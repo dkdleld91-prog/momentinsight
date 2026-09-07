@@ -1,5 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
+import {
+  PLAN_DEFAULT_DAYS,
+  expiryFromDate,
+  extendedExpiry,
+  normalizePlanDays,
+  normalizePlanName,
+  planStatus,
+} from "../account-plan.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
   DEFAULT_RANK_KEYWORD_LIMIT,
@@ -68,6 +77,9 @@ const AUDIT_ACTION_LABELS = new Map([
   ["operation_team.client_disconnected", "운영팀 광고주 연결 해제"],
   ["client.rank_keyword_limit_updated", "광고주 키워드 한도 변경"],
   ["team.rank_keyword_limit_updated", "운영팀 키워드 한도 변경"],
+  ["client.plan_updated", "광고주 이용 기간 변경"],
+  ["client.plan_cleared", "광고주 이용 기간 해제"],
+  ["client.created_from_trial", "체험 계정 정식 전환"],
   ["google_calendar_connected", "구글 캘린더 연결"],
   ["google_calendar_sync_failed", "구글 캘린더 동기화 실패"],
   ["google_calendar_catalog_refresh_failed", "구글 캘린더 목록 새로고침 실패"],
@@ -266,6 +278,9 @@ function clientPayload(row) {
     disconnectedAt: row.disconnected_at,
     publicSummary: row.public_summary,
     rankKeywordLimit: row.rank_keyword_limit ?? null,
+    // 플랜·이용 기간(대표 결정 2026-09-07). 열이 아직 없으면 무기한(state none)으로 계산된다.
+    plan: planStatus(row),
+    planNote: row.plan_note ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -346,8 +361,14 @@ async function attachTeamClient(ctx, team) {
 const CLIENT_LEGACY_FULL_SELECT = "id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at";
 // 위에 이번 기능의 열 하나를 얹은 것.
 const CLIENT_FULL_SELECT = `${CLIENT_LEGACY_FULL_SELECT}, rank_keyword_limit`;
+// 플랜·이용 기간 열(2026-09-07 마이그레이션)까지 얹은 것. 없으면 한 단 아래(한도까지)로 내려간다.
+const CLIENT_PLAN_SELECT = `${CLIENT_FULL_SELECT}, plan_name, plan_days, plan_started_at, plan_expires_at, plan_note, plan_updated_at`;
 // 운영팀 열조차 없던 아주 오래된 DB 를 위한 최소 열(마지막 수단).
 const CLIENT_BASE_SELECT = "id, name, business_name, agency_code, status, public_summary, created_at, updated_at";
+
+function isMissingPlanSchema(error) {
+  return /plan_name|plan_days|plan_started_at|plan_expires_at|plan_note|plan_updated_at|schema cache|does not exist/i.test(error?.message || "");
+}
 
 async function selectClients(ctx) {
   const query = (columns) => ctx.supabaseAdmin
@@ -357,8 +378,21 @@ async function selectClients(ctx) {
     .order("created_at", { ascending: true })
     .limit(100);
 
-  let result = await query(CLIENT_FULL_SELECT);
-  if (!result.error || !isMissingClientSchema(result.error)) return result;
+  let result = await query(CLIENT_PLAN_SELECT);
+  if (!result.error) return result;
+  if (!isMissingClientSchema(result.error) && !isMissingPlanSchema(result.error)) return result;
+
+  // 플랜 열만 없는 단계(배포가 플랜 마이그레이션보다 먼저): 한도까지는 그대로 읽고 플랜만 무기한으로 본다.
+  // 오류 문구가 한도·운영팀 열을 가리키면 이 단은 건너뛴다(기존 사다리의 호출 수를 늘리지 않는다).
+  const firstMessage = String(result.error.message || "");
+  if (/plan_/i.test(firstMessage) && !/rank_keyword_limit|issued_by_team_code|disconnected_at/i.test(firstMessage)) {
+    result = await query(CLIENT_FULL_SELECT);
+    if (!result.error) {
+      result.planSchemaPending = true;
+      return result;
+    }
+    if (!isMissingClientSchema(result.error)) return result;
+  }
 
   // 가운데 단이 있는 이유: 배포가 마이그레이션보다 먼저 나가면 rank_keyword_limit
   // 하나만 없다. 이때 곧바로 최소 열로 내려가면 운영 DB 에 이미 있는
@@ -591,17 +625,83 @@ async function listClients(request, ctx) {
     return json(request, { ok: false, message: "운영팀 코드 목록 조회에 실패했습니다.", detail: teamsResult.error.message }, 500);
   }
 
+  // 구글 연동 이메일(문의 때 계정 찾기)과 무료 체험 계정 목록(대표 지시 2026-09-07).
+  const identities = await selectLoginIdentities(ctx);
+  const trialUsage = await selectTrialUsageToday(ctx);
+  const emailFor = (role, code) => identities.byKey.get(`${role}:${String(code || "").trim().toLowerCase()}`) || null;
+
   return json(request, {
     ok: true,
     schemaPending: Boolean(clientsResult.schemaPending || teamsResult.schemaPending),
+    planSchemaPending: Boolean(clientsResult.planSchemaPending),
     ownerAgencyCode: primaryAgencyCode(),
     health: await loadOwnerHealth(ctx),
     teams: (teamsResult.data || []).map((team) => ({
       ...team,
       clients: (clientsResult.data || []).find((client) => client.id === team.client_id) || null,
-    })).map(teamPayload),
-    clients: (clientsResult.data || []).map(clientPayload),
+    })).map((team) => {
+      const payload = teamPayload(team);
+      payload.googleEmail = emailFor("team", payload.teamCode);
+      if (payload.client) payload.client.googleEmail = emailFor("client", payload.client.agencyCode);
+      return payload;
+    }),
+    clients: (clientsResult.data || []).map((row) => ({ ...clientPayload(row), googleEmail: emailFor("client", row.agency_code) })),
+    trials: identities.trials.map((row) => trialPayload(row, trialUsage)),
   });
+}
+
+// 구글 로그인 연결 표(login_identities). 표가 없거나 실패하면 이메일 없이, 체험 목록도 비워 둔다.
+async function selectLoginIdentities(ctx) {
+  const empty = { byKey: new Map(), trials: [] };
+  try {
+    const result = await ctx.supabaseAdmin
+      .from("login_identities")
+      .select("google_sub, google_email, role, code, linked_at")
+      .limit(1000);
+    if (result.error) return empty;
+    const byKey = new Map();
+    const trials = [];
+    for (const row of result.data || []) {
+      if (row.role === "trial") {
+        trials.push(row);
+        continue;
+      }
+      byKey.set(`${row.role}:${String(row.code || "").trim().toLowerCase()}`, row.google_email || null);
+    }
+    trials.sort((a, b) => Date.parse(b.linked_at || 0) - Date.parse(a.linked_at || 0));
+    return { byKey, trials };
+  } catch {
+    return empty;
+  }
+}
+
+function seoulDay(now = Date.now()) {
+  return new Date(now).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+}
+
+async function selectTrialUsageToday(ctx) {
+  const usage = new Map();
+  try {
+    const result = await ctx.supabaseAdmin
+      .from("trial_keyword_quota")
+      .select("google_sub, used")
+      .eq("day", seoulDay())
+      .limit(1000);
+    if (result.error) return usage;
+    for (const row of result.data || []) usage.set(String(row.google_sub || ""), Number(row.used || 0));
+  } catch {
+    /* 표가 없으면 0 으로 둔다 */
+  }
+  return usage;
+}
+
+function trialPayload(row, usage) {
+  return {
+    googleSub: row.google_sub,
+    googleEmail: row.google_email || null,
+    linkedAt: row.linked_at || null,
+    todayUsed: usage.get(String(row.google_sub || "")) || 0,
+  };
 }
 
 async function listAuditLogs(request, ctx, url) {
@@ -1069,6 +1169,212 @@ async function revokeTeam(request, ctx, body) {
     });
   }
 
+// ── 플랜·이용 기간 (대표 결정 2026-09-07) ─────────────────────────
+function planSchemaPending(request) {
+  return json(request, {
+    ok: false,
+    code: "PLAN_SCHEMA_PENDING",
+    schemaPending: true,
+    message: "이용 기간 DB 마이그레이션(20260907170000_account_plans.sql) 적용 전입니다. 적용 뒤 다시 시도해주세요.",
+  }, 409);
+}
+
+function planExpiryText(iso) {
+  const ms = Date.parse(String(iso || ""));
+  if (!Number.isFinite(ms)) return "무기한";
+  return new Date(ms).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+async function setPlan(request, ctx, body) {
+  const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
+  if (!agencyCode) return json(request, { ok: false, message: "이용 기간을 지정할 광고주 코드를 입력해주세요." }, 400);
+  if (agencyCode === primaryAgencyCode()) {
+    return json(request, { ok: false, message: "총관리자 코드는 기간 없이 사용합니다." }, 400);
+  }
+  const mode = String(body.mode || "extend").trim();
+  if (!["extend", "set", "meta"].includes(mode)) return json(request, { ok: false, message: "지원하지 않는 기간 작업입니다." }, 400);
+
+  const existing = await ctx.supabaseAdmin.from("clients").select(CLIENT_PLAN_SELECT).eq("agency_code", agencyCode).maybeSingle();
+  if (existing.error) {
+    if (isMissingPlanSchema(existing.error)) return planSchemaPending(request);
+    return json(request, { ok: false, message: "광고주 조회에 실패했습니다.", detail: existing.error.message }, 500);
+  }
+  if (!existing.data) return json(request, { ok: false, message: "등록된 광고주 코드를 찾을 수 없습니다." }, 404);
+
+  const nowIso = new Date().toISOString();
+  const update = { plan_updated_at: nowIso };
+  const planName = normalizePlanName(body.planName ?? body.plan_name);
+  if (planName) update.plan_name = planName;
+  const rawDays = body.planDays ?? body.plan_days;
+  if (rawDays !== undefined && rawDays !== null && String(rawDays).trim() !== "") {
+    const days = Number(rawDays);
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      return json(request, { ok: false, message: "기간은 1~3650일 사이의 정수로 입력해주세요." }, 400);
+    }
+    update.plan_days = days;
+  }
+  if (body.planNote !== undefined) update.plan_note = String(body.planNote || "").trim().slice(0, 500) || null;
+  if (mode === "set") {
+    const iso = expiryFromDate(body.expiresAt ?? body.expires_at);
+    if (!iso) return json(request, { ok: false, message: "만료일은 YYYY-MM-DD 형식으로 입력해주세요." }, 400);
+    update.plan_expires_at = iso;
+  } else if (mode === "extend") {
+    const days = update.plan_days ?? normalizePlanDays(existing.data.plan_days, PLAN_DEFAULT_DAYS);
+    update.plan_expires_at = extendedExpiry(existing.data, days);
+  }
+  if (!existing.data.plan_started_at && update.plan_expires_at) update.plan_started_at = nowIso;
+
+  const updated = await ctx.supabaseAdmin.from("clients").update(update).eq("id", existing.data.id).select(CLIENT_PLAN_SELECT).single();
+  if (updated.error) {
+    if (isMissingPlanSchema(updated.error)) return planSchemaPending(request);
+    return json(request, { ok: false, message: "이용 기간 저장에 실패했습니다.", detail: updated.error.message }, 500);
+  }
+  const auditLogged = await recordAuditLog(ctx, {
+    action: "client.plan_updated",
+    clientId: updated.data.id,
+    targetTable: "clients",
+    targetId: updated.data.id,
+    metadata: {
+      source: "super-admin-api",
+      agencyCode: updated.data.agency_code,
+      mode,
+      planName: updated.data.plan_name || "",
+      planDays: String(updated.data.plan_days ?? ""),
+      expiresAt: updated.data.plan_expires_at || "",
+    },
+  });
+  const message = mode === "meta"
+    ? "플랜 정보를 저장했습니다."
+    : `이용 기간을 ${planExpiryText(updated.data.plan_expires_at)}까지로 저장했습니다.`;
+  return json(request, { ok: true, message, client: clientPayload(updated.data), auditLogged });
+}
+
+async function clearPlan(request, ctx, body) {
+  const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
+  if (!agencyCode) return json(request, { ok: false, message: "광고주 코드를 입력해주세요." }, 400);
+  const updated = await ctx.supabaseAdmin
+    .from("clients")
+    .update({ plan_expires_at: null, plan_started_at: null, plan_updated_at: new Date().toISOString() })
+    .eq("agency_code", agencyCode)
+    .select(CLIENT_PLAN_SELECT)
+    .maybeSingle();
+  if (updated.error) {
+    if (isMissingPlanSchema(updated.error)) return planSchemaPending(request);
+    return json(request, { ok: false, message: "이용 기간 해제에 실패했습니다.", detail: updated.error.message }, 500);
+  }
+  if (!updated.data) return json(request, { ok: false, message: "등록된 광고주 코드를 찾을 수 없습니다." }, 404);
+  const auditLogged = await recordAuditLog(ctx, {
+    action: "client.plan_cleared",
+    clientId: updated.data.id,
+    targetTable: "clients",
+    targetId: updated.data.id,
+    metadata: { source: "super-admin-api", agencyCode: updated.data.agency_code },
+  });
+  return json(request, { ok: true, message: "이용 기간을 해제해 무기한으로 두었습니다.", client: clientPayload(updated.data), auditLogged });
+}
+
+// 체험 계정용 무작위 코드. 구글 로그인이 그대로 이어지므로 고객이 외울 필요는 없지만, 코드 로그인도
+// 가능한 자격이라 추측 불가능해야 한다(12자, 헷갈리는 글자 제외).
+function generateAgencyCode() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = randomBytes(12);
+  let out = "";
+  for (const byte of bytes) out += alphabet[byte % alphabet.length];
+  return out;
+}
+
+async function openTrial(request, ctx, body) {
+  const googleSub = String(body.googleSub || body.google_sub || "").trim().slice(0, 128);
+  const name = String(body.name || body.clientName || "").trim();
+  if (!googleSub) return json(request, { ok: false, message: "전환할 체험 계정을 선택해주세요." }, 400);
+  if (!name) return json(request, { ok: false, message: "광고주명을 입력해주세요." }, 400);
+  const planDays = normalizePlanDays(body.planDays ?? body.plan_days, PLAN_DEFAULT_DAYS);
+  const planName = normalizePlanName(body.planName ?? body.plan_name) || "basic";
+  let rankKeywordLimit = null;
+  if (body.rankKeywordLimit !== undefined && body.rankKeywordLimit !== null && String(body.rankKeywordLimit).trim() !== "") {
+    const parsed = parseRankKeywordLimitInput(body.rankKeywordLimit);
+    if (!parsed.ok) return json(request, { ok: false, message: parsed.message }, 400);
+    rankKeywordLimit = parsed.limit;
+  }
+
+  const identity = await ctx.supabaseAdmin
+    .from("login_identities")
+    .select("google_sub, google_email, role, code")
+    .eq("google_sub", googleSub)
+    .maybeSingle();
+  if (identity.error) return json(request, { ok: false, message: "체험 계정 조회에 실패했습니다.", detail: identity.error.message }, 500);
+  if (!identity.data || identity.data.role !== "trial") {
+    return json(request, { ok: false, message: "체험 계정을 찾을 수 없습니다. 이미 전환됐거나 삭제된 계정입니다." }, 404);
+  }
+
+  let agencyCode = "";
+  for (let attempt = 0; attempt < 3 && !agencyCode; attempt += 1) {
+    const candidate = normalizeAgencyCode(generateAgencyCode());
+    const clash = await ctx.supabaseAdmin.from("clients").select("id").eq("agency_code", candidate).maybeSingle();
+    if (clash.error) return json(request, { ok: false, message: "코드 중복 확인에 실패했습니다.", detail: clash.error.message }, 500);
+    if (!clash.data) agencyCode = candidate;
+  }
+  if (!agencyCode) return json(request, { ok: false, message: "코드 생성에 실패했습니다. 다시 시도해주세요." }, 500);
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const inserted = await ctx.supabaseAdmin
+    .from("clients")
+    .insert({
+      name,
+      business_name: String(body.businessName || body.business_name || name).trim() || name,
+      agency_code: agencyCode,
+      status: "active",
+      public_summary: "무료 체험에서 전환한 광고주입니다.",
+      internal_note: "MI super admin opened from trial",
+      rank_keyword_limit: rankKeywordLimit,
+      plan_name: planName,
+      plan_days: planDays,
+      plan_started_at: nowIso,
+      plan_expires_at: new Date(nowMs + planDays * 24 * 60 * 60 * 1000).toISOString(),
+      plan_note: String(body.planNote || "").trim().slice(0, 500) || null,
+      plan_updated_at: nowIso,
+    })
+    .select(CLIENT_PLAN_SELECT)
+    .single();
+  if (inserted.error) {
+    if (isMissingPlanSchema(inserted.error)) return planSchemaPending(request);
+    return json(request, { ok: false, message: "광고주 생성에 실패했습니다.", detail: inserted.error.message }, 500);
+  }
+
+  // 구글 연결을 새 광고주 코드로 옮긴다. 이 순간부터 같은 구글 계정 로그인이 정식 광고주 세션이 된다.
+  const relinked = await ctx.supabaseAdmin
+    .from("login_identities")
+    .update({ role: "client", code: agencyCode, updated_at: nowIso })
+    .eq("google_sub", googleSub)
+    .eq("role", "trial");
+  if (relinked.error) {
+    await ctx.supabaseAdmin.from("clients").delete().eq("id", inserted.data.id);
+    return json(request, { ok: false, message: "구글 연결 이동에 실패해 전환을 되돌렸습니다.", detail: relinked.error.message }, 500);
+  }
+
+  const auditLogged = await recordAuditLog(ctx, {
+    action: "client.created_from_trial",
+    clientId: inserted.data.id,
+    targetTable: "clients",
+    targetId: inserted.data.id,
+    metadata: {
+      source: "super-admin-api",
+      agencyCode,
+      googleEmail: identity.data.google_email || "",
+      planName,
+      planDays: String(planDays),
+      rankKeywordLimit: rankKeywordLimit === null ? "default" : String(rankKeywordLimit),
+    },
+  });
+  return json(request, {
+    ok: true,
+    message: `체험 계정을 정식 광고주로 전환했습니다(코드 ${agencyCode}, ${planExpiryText(inserted.data.plan_expires_at)}까지). 구글 로그인은 그대로 됩니다.`,
+    client: { ...clientPayload(inserted.data), googleEmail: identity.data.google_email || null },
+    auditLogged,
+  });
+}
+
 async function setRankKeywordLimit(request, ctx, body) {
   const agencyCode = normalizeAgencyCode(
     body.agencyCode || body.agency_code || body.code || body.teamCode || body.team_code,
@@ -1254,13 +1560,16 @@ export default {
     }
     if (request.method === "POST") {
       const action = String(body.action || "create-team").trim();
-      if (["create-team", "create-client", "revoke-team", "revoke-client", "set-rank-keyword-limit"].includes(action)) {
+      if (["create-team", "create-client", "revoke-team", "revoke-client", "set-rank-keyword-limit", "set-plan", "clear-plan", "open-trial"].includes(action)) {
         const ownerAuth = ownerActionAuthorized(request, body);
         if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
         if (action === "create-team") return createTeam(request, ctx, body);
         if (action === "create-client") return createClient(request, ctx, body);
         if (action === "revoke-team") return revokeTeam(request, ctx, body);
         if (action === "set-rank-keyword-limit") return setRankKeywordLimit(request, ctx, body);
+        if (action === "set-plan") return setPlan(request, ctx, body);
+        if (action === "clear-plan") return clearPlan(request, ctx, body);
+        if (action === "open-trial") return openTrial(request, ctx, body);
         return revokeClient(request, ctx, body);
       }
       if (isTeamPath && action === "validate-team") return validateTeam(request, ctx, body);

@@ -1,5 +1,6 @@
 import { csrfMatches, sessionFromRequest, trialKeywordDailyLimit } from "./code-session.mjs";
 import { trialSampleTrackersPayload } from "./trial-sample-trackers.mjs";
+import { planRestricted, planStatus } from "./account-plan.mjs";
 import {
   ownerClaimsMatchPrimary,
   PRIMARY_AGENCY_CODE,
@@ -84,6 +85,42 @@ const TRIAL_SAMPLE_TRACKER_PATHS = new Set([
   "/api/naver-rank-trackers",
   "/api/naver-place-rank-trackers",
 ]);
+// 이용 기간이 끝난 광고주(만료~유예 5일, 대표 결정 2026-09-07): 세션은 살려 두고 읽기만 허용한다.
+// 키워드 조회·뉴스·공개 상태는 열고, 순위 목록은 GET(기록 보기)만, 그 외·쓰기는 403 PLAN_EXPIRED.
+const PLAN_EXPIRED_GET_PATHS = new Set([
+  "/api/session",
+  "/api/naver-keyword",
+  "/api/client/keyword-research",
+  "/api/client/keyword-notes",
+  "/api/client/public-state",
+  "/api/client/home-feed",
+  "/api/naver-rank-trackers",
+  "/api/naver-place-rank-trackers",
+  "/api/my/google-login",
+]);
+const PLAN_EXPIRED_WRITE_PATHS = new Set([
+  "/api/client/keyword-notes",
+]);
+// 요청마다 다시 읽지 않도록 활성 확인 때 읽은 만료 시각을 클레임 sid 별로 잠깐 기억한다(같은 인스턴스, 60초).
+const planExpiryMemo = new Map();
+const PLAN_MEMO_TTL_MS = 60 * 1000;
+
+function rememberPlanExpiry(sid, value) {
+  if (!sid) return;
+  if (planExpiryMemo.size > 500) planExpiryMemo.clear();
+  planExpiryMemo.set(sid, { value: value || null, at: Date.now() });
+}
+
+function recalledPlanExpiry(sid) {
+  const hit = sid ? planExpiryMemo.get(sid) : null;
+  if (!hit || Date.now() - hit.at > PLAN_MEMO_TTL_MS) return undefined;
+  return hit.value;
+}
+
+export function planExpiredAllowsRequest(request, path) {
+  if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS") return PLAN_EXPIRED_GET_PATHS.has(path);
+  return PLAN_EXPIRED_WRITE_PATHS.has(path);
+}
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
 export const SESSION_ACTIVITY_REVOKED = "revoked";
@@ -292,7 +329,7 @@ async function consumeTrialKeywordQuota(claims, env, options = {}) {
 async function activeClientForClaims(claims, env, fetchImpl) {
   if (!claims.clientId || !claims.agencyCode) return SESSION_ACTIVITY_REVOKED;
   let result = await selectSessionRows("clients", {
-    select: "id,agency_code,status,disconnected_at",
+    select: "id,agency_code,status,disconnected_at,plan_expires_at",
     id: `eq.${claims.clientId}`,
     agency_code: `eq.${claims.agencyCode}`,
     status: "eq.active",
@@ -300,13 +337,19 @@ async function activeClientForClaims(claims, env, fetchImpl) {
     limit: "1",
   }, env, fetchImpl);
   if (optionalColumnUnavailable(result)) {
+    // 플랜 열(2026-09-07)이 아직 없으면 그 열만 빼고 다시 읽는다. 만료 시각은 무기한으로 본다.
     result = await selectSessionRows("clients", {
-      select: "id,agency_code,status",
+      select: "id,agency_code,status,disconnected_at",
       id: `eq.${claims.clientId}`,
       agency_code: `eq.${claims.agencyCode}`,
       status: "eq.active",
+      disconnected_at: "is.null",
       limit: "1",
     }, env, fetchImpl);
+  }
+  if (result.ok && result.rows.length === 1) rememberPlanExpiry(claims.sid, result.rows[0]?.plan_expires_at || null);
+  if (optionalColumnUnavailable(result)) {
+    return SESSION_ACTIVITY_UNAVAILABLE;
   }
   if (!result.ok) return SESSION_ACTIVITY_UNAVAILABLE;
   return result.rows.length === 1 && result.rows[0]?.id === claims.clientId
@@ -489,6 +532,19 @@ export async function authorizeCodeSession(request, env = process.env, options =
         message: "계정 연결 상태가 변경되어 다시 접속해야 합니다.",
       }, 401),
     };
+  }
+  if (claims.role === "client" && !isTrialClaims(claims)) {
+    const expiresAt = recalledPlanExpiry(claims.sid);
+    if (expiresAt && planRestricted(planStatus({ plan_expires_at: expiresAt })) && !planExpiredAllowsRequest(request, path)) {
+      return {
+        ok: false,
+        response: protectedJson(request, {
+          ok: false,
+          code: "PLAN_EXPIRED",
+          message: "이용 기간이 끝났습니다. 연장 문의는 카카오톡 채널로 주세요.",
+        }, 403),
+      };
+    }
   }
   if (trialSample) {
     // 활성 확인을 지난 체험 세션에만 예시 목록을 준다. 응답 모양은 실제 핸들러와 같아 화면이 그대로 그린다.

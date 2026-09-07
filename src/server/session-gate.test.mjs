@@ -467,3 +467,33 @@ test("trial sessions get sample tracker lists instead of the rank handlers, but 
   const passed = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers?limit=500", real), ENV, { activityCheck: async () => true });
   assert.equal(passed.ok, true);
 });
+
+// 이용 기간이 끝난 광고주(대표 결정 2026-09-07): 세션은 살아 있지만 읽기만 된다. 순위 등록(POST)은 PLAN_EXPIRED.
+test("expired advertiser plans keep the session but block writes outside the read-only allow list", async () => {
+  const claims = createSessionClaims({ role: "client", clientId: "client-9", agencyCode: "mml93-a09" });
+  // 세션 쿠키를 여는 비밀키가 있어야 하므로 공용 ENV 위에 Supabase 주소만 얹는다.
+  const env = { ...ENV, SUPABASE_URL: "https://project.supabase.co" };
+  const expiredFetch = async (url) => {
+    const parsed = new URL(url);
+    assert.match(parsed.pathname, /clients/);
+    assert.match(parsed.searchParams.get("select"), /plan_expires_at/);
+    return Response.json([{ id: "client-9", agency_code: "mml93-a09", status: "active", disconnected_at: null, plan_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }]);
+  };
+  const activeFetch = async () => Response.json([{ id: "client-9", agency_code: "mml93-a09", status: "active", disconnected_at: null, plan_expires_at: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString() }]);
+
+  const read = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers?limit=500", claims), env, { fetchImpl: expiredFetch });
+  assert.equal(read.ok, true, "만료돼도 순위 기록 GET 은 열린다");
+  const write = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims, { method: "POST", body: "{}", headers: { "content-type": "application/json", origin: "https://insight.momentlabs.co.kr" } }), env, { fetchImpl: expiredFetch });
+  assert.equal(write.ok, false);
+  assert.equal(write.response.status, 403);
+  assert.equal((await write.response.json()).code, "PLAN_EXPIRED");
+  const notes = await authorizeCodeSession(requestWithSession("/api/client/keyword-notes", claims, { method: "POST", body: "{}", headers: { "content-type": "application/json", origin: "https://insight.momentlabs.co.kr" } }), env, { fetchImpl: expiredFetch });
+  assert.equal(notes.ok, true, "조사 노트 저장은 만료 뒤에도 된다");
+  const report = await authorizeCodeSession(requestWithSession("/api/report-center", claims), env, { fetchImpl: expiredFetch });
+  assert.equal(report.ok, false);
+  assert.equal(report.response.status, 403);
+
+  const fresh = createSessionClaims({ role: "client", clientId: "client-9", agencyCode: "mml93-a09" });
+  const ok = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", fresh, { method: "POST", body: "{}", headers: { "content-type": "application/json", origin: "https://insight.momentlabs.co.kr" } }), env, { fetchImpl: activeFetch });
+  assert.equal(ok.ok, true, "기간이 남은 광고주는 그대로 쓴다");
+});

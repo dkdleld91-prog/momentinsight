@@ -11350,6 +11350,19 @@
       line-height: 1.55;
     }
 
+    /* 계정·플랜 관리(대표 결정 2026-09-07): 검색칸, 구글 이메일·이용 기간 줄, 기간 조작, 체험 계정 목록 */
+    #mi-admin .mi-account-search { display: flex; align-items: center; gap: 10px; margin: 12px 0 14px; }
+    #mi-admin .mi-account-search .mi-input { max-width: 440px; }
+    #mi-admin .mi-account-search-count { color: var(--mi-muted); font-size: 12px; }
+    #mi-admin .mi-account-slot[hidden] { display: none; }
+    #mi-admin .mi-account-plan { display: block; }
+    #mi-admin .mi-account-plan.is-warn { color: var(--mi-orange); font-weight: 700; }
+    #mi-admin .mi-account-plan.is-danger { color: var(--mi-orange); font-weight: 800; text-decoration: underline; }
+    #mi-admin .mi-plan-controls { flex-wrap: wrap; row-gap: 8px; }
+    #mi-admin .mi-plan-name-input { width: 150px; }
+    #mi-admin .mi-plan-select { min-width: 96px; }
+    #mi-admin .mi-plan-date { width: 150px; }
+
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -12279,6 +12292,11 @@
                 <span>최상위 권한</span>
                 <strong data-owner-root-account-label>보안 세션</strong>
               </div>
+              <!-- 계정 검색(대표 지시 2026-09-07): 운영팀·광고주·체험 목록을 이름·코드·구글 이메일로 거른다. -->
+              <div class="mi-account-search">
+                <input class="mi-input" type="search" data-owner-account-search placeholder="운영팀·광고주 이름, 코드, 구글 이메일 검색" aria-label="계정 검색" />
+                <span class="mi-account-search-count" data-owner-account-search-count></span>
+              </div>
               <div class="mi-account-full-grid" data-owner-team-full-list data-owner-relationship-list>
                 <div class="mi-account-slot is-empty">
                   <span class="mi-account-slot-number">1번</span>
@@ -12303,6 +12321,29 @@
                   <span class="mi-account-slot-number">1번</span>
                   <div class="mi-account-slot-main">
                     <span>직접 광고주</span>
+                    <strong>조회 전</strong>
+                    <small>활성 계정 새로고침 후 표시됩니다.</small>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <!-- 무료 체험 계정(구글 가입, 대표 결정 2026-09-07): 결제 확인 후 정식 광고주로 전환한다. -->
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>무료 체험 계정</h2>
+                  <p>구글로 가입한 체험 계정입니다. 결제를 확인하면 광고주명·기간·한도를 넣고 [정식 전환]하세요. 구글 로그인은 그대로 이어집니다.</p>
+                </div>
+                <div class="mi-card-actions">
+                  <span class="mi-badge">체험 <b data-owner-trial-count>0개</b></span>
+                </div>
+              </div>
+              <div class="mi-account-full-grid" data-owner-trial-list>
+                <div class="mi-account-slot is-empty">
+                  <span class="mi-account-slot-number">1번</span>
+                  <div class="mi-account-slot-main">
+                    <span>체험 계정</span>
                     <strong>조회 전</strong>
                     <small>활성 계정 새로고침 후 표시됩니다.</small>
                   </div>
@@ -17840,6 +17881,105 @@
           escapeHtml(target) + '">한도 저장</button>';
       }
 
+      // ── 계정·플랜 관리(대표 결정 2026-09-07) ─────────────────────
+      function ownerShortDate(iso) {
+        var ms = Date.parse(String(iso || ""));
+        if (!Number.isFinite(ms)) return "-";
+        return new Date(ms).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" }).replace(/\.\s?/g, "/").replace(/\/$/, "");
+      }
+
+      function ownerGoogleLine(email, label) {
+        if (!email) return "";
+        return '<small>' + escapeHtml(label || "구글") + ': ' + escapeHtml(email) + '</small>';
+      }
+
+      function ownerPlanLine(client) {
+        var plan = client && client.plan ? client.plan : null;
+        var label = plan && plan.label ? "플랜 " + plan.label + " · " : "";
+        if (!plan || plan.state === "none") {
+          return '<small class="mi-account-plan">' + escapeHtml(label + "이용 기간: 무기한") + '</small>';
+        }
+        var until = ownerShortDate(plan.expiresAt) + "까지";
+        if (plan.state === "active") return '<small class="mi-account-plan">' + escapeHtml(label + until + " · D-" + plan.daysLeft) + '</small>';
+        if (plan.state === "expiring") return '<small class="mi-account-plan is-warn">' + escapeHtml(label + until + " · D-" + plan.daysLeft + " 만료 임박") + '</small>';
+        if (plan.state === "expired") return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + " · 만료됨 · " + plan.graceDaysLeft + "일 뒤 삭제 대상") + '</small>';
+        return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + " · 유예 종료 · 삭제 대상") + '</small>';
+      }
+
+      function ownerPlanSelect(attribute, code, selected) {
+        var options = [["basic", "기본"], ["premium", "프리미엄"], ["custom", "직접"]];
+        return '<select class="mi-input mi-quota-input mi-plan-select" aria-label="플랜" ' + attribute + '="' + escapeHtml(code) + '">' +
+          options.map(function (option) {
+            return '<option value="' + option[0] + '"' + (option[0] === selected ? ' selected' : '') + '>' + option[1] + '</option>';
+          }).join("") + '</select>';
+      }
+
+      function ownerPlanControl(client) {
+        var code = String(client && client.agencyCode || "");
+        if (!code) return "";
+        var plan = client.plan || {};
+        var days = plan.days || 30;
+        return '<label class="mi-account-slot-quota"><span>기간(일)</span>' +
+          '<input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="3650" step="1" value="' + escapeHtml(String(days)) +
+          '" aria-label="이용 기간 일수" data-owner-plan-days="' + escapeHtml(code) + '" /></label>' +
+          ownerPlanSelect("data-owner-plan-name", code, plan.name || "basic") +
+          '<button class="mi-button mi-button-small" type="button" data-owner-plan-extend="' + escapeHtml(code) + '">' + (plan.state && plan.state !== "none" ? "연장" : "오픈") + '</button>' +
+          '<input class="mi-input mi-quota-input mi-plan-date" type="date" aria-label="만료일 직접 지정" data-owner-plan-until="' + escapeHtml(code) + '" />' +
+          '<button class="mi-button mi-button-small" type="button" data-owner-plan-set="' + escapeHtml(code) + '">만료일 지정</button>' +
+          (plan.state && plan.state !== "none"
+            ? '<button class="mi-button mi-button-small is-ghost" type="button" data-owner-plan-clear="' + escapeHtml(code) + '">무기한</button>'
+            : '');
+      }
+
+      function ownerSearchText(parts) {
+        return escapeHtml(parts.filter(Boolean).join(" ").toLowerCase());
+      }
+
+      function renderOwnerTrialList(payload) {
+        var list = root.querySelector("[data-owner-trial-list]");
+        var count = root.querySelector("[data-owner-trial-count]");
+        if (!list) return;
+        var trials = payload && Array.isArray(payload.trials) ? payload.trials : [];
+        if (count) count.textContent = trials.length + "개";
+        if (!payload) {
+          list.innerHTML = ownerEmptySlot("체험 계정", "활성 계정 새로고침 후 표시됩니다.");
+          return;
+        }
+        if (!trials.length) {
+          list.innerHTML = ownerEmptySlot("체험 계정", "아직 구글로 가입한 체험 계정이 없습니다.");
+          return;
+        }
+        list.innerHTML = trials.map(function (trial, index) {
+          var sub = String(trial.googleSub || "");
+          var email = trial.googleEmail || "(이메일 없음)";
+          return '<div class="mi-account-slot" data-owner-search-text="' + ownerSearchText([email, sub]) + '"><span class="mi-account-slot-number">' + (index + 1) +
+            '번 체험</span><div class="mi-account-slot-main"><span>구글 가입 · ' + escapeHtml(ownerShortDate(trial.linkedAt)) + '</span><strong>' + escapeHtml(email) +
+            '</strong><small>오늘 키워드 조회 ' + Number(trial.todayUsed || 0) + '/5 · 정식 전환하면 같은 구글 로그인이 광고주 계정이 됩니다</small></div>' +
+            '<div class="mi-account-slot-actions mi-plan-controls">' +
+            '<input class="mi-input mi-quota-input mi-plan-name-input" type="text" placeholder="광고주명" aria-label="광고주명" data-owner-trial-name="' + escapeHtml(sub) + '" />' +
+            '<label class="mi-account-slot-quota"><span>기간(일)</span><input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="3650" step="1" value="30" aria-label="이용 기간 일수" data-owner-trial-days="' + escapeHtml(sub) + '" /></label>' +
+            ownerPlanSelect("data-owner-trial-plan", sub, "basic") +
+            '<label class="mi-account-slot-quota"><span>키워드 한도</span><input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="1000" step="1" placeholder="기본 50" aria-label="키워드 등록 한도" data-owner-trial-limit="' + escapeHtml(sub) + '" /></label>' +
+            '<button class="mi-button mi-button-small" type="button" data-owner-trial-open="' + escapeHtml(sub) + '">정식 전환</button></div></div>';
+        }).join("");
+      }
+
+      function applyOwnerAccountSearch() {
+        var input = root.querySelector("[data-owner-account-search]");
+        var countNode = root.querySelector("[data-owner-account-search-count]");
+        var query = input ? String(input.value || "").trim().toLowerCase() : "";
+        var slots = root.querySelectorAll("[data-owner-team-full-list] .mi-account-slot, [data-owner-client-full-list] .mi-account-slot, [data-owner-trial-list] .mi-account-slot");
+        var shown = 0;
+        slots.forEach(function (slot) {
+          if (slot.classList.contains("is-empty")) return;
+          var text = String(slot.getAttribute("data-owner-search-text") || slot.textContent || "").toLowerCase();
+          var match = !query || text.indexOf(query) > -1;
+          slot.hidden = !match;
+          if (match) shown += 1;
+        });
+        if (countNode) countNode.textContent = query ? shown + "개 일치" : "";
+      }
+
       function renderOwnerFullAccountView(payload) {
         var teamList = root.querySelector("[data-owner-team-full-list]");
         var clientList = root.querySelector("[data-owner-client-full-list]");
@@ -17876,14 +18016,19 @@
               var clientText = client ? ((client.name || client.businessName || "광고주") + " · " + (client.agencyCode || "-")) : "미연결";
               var linkedClass = client ? "" : " is-unlinked";
               var status = client ? '<span class="mi-status-pill">연결 완료</span>' : '<span class="mi-status-pill is-warn">미연결</span>';
-              return '<div class="mi-account-slot' + linkedClass + '"><span class="mi-account-slot-number">' + (index + 1) +
+              return '<div class="mi-account-slot' + linkedClass + '" data-owner-search-text="' +
+                ownerSearchText([team.teamName, team.teamCode, clientText, team.googleEmail, client && client.googleEmail]) +
+                '"><span class="mi-account-slot-number">' + (index + 1) +
                 '번 운영팀</span><div class="mi-account-slot-main"><span>총관리자 ' + escapeHtml(ownerCode) + ' 아래 연결</span><strong>운영팀: ' +
                 escapeHtml(team.teamName || "운영팀") + ' · ' + escapeHtml(team.teamCode || "-") +
-                '</strong><small>광고주: ' + escapeHtml(clientText) + '</small></div><div class="mi-account-slot-actions">' +
+                '</strong><small>광고주: ' + escapeHtml(clientText) + '</small>' +
+                ownerGoogleLine(team.googleEmail, "운영팀 구글") +
+                (client ? ownerGoogleLine(client.googleEmail, "광고주 구글") + ownerPlanLine(client) : "") +
+                '</div><div class="mi-account-slot-actions mi-plan-controls">' +
                 ownerQuotaControl(
                   client ? (client.agencyCode || "") : (team.teamCode || ""),
                   client ? client.rankKeywordLimit : team.rankKeywordLimit,
-                ) + status +
+                ) + (client ? ownerPlanControl(client) : "") + status +
                 '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
                 escapeHtml(team.teamCode || "") + '">권한 해제</button></div></div>';
             }).join("");
@@ -17901,15 +18046,22 @@
               var action = isOwnerClient
                 ? '<span class="mi-status-pill">보호</span>'
                 : '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-client="' + escapeHtml(client.agencyCode || "") + '">권한 해제</button>';
-              return '<div class="mi-account-slot"><span class="mi-account-slot-number">' + (index + 1) +
+              return '<div class="mi-account-slot" data-owner-search-text="' +
+                ownerSearchText([client.name, client.businessName, client.agencyCode, client.googleEmail]) +
+                '"><span class="mi-account-slot-number">' + (index + 1) +
                 '번 직접</span><div class="mi-account-slot-main"><span>총관리자 직접 발급</span><strong>광고주: ' +
                 escapeHtml(client.name || client.businessName || "광고주") + ' · ' + escapeHtml(client.agencyCode || "-") +
-                '</strong><small>' + escapeHtml(ownerClientIssuedText(client)) + '</small></div><div class="mi-account-slot-actions"><span class="mi-status-pill">활성</span>' +
+                '</strong><small>' + escapeHtml(ownerClientIssuedText(client)) + '</small>' +
+                ownerGoogleLine(client.googleEmail, "구글") + (isOwnerClient ? '' : ownerPlanLine(client)) +
+                '</div><div class="mi-account-slot-actions mi-plan-controls"><span class="mi-status-pill">활성</span>' +
                 (isOwnerClient ? '' : ownerQuotaControl(client.agencyCode || "", client.rankKeywordLimit)) +
+                (isOwnerClient ? '' : ownerPlanControl(client)) +
                 action + '</div></div>';
             }).join("");
           }
         }
+        renderOwnerTrialList(payload);
+        applyOwnerAccountSearch();
       }
 
       // 총관리자 활성 계정 요약의 추적기 집계 행. 서버 loadOwnerHealth 의 safeCount 결과
@@ -20631,6 +20783,75 @@
           refreshOperationHomeStatus();
         });
       }
+      // 이용 기간·체험 전환·검색 핸들러(대표 결정 2026-09-07). 한도 저장 핸들러와 같은 이유로
+      // 계정 조작 묶음 밖에 둔다. 모든 저장은 총관리자 세션의 super-admin API 한 곳으로만 간다.
+      root.addEventListener("input", function (event) {
+        var node = event.target;
+        if (node && node.matches && node.matches("[data-owner-account-search]")) applyOwnerAccountSearch();
+      });
+      root.addEventListener("click", async function (event) {
+        var target = event.target && event.target.closest
+          ? event.target.closest("[data-owner-plan-extend], [data-owner-plan-set], [data-owner-plan-clear], [data-owner-trial-open]")
+          : null;
+        if (!target) return;
+        if (!target.closest("[data-owner-team-full-list], [data-owner-client-full-list], [data-owner-trial-list]")) return;
+        if (!canManageOwnerCodes()) return;
+        var slot = target.closest(".mi-account-slot");
+        var field = function (selector) {
+          var node = slot ? slot.querySelector(selector) : null;
+          return node ? String(node.value || "").trim() : "";
+        };
+        var body = null;
+        var working = "";
+        if (target.hasAttribute("data-owner-plan-extend")) {
+          var extendCode = target.getAttribute("data-owner-plan-extend") || "";
+          body = { action: "set-plan", mode: "extend", agencyCode: extendCode, planDays: field("[data-owner-plan-days]") || undefined, planName: field("[data-owner-plan-name]") || undefined };
+          working = extendCode + " 이용 기간을 저장 중입니다.";
+        } else if (target.hasAttribute("data-owner-plan-set")) {
+          var setCode = target.getAttribute("data-owner-plan-set") || "";
+          var until = field("[data-owner-plan-until]");
+          if (!until) {
+            setStatus(ownerStatus, "만료일을 먼저 고르세요.", "is-warn");
+            return;
+          }
+          body = { action: "set-plan", mode: "set", agencyCode: setCode, expiresAt: until, planDays: field("[data-owner-plan-days]") || undefined, planName: field("[data-owner-plan-name]") || undefined };
+          working = setCode + " 만료일을 저장 중입니다.";
+        } else if (target.hasAttribute("data-owner-plan-clear")) {
+          var clearCode = target.getAttribute("data-owner-plan-clear") || "";
+          if (!window.confirm(clearCode + " 이용 기간을 해제해 무기한으로 둘까요?")) return;
+          body = { action: "clear-plan", agencyCode: clearCode };
+          working = clearCode + " 이용 기간을 해제 중입니다.";
+        } else {
+          var googleSub = target.getAttribute("data-owner-trial-open") || "";
+          var clientName = field("[data-owner-trial-name]");
+          if (!clientName) {
+            setStatus(ownerStatus, "광고주명을 먼저 입력하세요.", "is-warn");
+            return;
+          }
+          body = { action: "open-trial", googleSub: googleSub, name: clientName, planDays: field("[data-owner-trial-days]") || undefined, planName: field("[data-owner-trial-plan]") || undefined, rankKeywordLimit: field("[data-owner-trial-limit]") || undefined };
+          working = "체험 계정을 정식 광고주로 전환 중입니다.";
+        }
+        var actionSession = captureAdminSession();
+        if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+        target.disabled = true;
+        setStatus(ownerStatus, working, "");
+        try {
+          var payload = await requestOwnerCodes("POST", body);
+          if (payload.staleSession) return;
+          if (!payload.ok) throw new Error(payload.message || "저장에 실패했습니다.");
+          await loadOwnerCodes(true);
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+          setStatus(ownerStatus, payload.message || "저장했습니다.", "is-ok");
+        } catch (error) {
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+          setStatus(ownerStatus, error.message || "저장에 실패했습니다.", "is-warn");
+        } finally {
+          if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
+            target.disabled = false;
+          }
+        }
+      });
+
       // 키워드 한도 저장 핸들러는 총관리자 계정 조작 묶음(ownerCreateButton ~ codeSaveButton)
       // 밖에 둔다. 그 묶음은 출시 기준선이 낡은 세션 가드 호출 수를 정확히 세는 구역이라
       // 새 핸들러가 들어가면 보안 불변식 검사가 깨진다. requestOwnerAuditLogs 와 같은 이유다.

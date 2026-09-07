@@ -6170,6 +6170,28 @@
       background: rgba(6, 26, 58, 0.45);
     }
     #mi-clean .mi-trial-modal.is-open { display: flex; }
+    /* 이용 기간(대표 결정 2026-09-07): 사이드바 남은 기간 줄, 만료 뒤 화면 위 띠 */
+    #mi-clean .mi-plan-line { display: block; color: var(--mi-muted); font-size: 12px; font-weight: 700; }
+    #mi-clean .mi-plan-line[hidden] { display: none; }
+    #mi-clean .mi-plan-line.is-warn { color: var(--mi-orange); }
+    #mi-clean .mi-plan-line.is-danger { color: var(--mi-orange); text-decoration: underline; }
+    #mi-clean .mi-plan-bar { display: none; }
+    #mi-clean.is-plan-expired .mi-plan-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+      margin: 0 0 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--mi-line);
+      border-left: 4px solid var(--mi-orange);
+      border-radius: 12px;
+      background: linear-gradient(90deg, var(--mi-orange-bg) 0%, #ffffff 60%);
+    }
+    #mi-clean .mi-plan-bar-kicker { padding: 3px 8px; border-radius: 999px; background: var(--mi-orange); color: #fff; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    #mi-clean .mi-plan-bar strong { color: var(--mi-navy); font-size: 14px; }
+    #mi-clean .mi-plan-bar-desc { flex: 1 1 320px; color: var(--mi-muted); font-size: 12px; line-height: 1.5; }
+    #mi-clean .mi-plan-bar a.mi-button { margin-left: auto; text-decoration: none; white-space: nowrap; }
     #mi-clean .mi-trial-modal .mi-trial-lock { display: grid; margin: 0; width: min(560px, 100%); position: relative; }
     #mi-clean .mi-trial-modal-close {
       position: absolute;
@@ -6275,6 +6297,7 @@
         <span data-mi-auth-label>현재 접속 코드</span>
         <strong data-mi-current-code>미연결</strong>
         <span class="mi-trial-chip" data-trial-chip>체험 계정</span>
+        <span class="mi-plan-line" data-mi-plan-line hidden></span>
         <button type="button" data-mi-logout>로그아웃</button>
       </div>
 
@@ -7271,6 +7294,8 @@
       };
       // 체험 계정의 오늘 조회 횟수 { used, limit } — /api/session 응답의 trialQuota 를 그대로 둔다.
       var trialQuota = null;
+      // 광고주 이용 기간(plan) — /api/session 응답의 plan(state none|active|expiring|expired|delete_due)을 그대로 둔다.
+      var clientPlan = null;
       var clientSessionGeneration = 0;
       var clientWorkItems = [];
       var clientWorkItemsLoaded = false;
@@ -7380,8 +7405,10 @@
         // 체험 계정(구글 가입): 키워드 조회만 열리고 나머지는 잠금 카드로 안내한다(대표 승인 2026-09-07).
         secureClientSession.trial = session.trial === true;
         trialQuota = payload && payload.trialQuota && typeof payload.trialQuota === "object" ? payload.trialQuota : null;
+        clientPlan = payload && payload.plan && typeof payload.plan === "object" ? payload.plan : null;
         // 넛지 회귀 테스트가 이 함수만 떼어 실행한다 — 화면 글루가 없는 곳에서는 조용히 넘어간다.
         if (typeof applyTrialMode === "function") applyTrialMode();
+        if (typeof applyPlanMode === "function") applyPlanMode();
         return session;
       }
 
@@ -7393,7 +7420,9 @@
         secureClientSession.teamId = "";
         secureClientSession.trial = false;
         trialQuota = null;
+        clientPlan = null;
         applyTrialMode();
+        applyPlanMode();
         try {
           window.localStorage.removeItem(selectedCodeKey);
           window.localStorage.removeItem("miRankAccessCode");
@@ -7566,6 +7595,185 @@
             renderTrialQuota();
           }).catch(function () {});
         }, 800);
+      }
+
+      // ── 이용 기간(플랜) 화면(대표 결정 2026-09-07) ─────────────────
+      // 서버(/api/session)가 계산한 plan.state 만 믿는다. 만료 3일 전부터 하루 한 번 팝업, 만료 뒤에는 모든 화면 위 띠.
+      var PLAN_INQUIRY_KAKAO = "https://pf.kakao.com/_ixoLxfX";
+      function planKoreanDate(iso) {
+        var ms = Date.parse(String(iso || ""));
+        if (!Number.isFinite(ms)) return "-";
+        return new Date(ms).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric" });
+      }
+      function planShortDate(iso) {
+        var ms = Date.parse(String(iso || ""));
+        if (!Number.isFinite(ms)) return "-";
+        return new Date(ms).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit" }).replace(/\.\s?/g, "/").replace(/\/$/, "");
+      }
+      function planNoticeCopy(plan) {
+        if (!plan) return null;
+        if (plan.state === "expiring") {
+          return {
+            kicker: "이용 기간 안내",
+            title: "이용 기간이 " + Math.max(0, Number(plan.daysLeft || 0)) + "일 남았습니다",
+            lines: ["만료일: " + planKoreanDate(plan.expiresAt) + "까지", "만료 후 5일 안에 연장하지 않으면 계정과 데이터가 삭제됩니다", "연장 문의는 카카오톡 채널로 주세요"]
+          };
+        }
+        if (plan.state === "expired") {
+          return {
+            kicker: "이용 기간 종료",
+            title: "이용 기간이 끝났습니다",
+            lines: [Math.max(0, Number(plan.graceDaysLeft || 0)) + "일 안에 연장하지 않으면 계정과 데이터가 삭제됩니다", "지금은 키워드 조회와 순위 기록 보기만 열려 있습니다", "연장 문의는 카카오톡 채널로 주세요"]
+          };
+        }
+        if (plan.state === "delete_due") {
+          return {
+            kicker: "이용 기간 종료",
+            title: "유예 기간이 끝났습니다",
+            lines: ["계정과 데이터가 삭제 대상입니다", "복구를 원하시면 바로 카카오톡 채널로 연락 주세요"]
+          };
+        }
+        return null;
+      }
+      function planNoticeCard(copy) {
+        var card = document.createElement("div");
+        card.className = "mi-trial-lock";
+        card.setAttribute("data-plan-notice", "");
+        var kicker = document.createElement("span");
+        kicker.className = "mi-kicker";
+        kicker.textContent = copy.kicker;
+        var title = document.createElement("h3");
+        title.textContent = copy.title;
+        var list = document.createElement("ul");
+        copy.lines.forEach(function (line) {
+          var item = document.createElement("li");
+          item.textContent = line;
+          list.appendChild(item);
+        });
+        var actions = document.createElement("div");
+        actions.className = "mi-trial-lock-actions";
+        var kakao = document.createElement("a");
+        kakao.className = "mi-button";
+        kakao.href = PLAN_INQUIRY_KAKAO;
+        kakao.target = "_blank";
+        kakao.rel = "noopener";
+        kakao.textContent = "연장 문의 · 카카오 채널";
+        var later = document.createElement("button");
+        later.type = "button";
+        later.className = "mi-button is-ghost";
+        later.setAttribute("data-trial-modal-close", "");
+        later.textContent = "오늘은 닫기";
+        actions.appendChild(kakao);
+        actions.appendChild(later);
+        card.appendChild(kicker);
+        card.appendChild(title);
+        card.appendChild(list);
+        card.appendChild(actions);
+        return card;
+      }
+      function ensureInquiryModal() {
+        if (trialModal) return trialModal;
+        trialModal = document.createElement("div");
+        trialModal.className = "mi-trial-modal";
+        trialModal.setAttribute("role", "dialog");
+        trialModal.setAttribute("aria-modal", "true");
+        trialModal.addEventListener("click", function (event) {
+          if (event.target === trialModal || event.target.closest("[data-trial-modal-close]")) closeTrialInquiry();
+        });
+        root.appendChild(trialModal);
+        return trialModal;
+      }
+      function planNoticeStorageKey(plan) {
+        var day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+        return "miPlanNotice:" + String(plan.state) + ":" + String(secureClientSession.scopeKey || "") + ":" + day;
+      }
+      function maybeShowPlanNotice(plan) {
+        var copy = planNoticeCopy(plan);
+        if (!copy) return;
+        var key = planNoticeStorageKey(plan);
+        try {
+          if (window.localStorage.getItem(key)) return;
+          window.localStorage.setItem(key, "1");
+        } catch (error) {}
+        var modal = ensureInquiryModal();
+        modal.textContent = "";
+        var card = planNoticeCard(copy);
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "mi-trial-modal-close";
+        close.setAttribute("data-trial-modal-close", "");
+        close.setAttribute("aria-label", "닫기");
+        close.textContent = "×";
+        card.appendChild(close);
+        modal.appendChild(card);
+        modal.classList.add("is-open");
+      }
+      function ensurePlanBar(plan) {
+        var main = root.querySelector(".mi-main");
+        var existing = root.querySelector("[data-plan-bar]");
+        if (!plan) {
+          if (existing) existing.remove();
+          return;
+        }
+        var copy = planNoticeCopy(plan);
+        if (!copy) return;
+        var bar = existing || document.createElement("div");
+        bar.className = "mi-plan-bar";
+        bar.setAttribute("data-plan-bar", plan.state);
+        bar.setAttribute("role", "note");
+        bar.textContent = "";
+        var kicker = document.createElement("span");
+        kicker.className = "mi-plan-bar-kicker";
+        kicker.textContent = copy.kicker;
+        var title = document.createElement("strong");
+        title.textContent = copy.title;
+        var desc = document.createElement("span");
+        desc.className = "mi-plan-bar-desc";
+        desc.textContent = copy.lines.join(" · ");
+        var kakao = document.createElement("a");
+        kakao.className = "mi-button";
+        kakao.href = PLAN_INQUIRY_KAKAO;
+        kakao.target = "_blank";
+        kakao.rel = "noopener";
+        kakao.textContent = "연장 문의 · 카카오 채널";
+        bar.appendChild(kicker);
+        bar.appendChild(title);
+        bar.appendChild(desc);
+        bar.appendChild(kakao);
+        if (!existing && main) main.insertBefore(bar, main.firstChild);
+      }
+      function applyPlanMode() {
+        var plan = secureClientSession.trial === true ? null : clientPlan;
+        var expired = Boolean(plan && (plan.state === "expired" || plan.state === "delete_due"));
+        root.classList.toggle("is-plan-expired", expired);
+        var line = root.querySelector("[data-mi-plan-line]");
+        if (line) {
+          line.className = "mi-plan-line";
+          if (!plan) {
+            line.hidden = true;
+            line.textContent = "";
+          } else if (plan.state === "none") {
+            line.hidden = false;
+            line.textContent = "이용 기간 · 무기한";
+          } else if (plan.state === "active") {
+            line.hidden = false;
+            line.textContent = "이용 기간 · D-" + plan.daysLeft + " (" + planShortDate(plan.expiresAt) + "까지)";
+          } else if (plan.state === "expiring") {
+            line.hidden = false;
+            line.className = "mi-plan-line is-warn";
+            line.textContent = "이용 기간 · D-" + plan.daysLeft + " · 연장 문의";
+          } else if (plan.state === "expired") {
+            line.hidden = false;
+            line.className = "mi-plan-line is-danger";
+            line.textContent = "이용 기간 종료 · " + Math.max(0, Number(plan.graceDaysLeft || 0)) + "일 안에 연장 없으면 삭제";
+          } else {
+            line.hidden = false;
+            line.className = "mi-plan-line is-danger";
+            line.textContent = "이용 기간 종료 · 삭제 대상";
+          }
+        }
+        ensurePlanBar(expired ? plan : null);
+        if (plan && root.classList.contains("is-authed")) maybeShowPlanNotice(plan);
       }
 
       function blankPublicState(code) {
@@ -13207,6 +13415,8 @@
         // 이 호출을 건너뛰게 만들 수 없다(화면 안 로그아웃 → 재로그인 회귀).
         // 체험 계정은 구글로 이미 들어왔으니 연동 안내가 없다.
         if (secureClientSession.trial !== true) maybeShowGoogleNudge();
+        // 이용 기간 안내(만료 3일 전·만료 뒤)는 화면이 열린 뒤 하루 한 번 띄운다.
+        applyPlanMode();
         // 구글 콜백은 /client?glogin=... · /client?gcal=... 으로 돌아온다(해시 없음).
         if (personalCalendarNoticePending()) setScreen("my-calendar", false);
         updateClientAuthPanel(state.client);

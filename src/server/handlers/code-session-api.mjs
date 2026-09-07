@@ -17,6 +17,7 @@ import {
   primaryAgencyConfiguration,
 } from "../owner-identity.mjs";
 import { allowedOrigins, corsHeaders } from "../security.mjs";
+import { planStatus } from "../account-plan.mjs";
 
 function boundedInteger(value, fallback, minimum, maximum) {
   if (value === undefined || value === null || String(value).trim() === "") return fallback;
@@ -202,6 +203,18 @@ async function clearRateLimit(ctx, key) {
 }
 
 export async function activeClientByCode(ctx, code) {
+  // 플랜·이용 기간 열(2026-09-07)까지 읽는다. 열이 없으면(마이그레이션 전) 한 단 아래 열로 폴백한다.
+  const planQuery = await ctx.supabaseAdmin
+    .from("clients")
+    .select("id, name, business_name, agency_code, status, disconnected_at, plan_name, plan_days, plan_started_at, plan_expires_at")
+    .ilike("agency_code", normalizedIdentity(code))
+    .eq("status", "active")
+    .maybeSingle();
+  if (!planQuery.error) {
+    if (planQuery.data?.disconnected_at) return { data: null, error: null };
+    return planQuery;
+  }
+  if (!/plan_|disconnected_at|schema cache|does not exist/i.test(planQuery.error.message || "")) return planQuery;
   let query = ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, disconnected_at")
@@ -529,12 +542,15 @@ async function currentSession(request, ctx) {
   }
   // 체험 계정: 오늘 조회 횟수를 같이 실어 화면 칩("오늘 조회 n/5")이 별도 호출 없이 그려지게 한다.
   const trialQuota = claims.trial === 1 ? await trialKeywordQuota(ctx, claims.gsub) : null;
+  // 광고주 계정: 이용 기간(플랜)을 실어 사이드바 D-day·만료 3일 전 팝업·만료 띠를 그린다(대표 결정 2026-09-07).
+  const plan = claims.role === "client" && claims.trial !== 1 && active.client ? planStatus(active.client) : null;
   return response(request, {
     ok: true,
     session: publicSession(responseClaims),
     client: visibleClient(active.client),
     team: visibleTeam(active.team),
     ...(trialQuota ? { trialQuota } : {}),
+    ...(plan ? { plan } : {}),
   }, 200, cookies);
 }
 

@@ -350,10 +350,13 @@ function googleLoginRoles(env = process.env) {
 // trial 표식으로 키워드 조회만 허용한다(대표 승인 2026-09-07).
 export function trialLoginAccess(googleSub) {
   const sub = cleanText(googleSub, 128);
+  // clientId 도 같은 값으로 채운다: 광고주 화면의 순위 추적 범위(verifiedRankTrackerScope)가 clientId 를
+  // 요구하고, 게이트의 예시 순위 응답이 scopeClientId 로 같은 값을 돌려준다. clients 표에는 없는 값이다.
+  const trialCode = `trial-${sub.toLowerCase().slice(0, 8)}`;
   return {
     role: "client",
-    clientId: "",
-    agencyCode: `trial-${sub.toLowerCase().slice(0, 8)}`,
+    clientId: trialCode,
+    agencyCode: trialCode,
     trial: true,
     googleSub: sub,
   };

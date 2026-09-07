@@ -338,7 +338,8 @@ test("trial sessions carry the trial marker and only open the keyword tool paths
   ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers", "/api/naver-shopping-rank", "/api/report-center", "/api/work-items", "/api/my/google-login", "/api/client/work-items"]
     .forEach((path) => assert.equal(trialAllowsPath(path), false, path));
 
-  const locked = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, { activityCheck: async () => true });
+  // 순위 목록 GET 은 이제 예시 응답(별도 테스트)이라, 잠금 확인은 다른 광고주 경로로 한다.
+  const locked = await authorizeCodeSession(requestWithSession("/api/naver-shopping-rank?keyword=x", claims), ENV, { activityCheck: async () => true });
   assert.equal(locked.ok, false);
   assert.equal(locked.response.status, 403);
   assert.equal((await locked.response.json()).code, "TRIAL_LOCKED");
@@ -425,4 +426,44 @@ test("trial session activity follows the trial login identity row", async () => 
   assert.equal(await sessionActivityState(claims, env, { fetchImpl: activeFetch }), SESSION_ACTIVITY_ACTIVE);
   assert.equal(await sessionActivityState(claims, env, { fetchImpl: revokedFetch }), SESSION_ACTIVITY_REVOKED);
   assert.equal(await sessionActivityState(claims, env, { fetchImpl: unavailableFetch }), SESSION_ACTIVITY_UNAVAILABLE);
+});
+
+// 체험 세션의 순위 목록 GET 은 핸들러 대신 예시 응답(200)을 받는다. 등록(POST)은 여전히 TRIAL_LOCKED 다.
+test("trial sessions get sample tracker lists instead of the rank handlers, but cannot write", async () => {
+  const claims = createSessionClaims({
+    role: "client",
+    clientId: "trial-10293847",
+    agencyCode: "trial-10293847",
+    trial: true,
+    googleSub: "102938475647382910111",
+  });
+  for (const path of ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers"]) {
+    const result = await authorizeCodeSession(requestWithSession(`${path}?limit=500`, claims), ENV, { activityCheck: async () => true });
+    assert.equal(result.ok, false, path);
+    assert.equal(result.response.status, 200, path);
+    const payload = await result.response.json();
+    assert.equal(payload.ok, true, path);
+    assert.equal(payload.sample, true, path);
+    assert.equal(payload.complete, true, path);
+    assert.equal(payload.hasMore, false, path);
+    assert.equal(payload.scopeClientId, "trial-10293847", path);
+    assert.equal(payload.returnedCount, payload.trackers.length, path);
+    assert.ok(payload.trackers.length >= 2, path);
+    assert.equal(new Set(payload.trackers.map((tracker) => tracker.id)).size, payload.trackers.length, path);
+    for (const tracker of payload.trackers) {
+      assert.equal(tracker.sample, true);
+      assert.equal(tracker.status, "active");
+      assert.ok(new Date(tracker.nextCheckAt).getTime() > Date.now(), "nextCheckAt must be in the future");
+      assert.equal(tracker.snapshots.length, 30);
+      assert.ok(String(tracker.productTitle || tracker.placeName).startsWith("[예시]"));
+    }
+    const write = await authorizeCodeSession(requestWithSession(path, claims, { method: "POST", body: "{}", headers: { "content-type": "application/json", origin: "https://insight.momentlabs.co.kr" } }), ENV, { activityCheck: async () => true });
+    assert.equal(write.ok, false, path);
+    assert.equal(write.response.status, 403, path);
+    assert.equal((await write.response.json()).code, "TRIAL_LOCKED", path);
+  }
+  // 코드 광고주 세션은 예시가 아니라 핸들러로 간다(게이트 통과).
+  const real = createSessionClaims({ role: "client", clientId: "client-1", agencyCode: "mml93-a02" });
+  const passed = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers?limit=500", real), ENV, { activityCheck: async () => true });
+  assert.equal(passed.ok, true);
 });

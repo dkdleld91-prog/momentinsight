@@ -34,6 +34,11 @@
 - 가입 경로(대표 지시 2026-09-07 "가입하기 경로도 만들어야"): 홈 히어로·시작 섹션·푸터에 "무료 체험 가입" 링크(`/client?signup=1`, GA `signup_click`) → 광고주 로그인 화면이 `signup=1` 을 읽어 카드 제목을 "무료 체험 가입"으로 바꾸고 로그인 카드 아래의 별도 블록("처음이신가요? · Google로 가입하고 시작하기 · 개인정보 처리방침 링크")을 강조·스크롤한다. 로그인 버튼("Google 계정으로 로그인")과 가입 버튼은 같은 `mode=trial` 시작 주소로 가며 문구만 다르다. 운영팀 모드에서는 가입 블록을 접는다.
 - 화면 띠(대표 피드백 2026-09-07 "잠김 말고 UI는 보이게, 상단에 문의처, 이메일 문의 제거"): 순위·플레이스·SEO·메타·매출·대시보드·대행사 연결·내 캘린더·뉴스 화면은 본문을 그대로 보이고(초기 상태·빈 상태), 맨 위에 `mi-trial-bar`(체험 계정 칩 + 무엇이 도입 후 열리는지 한 줄 + 카카오 채널 `https://pf.kakao.com/_ixoLxfX` 버튼)를 얹는다. 순위 화면 로드는 체험에서 부르지 않아 초기 안내 문구가 그대로 남고, 조작 시 서버 403 TRIAL_LOCKED 문구가 뜬다. "뉴스 전체 보기"·한도 초과 429 는 안내 모달(`mi-trial-lock`, 카카오 버튼만).
 
+## 6-0. 예시 순위 데이터 (대표 지시 2026-09-07 "무료체험 계정에 예시로 나올 수 있게")
+- 체험 세션의 `GET /api/naver-rank-trackers`·`/api/naver-place-rank-trackers` 는 세션 게이트가 핸들러로 보내지 않고 `src/server/trial-sample-trackers.mjs` 의 예시 응답(200)을 돌려준다. 필드 모양은 실제 `trackerPayload`/`placeTrackerPayload` 와 같고 제목에 `[예시]`, `sample: true`, 30일 스냅샷(매일 09:00 KST), `nextCheckAt` 은 내일이라 화면이 자동 갱신(POST)을 시도하지 않는다. 등록·갱신·삭제(POST)는 TRIAL_LOCKED 그대로. 순위 수집 코드·표·워커 무접촉.
+- 그러려면 체험 세션에 `clientId` 가 있어야 한다(화면 `verifiedRankTrackerScope` 가 clientId 를 요구, 응답 `scopeClientId` 와 대조). `trialLoginAccess` 가 `clientId = agencyCode = trial-<sub8>` 로 발급한다. 이 배포 전에 만든 체험 세션은 clientId 가 비어 있어 로그아웃 후 다시 구글로 들어와야 예시가 보인다.
+- 화면은 체험에서도 `mi:rank-auth-ready` 를 쏴 잠긴 로더가 예시를 그린다. 띠 문구에 "아래 표는 예시 데이터" 를 넣는다.
+
 ## 6-1. 공개 뉴스 JSON (A안, 대표 결정 2026-09-07)
 - `/api/public/market-news` 와 `/news` SSR 이 쓰는 `loadPublicMarketNews` 가 `withoutFullNews` 를 거쳐 플랫폼별 7일 전체 목록(`all`)을 싣지 않는다. count7d·lead·items(3건)는 그대로. 로그인 화면의 대체 표시(홈 피드 실패 시 공개 뉴스로 채움)는 그 순간에만 전체 보기가 3건씩이고, 서버가 회복되면 세션 응답의 `all` 로 돌아온다.
 

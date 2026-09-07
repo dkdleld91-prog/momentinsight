@@ -635,7 +635,7 @@
     {
       "id": "shopping-local-worker-session-boundary",
       "file": "src/server/session-gate.mjs",
-      "sha256": "d622ee165e1343203899a5e19a9c220c0daa887256b9650b5404ad5ac6e494c8"
+      "sha256": "df3db2a52c8760013a28c041b189e3b9506ef5efd8305ae32467d4bd31eb792b"
     },
     {
       "id": "shopping-worker-cycle-keyword-overflow",

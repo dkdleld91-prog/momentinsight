@@ -2498,7 +2498,7 @@ test("trial login callback creates a trial identity for an unknown google accoun
   assert.equal(claims.trial, 1);
   assert.equal(claims.gsub, "999000111222333");
   assert.equal(claims.agencyCode, "trial-99900011");
-  assert.equal(claims.clientId, "");
+  assert.equal(claims.clientId, "trial-99900011");
 });
 
 test("login callback without the trial marker still refuses an unknown google account", async () => {

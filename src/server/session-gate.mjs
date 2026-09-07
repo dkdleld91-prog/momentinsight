@@ -1,4 +1,5 @@
 import { csrfMatches, sessionFromRequest, trialKeywordDailyLimit } from "./code-session.mjs";
+import { trialSampleTrackersPayload } from "./trial-sample-trackers.mjs";
 import {
   ownerClaimsMatchPrimary,
   PRIMARY_AGENCY_CODE,
@@ -77,6 +78,12 @@ const TRIAL_ALLOWED_PATHS = new Set([
 ]);
 const TRIAL_KEYWORD_LOOKUP_PATH = "/api/naver-keyword";
 const TRIAL_QUOTA_RPC = "mi_trial_keyword_consume";
+// 체험 세션의 순위 추적 목록 GET 은 핸들러로 보내지 않고 예시 응답을 돌려준다(대표 지시 2026-09-07
+// "무료체험 계정에 예시로 나올 수 있게"). 순위 수집 코드·표는 무접촉이고, 등록·갱신(POST)은 TRIAL_LOCKED 그대로다.
+const TRIAL_SAMPLE_TRACKER_PATHS = new Set([
+  "/api/naver-rank-trackers",
+  "/api/naver-place-rank-trackers",
+]);
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
 export const SESSION_ACTIVITY_REVOKED = "revoked";
@@ -429,7 +436,8 @@ export async function authorizeCodeSession(request, env = process.env, options =
       response: protectedJson(request, { ok: false, message: "이 계정에는 해당 작업 권한이 없습니다." }, 403),
     };
   }
-  if (isTrialClaims(claims) && !trialAllowsPath(path)) {
+  const trialSample = isTrialClaims(claims) && request.method === "GET" && TRIAL_SAMPLE_TRACKER_PATHS.has(path);
+  if (isTrialClaims(claims) && !trialSample && !trialAllowsPath(path)) {
     return {
       ok: false,
       response: protectedJson(request, {
@@ -481,6 +489,11 @@ export async function authorizeCodeSession(request, env = process.env, options =
         message: "계정 연결 상태가 변경되어 다시 접속해야 합니다.",
       }, 401),
     };
+  }
+  if (trialSample) {
+    // 활성 확인을 지난 체험 세션에만 예시 목록을 준다. 응답 모양은 실제 핸들러와 같아 화면이 그대로 그린다.
+    const sample = trialSampleTrackersPayload(path, claims, Date.now());
+    if (sample) return { ok: false, response: protectedJson(request, sample, 200) };
   }
   if (isTrialClaims(claims) && trialKeywordLookupRequest(request, path)) {
     const quota = await consumeTrialKeywordQuota(claims, env, options);

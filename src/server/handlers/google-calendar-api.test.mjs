@@ -1164,7 +1164,8 @@ test("login callback success seals an owner session cookie and records an audit 
   assert.equal(response.status, 302);
   assert.equal(response.headers.get("location"), "/admin?glogin=success");
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(flowMethods(calls), ["POST", "GET", "POST"]);
+  // exchange, lookup, audit, 그리고 오늘 현황 로그인 기록(site_events RPC, 2026-09-07)
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "POST", "POST"]);
 
   const cookies = sessionCookies(response);
   assert.equal(cookies.length, 1);
@@ -1309,7 +1310,8 @@ test("an enabled operation-team role logs in with the same claims code login iss
   });
 
   assert.equal(response.headers.get("location"), "/admin?glogin=success");
-  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "GET", "POST"]);
+  // 마지막 POST 는 오늘 현황 로그인 기록(site_events RPC, 2026-09-07)
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "GET", "POST", "POST"]);
   const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
   const cookie = sessionCookies(response)[0];
   const claims = openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
@@ -1353,7 +1355,8 @@ test("an enabled advertiser role logs in and a revoked code is refused as inacti
   assert.equal(claims.role, "client");
   assert.equal(claims.clientId, "client-9");
   assert.equal(claims.agencyCode, "mml93-a02");
-  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "POST"]);
+  // 마지막 POST 는 오늘 현황 로그인 기록(site_events RPC, 2026-09-07)
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "POST", "POST"]);
 
   const audits = [];
   const revoked = loginState();

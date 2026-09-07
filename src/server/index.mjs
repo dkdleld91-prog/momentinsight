@@ -24,6 +24,7 @@ const handlerLoaders = {
   naverProductSeoAudit: () => import("./handlers/naver-product-seo-audit.mjs"),
   naverPlaceRankCron: () => import("./handlers/naver-place-rank-cron.mjs"),
   accountExpiryCron: () => import("./handlers/account-expiry-cron.mjs"),
+  siteEvents: () => import("./handlers/site-events.mjs"),
   naverPlaceRankTrackers: () => import("./handlers/naver-place-rank-trackers.mjs"),
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
@@ -162,6 +163,11 @@ async function routeRequest(request) {
     // 이용 기간 만료 + 유예 5일 지난 광고주 데이터 정리(대표 결정 2026-09-07). 크론 비밀키로만 열린다.
     if (url.pathname === "/api/account-expiry-cron") {
       return dispatch("accountExpiryCron", request);
+    }
+
+    // 오늘 현황 방문 신호(대표 지시 2026-09-07). 세션 없이 POST 만 받고 항상 204 로 끝난다.
+    if (url.pathname === "/api/site-event") {
+      return dispatch("siteEvents", request);
     }
 
     if (url.pathname === "/api/meta-ads") {

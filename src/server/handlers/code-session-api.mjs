@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { withSupabase } from "@supabase/server";
+import { recordLoginEvent } from "./site-events.mjs";
 import {
   clearedSessionCookies,
   createSessionClaims,
@@ -492,6 +493,8 @@ async function login(request, ctx) {
   await clearRateLimit(ctx, rate.credentialKey);
   const claims = createSessionClaims(access, { ttlSeconds: config.ttl });
   const token = sealSession(claims);
+  // 오늘 현황(2026-09-07): 로그인 계정 수. 코드 해시만 남기고, 실패해도 로그인은 그대로 진행한다.
+  await recordLoginEvent(ctx, { role: access.role, code: access.teamCode || access.agencyCode || "" });
   return response(request, {
     ok: true,
     session: publicSession(claims),

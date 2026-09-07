@@ -31,6 +31,8 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-place-rank-cron",
   // 이용 기간 만료 계정 정리 크론(대표 결정 2026-09-07). 크론 비밀키(Bearer)로만 열리고 세션 쿠키는 쓰지 않는다.
   "/api/account-expiry-cron",
+  // 오늘 현황 방문 신호(대표 지시 2026-09-07). 공개 페이지가 세션 없이 POST 하고, 서버는 해시만 남기고 204 로 끝낸다.
+  "/api/site-event",
   "/api/naver-shopping-local-worker",
   // 수집 정체 워치독이 무세션으로 폴링하는 집계 전용 경로. 계정 데이터를 반환하지 않는다.
   "/api/rank-collection-health",

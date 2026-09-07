@@ -194,7 +194,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
 
   <script type="application/json" id="news-data">${embedded}</script>
   <script src="/mi-news-page.js?v=news-v5-20260907" defer></script>
-  <script src="/mi-analytics.js?v=ga-v1-20260906" defer></script>
+  <script src="/mi-analytics.js?v=site-v2-20260907" defer></script>
 </body>
 </html>
 `;

@@ -5121,6 +5121,10 @@
 
     /* 키워드 조회 1차 고도화(2026-09-06): 클릭 요약·전년 대비·결론 한 줄·시즌 캘린더·연관 정렬 도구 */
     #mi-admin .mi-market-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    /* 오늘 현황(대표 지시 2026-09-07): 방문·가입 클릭·문의 클릭·체험 가입·로그인 계정 5칸, 어제 값은 작은 글씨 */
+    #mi-admin .mi-site-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 12px; }
+    #mi-admin .mi-site-kpis .mi-market-kpi em { display: block; margin-top: 4px; font-size: 11px; font-style: normal; color: var(--mi-muted); line-height: 1.4; }
+    @media (max-width: 760px) { #mi-admin .mi-site-kpis { grid-template-columns: 1fr 1fr; } }
     #mi-admin .mi-market-kpi { border: 1px solid var(--mi-line); border-radius: 12px; background: var(--mi-grey-50); padding: 10px 12px; min-width: 0; }
     #mi-admin .mi-market-kpi span { display: block; font-size: 11.5px; color: var(--mi-muted); margin-bottom: 4px; }
     #mi-admin .mi-market-kpi b { display: block; font-size: 17px; font-weight: 700; color: var(--mi-navy); letter-spacing: -0.02em; line-height: 1.15; }
@@ -12291,6 +12295,19 @@
           </header>
 
           <div class="mi-account-board">
+            <!-- 오늘 현황(대표 지시 2026-09-07): 공개 페이지 방문·가입 클릭·문의 클릭·체험 가입·로그인 계정. 서버 site_events 집계, 어제와 비교. -->
+            <article class="mi-card mi-card-pad" data-owner-site-summary hidden>
+              <div class="mi-card-head">
+                <div>
+                  <h2>오늘 현황</h2>
+                  <p data-owner-site-summary-note>공개 페이지 방문과 가입·문의 흐름 · 자정(KST) 기준 · 어제와 비교</p>
+                </div>
+                <div class="mi-card-actions">
+                  <button class="mi-button mi-button-small is-ghost" type="button" data-owner-site-summary-refresh>새로고침</button>
+                </div>
+              </div>
+              <div class="mi-market-kpis mi-site-kpis" data-owner-site-kpis aria-live="polite"></div>
+            </article>
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
@@ -20221,6 +20238,54 @@
         return secureSession.role === "owner";
       }
 
+      // 오늘 현황(대표 지시 2026-09-07): 계정 화면 맨 위 카드. 서버 site_events 요약(오늘·어제)을 그린다.
+      function renderSiteSummary(payload) {
+        var card = root.querySelector("[data-owner-site-summary]");
+        var grid = root.querySelector("[data-owner-site-kpis]");
+        var note = root.querySelector("[data-owner-site-summary-note]");
+        if (!card || !grid) return;
+        card.hidden = false;
+        if (!payload || !payload.ok) {
+          grid.innerHTML = "";
+          if (note) note.textContent = (payload && payload.message) || "오늘 현황을 불러오지 못했습니다.";
+          return;
+        }
+        var today = payload.today || {};
+        var yesterday = payload.yesterday || {};
+        var items = [
+          ["방문", today.visitors, yesterday.visitors, "명", "공개 페이지 고유 방문자"],
+          ["가입 클릭", today.signupClicks, yesterday.signupClicks, "명", "무료 체험 가입 버튼"],
+          ["문의 클릭", today.inquiryClicks, yesterday.inquiryClicks, "명", "카카오 채널·이메일"],
+          ["체험 가입", today.trialSignups, yesterday.trialSignups, "명", "구글 가입 완료"],
+          ["로그인 계정", today.logins, yesterday.logins, "개", "코드·구글 로그인"]
+        ];
+        var show = function (value, unit) {
+          return value === null || value === undefined ? "—" : Number(value).toLocaleString("ko-KR") + unit;
+        };
+        grid.innerHTML = items.map(function (item) {
+          return '<div class="mi-market-kpi"><span>' + escapeHtml(item[0]) + '</span><b>' + escapeHtml(show(item[1], item[3])) + '</b><em>' +
+            escapeHtml("어제 " + show(item[2], item[3]) + " · " + item[4]) + '</em></div>';
+        }).join("");
+        if (note) {
+          note.textContent = payload.pending
+            ? (payload.message || "집계 표가 아직 없습니다.")
+            : "오늘 " + (payload.day || "") + " · 자정(KST) 기준 · 공개 페이지 방문과 가입·문의 흐름 · 로봇 제외 · 어제와 비교";
+        }
+      }
+      async function loadSiteSummary() {
+        if (!canManageOwnerCodes()) return;
+        try {
+          // 운영 이력과 같은 GET ?view= 요청 함수를 쓴다(requestOwnerCodes 는 2-인자 계약이 기준선에 고정돼 있다).
+          var payload = await requestOwnerAuditLogs({ view: "site-summary" });
+          if (payload.staleSession) return;
+          renderSiteSummary(payload);
+        } catch (error) {
+          renderSiteSummary({ ok: false, message: "오늘 현황을 불러오지 못했습니다." });
+        }
+      }
+      var ownerSiteSummaryRefresh = root.querySelector("[data-owner-site-summary-refresh]");
+      if (ownerSiteSummaryRefresh) ownerSiteSummaryRefresh.addEventListener("click", function () { loadSiteSummary(); });
+
       async function loadOwnerCodes(silent) {
         syncOwnerAccessFields();
         if (!canManageOwnerCodes()) {
@@ -20234,6 +20299,7 @@
           if (!canManageOwnerCodes() || root.classList.contains("is-locked")) return false;
           if (!payload.ok) throw new Error(payload.message || "활성 계정 조회에 실패했습니다.");
           renderOwnerCodeList(payload);
+          loadSiteSummary();
           if (!silent) setStatus(ownerStatus, "활성 계정 목록을 불러왔습니다.", "is-ok");
           return true;
         } catch (error) {

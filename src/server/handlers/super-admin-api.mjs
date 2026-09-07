@@ -10,6 +10,7 @@ import {
   planStatus,
 } from "../account-plan.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
+import { siteSummary } from "./site-events.mjs";
 import {
   DEFAULT_RANK_KEYWORD_LIMIT,
   isMissingRankKeywordLimitSchema,
@@ -1566,6 +1567,8 @@ export default {
       if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
       // 총관리자 확인을 통과한 뒤에만 운영 이력을 연다(운영팀·광고주는 여기까지 못 온다).
       if (url.searchParams.get("view") === "audit-logs") return listAuditLogs(request, ctx, url);
+      // 오늘 현황(대표 지시 2026-09-07): 방문·가입 클릭·문의 클릭·체험 가입·로그인 계정, 오늘과 어제.
+      if (url.searchParams.get("view") === "site-summary") return json(request, await siteSummary(ctx));
       return listClients(request, ctx);
     }
     if (request.method === "POST") {

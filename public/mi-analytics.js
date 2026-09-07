@@ -6,6 +6,20 @@
   var host = window.location && window.location.hostname;
   if (!host || host === "localhost" || host === "127.0.0.1") return;
 
+  // 오늘 현황(대표 지시 2026-09-07): 총관리자 화면에 바로 뜨는 방문·클릭 수. 우리 서버(/api/site-event)에 경로만 보낸다.
+  // 서버가 (날짜 + IP + 브라우저) 해시로 고유 방문자를 세고, 쿠키·개인 정보는 쓰지 않는다. 실패해도 화면에 영향 없다.
+  function siteEvent(event) {
+    try {
+      var payload = JSON.stringify({ event: event, path: window.location.pathname || "/" });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon("/api/site-event", new Blob([payload], { type: "application/json" }));
+        return;
+      }
+      fetch("/api/site-event", { method: "POST", headers: { "content-type": "application/json" }, body: payload, keepalive: true, credentials: "omit" }).catch(function () {});
+    } catch (error) {}
+  }
+  siteEvent("view");
+
   window.dataLayer = window.dataLayer || [];
   function gtag() { window.dataLayer.push(arguments); }
   window.gtag = window.gtag || gtag;
@@ -43,15 +57,18 @@
     var text = (link.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
     if (/^https:\/\/pf\.kakao\.com\//.test(href)) {
       gtag("event", "inquiry_click", { place: place(link), label: text });
+      siteEvent("inquiry_click");
       return;
     }
     if (/^mailto:/.test(href)) {
       gtag("event", "inquiry_click", { place: place(link), label: "email" });
+      siteEvent("inquiry_click");
       return;
     }
     // 가입 경로(2026-09-07): 홈의 "무료 체험 가입" 은 /client?signup=1 로 간다. 로그인 클릭과 따로 센다.
     if (/[?&]signup=1(?:&|$)/.test(href)) {
       gtag("event", "signup_click", { place: place(link), label: text });
+      siteEvent("signup_click");
       return;
     }
     if (href === "/client" || href.indexOf("/client") === 0) {

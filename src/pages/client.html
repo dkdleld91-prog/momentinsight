@@ -6099,10 +6099,33 @@
       letter-spacing: -0.01em;
     }
     #mi-clean.is-trial .mi-trial-chip { display: inline-flex; }
-    #mi-clean.is-trial .mi-view.is-trial-locked > :not(.mi-trial-lock),
-    #mi-clean.is-trial .is-trial-locked[data-home-rank-strip] > :not(.mi-trial-lock),
-    #mi-clean.is-trial .is-trial-locked[data-home-feed-metrics] > :not(.mi-trial-lock),
-    #mi-clean.is-trial .is-trial-locked[data-home-feed-keyword-news] > :not(.mi-trial-lock) { display: none !important; }
+    /* 화면은 그대로 보이고(대표 피드백 2026-09-07 "잠김 말고 UI는 보이게"), 맨 위 띠 하나로 도입 문의처를 둔다. */
+    #mi-clean .mi-trial-bar { display: none; }
+    #mi-clean.is-trial .mi-trial-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+      margin: 0 0 16px;
+      padding: 12px 16px;
+      border: 1px solid var(--mi-line);
+      border-left: 4px solid var(--mi-orange);
+      border-radius: 12px;
+      background: linear-gradient(90deg, var(--mi-orange-bg) 0%, #ffffff 60%);
+    }
+    #mi-clean .mi-trial-bar-kicker {
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--mi-orange);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    #mi-clean .mi-trial-bar strong { color: var(--mi-navy); font-size: 14px; letter-spacing: -0.01em; }
+    #mi-clean .mi-trial-bar-desc { flex: 1 1 320px; color: var(--mi-muted); font-size: 12px; line-height: 1.5; }
+    #mi-clean .mi-trial-bar a.mi-button { margin-left: auto; text-decoration: none; white-space: nowrap; }
     #mi-clean .mi-trial-lock { display: none; }
     #mi-clean.is-trial .mi-trial-lock {
       display: grid;
@@ -6124,7 +6147,7 @@
     #mi-clean .mi-trial-lock-actions a { text-decoration: none; }
     #mi-clean.is-trial .mi-nav a.is-trial-nav-locked::after,
     #mi-clean.is-trial .mi-mobile-nav a.is-trial-nav-locked::after {
-      content: "잠김";
+      content: "도입 후";
       margin-left: 6px;
       padding: 1px 6px;
       border-radius: 999px;
@@ -7384,7 +7407,6 @@
       // 서버 게이트가 실제 접근을 막는다(403 TRIAL_LOCKED · 429 TRIAL_QUOTA). 여기서는 무엇이 열리는지
       // 설명하는 잠금 카드와 "오늘 조회 n/5" 칩만 그린다. 뉴스는 메인에 뜬 기사까지만 보인다.
       var TRIAL_INQUIRY_KAKAO = "https://pf.kakao.com/_ixoLxfX";
-      var TRIAL_INQUIRY_MAIL = "mailto:mml93@naver.com";
       var TRIAL_LOCKED_SCREENS = ["naver-rank-tracking", "naver-place-rank-tracking", "seo-check", "meta-ads", "sales", "dashboard", "agency-code", "my-calendar", "schedule"];
       var TRIAL_LOCK_COPY = {
         "naver-rank-tracking": { title: "N 30일 순위 추적은 도입 후 열립니다", lines: ["등록한 키워드의 네이버 쇼핑 순위를 30일 동안 매일 자동 수집", "내 상품과 경쟁 상품의 순위 변화를 한 표에서 비교", "급등·급락은 뉴스 화면 '내 순위 요약'에 바로 표시"] },
@@ -7396,7 +7418,7 @@
         "agency-code": { title: "대행사 연결은 도입 계정에서 합니다", lines: ["도입하면 담당자가 접속 코드를 발급합니다", "이미 코드를 받으셨다면 로그아웃 후 코드로 접속하세요"] },
         "my-calendar": { title: "내 캘린더는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정·할 일", "구글 캘린더 연동"] },
         "schedule": { title: "일정표는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정"] },
-        "news": { title: "뉴스 전체 보기는 도입 후 열립니다", lines: ["최근 7일 플랫폼별 전체 기사(네이버·쿠팡·11번가·G마켓)", "내가 등록한 키워드와 겹치는 기사만 모아 보는 '내 키워드 뉴스'", "등록 키워드 검색량 증감·분야 트렌드·내 순위 요약"] },
+        "news": { title: "뉴스 전체 보기·내 키워드 지표·내 순위 요약은 도입 후 열립니다", lines: ["최근 7일 플랫폼별 전체 기사(네이버·쿠팡·11번가·G마켓)", "내가 등록한 키워드와 겹치는 기사만 모아 보는 '내 키워드 뉴스'", "등록 키워드 검색량 증감·분야 트렌드·내 순위 요약"] },
         "quota": { title: "오늘 체험 조회 횟수를 모두 썼습니다", lines: ["체험 계정은 키워드 조회가 하루 5회입니다(자정 이후 다시 열림)", "도입하면 횟수 제한 없이 조회하고 30일 순위 추적까지 이용"] }
       };
 
@@ -7426,12 +7448,7 @@
         kakao.target = "_blank";
         kakao.rel = "noopener";
         kakao.textContent = "도입 문의 · 카카오 채널";
-        var mail = document.createElement("a");
-        mail.className = "mi-button is-ghost";
-        mail.href = TRIAL_INQUIRY_MAIL;
-        mail.textContent = "이메일 문의";
         actions.appendChild(kakao);
-        actions.appendChild(mail);
         card.appendChild(kicker);
         card.appendChild(title);
         card.appendChild(list);
@@ -7440,11 +7457,38 @@
         return card;
       }
 
-      function ensureTrialLock(container, kind, compact) {
+      // 화면 맨 위 띠: 무엇이 도입 후 열리는지 한 줄 + 카카오 문의. 화면 자체는 그대로 보인다(잠금 카드 아님).
+      function trialBar(kind) {
+        var copy = TRIAL_LOCK_COPY[kind] || TRIAL_LOCK_COPY.news;
+        var bar = document.createElement("div");
+        bar.className = "mi-trial-bar";
+        bar.setAttribute("data-trial-bar", kind);
+        bar.setAttribute("role", "note");
+        var kicker = document.createElement("span");
+        kicker.className = "mi-trial-bar-kicker";
+        kicker.textContent = "체험 계정";
+        var title = document.createElement("strong");
+        title.textContent = copy.title;
+        var desc = document.createElement("span");
+        desc.className = "mi-trial-bar-desc";
+        desc.textContent = copy.lines.join(" · ");
+        var kakao = document.createElement("a");
+        kakao.className = "mi-button";
+        kakao.href = TRIAL_INQUIRY_KAKAO;
+        kakao.target = "_blank";
+        kakao.rel = "noopener";
+        kakao.textContent = "도입 문의 · 카카오 채널";
+        bar.appendChild(kicker);
+        bar.appendChild(title);
+        bar.appendChild(desc);
+        bar.appendChild(kakao);
+        return bar;
+      }
+
+      function ensureTrialBar(container, kind) {
         if (!container) return;
-        container.classList.add("is-trial-locked");
-        if (container.querySelector(":scope > [data-trial-lock]")) return;
-        container.insertBefore(trialLockCard(kind, compact), container.firstChild);
+        if (container.querySelector(":scope > [data-trial-bar]")) return;
+        container.insertBefore(trialBar(kind), container.firstChild);
       }
 
       function renderTrialQuota() {
@@ -7460,14 +7504,13 @@
         root.classList.toggle("is-trial", trial);
         if (!trial) return;
         TRIAL_LOCKED_SCREENS.forEach(function (name) {
-          ensureTrialLock(root.querySelector('[data-mi-view="' + name + '"]'), name, false);
+          ensureTrialBar(root.querySelector('[data-mi-view="' + name + '"]'), name);
         });
         root.querySelectorAll("[data-mi-screen]").forEach(function (link) {
           link.classList.toggle("is-trial-nav-locked", TRIAL_LOCKED_SCREENS.indexOf(link.getAttribute("data-mi-screen")) > -1);
         });
-        ensureTrialLock(root.querySelector("[data-home-rank-strip]"), "news", true);
-        ensureTrialLock(root.querySelector("[data-home-feed-metrics]"), "news", true);
-        ensureTrialLock(root.querySelector("[data-home-feed-keyword-news]"), "news", true);
+        // 뉴스 화면은 메인 기사까지 그대로 보이고, 내 키워드 지표·순위 요약은 빈 상태 그대로 둔 채 띠만 얹는다.
+        ensureTrialBar(root.querySelector('[data-mi-view="news"]'), "news");
         renderTrialQuota();
       }
 

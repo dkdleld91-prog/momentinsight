@@ -6735,7 +6735,8 @@
                 <div class="mi-market-basis"><span data-keyword-market-basis>검색광고 키워드도구 · 최근 30일 · PC·모바일 합산</span><span data-keyword-market-disclaimer></span></div>
                 <!-- 업체 전달용 저장(2026-09-07 대표 요청): 조회 키워드 → 핵심 4줄 → 참고 3줄 → 연관 키워드 -->
                 <div class="mi-related-tools mi-kw-save" data-keyword-save-tools hidden>
-                  <button type="button" data-keyword-save="png">이미지(PNG) 저장</button>
+                  <button type="button" data-keyword-save="capture">전체 캡처(PNG)</button>
+                  <button type="button" data-keyword-save="png">요약 이미지(PNG)</button>
                   <button type="button" data-keyword-save="csv">표(CSV) 저장</button>
                   <span class="mi-kw-save-msg" data-keyword-save-msg aria-live="polite"></span>
                 </div>
@@ -7250,6 +7251,7 @@
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
   <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
+  <script src="/mi-capture.js?v=cap-v1-20260908" defer></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -9344,6 +9346,19 @@
           if (kind === "csv") {
             keywordDownloadBlob(keywordExportCsv(summary), base + ".csv");
             say("CSV로 저장했습니다 · 엑셀에서 바로 열립니다.");
+          } else if (kind === "capture") {
+            // 전체 캡처(대표 요청 2026-09-08): 조회 화면 전체를 캡처본처럼(public/mi-capture.js + /vendor/html2canvas, 누를 때만 로드).
+            var view = root.querySelector("#mi-keyword-tool");
+            if (!view || typeof window.miCaptureElement !== "function") throw new Error("capture unavailable");
+            say("화면 전체를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
+            var captured = await window.miCaptureElement(view, {
+              fileBase: base + "-전체",
+              background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
+              ignore: function (node) {
+                return Boolean(node && node.hasAttribute && (node.hasAttribute("data-keyword-save-tools") || node.classList.contains("mi-trial-modal")));
+              }
+            });
+            say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");
           } else {
             say("이미지를 만드는 중입니다.");
             var result = await keywordExportImage(summary);

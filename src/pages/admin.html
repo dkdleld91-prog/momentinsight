@@ -5256,10 +5256,14 @@
       font-size: 14px;
     }
 
+    /* 확장 리스트는 6열(키워드·월 검색수·PC·모바일·광고 평균 클릭·광고 클릭률)을 한 줄에 둔다(2026-09-08 대표 요청, 광고주 화면과 동일). */
     #mi-admin .mi-related-large div {
-      grid-template-columns: minmax(0, 1.2fr) 130px 90px 150px;
+      grid-template-columns: minmax(0, 1.2fr) 110px 90px 90px 120px 100px;
       padding: 13px 0;
     }
+    /* 전체 캡처 저장(2026-09-08): 조회 뒤 1번 카드 기준 줄 아래 버튼 */
+    #mi-admin .mi-kw-save { margin: 12px 0 0; align-items: center; }
+    #mi-admin .mi-kw-save-msg { font-size: 12px; color: var(--mi-muted); }
 
     #mi-admin .mi-grade {
       display: inline-flex;
@@ -12752,6 +12756,11 @@
                   <span class="mi-market-status" data-keyword-market-status>분석 대기</span>
                 </div>
                 <div class="mi-market-basis"><span data-keyword-market-basis>검색광고 키워드도구 · 최근 30일 · PC·모바일 합산</span><span data-keyword-market-disclaimer></span></div>
+                <!-- 전체 캡처(대표 요청 2026-09-08): 조회 화면 전체를 캡처본처럼 이미지로 저장 -->
+                <div class="mi-related-tools mi-kw-save" data-keyword-save-tools hidden>
+                  <button type="button" data-keyword-save="capture">전체 캡처(PNG)</button>
+                  <span class="mi-kw-save-msg" data-keyword-save-msg aria-live="polite"></span>
+                </div>
               </section>
               <!-- 클릭수·클릭률·피크 달·노출 깊이 — 검색광고 응답과 월별 비율에서 바로 계산 -->
               <div class="mi-market-kpis" data-keyword-kpis hidden aria-label="클릭·시즌 요약">
@@ -13319,6 +13328,7 @@
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
   <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
+  <script src="/mi-capture.js?v=cap-v1-20260908" defer></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -21873,6 +21883,10 @@
         // 1차 고도화: 연관 목록을 보관해 정렬·CSV에 쓰고, 클릭·전년 대비·시즌 캘린더를 그린다.
         keywordRelatedCache = related;
         keywordRelatedSort = "volume";
+        var saveTools = root.querySelector("[data-keyword-save-tools]");
+        if (saveTools) saveTools.hidden = false;
+        var saveMessage = root.querySelector("[data-keyword-save-msg]");
+        if (saveMessage) saveMessage.textContent = "";
         root.querySelectorAll("[data-keyword-related-sort]").forEach(function (button) {
           button.classList.toggle("is-active", button.getAttribute("data-keyword-related-sort") === "volume");
         });
@@ -22409,6 +22423,41 @@
         link.click();
         link.remove();
         window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
+
+      // 전체 캡처(대표 요청 2026-09-08): 키워드 조회 화면 전체를 이미지로 저장(public/mi-capture.js + /vendor/html2canvas, 누를 때만 로드).
+      root.addEventListener("click", async function (event) {
+        var button = event.target.closest("[data-keyword-save]");
+        if (!button || !root.contains(button)) return;
+        var messageNode = root.querySelector("[data-keyword-save-msg]");
+        var say = function (text) { if (messageNode) messageNode.textContent = text; };
+        var title = root.querySelector("[data-keyword-market-title]");
+        var keyword = title ? String(title.textContent || "").trim() : "";
+        if (!keyword || keyword === "키워드 시장 분석") {
+          say("키워드를 먼저 조회해주세요.");
+          return;
+        }
+        var view = root.querySelector("#mi-admin-keyword");
+        if (!view || typeof window.miCaptureElement !== "function") {
+          say("캡처 기능을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
+          return;
+        }
+        var day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }).replace(/-/g, "");
+        var base = "키워드조회-전체-" + keyword.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40) + "-" + day;
+        button.disabled = true;
+        say("화면 전체를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
+        try {
+          var captured = await window.miCaptureElement(view, {
+            fileBase: base,
+            background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
+            ignore: function (node) { return Boolean(node && node.hasAttribute && node.hasAttribute("data-keyword-save-tools")); }
+          });
+          say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");
+        } catch (error) {
+          say("캡처에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.");
+        } finally {
+          button.disabled = false;
+        }
       });
 
       // ── 키워드 조회 2차(2026-09-06): 조회 재시도 · 후보 비교 · 입찰가/노출 깊이/콘텐츠 시장 ──

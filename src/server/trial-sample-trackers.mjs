@@ -286,3 +286,33 @@ export function trialSampleTrackersPayload(path, claims, nowMs = Date.now()) {
   const build = TRIAL_SAMPLE_PATHS.get(String(path || ""));
   return build ? build(claims, nowMs) : null;
 }
+
+// 홈 피드(뉴스 화면)의 "내 순위 요약"·내 키워드 지표용 DB 행 모양. 순위 화면 예시(productTracker)와 같은
+// id·키워드·순위를 쓰므로 두 화면이 같은 예시를 가리킨다. accountCode 는 게이트가 심은 trial-<sub8> 이고,
+// 게이트의 예시 id(trial-<sub8>-p1…)와 같은 태그가 나온다.
+export function trialSampleRankRows(accountCode, nowMs = Date.now()) {
+  const tag = String(accountCode || "").replace(/^trial-/, "").slice(0, 8) || "sample";
+  const claims = { gsub: tag, agencyCode: `trial-${tag}`, clientId: `trial-${tag}` };
+  const trackers = [];
+  const snapshots = [];
+  const since = nowMs - 3 * DAY_MS;
+  for (const sample of PRODUCT_SAMPLES) {
+    const tracker = productTracker(sample, claims, nowMs);
+    trackers.push({
+      id: tracker.id,
+      agency_code: claims.agencyCode,
+      keyword: tracker.keyword,
+      status: "active",
+      current_rank: tracker.currentRank,
+      last_checked_at: tracker.lastCheckedAt,
+      check_count: tracker.checkCount,
+      found_count: tracker.foundCount,
+    });
+    for (const snapshot of tracker.snapshots) {
+      if (new Date(snapshot.checkedAt).getTime() < since) continue;
+      snapshots.push({ tracker_id: tracker.id, checked_at: snapshot.checkedAt, rank: snapshot.rank, matched: snapshot.matched });
+    }
+  }
+  snapshots.sort((a, b) => Date.parse(b.checked_at) - Date.parse(a.checked_at));
+  return { trackers, snapshots };
+}

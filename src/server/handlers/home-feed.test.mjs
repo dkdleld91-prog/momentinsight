@@ -26,6 +26,7 @@ import {
   weeklyChangePct,
   withoutFullNews,
 } from "./home-feed.mjs";
+import { trialSampleRankRows } from "../trial-sample-trackers.mjs";
 
 const NOW = Date.parse("2026-09-04T01:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
@@ -372,4 +373,26 @@ test("withoutFullNews strips only the per-platform full lists and keeps counts, 
   assert.deepEqual(withoutFullNews({ ok: false, reason: "news_unavailable" }), { ok: false, reason: "news_unavailable" });
   assert.equal(withoutFullNews(null), null);
   assert.deepEqual(withoutFullNews([1]), [1]);
+});
+
+// 체험 계정 뉴스 화면의 "내 순위 요약"은 순위 화면 예시 3건과 같은 id·키워드로 채워진다.
+test("trial sample rank rows feed the news-screen summary with the same three example trackers", () => {
+  const nowMs = Date.parse("2026-09-07T05:00:00Z");
+  const rows = trialSampleRankRows("trial-10293847", nowMs);
+  assert.equal(rows.trackers.length, 3);
+  assert.deepEqual(rows.trackers.map((tracker) => tracker.id), ["trial-10293847-p1", "trial-10293847-p2", "trial-10293847-p3"]);
+  for (const tracker of rows.trackers) {
+    assert.equal(tracker.agency_code, "trial-10293847");
+    assert.equal(tracker.status, "active");
+    assert.ok(tracker.check_count >= 3 && tracker.found_count > 0);
+  }
+  // 최근 3일치만, 최신이 앞.
+  assert.ok(rows.snapshots.length >= 6 && rows.snapshots.length <= 12);
+  assert.ok(rows.snapshots.every((snapshot) => Date.parse(snapshot.checked_at) >= nowMs - 3 * 24 * 60 * 60 * 1000));
+  assert.ok(Date.parse(rows.snapshots[0].checked_at) >= Date.parse(rows.snapshots[rows.snapshots.length - 1].checked_at));
+  const summary = computeRankSummary(rows.trackers, rows.snapshots);
+  assert.equal(summary.trackedCount, 3);
+  assert.equal(summary.unmatched, 0);
+  assert.equal(summary.up + summary.down + summary.unchanged, 3);
+  assert.ok(summary.lastCollectedAt);
 });

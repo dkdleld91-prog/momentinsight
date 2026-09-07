@@ -6368,26 +6368,27 @@
               <div class="mi-home-bhead">
                 <strong>내 키워드 지표</strong>
                 <span class="mi-home-lead-note">등록한 키워드만 집계합니다</span>
-                <span class="mi-home-rt"><span class="mi-home-live"></span>매일 04:10 갱신 · 분야는 키워드 조회 기준 자동 분류</span>
+                <span class="mi-home-rt"><span class="mi-home-live"></span>매일 04:10 갱신 · 분야 트렌드·구매층 비중은 준비되면 추가</span>
               </div>
               <div class="mi-home-lead-note" style="margin-bottom: 12px;">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
               <div class="mi-home-scope" data-home-scope>집계 범위 — 내가 등록한 키워드를 확인하는 중입니다 · 전체 시장 통계가 아닙니다</div>
               <div class="mi-home-m3">
-                <div class="mi-home-mbox">
+                <!-- 분야 트렌드·구매층 비중 칸은 데이터가 연결될 때까지 숨긴다("다음 배포" 안내를 운영 화면에 두지 않음, 2026-09-07 검토). -->
+                <div class="mi-home-mbox" style="grid-column: 1 / -1;">
                   <h4>검색량 증감 TOP</h4>
                   <div class="mi-home-sub"><span class="mi-home-pill is-info">내 등록 키워드</span>검색 관심도 · 지난주 대비 · 데이터랩 상대지수</div>
                   <div data-home-volume-rows>
                     <div class="mi-home-empty-detail">지표를 불러오는 중입니다.</div>
                   </div>
                 </div>
-                <div class="mi-home-mbox">
+                <div class="mi-home-mbox" hidden>
                   <h4>분야 트렌드</h4>
                   <div class="mi-home-sub"><span class="mi-home-pill">내 키워드가 속한 분야</span>클릭 추이 · 14일 · 상대지수</div>
                   <div data-home-category-trend>
                     <div class="mi-home-empty-detail">다음 배포에서 연결됩니다</div>
                   </div>
                 </div>
-                <div class="mi-home-mbox">
+                <div class="mi-home-mbox" hidden>
                   <h4>구매층 비중</h4>
                   <div class="mi-home-sub"><span class="mi-home-pill">내 키워드 분야 기준</span>최근 7일</div>
                   <div data-home-demographics>
@@ -7507,6 +7508,9 @@
         // 구글 체험 계정은 접속 코드가 없다. 사이드바 라벨을 계정 기준으로 바꾼다.
         var authLabel = root.querySelector("[data-mi-auth-label]");
         if (authLabel) authLabel.textContent = trial ? "현재 계정" : "현재 접속 코드";
+        // 체험은 첫 조회까지 빨리 가도록 입력창에 예시 키워드를 보여 준다(자동 조회는 한도를 쓰므로 하지 않는다).
+        var keywordInput = root.querySelector("[data-mi-keyword-input]");
+        if (keywordInput && trial) keywordInput.placeholder = "예: 차량용 거치대, 온수매트 · 쉼표로 최대 5개 비교";
         if (!trial) return;
         TRIAL_LOCKED_SCREENS.forEach(function (name) {
           ensureTrialBar(root.querySelector('[data-mi-view="' + name + '"]'), name);

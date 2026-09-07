@@ -19,6 +19,7 @@ import {
   naverSearchRequest,
 } from "../naver-api-hub.mjs";
 import { RANK_NEVER_FOUND_MIN_CHECKS } from "../naver-rank-requeue.mjs";
+import { trialSampleRankRows } from "../trial-sample-trackers.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 
@@ -738,9 +739,15 @@ export async function handleHomeFeedRequest(request, ctx) {
     reason: String(error?.message || "news_unavailable"),
   }));
 
+  // 체험 계정: 순위 요약·내 키워드 지표를 순위 화면과 같은 예시 3건으로 채운다(DB 무접촉, 2026-09-07 검토 후속).
+  const trial = String(request.headers.get("x-mi-session-scope") || "").trim().toLowerCase() === "trial";
+  const trialRows = trial ? trialSampleRankRows(scope.accountCode, nowMs) : null;
+
   let trackers = [];
   let trackerError = "";
-  if (scope.accountCode) {
+  if (trialRows) {
+    trackers = trialRows.trackers;
+  } else if (scope.accountCode) {
     try {
       trackers = await activeTrackers(ctx, scope.accountCode, env);
     } catch (error) {
@@ -761,7 +768,9 @@ export async function handleHomeFeedRequest(request, ctx) {
   let rank = { ok: false, reason: trackerError || "rank_unavailable" };
   if (!trackerError) {
     try {
-      const snapshots = await recentSnapshots(ctx, trackers.map((tracker) => tracker.id), nowMs);
+      const snapshots = trialRows
+        ? trialRows.snapshots
+        : await recentSnapshots(ctx, trackers.map((tracker) => tracker.id), nowMs);
       rank = scope.role === "client"
         ? { ok: true, summary: computeRankSummary(trackers, snapshots) }
         : { ok: true, swings: computeRankSwings(trackers, snapshots) };
@@ -773,8 +782,6 @@ export async function handleHomeFeedRequest(request, ctx) {
   const [news, metrics, keywordNews] = await Promise.all([newsPromise, metricsPromise, keywordNewsPromise]);
 
   // 체험 계정은 메인에 뜬 기사(플랫폼별 lead+items)만 본다. 7일 전체(all)는 도입 후 계정에만 실린다(대표 결정 2026-09-07).
-  const trial = String(request.headers.get("x-mi-session-scope") || "").trim().toLowerCase() === "trial";
-
   return json(request, {
     ok: true,
     role: scope.role,

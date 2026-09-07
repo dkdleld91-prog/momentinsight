@@ -110,7 +110,7 @@
         set("groups", Number(health.trackers.activeProductKeywordGroups || 0) + "개 · 상품 " + Number(health.trackers.activeProduct || 0) + "개");
         var last = health.lanes && health.lanes.product && health.lanes.product.lastSuccessAt ? new Date(health.lanes.product.lastSuccessAt) : null;
         var clock = last && isFinite(last.getTime()) ? two(last.getHours()) + ":" + two(last.getMinutes()) : "";
-        set("collect", (clock ? "마지막 성공 " + clock + " · " : "") + "하루 2회 09:00 · 15:00");
+        set("collect", (clock ? "마지막 수집 " + clock + " · " : "") + "하루 2회 09:00 · 15:00");
       })
       .catch(function () { set("groups", "확인 필요"); set("collect", "확인 필요"); });
   }

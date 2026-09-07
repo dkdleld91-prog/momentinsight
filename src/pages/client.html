@@ -7686,7 +7686,7 @@
         later.type = "button";
         later.className = "mi-button is-ghost";
         later.setAttribute("data-trial-modal-close", "");
-        later.textContent = "오늘은 닫기";
+        later.textContent = "닫기";
         actions.appendChild(kakao);
         actions.appendChild(later);
         card.appendChild(kicker);
@@ -7707,18 +7707,15 @@
         root.appendChild(trialModal);
         return trialModal;
       }
-      function planNoticeStorageKey(plan) {
-        var day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-        return "miPlanNotice:" + String(plan.state) + ":" + String(secureClientSession.scopeKey || "") + ":" + day;
-      }
+      // 대표 결정(2026-09-07): 만료 안내 팝업은 들어올 때마다 띄운다(하루 한 번이 아니다). 한 번 연 화면 안에서
+      // 세션이 다시 읽혀도 또 뜨지 않게 로그인 1회당 한 번만 — 로그아웃(clearClientAuth)·새로고침이면 다시 뜬다.
+      var planNoticeShownKey = "";
       function maybeShowPlanNotice(plan) {
         var copy = planNoticeCopy(plan);
         if (!copy) return;
-        var key = planNoticeStorageKey(plan);
-        try {
-          if (window.localStorage.getItem(key)) return;
-          window.localStorage.setItem(key, "1");
-        } catch (error) {}
+        var key = String(plan.state) + ":" + String(secureClientSession.scopeKey || "");
+        if (planNoticeShownKey === key) return;
+        planNoticeShownKey = key;
         var modal = ensureInquiryModal();
         modal.textContent = "";
         var card = planNoticeCard(copy);
@@ -9993,6 +9990,7 @@
 
       function clearClientAuth() {
         clientSessionGeneration += 1;
+        planNoticeShownKey = "";
         try {
           removeClientAuthCode();
           var savedPublicState = window.localStorage.getItem(storageKey);

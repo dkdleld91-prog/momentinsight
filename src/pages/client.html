@@ -1,5 +1,7 @@
+<html lang="ko">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <title>모먼트인사이트 광고주 대시보드</title>
 <meta name="description" content="모먼트인사이트 광고주 전용 데이터 대시보드입니다." />
 <meta name="robots" content="noindex, nofollow" />
@@ -6270,7 +6272,7 @@
       </nav>
 
       <div class="mi-auth-panel" aria-label="현재 광고주 접속 정보">
-        <span>현재 접속 코드</span>
+        <span data-mi-auth-label>현재 접속 코드</span>
         <strong data-mi-current-code>미연결</strong>
         <span class="mi-trial-chip" data-trial-chip>체험 계정</span>
         <button type="button" data-mi-logout>로그아웃</button>
@@ -7502,6 +7504,9 @@
       function applyTrialMode() {
         var trial = secureClientSession.trial === true;
         root.classList.toggle("is-trial", trial);
+        // 구글 체험 계정은 접속 코드가 없다. 사이드바 라벨을 계정 기준으로 바꾼다.
+        var authLabel = root.querySelector("[data-mi-auth-label]");
+        if (authLabel) authLabel.textContent = trial ? "현재 계정" : "현재 접속 코드";
         if (!trial) return;
         TRIAL_LOCKED_SCREENS.forEach(function (name) {
           ensureTrialBar(root.querySelector('[data-mi-view="' + name + '"]'), name);

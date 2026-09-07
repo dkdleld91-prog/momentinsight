@@ -136,6 +136,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
 <title>셀러 뉴스 | 모먼트 인사이트 — 네이버·쿠팡 셀러 관련 기사 7일치</title>
 <meta name="description" content="${escapeHtml(description)}" />
 <link rel="canonical" href="${SITE}/news" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="모먼트 인사이트" />
 <meta property="og:title" content="셀러 뉴스 | 네이버·쿠팡 셀러 관련 기사 7일치" />
@@ -150,8 +151,8 @@ export function renderNewsPage(news, nowMs = Date.now()) {
     <div class="shell top-inner">
       <a class="brand" href="/"><span class="mk">MI</span><span>모먼트 인사이트</span></a>
       <nav class="top-links" aria-label="상단 바로가기">
-        <a class="btn" href="/client">광고주 로그인</a>
-        <a class="btn primary" href="${KAKAO}" target="_blank" rel="noopener">도입 문의</a>
+        <a class="btn" href="/client">로그인</a>
+        <a class="btn primary" href="/client?signup=1">무료 체험 가입</a>
       </nav>
     </div>
   </header>

@@ -12,6 +12,8 @@ const pages = {
   admin: "admin.html",
   client: "client.html",
   privacy: "privacy.html",
+  // 없는 주소는 Vercel 기본 문자열 대신 이 안내 페이지(홈·뉴스·가입·로그인 링크)로 답한다(2026-09-07).
+  "404": "404.html",
 };
 
 async function exists(filePath) {

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 모먼트 인사이트 DB 일일 백업 · 매일 03:00(맥 현지 시각) · docs/drafts/db-backup-runbook.md 참조.
+       __REPO__ 와 __HOME__ 은 런북의 sed 한 줄이 채운다. -->
+  <key>Label</key>
+  <string>kr.co.momentlabs.insight.db-export</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string>
+    <string>node</string>
+    <string>__REPO__/scripts/db-export.mjs</string>
+    <string>--out</string>
+    <string>__HOME__/MomentInsightBackups</string>
+    <string>--keep</string>
+    <string>14</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/MomentInsightBackups/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/MomentInsightBackups/launchd.log</string>
+</dict>
+</plist>

@@ -23,7 +23,7 @@ const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.
 const vercelConfig = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
-const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v5-20260908"></script>';
+const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v6-20260908"></script>';
 // 구글 연동 기한 카운트다운(2026-09-08): 스크립트와 같은 날짜·같은 계산(Asia/Seoul 자정 기준 일수)으로 기대 문구를 만든다.
 // 연동한 계정의 이용 기간 시작일(기한 다음 날)도 같은 계산이다.
 const NUDGE_DEADLINE = "2026-10-07";
@@ -35,11 +35,17 @@ function nudgeCountdown() {
   const [, startMonth, startDay] = new Date(Date.parse(NUDGE_DEADLINE + "T00:00:00+09:00") + 86400000)
     .toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" })
     .split("-");
-  return {
-    countdown,
-    deadlineText: `${Number(month)}월 ${Number(day)}일까지 (${countdown})`,
-    planStartText: `${Number(startMonth)}월 ${Number(startDay)}일`,
-  };
+  const passed = days < 0;
+  const deadlineText = passed
+    ? `${Number(month)}월 ${Number(day)}일 연동 기한이 지났습니다`
+    : `${Number(month)}월 ${Number(day)}일까지 (${countdown})`;
+  const planStartText = `${Number(startMonth)}월 ${Number(startDay)}일`;
+  // 기한 뒤에는 "지나면"이 아니라 "지났다"로 말한다(스크립트와 같은 분기).
+  const bodyLine2 = passed
+    ? deadlineText + " — 지금 구글 계정을 연결하고 카카오톡 채널로 연장을 요청해 주세요. 연결하지 않은 계정은 만료 3일 뒤 삭제됩니다."
+    : deadlineText + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되어 3일 뒤 삭제되고, 연결한 계정은 " +
+      planStartText + "부터 30일 이용 기간이 시작됩니다.";
+  return { countdown, deadlineText, planStartText, bodyLine2 };
 }
 const ROOT_ATTRIBUTE = "data-mi-google-nudge";
 
@@ -231,9 +237,7 @@ test("대표 결재 문구가 그려진 노드에서 그대로 읽힌다", async
   assert.equal(title.textContent, "로그인 방식이 구글 계정 연동으로 바뀝니다");
   assert.equal(
     realm.dom.text(body),
-    "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.\n" + nudgeCountdown().deadlineText +
-      " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되어 3일 뒤 삭제되고, 연결한 계정은 " +
-      nudgeCountdown().planStartText + "부터 30일 이용 기간이 시작됩니다.",
+    "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.\n" + nudgeCountdown().bodyLine2,
   );
   const [primary] = realm.dom.findByClass("mi-google-nudge-primary");
   const [secondary] = realm.dom.findByClass("mi-google-nudge-secondary");

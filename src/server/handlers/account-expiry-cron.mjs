@@ -9,7 +9,7 @@ import { withSupabase } from "@supabase/server";
 import { cronAuthorized } from "../cron-auth.mjs";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
-import { primaryAgencyConfiguration } from "../owner-identity.mjs";
+import { PRIMARY_AGENCY_CODE, primaryAgencyConfiguration } from "../owner-identity.mjs";
 import {
   GOOGLE_LINKED_PLAN_NOTE,
   GOOGLE_LINK_EXPIRY_NOTE,
@@ -38,6 +38,12 @@ export function deletionDisabled(env = process.env) {
   return String(env.MI_ACCOUNT_EXPIRY_DELETE_DISABLED || "").trim().toLowerCase() === "true";
 }
 
+// 총관리자 코드는 어떤 경우에도 만료·삭제 대상이 아니다. 환경변수(MI_PRIMARY_AGENCY_CODE)가 빠져 effective 가 비어도 상수로 막는다
+// (clients 표에 총관리자 코드 행이 실제로 있다 — 2026-09-08 백업본 확인).
+function protectedOwnerCode(env = process.env) {
+  return String(primaryAgencyConfiguration(env).effective || PRIMARY_AGENCY_CODE).toLowerCase();
+}
+
 // 만료 시각 + 유예를 넘긴 광고주만. 유예는 행마다 다르므로(구글 미연동 3일 · 일반 5일) 조회는 짧은 유예 기준으로 넓게 잡고,
 // 총관리자 코드는 제외하고, 최종 판정은 planStatus(delete_due, plan_note 로 유예 결정)로 한 번 더 한다.
 export async function selectDeleteDueClients(ctx, nowMs = Date.now(), limit = EXPIRY_DELETE_BATCH, env = process.env) {
@@ -50,7 +56,7 @@ export async function selectDeleteDueClients(ctx, nowMs = Date.now(), limit = EX
     .order("plan_expires_at", { ascending: true })
     .limit(limit);
   if (error) throw error;
-  const owner = String(primaryAgencyConfiguration(env).effective || "").toLowerCase();
+  const owner = protectedOwnerCode(env);
   return (data || []).filter((row) => {
     const code = String(row.agency_code || "").trim().toLowerCase();
     if (!code || code === owner) return false;
@@ -139,7 +145,7 @@ export async function expireUnlinkedClients(ctx, { nowMs = Date.now(), dryRun = 
   const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "client");
   if (identities.error) throw identities.error;
   const linked = new Set((identities.data || []).map((row) => String(row.code || "").trim().toLowerCase()).filter(Boolean));
-  const owner = String(primaryAgencyConfiguration(env).effective || "").toLowerCase();
+  const owner = protectedOwnerCode(env);
   const marked = [];
   const failed = [];
   for (const row of clients.data || []) {
@@ -195,7 +201,7 @@ export async function startLinkedClientPlans(ctx, { nowMs = Date.now(), dryRun =
   const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "client");
   if (identities.error) throw identities.error;
   const linked = new Set((identities.data || []).map((row) => String(row.code || "").trim().toLowerCase()).filter(Boolean));
-  const owner = String(primaryAgencyConfiguration(env).effective || "").toLowerCase();
+  const owner = protectedOwnerCode(env);
   const started = [];
   const failed = [];
   for (const row of clients.data || []) {

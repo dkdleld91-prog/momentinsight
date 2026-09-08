@@ -210,6 +210,32 @@ test("기한이 지나면 구글 미연동 활성 광고주만 만료일=기한�
   assert.equal(audits[0].ops[0][1].action, "client.expired_unlinked");
 });
 
+test("총관리자 코드는 환경변수가 빠진 프로덕션에서도 만료·삭제 대상이 아니다(상수 보호)", async () => {
+  const afterMs = Date.parse(googleLinkDeadlineIso()) + 60 * 60 * 1000;
+  const productionWithoutCode = { VERCEL_ENV: "production" };
+  const { ctx: expireCtx } = fakeCtx({
+    clients: [
+      { id: "c-owner", name: "브랜드 A", agency_code: "mml93-a01", status: "active", plan_expires_at: null },
+      { id: "c-1", name: "미연동", agency_code: "abc123", status: "active", plan_expires_at: null },
+    ],
+    login_identities: [],
+  });
+  const expired = await expireUnlinkedClients(expireCtx, { nowMs: afterMs, dryRun: true, env: productionWithoutCode });
+  assert.deepEqual(expired.marked.map((row) => row.agencyCode), ["abc123"]);
+
+  const { ctx: dueCtx } = fakeCtx({
+    clients: [{ id: "c-owner", name: "브랜드 A", agency_code: "mml93-a01", status: "active", plan_expires_at: iso(-30) }],
+  });
+  assert.deepEqual(await selectDeleteDueClients(dueCtx, NOW, 20, productionWithoutCode), []);
+
+  const { ctx: linkedCtx } = fakeCtx({
+    clients: [{ id: "c-owner", name: "브랜드 A", agency_code: "mml93-a01", status: "active", plan_expires_at: null }],
+    login_identities: [{ code: "mml93-a01" }],
+  });
+  const started = await startLinkedClientPlans(linkedCtx, { nowMs: afterMs, dryRun: true, env: productionWithoutCode });
+  assert.deepEqual(started.started, []);
+});
+
 test("dryRun 이면 미연동 대상만 보고하고 갱신·감사는 없다 · runAccountExpiry 응답에 실린다", async () => {
   const afterMs = Date.parse(googleLinkDeadlineIso()) + DAY;
   const { ctx, calls } = fakeCtx({

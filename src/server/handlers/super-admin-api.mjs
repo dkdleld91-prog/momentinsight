@@ -5,6 +5,7 @@ import {
   PLAN_DEFAULT_DAYS,
   expiryFromDate,
   extendedExpiry,
+  isAutomaticPlanNote,
   normalizePlanDays,
   normalizePlanName,
   planStatus,
@@ -1231,6 +1232,8 @@ async function setPlan(request, ctx, body) {
     update.plan_expires_at = extendedExpiry(existing.data, days);
   }
   if (!existing.data.plan_started_at && update.plan_expires_at) update.plan_started_at = nowIso;
+  // 총관리자가 기간을 다시 정하면 크론의 자동 메모(구글 미연동 · 자동 만료 등)는 지운다 — 유예 3일 판정·카드 문구가 새 기간에 따라오면 안 된다.
+  if (update.plan_note === undefined && update.plan_expires_at && isAutomaticPlanNote(existing.data.plan_note)) update.plan_note = null;
 
   const updated = await ctx.supabaseAdmin.from("clients").update(update).eq("id", existing.data.id).select(CLIENT_PLAN_SELECT).single();
   if (updated.error) {
@@ -1262,7 +1265,8 @@ async function clearPlan(request, ctx, body) {
   if (!agencyCode) return json(request, { ok: false, message: "광고주 코드를 입력해주세요." }, 400);
   const updated = await ctx.supabaseAdmin
     .from("clients")
-    .update({ plan_expires_at: null, plan_started_at: null, plan_updated_at: new Date().toISOString() })
+    // 무기한으로 돌리면 크론의 자동 메모도 함께 지운다(총관리자가 직접 쓰는 메모 UI 는 없다).
+    .update({ plan_expires_at: null, plan_started_at: null, plan_note: null, plan_updated_at: new Date().toISOString() })
     .eq("agency_code", agencyCode)
     .select(CLIENT_PLAN_SELECT)
     .maybeSingle();

@@ -37,6 +37,12 @@ export function planGraceDays(row) {
   return isGoogleUnlinkedExpiry(row) ? GOOGLE_LINK_GRACE_DAYS : PLAN_GRACE_DAYS;
 }
 
+// 크론이 남기는 자동 메모("구글 미연동 · …", "구글 연동 · …")인지. 총관리자가 기간을 다시 정하면(연장·만료일 지정·무기한) 지운다 —
+// 남겨 두면 다음 만료도 유예 3일로 계산되고 카드·팝업에 옛 문구가 남는다(2026-09-08 점검에서 발견).
+export function isAutomaticPlanNote(note) {
+  return /^구글 (미)?연동 · /.test(String(note || ""));
+}
+
 // row: clients 행(plan_* 열). 열이 아직 없으면(마이그레이션 전) 전부 undefined → 무기한으로 본다.
 export function planStatus(row, nowMs = Date.now()) {
   const expiresMs = Date.parse(String(row?.plan_expires_at || ""));

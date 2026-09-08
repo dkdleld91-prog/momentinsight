@@ -22,6 +22,7 @@ import handler, {
   teamActionAccess,
   teamActionPayload,
 } from "./super-admin-api.mjs";
+import { GOOGLE_LINKED_PLAN_NOTE, GOOGLE_LINK_EXPIRY_NOTE } from "../account-plan.mjs";
 
 test("new advertiser and operation-team codes keep the six-character minimum", () => {
   assert.equal(normalizeAgencyCode("abc12"), "");
@@ -1378,7 +1379,46 @@ test("clear-plan accepts a legacy five-character agency code", async () => {
   const patch = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "PATCH");
   assert.equal(patch.searchParams.get("agency_code"), "eq.ofyou");
   assert.equal(patch.body.plan_expires_at, null);
+  assert.equal(patch.body.plan_note, null, "무기한으로 돌리면 크론 자동 메모도 지운다");
   assert.equal(payload.client.plan.state, "none");
+});
+
+// 크론 자동 메모(구글 미연동 · 자동 만료 / 구글 연동 · 기한 뒤 30일 이용)는 총관리자가 기간을 다시 정하면 지워져야 한다(2026-09-08 점검).
+test("set-plan extend/set clears the cron's automatic plan note so the new period uses the ordinary grace", async () => {
+  for (const [note, mode, extra] of [
+    [GOOGLE_LINK_EXPIRY_NOTE, "extend", {}],
+    [GOOGLE_LINKED_PLAN_NOTE, "set", { expiresAt: "2026-12-31" }],
+  ]) {
+    const row = { ...LEGACY_PLAN_ROW, plan_expires_at: "2026-10-07T14:59:59.000Z", plan_started_at: "2026-09-01T00:00:00.000Z", plan_days: 30, plan_note: note };
+    const stub = planActionStub({
+      "GET /rest/v1/clients": row,
+      "PATCH /rest/v1/clients": (body) => ({ ...row, ...body }),
+    });
+    const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+      stub.impl,
+      () => handler.fetch(planActionRequest({ action: "set-plan", mode, agencyCode: "ofyou", ...extra })),
+    ));
+    const payload = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(payload));
+    const patch = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "PATCH");
+    assert.equal(patch.body.plan_note, null, `${mode}: 자동 메모 "${note}" 를 지운다`);
+    assert.ok(patch.body.plan_expires_at);
+    assert.equal(payload.client.plan.graceDays, 5, "새 기간은 일반 유예 5일");
+  }
+
+  // 이름·일수만 바꾸는 meta 는 기간이 그대로라 메모도 그대로 둔다.
+  const metaRow = { ...LEGACY_PLAN_ROW, plan_expires_at: "2026-10-07T14:59:59.000Z", plan_note: GOOGLE_LINK_EXPIRY_NOTE };
+  const metaStub = planActionStub({
+    "GET /rest/v1/clients": metaRow,
+    "PATCH /rest/v1/clients": (body) => ({ ...metaRow, ...body }),
+  });
+  const metaResponse = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    metaStub.impl,
+    () => handler.fetch(planActionRequest({ action: "set-plan", mode: "meta", agencyCode: "ofyou", planName: "premium" })),
+  ));
+  assert.equal(metaResponse.status, 200);
+  const metaPatch = metaStub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "PATCH");
+  assert.equal(Object.prototype.hasOwnProperty.call(metaPatch.body, "plan_note"), false);
 });
 
 test("open-trial with unlimited opens the client without an expiry date", async () => {

@@ -37,7 +37,8 @@
   var CLASS_PREFIX = "mi-google-nudge";
 
   // 구글 연동 기한 카운트다운(대표 지시 2026-09-08): 서버 account-plan.mjs 의 GOOGLE_LINK_DEADLINE 과 같은 날짜.
-  // 기한이 지나면 연결하지 않은 광고주 코드 계정은 크론이 만료 처리하고 5일 뒤 삭제한다. 날짜만 바꾸면 화면·크론이 함께 움직인다.
+  // 기한이 지나면 연결하지 않은 계정은 크론이 만료 처리하고 3일 뒤 삭제하며, 연결한 계정은 기한 다음 날부터 30일 이용 기간이
+  // 시작된다(대표 결정 2026-09-08). 날짜만 바꾸면 화면·크론이 함께 움직인다.
   var LINK_DEADLINE = "2026-10-07";
   function kstToday() {
     return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
@@ -51,6 +52,12 @@
     var parts = LINK_DEADLINE.split("-");
     return Number(parts[1]) + "월 " + Number(parts[2]) + "일";
   }
+  // 연동한 계정의 이용 기간 시작일 = 기한 다음 날(서버 googleLinkPlanStartDate 와 같은 계산).
+  function planStartLabel() {
+    var start = new Date(Date.parse(LINK_DEADLINE + "T00:00:00+09:00") + 86400000);
+    var parts = start.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }).split("-");
+    return Number(parts[1]) + "월 " + Number(parts[2]) + "일";
+  }
   var DAYS_LEFT = daysUntilDeadline();
   var COUNTDOWN_TEXT = DAYS_LEFT > 0 ? "D-" + DAYS_LEFT : (DAYS_LEFT === 0 ? "D-day" : "기한 지남");
   var PILL_TEXT = "적용 안내 · " + COUNTDOWN_TEXT;
@@ -58,7 +65,7 @@
   var BODY_LINE_1 = "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.";
   // 두 번째 줄 앞머리의 기한(날짜 + 카운트다운)만 강조 노드로 떼어 낸다(대표 지시 2026-08-26 방식 유지).
   var DEADLINE_TEXT = deadlineLabel() + "까지 (" + COUNTDOWN_TEXT + ")";
-  var BODY_LINE_2 = DEADLINE_TEXT + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되고 5일 뒤 삭제됩니다.";
+  var BODY_LINE_2 = DEADLINE_TEXT + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되어 3일 뒤 삭제되고, 연결한 계정은 " + planStartLabel() + "부터 30일 이용 기간이 시작됩니다.";
   var PRIMARY_TEXT = "구글 계정 연결";
   var SECONDARY_TEXT = "나중에 하기";
 

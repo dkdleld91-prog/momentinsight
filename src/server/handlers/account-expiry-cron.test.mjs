@@ -7,8 +7,16 @@ import handler, {
   revokeUnlinkedTeams,
   runAccountExpiry,
   selectDeleteDueClients,
+  startLinkedClientPlans,
 } from "./account-expiry-cron.mjs";
-import { GOOGLE_LINK_DEADLINE, GOOGLE_LINK_EXPIRY_NOTE, googleLinkDeadlineIso } from "../account-plan.mjs";
+import {
+  GOOGLE_LINKED_PLAN_NOTE,
+  GOOGLE_LINK_DEADLINE,
+  GOOGLE_LINK_EXPIRY_NOTE,
+  GOOGLE_LINK_GRACE_DAYS,
+  googleLinkDeadlineIso,
+  googleLinkPlanExpiryIso,
+} from "../account-plan.mjs";
 import { requiresCodeSession } from "../session-gate.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -58,13 +66,18 @@ test("delete-due selection keeps only accounts past the grace period and never t
       { id: "c-2", name: "유예 중", agency_code: "def456", status: "active", plan_expires_at: iso(-2) },
       { id: "c-3", name: "총관리자", agency_code: "mml93-a01", status: "active", plan_expires_at: iso(-30) },
       { id: "c-4", name: "무기한", agency_code: "ghi789", status: "active", plan_expires_at: null },
+      // 구글 미연동 자동 만료는 유예 3일(대표 결정 2026-09-08): 4일 지난 미연동은 삭제 대상, 같은 날짜의 일반 만료는 아직 유예 중.
+      { id: "c-5", name: "미연동 4일 지남", agency_code: "unl001", status: "active", plan_expires_at: iso(-4), plan_note: GOOGLE_LINK_EXPIRY_NOTE },
+      { id: "c-6", name: "일반 4일 지남", agency_code: "ord001", status: "active", plan_expires_at: iso(-4), plan_note: null },
     ],
   });
   const due = await selectDeleteDueClients(ctx, NOW, 20, ENV);
-  assert.deepEqual(due.map((row) => row.agency_code), ["abc123"]);
+  assert.deepEqual(due.map((row) => row.agency_code), ["abc123", "unl001"]);
   const query = calls.find((call) => call.table === "clients");
   assert.ok(query.ops.some(([op, column]) => op === "not" && column === "plan_expires_at"));
-  assert.ok(query.ops.some(([op, column, value]) => op === "lt" && column === "plan_expires_at" && value === iso(-5)));
+  // 조회는 짧은 유예(3일) 기준으로 넓게 잡고 planStatus 가 행별 유예로 최종 판정한다.
+  assert.ok(query.ops.some(([op, column, value]) => op === "lt" && column === "plan_expires_at" && value === iso(-GOOGLE_LINK_GRACE_DAYS)));
+  assert.ok(query.ops.some(([op, columns]) => op === "select" && /plan_note/.test(columns)), "유예 판정에 plan_note 가 필요하다");
 });
 
 test("deleting an expired client removes rank trackers, notes, identities, quota and the client row, then audits", async () => {
@@ -207,22 +220,93 @@ test("dryRun 이면 미연동 대상만 보고하고 갱신·감사는 없다 ·
   assert.equal(summary.dryRun, true);
   assert.equal(summary.googleLinkDeadline, googleLinkDeadlineIso());
   assert.deepEqual(summary.unlinkedExpired.map((row) => row.agencyCode), ["abc123"]);
+  assert.deepEqual(summary.linkedPlanStarted, [], "미연동 계정에는 이용 기간을 시작하지 않는다");
+  assert.equal(summary.googleLinkGraceDays, GOOGLE_LINK_GRACE_DAYS);
+  assert.equal(summary.linkedPlanExpiresAt, googleLinkPlanExpiryIso());
   assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
   assert.equal(calls.some((call) => call.table === "audit_logs"), false);
 });
 
-// ── 운영팀도 포함(대표 지시 2026-09-08): 기한 + 유예 5일이 지난 날부터 구글 미연동 활성 운영팀 코드를 해제한다 ──
-test("운영팀 미연동 해제는 기한 + 유예 5일 전에는 아무것도 하지 않는다", async () => {
+// ── 연동한 계정(대표 결정 2026-09-08 "30일 지난 후부터 30일 카운팅"): 기한 뒤 구글 연결 + 무기한 광고주에 10/08~11/06 이용 기간을 찍는다 ──
+test("구글 연동 기한 전에는 연동 계정 이용 기간 시작이 DB 를 읽지도 않는다", async () => {
+  const { ctx, calls } = fakeCtx({ clients: [{ id: "c-1", agency_code: "def456", status: "active" }], login_identities: [{ code: "def456" }] });
+  const beforeMs = Date.parse(googleLinkDeadlineIso()) - DAY;
+  const result = await startLinkedClientPlans(ctx, { nowMs: beforeMs, env: ENV });
+  assert.equal(result.active, false);
+  assert.deepEqual(result.started, []);
+  assert.equal(calls.length, 0);
+});
+
+test("기한이 지나면 구글 연동 + 무기한 활성 광고주에만 기한 다음 날부터 30일 이용 기간을 찍고 감사를 남긴다", async () => {
+  const deadline = googleLinkDeadlineIso();
+  const afterMs = Date.parse(deadline) + 60 * 60 * 1000;
+  const { ctx, calls } = fakeCtx({
+    clients: [
+      { id: "c-1", name: "미연동 무기한", agency_code: "abc123", status: "active", plan_expires_at: null, plan_name: null },
+      { id: "c-2", name: "연동 무기한", agency_code: "def456", status: "active", plan_expires_at: null, plan_name: null, plan_updated_at: "2026-09-07T12:33:07.689+00:00" },
+      { id: "c-3", name: "총관리자", agency_code: "mml93-a01", status: "active", plan_expires_at: null },
+      { id: "c-4", name: "연동 + 기간 있음", agency_code: "jkl012", status: "active", plan_expires_at: "2027-01-01T00:00:00.000Z" },
+      { id: "c-5", name: "연동 + 기한 뒤 총관리자가 무기한으로 돌림", agency_code: "mno345", status: "active", plan_expires_at: null, plan_updated_at: new Date(Date.parse(deadline) + 30 * 60 * 1000).toISOString() },
+      { id: "c-6", name: "연동 프리미엄 무기한", agency_code: "pqr678", status: "active", plan_expires_at: null, plan_name: "premium", plan_updated_at: null },
+    ],
+    login_identities: [{ code: "DEF456" }, { code: "mml93-a01" }, { code: "jkl012" }, { code: "mno345" }, { code: "pqr678" }],
+  });
+  const result = await startLinkedClientPlans(ctx, { nowMs: afterMs, env: ENV });
+  assert.equal(result.active, true);
+  assert.equal(result.expiresAt, googleLinkPlanExpiryIso());
+  assert.deepEqual(result.started.map((row) => row.agencyCode).sort(), ["def456", "pqr678"]);
+  assert.deepEqual(result.failed, []);
+  const updates = calls.filter((call) => call.table === "clients" && call.ops.some(([op]) => op === "update"));
+  assert.equal(updates.length, 2);
+  const values = updates.map((call) => call.ops.find(([op]) => op === "update")[1]);
+  for (const value of values) {
+    assert.equal(value.plan_days, 30);
+    assert.equal(value.plan_started_at, deadline);
+    assert.equal(value.plan_expires_at, googleLinkPlanExpiryIso());
+    assert.equal(value.plan_expires_at, "2026-11-06T14:59:59.000Z");
+    assert.equal(value.plan_note, GOOGLE_LINKED_PLAN_NOTE);
+    assert.ok(value.plan_updated_at);
+  }
+  assert.deepEqual(values.map((value) => value.plan_name).sort(), ["basic", "premium"], "플랜 이름은 있으면 유지, 없으면 basic");
+  const audits = calls.filter((call) => call.table === "audit_logs");
+  assert.equal(audits.length, 2);
+  assert.equal(audits[0].ops[0][1].action, "client.plan_started_linked");
+  assert.equal(audits[0].ops[0][1].metadata.source, "account-expiry-cron");
+});
+
+test("연동 계정 이용 기간 시작도 dryRun 이면 대상만 보고하고 갱신·감사는 없다 · runAccountExpiry 응답에 실린다", async () => {
+  const afterMs = Date.parse(googleLinkDeadlineIso()) + DAY;
+  const { ctx, calls } = fakeCtx({
+    clients: [
+      { id: "c-1", name: "미연동", agency_code: "abc123", status: "active", plan_expires_at: null },
+      { id: "c-2", name: "연동", agency_code: "def456", status: "active", plan_expires_at: null },
+    ],
+    login_identities: [{ code: "def456" }],
+  });
+  const summary = await runAccountExpiry(ctx, { nowMs: afterMs, dryRun: true, env: ENV });
+  assert.equal(summary.dryRun, true);
+  assert.deepEqual(summary.unlinkedExpired.map((row) => row.agencyCode), ["abc123"]);
+  assert.deepEqual(summary.linkedPlanStarted.map((row) => row.agencyCode), ["def456"]);
+  assert.equal(summary.linkedPlanStarted[0].dryRun, true);
+  assert.equal(summary.googleLinkPlanDays, 30);
+  assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
+  assert.equal(calls.some((call) => call.table === "audit_logs"), false);
+});
+
+// ── 운영팀도 포함(대표 지시 2026-09-08): 기한 + 유예 3일이 지난 날부터 구글 미연동 활성 운영팀 코드를 해제한다 ──
+test("운영팀 미연동 해제는 기한 + 유예 3일 전에는 아무것도 하지 않는다", async () => {
   const { ctx, calls } = fakeCtx({ operation_team_codes: [{ id: "t-1", team_code: "teamalpha", status: "active" }] });
   const justAfterDeadline = Date.parse(googleLinkDeadlineIso()) + DAY;
   const result = await revokeUnlinkedTeams(ctx, { nowMs: justAfterDeadline, env: ENV });
   assert.equal(result.active, false);
   assert.equal(calls.length, 0);
-  assert.equal(result.revokeFrom, new Date(Date.parse(googleLinkDeadlineIso()) + 5 * DAY).toISOString());
+  assert.equal(GOOGLE_LINK_GRACE_DAYS, 3);
+  assert.equal(result.revokeFrom, new Date(Date.parse(googleLinkDeadlineIso()) + 3 * DAY).toISOString());
+  assert.equal(result.revokeFrom, "2026-10-10T14:59:59.000Z");
 });
 
 test("기한 + 유예가 지나면 구글 미연동 활성 운영팀만 revoked 로 바꾸고 감사를 남긴다(연결된 운영팀 제외, 광고주는 건드리지 않음)", async () => {
-  const afterMs = Date.parse(googleLinkDeadlineIso()) + 5 * DAY + 60 * 60 * 1000;
+  const afterMs = Date.parse(googleLinkDeadlineIso()) + 3 * DAY + 60 * 60 * 1000;
   const { ctx, calls } = fakeCtx({
     operation_team_codes: [
       { id: "t-1", team_name: "미연동팀", team_code: "teamalpha", status: "active", client_id: "c-9" },

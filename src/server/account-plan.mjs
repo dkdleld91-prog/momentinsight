@@ -27,12 +27,23 @@ export function normalizePlanDays(value, fallback = PLAN_DEFAULT_DAYS) {
   return parsed;
 }
 
+// 유예 일수는 행마다 다르다(대표 결정 2026-09-08 "구글 연동 안 된 사람은 읽기 전용에서 3일 뒤 삭제"): 크론이 plan_note 에
+// "구글 미연동" 을 남긴 계정은 3일, 그 밖의 만료는 5일. 게이트·세션·총관리자·크론이 전부 이 계산을 쓴다.
+export function isGoogleUnlinkedExpiry(row) {
+  return /구글 미연동/.test(String(row?.plan_note || ""));
+}
+
+export function planGraceDays(row) {
+  return isGoogleUnlinkedExpiry(row) ? GOOGLE_LINK_GRACE_DAYS : PLAN_GRACE_DAYS;
+}
+
 // row: clients 행(plan_* 열). 열이 아직 없으면(마이그레이션 전) 전부 undefined → 무기한으로 본다.
 export function planStatus(row, nowMs = Date.now()) {
   const expiresMs = Date.parse(String(row?.plan_expires_at || ""));
   const startedMs = Date.parse(String(row?.plan_started_at || ""));
   const name = normalizePlanName(row?.plan_name);
   const days = normalizePlanDays(row?.plan_days);
+  const graceDays = planGraceDays(row);
   if (!Number.isFinite(expiresMs)) {
     return {
       name,
@@ -41,12 +52,13 @@ export function planStatus(row, nowMs = Date.now()) {
       startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null,
       expiresAt: null,
       daysLeft: null,
+      graceDays,
       graceEndsAt: null,
       graceDaysLeft: null,
       state: "none",
     };
   }
-  const graceEndsMs = expiresMs + PLAN_GRACE_DAYS * DAY_MS;
+  const graceEndsMs = expiresMs + graceDays * DAY_MS;
   const daysLeft = Math.ceil((expiresMs - nowMs) / DAY_MS);
   const graceDaysLeft = Math.ceil((graceEndsMs - nowMs) / DAY_MS);
   let state = "active";
@@ -60,6 +72,7 @@ export function planStatus(row, nowMs = Date.now()) {
     startedAt: Number.isFinite(startedMs) ? new Date(startedMs).toISOString() : null,
     expiresAt: new Date(expiresMs).toISOString(),
     daysLeft,
+    graceDays,
     graceEndsAt: new Date(graceEndsMs).toISOString(),
     graceDaysLeft,
     state,
@@ -77,13 +90,32 @@ export function extendedExpiry(row, days, nowMs = Date.now()) {
   return new Date(base + normalizePlanDays(days) * DAY_MS).toISOString();
 }
 
-// 구글 연동 기한(대표 지시 2026-09-08 "30일 카운트다운, 연동 안 한 계정은 없어지는 걸로"): 이 날(Asia/Seoul 23:59:59)까지
-// 구글을 연결하지 않은 광고주 코드 계정은 크론이 만료일을 이 날로 찍는다 → 기존 흐름(만료 팝업·읽기 전용 → 유예 5일 → 삭제).
+// 구글 연동 기한(대표 지시 2026-09-08 "지금부터 30일은 구글 연동 기간"): 이 날(Asia/Seoul 23:59:59)까지가 연동 기간이다.
+// - 연결하지 않은 광고주 코드 계정: 크론이 만료일을 이 날로 찍는다 → 읽기 전용 → 유예 3일(GOOGLE_LINK_GRACE_DAYS) → 삭제.
+// - 연결한 광고주(무기한 상태): 기한 다음 날(10/08)부터 30일(GOOGLE_LINK_PLAN_DAYS) 이용 기간을 크론이 시작한다 → 이후는 일반 플랜 흐름.
 // 화면 카운트다운(public/mi-google-nudge.js 의 LINK_DEADLINE)과 같은 날짜여야 한다. 총관리자 코드·체험 계정은 대상이 아니다.
 export const GOOGLE_LINK_DEADLINE = "2026-10-07";
 export const GOOGLE_LINK_EXPIRY_NOTE = "구글 미연동 · 자동 만료";
+export const GOOGLE_LINK_GRACE_DAYS = 3; // 미연동 만료 뒤 삭제까지(대표 결정 2026-09-08 "읽기 전용에서 3일 뒤 삭제").
+export const GOOGLE_LINK_PLAN_DAYS = 30; // 연동한 계정의 첫 이용 기간(대표 결정 2026-09-08 "30일 지난 후부터 30일 카운팅").
+export const GOOGLE_LINKED_PLAN_NOTE = "구글 연동 · 기한 뒤 30일 이용";
 export function googleLinkDeadlineIso() {
   return expiryFromDate(GOOGLE_LINK_DEADLINE);
+}
+
+// 연동한 계정의 이용 기간: 기한 다음 날 ~ 기한 + 30일(Asia/Seoul 23:59:59). 2026-10-07 기준 10/08 ~ 11/06.
+export function googleLinkPlanStartDate() {
+  return shiftDate(GOOGLE_LINK_DEADLINE, 1);
+}
+export function googleLinkPlanExpiryIso() {
+  return expiryFromDate(shiftDate(GOOGLE_LINK_DEADLINE, GOOGLE_LINK_PLAN_DAYS));
+}
+
+function shiftDate(value, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+  if (!match) return null;
+  const shifted = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + Number(days || 0)));
+  return Number.isFinite(shifted.getTime()) ? shifted.toISOString().slice(0, 10) : null;
 }
 
 // 만료일 직접 지정: 그 날짜의 Asia/Seoul 23:59:59 로 맞춘다("09/19까지"가 그날 끝까지라는 뜻).

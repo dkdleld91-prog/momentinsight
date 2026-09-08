@@ -6697,11 +6697,12 @@
             </div>
             <div class="mi-kw-notes-bar">
               <button class="mi-button secondary" type="button" data-keyword-note-save disabled>조사 노트에 저장</button>
+              <!-- 데이터 캡처(대표 요청 2026-09-08): 조사 노트 버튼과 같은 모양·크기. 조회 뒤 활성화, 핵심 4줄부터 끝까지 이미지로 저장 -->
+              <button class="mi-button secondary" type="button" data-keyword-save="capture" disabled>데이터 캡처</button>
               <span class="mi-code-status" data-keyword-note-status>조회한 뒤 저장할 수 있습니다 · 검색량이 함께 기록됩니다</span>
             </div>
-            <!-- 업체 전달용 저장(2026-09-07~08 대표 요청): 조사 노트 줄 바로 아래(조회 뒤 표시). 전체 캡처 · 요약 이미지 · CSV -->
+            <!-- 업체 전달용 저장(2026-09-07~08 대표 요청): 조사 노트 줄 바로 아래(조회 뒤 표시). 요약 이미지 · CSV -->
             <div class="mi-related-tools mi-kw-save" data-keyword-save-tools hidden>
-              <button type="button" data-keyword-save="capture">전체 캡처(PNG)</button>
               <button type="button" data-keyword-save="png">요약 이미지(PNG)</button>
               <button type="button" data-keyword-save="csv">표(CSV) 저장</button>
               <span class="mi-kw-save-msg" data-keyword-save-msg aria-live="polite"></span>
@@ -8553,6 +8554,7 @@
         keywordExportItem = item;
         var saveTools = root.querySelector("[data-keyword-save-tools]");
         if (saveTools) saveTools.hidden = false;
+        root.querySelectorAll('[data-keyword-save="capture"]').forEach(function (button) { button.disabled = false; });
         var saveMessage = root.querySelector("[data-keyword-save-msg]");
         if (saveMessage) saveMessage.textContent = "";
         root.querySelectorAll("[data-keyword-related-sort]").forEach(function (button) {
@@ -8566,6 +8568,7 @@
         keywordExportItem = null;
         var saveToolsToHide = root.querySelector("[data-keyword-save-tools]");
         if (saveToolsToHide) saveToolsToHide.hidden = true;
+        root.querySelectorAll('[data-keyword-save="capture"]').forEach(function (button) { button.disabled = true; });
         var fields = [
           ["[data-keyword-market-title]", "키워드 시장 분석"],
           ["[data-keyword-market-path]", "키워드를 입력하면 월 검색수와 클릭 지표를 표시합니다."],
@@ -9350,12 +9353,16 @@
             // 전체 캡처(대표 요청 2026-09-08): 조회 화면 전체를 캡처본처럼(public/mi-capture.js + /vendor/html2canvas, 누를 때만 로드).
             var view = root.querySelector("#mi-keyword-tool");
             if (!view || typeof window.miCaptureElement !== "function") throw new Error("capture unavailable");
-            say("화면 전체를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
+            // 핵심 4줄부터 담는다(대표 요청): 화면 제목과 조회 칸은 뺀다.
+            var header = view.querySelector("header");
+            var searchButton = root.querySelector("[data-mi-keyword-search]");
+            var queryCard = searchButton ? searchButton.closest("article") : null;
+            say("데이터를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
             var captured = await window.miCaptureElement(view, {
-              fileBase: base + "-전체",
+              fileBase: base + "-데이터",
               background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
               ignore: function (node) {
-                return Boolean(node && node.hasAttribute && (node.hasAttribute("data-keyword-save-tools") || node.classList.contains("mi-trial-modal")));
+                return node === header || node === queryCard || Boolean(node && node.hasAttribute && (node.hasAttribute("data-keyword-save-tools") || node.classList.contains("mi-trial-modal")));
               }
             });
             say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");

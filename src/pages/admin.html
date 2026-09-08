@@ -12718,11 +12718,9 @@
               </div>
               <div class="mi-kw-notes-bar">
                 <button class="mi-button secondary" type="button" data-keyword-note-save disabled>조사 노트에 저장</button>
+                <!-- 데이터 캡처(대표 요청 2026-09-08): 조사 노트 버튼과 같은 모양·크기. 조회 뒤 활성화, 핵심 4줄부터 끝까지 이미지로 저장 -->
+                <button class="mi-button secondary" type="button" data-keyword-save="capture" disabled>데이터 캡처</button>
                 <span class="mi-code-status" data-keyword-note-status>조회한 뒤 저장할 수 있습니다 · 검색량이 함께 기록됩니다</span>
-              </div>
-              <!-- 전체 캡처(대표 요청 2026-09-08): 조사 노트 줄 바로 아래(조회 뒤 표시). 조회 화면 전체를 캡처본처럼 이미지로 저장 -->
-              <div class="mi-related-tools mi-kw-save" data-keyword-save-tools hidden>
-                <button type="button" data-keyword-save="capture">전체 캡처(PNG)</button>
                 <span class="mi-kw-save-msg" data-keyword-save-msg aria-live="polite"></span>
               </div>
               <div class="mi-kw-notes" data-keyword-notes hidden>
@@ -21883,8 +21881,7 @@
         // 1차 고도화: 연관 목록을 보관해 정렬·CSV에 쓰고, 클릭·전년 대비·시즌 캘린더를 그린다.
         keywordRelatedCache = related;
         keywordRelatedSort = "volume";
-        var saveTools = root.querySelector("[data-keyword-save-tools]");
-        if (saveTools) saveTools.hidden = false;
+        root.querySelectorAll('[data-keyword-save="capture"]').forEach(function (button) { button.disabled = false; });
         var saveMessage = root.querySelector("[data-keyword-save-msg]");
         if (saveMessage) saveMessage.textContent = "";
         root.querySelectorAll("[data-keyword-related-sort]").forEach(function (button) {
@@ -22442,15 +22439,19 @@
           say("캡처 기능을 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.");
           return;
         }
+        // 핵심 4줄부터 담는다(대표 요청): 화면 제목과 조회 칸은 뺀다.
+        var header = view.querySelector("header");
+        var searchButton = root.querySelector("[data-admin-keyword-search]");
+        var queryCard = searchButton ? searchButton.closest("article") : null;
         var day = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }).replace(/-/g, "");
-        var base = "키워드조회-전체-" + keyword.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40) + "-" + day;
+        var base = "키워드조회-데이터-" + keyword.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40) + "-" + day;
         button.disabled = true;
-        say("화면 전체를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
+        say("데이터를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
         try {
           var captured = await window.miCaptureElement(view, {
             fileBase: base,
             background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
-            ignore: function (node) { return Boolean(node && node.hasAttribute && node.hasAttribute("data-keyword-save-tools")); }
+            ignore: function (node) { return node === header || node === queryCard || Boolean(node && node.hasAttribute && node.hasAttribute("data-keyword-save-tools")); }
           });
           say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");
         } catch (error) {

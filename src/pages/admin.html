@@ -5264,6 +5264,9 @@
     /* 전체 캡처 저장(2026-09-08): 조회 뒤 1번 카드 기준 줄 아래 버튼 */
     #mi-admin .mi-kw-save { margin: 12px 0 0; align-items: center; }
     #mi-admin .mi-kw-save-msg { font-size: 12px; color: var(--mi-muted); }
+    /* 데이터 캡처 중에만: 비율 차트 격자선(calc 정지점 그라데이션)은 캡처 부품이 회색 띠로 그려서 잠시 끈다(2026-09-08 대표 보고).
+       가상 요소는 복제 시점에 스타일이 굳어 복제본 CSS 로는 못 바꾸므로 원본에 is-capturing 을 잠깐 붙인다. */
+    #mi-admin.is-capturing .mi-ratio-chart:before { background: none; }
 
     #mi-admin .mi-grade {
       display: inline-flex;
@@ -13326,7 +13329,7 @@
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
   <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
-  <script src="/mi-capture.js?v=cap-v1-20260908" defer></script>
+  <script src="/mi-capture.js?v=cap-v2-20260908" defer></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -22447,6 +22450,8 @@
         var base = "키워드조회-데이터-" + keyword.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 40) + "-" + day;
         button.disabled = true;
         say("데이터를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
+        // 비율 차트 격자선(calc 정지점 그라데이션)은 캡처 부품이 회색 띠로 그린다(2026-09-08 대표 보고) → 캡처 동안만 끈다.
+        root.classList.add("is-capturing");
         try {
           var captured = await window.miCaptureElement(view, {
             fileBase: base,
@@ -22457,6 +22462,7 @@
         } catch (error) {
           say("캡처에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.");
         } finally {
+          root.classList.remove("is-capturing");
           button.disabled = false;
         }
       });

@@ -4379,6 +4379,9 @@
     /* 업체 전달용 저장(2026-09-07): 조회 키워드 → 핵심 4줄 → 참고 → 연관 키워드 순으로 PNG·CSV */
     #mi-clean .mi-kw-save { margin: 12px 0 0; align-items: center; }
     #mi-clean .mi-kw-save-msg { font-size: 12px; color: var(--mi-muted); }
+    /* 데이터 캡처 중에만: 비율 차트 격자선(calc 정지점 그라데이션)은 캡처 부품이 회색 띠로 그려서 잠시 끈다(2026-09-08 대표 보고).
+       가상 요소는 복제 시점에 스타일이 굳어 복제본 CSS 로는 못 바꾸므로 원본에 is-capturing 을 잠깐 붙인다. */
+    #mi-clean.is-capturing .mi-ratio-chart:before { background: none; }
     #mi-clean .mi-related-tools button { border: 1px solid var(--mi-line); background: #fff; border-radius: 999px; padding: 5px 11px; font-size: 12px; color: var(--mi-muted); cursor: pointer; }
     #mi-clean .mi-related-tools button.is-active { background: var(--mi-navy); border-color: var(--mi-navy); color: #fff; font-weight: 600; }
     #mi-clean .mi-season { display: grid; gap: 4px; overflow-x: auto; }
@@ -7252,7 +7255,7 @@
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
   <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
-  <script src="/mi-capture.js?v=cap-v1-20260908" defer></script>
+  <script src="/mi-capture.js?v=cap-v2-20260908" defer></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -9358,13 +9361,20 @@
             var searchButton = root.querySelector("[data-mi-keyword-search]");
             var queryCard = searchButton ? searchButton.closest("article") : null;
             say("데이터를 이미지로 만드는 중입니다 · 길면 몇 초 걸립니다.");
-            var captured = await window.miCaptureElement(view, {
-              fileBase: base + "-데이터",
-              background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
-              ignore: function (node) {
-                return node === header || node === queryCard || Boolean(node && node.hasAttribute && (node.hasAttribute("data-keyword-save-tools") || node.classList.contains("mi-trial-modal")));
-              }
-            });
+            // 비율 차트 격자선(calc 정지점 그라데이션)은 캡처 부품이 회색 띠로 그린다(2026-09-08 대표 보고) → 캡처 동안만 끈다.
+            root.classList.add("is-capturing");
+            var captured;
+            try {
+              captured = await window.miCaptureElement(view, {
+                fileBase: base + "-데이터",
+                background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
+                ignore: function (node) {
+                  return node === header || node === queryCard || Boolean(node && node.hasAttribute && (node.hasAttribute("data-keyword-save-tools") || node.classList.contains("mi-trial-modal")));
+                }
+              });
+            } finally {
+              root.classList.remove("is-capturing");
+            }
             say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");
           } else {
             say("이미지를 만드는 중입니다.");

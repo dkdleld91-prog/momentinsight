@@ -38,7 +38,8 @@
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  // element 를 통째로 그린다. options: { fileBase, background, ignore(node) → true 면 제외 }
+  // element 를 통째로 그린다. options: { fileBase, background, ignore(node) → true 면 제외,
+  //   captureCss: 복제본에만 넣는 CSS(예: html2canvas 가 못 그리는 calc() 격자선 그라데이션을 끄기), onclone(doc) }
   window.miCaptureElement = async function (element, options) {
     options = options || {};
     var html2canvas = await loadHtml2Canvas();
@@ -55,6 +56,16 @@
       windowWidth: document.documentElement.clientWidth,
       ignoreElements: function (node) {
         try { return Boolean(options.ignore && options.ignore(node)); } catch (error) { return false; }
+      },
+      onclone: function (clonedDocument) {
+        try {
+          if (options.captureCss) {
+            var style = clonedDocument.createElement("style");
+            style.textContent = String(options.captureCss);
+            clonedDocument.head.appendChild(style);
+          }
+          if (typeof options.onclone === "function") options.onclone(clonedDocument);
+        } catch (error) {}
       }
     });
     var jpeg = canvas.width * canvas.height > JPEG_AREA;

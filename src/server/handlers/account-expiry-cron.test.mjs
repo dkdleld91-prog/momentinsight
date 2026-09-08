@@ -3,9 +3,11 @@ import test from "node:test";
 import handler, {
   RANK_TRACKER_TABLES,
   deleteExpiredClient,
+  expireUnlinkedClients,
   runAccountExpiry,
   selectDeleteDueClients,
 } from "./account-expiry-cron.mjs";
+import { GOOGLE_LINK_DEADLINE, GOOGLE_LINK_EXPIRY_NOTE, googleLinkDeadlineIso } from "../account-plan.mjs";
 import { requiresCodeSession } from "../session-gate.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -27,6 +29,7 @@ function fakeCtx(rowsByTable) {
       const query = {
         select(columns) { record.ops.push(["select", columns]); return query; },
         delete() { record.ops.push(["delete"]); return query; },
+        update(values) { record.ops.push(["update", values]); return query; },
         insert(values) { record.ops.push(["insert", values]); return Promise.resolve({ data: null, error: null }); },
         not(column, op, value) { record.ops.push(["not", column, op, value]); return query; },
         lt(column, value) { record.ops.push(["lt", column, value]); return query; },
@@ -151,4 +154,58 @@ test("the cron endpoint needs the cron secret and is outside the code-session ga
       else process.env[key] = value;
     }
   }
+});
+
+// ── 구글 연동 기한(대표 지시 2026-09-08): 기한 전엔 아무것도 안 하고, 지나면 미연동 활성 광고주에 만료일을 찍는다 ──
+test("구글 연동 기한 전에는 미연동 만료 처리가 DB 를 읽지도 않는다", async () => {
+  const { ctx, calls } = fakeCtx({ clients: [{ id: "c-1", agency_code: "abc123", status: "active" }] });
+  const beforeMs = Date.parse(googleLinkDeadlineIso()) - DAY;
+  const result = await expireUnlinkedClients(ctx, { nowMs: beforeMs, env: ENV });
+  assert.equal(result.active, false);
+  assert.deepEqual(result.marked, []);
+  assert.equal(calls.length, 0);
+  assert.equal(GOOGLE_LINK_DEADLINE, "2026-10-07");
+});
+
+test("기한이 지나면 구글 미연동 활성 광고주만 만료일=기한·메모로 찍고 감사를 남긴다(총관리자·연동 계정·이미 만료 계정 제외)", async () => {
+  const deadline = googleLinkDeadlineIso();
+  const afterMs = Date.parse(deadline) + 60 * 60 * 1000;
+  const { ctx, calls } = fakeCtx({
+    clients: [
+      { id: "c-1", name: "미연동", agency_code: "abc123", status: "active", plan_expires_at: null },
+      { id: "c-2", name: "연동됨", agency_code: "def456", status: "active", plan_expires_at: null },
+      { id: "c-3", name: "총관리자", agency_code: "mml93-a01", status: "active", plan_expires_at: null },
+      { id: "c-4", name: "이미 만료", agency_code: "ghi789", status: "active", plan_expires_at: iso(-10) },
+      { id: "c-5", name: "먼 미래 만료", agency_code: "jkl012", status: "active", plan_expires_at: "2027-01-01T00:00:00.000Z" },
+    ],
+    login_identities: [{ code: "DEF456" }],
+  });
+  const result = await expireUnlinkedClients(ctx, { nowMs: afterMs, env: ENV });
+  assert.equal(result.active, true);
+  assert.deepEqual(result.marked.map((row) => row.agencyCode).sort(), ["abc123", "jkl012"]);
+  assert.deepEqual(result.failed, []);
+  const updates = calls.filter((call) => call.table === "clients" && call.ops.some(([op]) => op === "update"));
+  assert.equal(updates.length, 2);
+  for (const call of updates) {
+    const [, values] = call.ops.find(([op]) => op === "update");
+    assert.equal(values.plan_expires_at, deadline);
+    assert.equal(values.plan_note, GOOGLE_LINK_EXPIRY_NOTE);
+  }
+  const audits = calls.filter((call) => call.table === "audit_logs");
+  assert.equal(audits.length, 2);
+  assert.equal(audits[0].ops[0][1].action, "client.expired_unlinked");
+});
+
+test("dryRun 이면 미연동 대상만 보고하고 갱신·감사는 없다 · runAccountExpiry 응답에 실린다", async () => {
+  const afterMs = Date.parse(googleLinkDeadlineIso()) + DAY;
+  const { ctx, calls } = fakeCtx({
+    clients: [{ id: "c-1", name: "미연동", agency_code: "abc123", status: "active", plan_expires_at: null }],
+    login_identities: [],
+  });
+  const summary = await runAccountExpiry(ctx, { nowMs: afterMs, dryRun: true, env: ENV });
+  assert.equal(summary.dryRun, true);
+  assert.equal(summary.googleLinkDeadline, googleLinkDeadlineIso());
+  assert.deepEqual(summary.unlinkedExpired.map((row) => row.agencyCode), ["abc123"]);
+  assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
+  assert.equal(calls.some((call) => call.table === "audit_logs"), false);
 });

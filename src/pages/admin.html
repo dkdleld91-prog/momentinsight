@@ -13328,7 +13328,7 @@
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
-  <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
+  <script src="/mi-google-nudge.js?v=gnudge-v4-20260908"></script>
   <script src="/mi-capture.js?v=cap-v2-20260908" defer></script>
   <script>
     (function () {
@@ -17944,10 +17944,12 @@
           return '<small class="mi-account-plan">' + escapeHtml(label + "이용 기간: 무기한") + '</small>';
         }
         var until = ownerShortDate(plan.expiresAt) + "까지";
-        if (plan.state === "active") return '<small class="mi-account-plan">' + escapeHtml(label + until + " · D-" + plan.daysLeft) + '</small>';
-        if (plan.state === "expiring") return '<small class="mi-account-plan is-warn">' + escapeHtml(label + until + " · D-" + plan.daysLeft + " 만료 임박") + '</small>';
-        if (plan.state === "expired") return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + " · 만료됨 · " + plan.graceDaysLeft + "일 뒤 삭제 대상") + '</small>';
-        return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + " · 유예 종료 · 삭제 대상") + '</small>';
+        // 서버 메모(예: "구글 미연동 · 자동 만료")가 있으면 같은 줄에 붙인다(2026-09-08).
+        var note = client && client.planNote ? " · " + String(client.planNote) : "";
+        if (plan.state === "active") return '<small class="mi-account-plan">' + escapeHtml(label + until + note +" · D-" + plan.daysLeft) + '</small>';
+        if (plan.state === "expiring") return '<small class="mi-account-plan is-warn">' + escapeHtml(label + until + note +" · D-" + plan.daysLeft + " 만료 임박") + '</small>';
+        if (plan.state === "expired") return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + note +" · 만료됨 · " + plan.graceDaysLeft + "일 뒤 삭제 대상") + '</small>';
+        return '<small class="mi-account-plan is-danger">' + escapeHtml(label + until + note +" · 유예 종료 · 삭제 대상") + '</small>';
       }
 
       function ownerPlanSelect(attribute, code, selected) {

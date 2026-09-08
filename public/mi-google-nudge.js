@@ -36,12 +36,29 @@
   var ROOT_ATTRIBUTE = "data-mi-google-nudge";
   var CLASS_PREFIX = "mi-google-nudge";
 
-  var PILL_TEXT = "적용 안내 · 30일 이내 전환";
+  // 구글 연동 기한 카운트다운(대표 지시 2026-09-08): 서버 account-plan.mjs 의 GOOGLE_LINK_DEADLINE 과 같은 날짜.
+  // 기한이 지나면 연결하지 않은 광고주 코드 계정은 크론이 만료 처리하고 5일 뒤 삭제한다. 날짜만 바꾸면 화면·크론이 함께 움직인다.
+  var LINK_DEADLINE = "2026-10-07";
+  function kstToday() {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  }
+  function daysUntilDeadline() {
+    var today = Date.parse(kstToday() + "T00:00:00+09:00");
+    var deadline = Date.parse(LINK_DEADLINE + "T00:00:00+09:00");
+    return Math.round((deadline - today) / 86400000);
+  }
+  function deadlineLabel() {
+    var parts = LINK_DEADLINE.split("-");
+    return Number(parts[1]) + "월 " + Number(parts[2]) + "일";
+  }
+  var DAYS_LEFT = daysUntilDeadline();
+  var COUNTDOWN_TEXT = DAYS_LEFT > 0 ? "D-" + DAYS_LEFT : (DAYS_LEFT === 0 ? "D-day" : "기한 지남");
+  var PILL_TEXT = "적용 안내 · " + COUNTDOWN_TEXT;
   var TITLE_TEXT = "로그인 방식이 구글 계정 연동으로 바뀝니다";
   var BODY_LINE_1 = "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.";
-  var BODY_LINE_2 = "30일 이내에 구글 계정을 연결해 주세요 — 연결 후에는 코드 입력 없이 바로 로그인할 수 있습니다.";
-  // 승인된 문구는 그대로 두고, 그 안의 기한만 강조 노드로 떼어 낸다(대표 지시 2026-08-26).
-  var DEADLINE_TEXT = "30일 이내";
+  // 두 번째 줄 앞머리의 기한(날짜 + 카운트다운)만 강조 노드로 떼어 낸다(대표 지시 2026-08-26 방식 유지).
+  var DEADLINE_TEXT = deadlineLabel() + "까지 (" + COUNTDOWN_TEXT + ")";
+  var BODY_LINE_2 = DEADLINE_TEXT + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되고 5일 뒤 삭제됩니다.";
   var PRIMARY_TEXT = "구글 계정 연결";
   var SECONDARY_TEXT = "나중에 하기";
 

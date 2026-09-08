@@ -9,7 +9,7 @@ import { cronAuthorized } from "../cron-auth.mjs";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { primaryAgencyConfiguration } from "../owner-identity.mjs";
-import { PLAN_GRACE_DAYS, planStatus } from "../account-plan.mjs";
+import { GOOGLE_LINK_EXPIRY_NOTE, PLAN_GRACE_DAYS, googleLinkDeadlineIso, planStatus } from "../account-plan.mjs";
 
 export const EXPIRY_DELETE_BATCH = 20;
 export const RANK_TRACKER_TABLES = ["naver_rank_trackers", "naver_place_rank_trackers"];
@@ -111,10 +111,64 @@ export async function deleteExpiredClient(ctx, client) {
   return summary;
 }
 
+// 구글 연동 기한(GOOGLE_LINK_DEADLINE, 대표 지시 2026-09-08)이 지나면, 구글을 연결하지 않은 활성 광고주 코드 계정에 만료일(=기한)을
+// 찍는다. 이후는 기존 흐름: 만료 팝업·읽기 전용 → 유예 5일 → 위 삭제. 총관리자 코드와 이미 그 전에 만료된 계정은 건드리지 않는다.
+// 연결 여부 = login_identities(role client) 에 그 코드가 있는지. dryRun 이면 대상만 보고한다.
+export async function expireUnlinkedClients(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
+  const deadline = googleLinkDeadlineIso();
+  const deadlineMs = Date.parse(String(deadline || ""));
+  if (!Number.isFinite(deadlineMs) || nowMs < deadlineMs) return { active: false, deadline, marked: [], failed: [] };
+  const clients = await ctx.supabaseAdmin
+    .from("clients")
+    .select("id, name, agency_code, status, plan_expires_at, plan_note")
+    .eq("status", "active");
+  if (clients.error) throw clients.error;
+  const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "client");
+  if (identities.error) throw identities.error;
+  const linked = new Set((identities.data || []).map((row) => String(row.code || "").trim().toLowerCase()).filter(Boolean));
+  const owner = String(primaryAgencyConfiguration(env).effective || "").toLowerCase();
+  const marked = [];
+  const failed = [];
+  for (const row of clients.data || []) {
+    const code = String(row.agency_code || "").trim().toLowerCase();
+    if (!code || code === owner || linked.has(code)) continue;
+    const currentMs = Date.parse(String(row.plan_expires_at || ""));
+    if (Number.isFinite(currentMs) && currentMs <= deadlineMs) continue; // 이미 기한 전에 만료된 계정은 그대로
+    if (dryRun) {
+      marked.push({ agencyCode: code, name: row.name || "", dryRun: true });
+      continue;
+    }
+    const update = await ctx.supabaseAdmin
+      .from("clients")
+      .update({ plan_expires_at: deadline, plan_note: GOOGLE_LINK_EXPIRY_NOTE, plan_updated_at: new Date(nowMs).toISOString() })
+      .eq("id", row.id)
+      .select("id");
+    if (update.error) {
+      failed.push({ agencyCode: code, error: String(update.error.message || update.error) });
+      continue;
+    }
+    try {
+      await ctx.supabaseAdmin.from("audit_logs").insert({
+        actor_id: null,
+        client_id: row.id,
+        action: "client.expired_unlinked",
+        target_table: "clients",
+        target_id: row.id,
+        metadata: sanitizeAuditMetadata({ source: "account-expiry-cron", agencyCode: code, deadline }),
+      });
+    } catch (error) {
+      // 감사 기록 실패는 만료 처리 결과를 바꾸지 않는다
+    }
+    marked.push({ agencyCode: code, name: row.name || "" });
+  }
+  return { active: true, deadline, marked, failed };
+}
+
 export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
-  const due = await selectDeleteDueClients(ctx, nowMs, EXPIRY_DELETE_BATCH, env);
   const disabled = deletionDisabled(env);
   const effectiveDryRun = dryRun || disabled;
+  const unlinked = await expireUnlinkedClients(ctx, { nowMs, dryRun: effectiveDryRun, env });
+  const due = await selectDeleteDueClients(ctx, nowMs, EXPIRY_DELETE_BATCH, env);
   const results = [];
   if (!effectiveDryRun) {
     for (const client of due) results.push(await deleteExpiredClient(ctx, client));
@@ -124,6 +178,9 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     dryRun: effectiveDryRun,
     disabled,
     graceDays: PLAN_GRACE_DAYS,
+    googleLinkDeadline: unlinked.deadline,
+    unlinkedExpired: unlinked.marked,
+    unlinkedFailed: unlinked.failed,
     checkedAt: new Date(nowMs).toISOString(),
     due: due.map((row) => ({ agencyCode: row.agency_code, name: row.name || "", expiresAt: row.plan_expires_at || null })),
     deleted: results.filter((result) => result.client).map((result) => result.agencyCode),

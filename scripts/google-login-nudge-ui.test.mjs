@@ -23,7 +23,16 @@ const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.
 const vercelConfig = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
-const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>';
+const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v4-20260908"></script>';
+// 구글 연동 기한 카운트다운(2026-09-08): 스크립트와 같은 날짜·같은 계산(Asia/Seoul 자정 기준 일수)으로 기대 문구를 만든다.
+const NUDGE_DEADLINE = "2026-10-07";
+function nudgeCountdown() {
+  const today = Date.parse(new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }) + "T00:00:00+09:00");
+  const days = Math.round((Date.parse(NUDGE_DEADLINE + "T00:00:00+09:00") - today) / 86400000);
+  const countdown = days > 0 ? `D-${days}` : (days === 0 ? "D-day" : "기한 지남");
+  const [, month, day] = NUDGE_DEADLINE.split("-");
+  return { countdown, deadlineText: `${Number(month)}월 ${Number(day)}일까지 (${countdown})` };
+}
 const ROOT_ATTRIBUTE = "data-mi-google-nudge";
 
 const LINKED_PAYLOAD = { ok: true, configured: true, storageReady: true, linked: true, googleEmail: "a@b.c" };
@@ -214,7 +223,8 @@ test("대표 결재 문구가 그려진 노드에서 그대로 읽힌다", async
   assert.equal(title.textContent, "로그인 방식이 구글 계정 연동으로 바뀝니다");
   assert.equal(
     realm.dom.text(body),
-    "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.\n30일 이내에 구글 계정을 연결해 주세요 — 연결 후에는 코드 입력 없이 바로 로그인할 수 있습니다.",
+    "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.\n" + nudgeCountdown().deadlineText +
+      " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되고 5일 뒤 삭제됩니다.",
   );
   const [primary] = realm.dom.findByClass("mi-google-nudge-primary");
   const [secondary] = realm.dom.findByClass("mi-google-nudge-secondary");
@@ -233,12 +243,12 @@ test("기한 강조와 안내 pill 이 warn 토큰으로 붙는다", async () =>
   const [deadline] = realm.dom.findByClass("mi-google-nudge-deadline");
   assert.ok(deadline, "기한 강조 노드가 없습니다.");
   assert.equal(deadline.tagName, "STRONG");
-  assert.equal(deadline.textContent, "30일 이내");
+  assert.equal(deadline.textContent, nudgeCountdown().deadlineText);
   assert.equal(deadline.parentNode.className, "mi-google-nudge-body");
 
   const [pill] = realm.dom.findByClass("mi-google-nudge-pill");
   assert.ok(pill, "안내 pill 이 없습니다.");
-  assert.equal(pill.textContent, "적용 안내 · 30일 이내 전환");
+  assert.equal(pill.textContent, "적용 안내 · " + nudgeCountdown().countdown);
   // pill 은 제목 위에 있다.
   const card = pill.parentNode;
   assert.ok(card.children.indexOf(pill) < card.children.findIndex((node) => node.tagName === "H2"));

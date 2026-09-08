@@ -30,5 +30,11 @@
 ## 5. 2단계 — 유예 뒤 데이터 삭제 (대표 결정 2026-09-07 "살릴 필요 없음, 서버·저장공간만 무거워짐" → 실행 승인)
 - 일 1회 Vercel 크론 `/api/account-expiry-cron`(매일 03:30 KST, `Authorization: Bearer CRON_SECRET`, 세션 무관): `src/server/handlers/account-expiry-cron.mjs`. `plan_expires_at + 5일 < now` 이고 planStatus 가 `delete_due` 인 광고주(총관리자 코드 제외, 한 번에 20개)를 지운다 — 순서: naver_rank_trackers → naver_place_rank_trackers(스냅샷 FK cascade) → keyword_research_notes → login_identities(role client) → trial_keyword_quota(그 구글 sub) → clients 행(brands·reports·kpi 등 cascade, 운영팀 client_id set null) → audit_logs `client.deleted_after_grace`. 한 단계라도 실패하면 계정 행은 남겨 다음 날 재시도. `?dryRun=1` 은 대상만 보고, `MI_ACCOUNT_EXPIRY_DELETE_DISABLED=true` 면 항상 dryRun. 복구 기능은 두지 않는다.
 
+## 5-1. 구글 연동 기한 (대표 지시 2026-09-08 "30일 카운트다운, 연동 안 한 계정은 없어지는 걸로")
+- 기한 `GOOGLE_LINK_DEADLINE = 2026-10-07`(KST 23:59:59, `src/server/account-plan.mjs`). 화면 카운트다운은 `public/mi-google-nudge.js` 의 `LINK_DEADLINE`(같은 날짜) — 팝업 pill "적용 안내 · D-n", 본문 "10월 7일까지 (D-n) 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되고 5일 뒤 삭제됩니다."
+- 기한 뒤: `account-expiry-cron` 이 매일 `expireUnlinkedClients` 를 먼저 돌린다 — 활성 광고주 중 `login_identities(role client)` 에 코드가 없는 계정에 `plan_expires_at = 기한`, `plan_note = "구글 미연동 · 자동 만료"`, 감사 `client.expired_unlinked`. 총관리자 코드·이미 기한 전에 만료된 계정·체험 계정(구글 연동이 곧 계정)은 제외. 운영팀 코드는 대상이 아니다(별도 결정 필요).
+- 이후는 §3·§5 그대로: 읽기 전용 → 유예 5일(10/08~10/12) → 10/13 03:30 KST 삭제. 광고주 팝업·띠는 plan.note 로 문구를 바꾼다("구글 계정을 연결하지 않아 이용이 만료되었습니다 · n일 안에 구글 연결 + 카카오 채널로 연장 요청"). 총관리자 카드 플랜 줄에 메모가 붙는다. 기한 뒤 구글을 연결해도 만료가 자동으로 풀리지는 않는다 — 총관리자가 연장/무기한으로 살린다.
+- 날짜를 바꾸려면 두 파일의 날짜 상수를 같이 바꾼다.
+
 ## 6. 검증
 - 단위: account-plan(planStatus 경계), super-admin-api(set-plan/open-trial), code-session-api(session.plan), session-gate(PLAN_EXPIRED). 실측: 총관리자 화면에서 체험 계정 정식 전환 → 광고주 화면 D-day 표시 → 만료일을 오늘로 지정해 팝업·띠 확인.

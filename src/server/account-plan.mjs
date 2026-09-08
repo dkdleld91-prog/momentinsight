@@ -77,6 +77,15 @@ export function extendedExpiry(row, days, nowMs = Date.now()) {
   return new Date(base + normalizePlanDays(days) * DAY_MS).toISOString();
 }
 
+// 구글 연동 기한(대표 지시 2026-09-08 "30일 카운트다운, 연동 안 한 계정은 없어지는 걸로"): 이 날(Asia/Seoul 23:59:59)까지
+// 구글을 연결하지 않은 광고주 코드 계정은 크론이 만료일을 이 날로 찍는다 → 기존 흐름(만료 팝업·읽기 전용 → 유예 5일 → 삭제).
+// 화면 카운트다운(public/mi-google-nudge.js 의 LINK_DEADLINE)과 같은 날짜여야 한다. 총관리자 코드·체험 계정은 대상이 아니다.
+export const GOOGLE_LINK_DEADLINE = "2026-10-07";
+export const GOOGLE_LINK_EXPIRY_NOTE = "구글 미연동 · 자동 만료";
+export function googleLinkDeadlineIso() {
+  return expiryFromDate(GOOGLE_LINK_DEADLINE);
+}
+
 // 만료일 직접 지정: 그 날짜의 Asia/Seoul 23:59:59 로 맞춘다("09/19까지"가 그날 끝까지라는 뜻).
 export function expiryFromDate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());

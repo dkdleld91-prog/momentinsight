@@ -164,10 +164,63 @@ export async function expireUnlinkedClients(ctx, { nowMs = Date.now(), dryRun = 
   return { active: true, deadline, marked, failed };
 }
 
+// 운영팀 코드도 포함(대표 지시 2026-09-08 "운영팀도 포함"): 운영팀은 플랜(이용 기간) 열이 없어 유예 표시가 없으므로, 기한 + 유예 5일이
+// 지난 날(광고주 삭제와 같은 날) 구글을 연결하지 않은 활성 운영팀 코드를 해제(status revoked)한다. 총관리자가 직접 해제할 때와 달리
+// 연결된 광고주는 일시중지하지 않는다(광고주는 광고주 규칙으로 따로 판정). 연결 여부 = login_identities(role team).
+export async function revokeUnlinkedTeams(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
+  const deadline = googleLinkDeadlineIso();
+  const deadlineMs = Date.parse(String(deadline || ""));
+  const revokeFromMs = Number.isFinite(deadlineMs) ? deadlineMs + PLAN_GRACE_DAYS * DAY_MS : NaN;
+  if (!Number.isFinite(revokeFromMs) || nowMs < revokeFromMs) return { active: false, revokeFrom: Number.isFinite(revokeFromMs) ? new Date(revokeFromMs).toISOString() : null, revoked: [], failed: [] };
+  const teams = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .select("id, team_name, team_code, status, client_id")
+    .eq("status", "active");
+  if (teams.error) throw teams.error;
+  const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "team");
+  if (identities.error) throw identities.error;
+  const linked = new Set((identities.data || []).map((row) => String(row.code || "").trim().toLowerCase()).filter(Boolean));
+  const nowIso = new Date(nowMs).toISOString();
+  const revoked = [];
+  const failed = [];
+  for (const row of teams.data || []) {
+    const code = String(row.team_code || "").trim().toLowerCase();
+    if (!code || linked.has(code)) continue;
+    if (dryRun) {
+      revoked.push({ teamCode: code, name: row.team_name || "", dryRun: true });
+      continue;
+    }
+    const update = await ctx.supabaseAdmin
+      .from("operation_team_codes")
+      .update({ status: "revoked", revoked_at: nowIso, client_id: null })
+      .eq("id", row.id)
+      .select("id");
+    if (update.error) {
+      failed.push({ teamCode: code, error: String(update.error.message || update.error) });
+      continue;
+    }
+    try {
+      await ctx.supabaseAdmin.from("audit_logs").insert({
+        actor_id: null,
+        client_id: null,
+        action: "operation_team.revoked_unlinked",
+        target_table: "operation_team_codes",
+        target_id: row.id,
+        metadata: sanitizeAuditMetadata({ source: "account-expiry-cron", teamCode: code, deadline }),
+      });
+    } catch (error) {
+      // 감사 기록 실패는 해제 결과를 바꾸지 않는다
+    }
+    revoked.push({ teamCode: code, name: row.team_name || "" });
+  }
+  return { active: true, revokeFrom: new Date(revokeFromMs).toISOString(), revoked, failed };
+}
+
 export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
   const disabled = deletionDisabled(env);
   const effectiveDryRun = dryRun || disabled;
   const unlinked = await expireUnlinkedClients(ctx, { nowMs, dryRun: effectiveDryRun, env });
+  const unlinkedTeams = await revokeUnlinkedTeams(ctx, { nowMs, dryRun: effectiveDryRun, env });
   const due = await selectDeleteDueClients(ctx, nowMs, EXPIRY_DELETE_BATCH, env);
   const results = [];
   if (!effectiveDryRun) {
@@ -181,6 +234,9 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     googleLinkDeadline: unlinked.deadline,
     unlinkedExpired: unlinked.marked,
     unlinkedFailed: unlinked.failed,
+    unlinkedTeamsRevokeFrom: unlinkedTeams.revokeFrom,
+    unlinkedTeamsRevoked: unlinkedTeams.revoked,
+    unlinkedTeamsFailed: unlinkedTeams.failed,
     checkedAt: new Date(nowMs).toISOString(),
     due: due.map((row) => ({ agencyCode: row.agency_code, name: row.name || "", expiresAt: row.plan_expires_at || null })),
     deleted: results.filter((result) => result.client).map((result) => result.agencyCode),

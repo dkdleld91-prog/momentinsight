@@ -32,7 +32,8 @@
 
 ## 5-1. 구글 연동 기한 (대표 지시 2026-09-08 "30일 카운트다운, 연동 안 한 계정은 없어지는 걸로")
 - 기한 `GOOGLE_LINK_DEADLINE = 2026-10-07`(KST 23:59:59, `src/server/account-plan.mjs`). 화면 카운트다운은 `public/mi-google-nudge.js` 의 `LINK_DEADLINE`(같은 날짜) — 팝업 pill "적용 안내 · D-n", 본문 "10월 7일까지 (D-n) 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되고 5일 뒤 삭제됩니다."
-- 기한 뒤: `account-expiry-cron` 이 매일 `expireUnlinkedClients` 를 먼저 돌린다 — 활성 광고주 중 `login_identities(role client)` 에 코드가 없는 계정에 `plan_expires_at = 기한`, `plan_note = "구글 미연동 · 자동 만료"`, 감사 `client.expired_unlinked`. 총관리자 코드·이미 기한 전에 만료된 계정·체험 계정(구글 연동이 곧 계정)은 제외. 운영팀 코드는 대상이 아니다(별도 결정 필요).
+- 기한 뒤: `account-expiry-cron` 이 매일 `expireUnlinkedClients` 를 먼저 돌린다 — 활성 광고주 중 `login_identities(role client)` 에 코드가 없는 계정에 `plan_expires_at = 기한`, `plan_note = "구글 미연동 · 자동 만료"`, 감사 `client.expired_unlinked`. 총관리자 코드·이미 기한 전에 만료된 계정·체험 계정(구글 연동이 곧 계정)은 제외.
+- 운영팀 포함(대표 지시 2026-09-08 "운영팀도 포함"): 운영팀 코드는 플랜 열이 없어 유예 표시 없이, 기한 + 유예 5일이 지난 날(광고주 삭제와 같은 10/13 03:30)에 `revokeUnlinkedTeams` 가 `login_identities(role team)` 에 없는 활성 운영팀 코드를 `status=revoked`(revoked_at, client_id null)로 바꾼다. 연결된 광고주는 일시중지하지 않는다(총관리자 수동 해제와 다른 점). 감사 `operation_team.revoked_unlinked`. 경고는 넛지 팝업 카운트다운으로만 나간다.
 - 이후는 §3·§5 그대로: 읽기 전용 → 유예 5일(10/08~10/12) → 10/13 03:30 KST 삭제. 광고주 팝업·띠는 plan.note 로 문구를 바꾼다("구글 계정을 연결하지 않아 이용이 만료되었습니다 · n일 안에 구글 연결 + 카카오 채널로 연장 요청"). 총관리자 카드 플랜 줄에 메모가 붙는다. 기한 뒤 구글을 연결해도 만료가 자동으로 풀리지는 않는다 — 총관리자가 연장/무기한으로 살린다.
 - 날짜를 바꾸려면 두 파일의 날짜 상수를 같이 바꾼다.
 

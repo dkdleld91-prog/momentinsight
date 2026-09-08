@@ -4,6 +4,7 @@ import handler, {
   RANK_TRACKER_TABLES,
   deleteExpiredClient,
   expireUnlinkedClients,
+  revokeUnlinkedTeams,
   runAccountExpiry,
   selectDeleteDueClients,
 } from "./account-expiry-cron.mjs";
@@ -208,4 +209,37 @@ test("dryRun 이면 미연동 대상만 보고하고 갱신·감사는 없다 ·
   assert.deepEqual(summary.unlinkedExpired.map((row) => row.agencyCode), ["abc123"]);
   assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
   assert.equal(calls.some((call) => call.table === "audit_logs"), false);
+});
+
+// ── 운영팀도 포함(대표 지시 2026-09-08): 기한 + 유예 5일이 지난 날부터 구글 미연동 활성 운영팀 코드를 해제한다 ──
+test("운영팀 미연동 해제는 기한 + 유예 5일 전에는 아무것도 하지 않는다", async () => {
+  const { ctx, calls } = fakeCtx({ operation_team_codes: [{ id: "t-1", team_code: "teamalpha", status: "active" }] });
+  const justAfterDeadline = Date.parse(googleLinkDeadlineIso()) + DAY;
+  const result = await revokeUnlinkedTeams(ctx, { nowMs: justAfterDeadline, env: ENV });
+  assert.equal(result.active, false);
+  assert.equal(calls.length, 0);
+  assert.equal(result.revokeFrom, new Date(Date.parse(googleLinkDeadlineIso()) + 5 * DAY).toISOString());
+});
+
+test("기한 + 유예가 지나면 구글 미연동 활성 운영팀만 revoked 로 바꾸고 감사를 남긴다(연결된 운영팀 제외, 광고주는 건드리지 않음)", async () => {
+  const afterMs = Date.parse(googleLinkDeadlineIso()) + 5 * DAY + 60 * 60 * 1000;
+  const { ctx, calls } = fakeCtx({
+    operation_team_codes: [
+      { id: "t-1", team_name: "미연동팀", team_code: "teamalpha", status: "active", client_id: "c-9" },
+      { id: "t-2", team_name: "연동팀", team_code: "teambeta", status: "active", client_id: null },
+    ],
+    login_identities: [{ code: "TEAMBETA" }],
+  });
+  const result = await revokeUnlinkedTeams(ctx, { nowMs: afterMs, env: ENV });
+  assert.equal(result.active, true);
+  assert.deepEqual(result.revoked.map((row) => row.teamCode), ["teamalpha"]);
+  const updates = calls.filter((call) => call.table === "operation_team_codes" && call.ops.some(([op]) => op === "update"));
+  assert.equal(updates.length, 1);
+  const [, values] = updates[0].ops.find(([op]) => op === "update");
+  assert.equal(values.status, "revoked");
+  assert.equal(values.client_id, null);
+  assert.ok(values.revoked_at);
+  assert.equal(calls.some((call) => call.table === "clients"), false, "광고주 행은 건드리지 않는다");
+  const audit = calls.find((call) => call.table === "audit_logs");
+  assert.equal(audit.ops[0][1].action, "operation_team.revoked_unlinked");
 });

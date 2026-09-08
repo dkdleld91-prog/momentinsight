@@ -85,13 +85,13 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "72b58169070b65e469c228b1daa0c4d3735ba0d4b0c65a7da909d8207291fa14"
+      "sha256": "be268d5d5394562174650ef5391afb847d6b4c4171494a4322a30a73001ab320"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "977bc1c531632842784fbfadbbf47a5ceb258360f18ca5df20331eb6c41b3a4e"
+      "sha256": "16e293fba960e00f1c30bc66ef18381423c03ba260be928e2405f5665133265a"
     },
     {
       "id": "operation-place-30-day",

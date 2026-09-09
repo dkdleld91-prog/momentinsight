@@ -38,14 +38,17 @@
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
-  // element 를 통째로 그린다. options: { fileBase, background, ignore(node) → true 면 제외,
-  //   captureCss: 복제본에만 넣는 CSS(예: html2canvas 가 못 그리는 calc() 격자선 그라데이션을 끄기), onclone(doc) }
-  window.miCaptureElement = async function (element, options) {
+  // element 를 통째로 그려 Blob 으로 돌려준다(내려받지 않음). options: { background, ignore(node) → true 면 제외,
+  //   captureCss: 복제본에만 넣는 CSS(예: html2canvas 가 못 그리는 calc() 격자선 그라데이션을 끄기), onclone(doc),
+  //   windowWidth: 복제 문서의 창 너비(고정 폭 시트를 데스크톱 배치로 그릴 때 1400 등), fileBase }
+  // N30 순위 공유 이미지(2026-09-09)가 이 함수를 쓴다 — foreignObject 캔버스가 사파리·아이폰에서 오염돼 SVG 로 떨어지던 문제의 대체 경로.
+  window.miCaptureElementBlob = async function (element, options) {
     options = options || {};
     var html2canvas = await loadHtml2Canvas();
     var height = Math.max(1, element.scrollHeight || element.getBoundingClientRect().height || 1);
     var width = Math.max(1, element.scrollWidth || element.getBoundingClientRect().width || 1);
     var scale = Math.max(1, Math.min(2, Math.floor((MAX_SIDE / Math.max(height, width)) * 10) / 10));
+    var windowWidth = Number(options.windowWidth) > 0 ? Number(options.windowWidth) : document.documentElement.clientWidth;
     var canvas = await html2canvas(element, {
       scale: scale,
       backgroundColor: options.background || null,
@@ -53,7 +56,7 @@
       logging: false,
       scrollX: 0,
       scrollY: -window.scrollY,
-      windowWidth: document.documentElement.clientWidth,
+      windowWidth: windowWidth,
       ignoreElements: function (node) {
         try { return Boolean(options.ignore && options.ignore(node)); } catch (error) { return false; }
       },
@@ -80,7 +83,13 @@
       }
     });
     var fileName = (options.fileBase || "capture") + (jpeg ? ".jpg" : ".png");
-    download(blob, fileName);
-    return { fileName: fileName, bytes: blob.size, width: canvas.width, height: canvas.height, scale: scale, jpeg: jpeg };
+    return { blob: blob, fileName: fileName, bytes: blob.size, width: canvas.width, height: canvas.height, scale: scale, jpeg: jpeg, ext: jpeg ? "jpg" : "png" };
+  };
+
+  // 그려서 바로 내려받는다(키워드 조회 "데이터 캡처" 버튼이 쓴다).
+  window.miCaptureElement = async function (element, options) {
+    var result = await window.miCaptureElementBlob(element, options);
+    download(result.blob, result.fileName);
+    return result;
   };
 })();

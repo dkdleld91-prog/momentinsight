@@ -1,8 +1,9 @@
 #!/bin/zsh
 # 순위 수집 워치독. 한 틱(10분)에 두 가지 일을 한다.
-# (i) 대기열 정체 감시·Chrome 재기동 — 공개 집계 엔드포인트
-#     (/api/rank-collection-health)만 폴링해 대기열 정체를 판정하고, 정체가 30분 이상
-#     연속으로 관측될 때만 Chrome 을 정상 종료 후 다시 연다. 강제 종료 폴백은 없다.
+# (i) 수집 장애 감시·Chrome 재기동 — 공개 집계 엔드포인트
+#     (/api/rank-collection-health)의 queue/worker 신호를 판정하고, 장애가 30분 이상
+#     연속으로 관측될 때만 Chrome 을 정상 종료 후 다시 연다. 한 연속 장애에는 1회만
+#     시도하고 강제 종료 폴백은 없다. commit 정체는 서버/DB 진단 대상이라 재기동하지 않는다.
 # (ii) 저장소 대비 설치 사본 드리프트 점검·자가 복구 — Application Support 사본이
 #     저장소보다 뒤처졌는지 14개 파일 해시로 대조하고, 게이트를 모두 통과할 때만
 #     설치기를 다시 돌려 사본을 스스로 되살린다.
@@ -71,10 +72,12 @@ log_event() {
 
 # ── 상태 읽기 ────────────────────────────────────────────────
 # 찢어진 상태 파일이 "영원히 정체"로 읽히면 안 된다. 파싱 불가 줄은 무시하고 0 을 쓴다.
-# 키가 두 개뿐인 옛 상태 파일도 그대로 읽혀야 한다(last_sync_at 은 0 이 된다).
+# 키가 두 개뿐인 옛 상태 파일도 그대로 읽혀야 한다(last_sync_at 과
+# recovery_attempted 는 0 이 된다).
 STALLED_SINCE=0
 LAST_RESTART_AT=0
 LAST_SYNC_AT=0
+RECOVERY_ATTEMPTED=0
 if [[ -f "${STATE_PATH}" ]]; then
   STATE_LINES=("${(@f)$(/bin/cat "${STATE_PATH}")}")
   for STATE_LINE in "${STATE_LINES[@]}"; do
@@ -84,21 +87,33 @@ if [[ -f "${STATE_PATH}" ]]; then
       LAST_RESTART_AT="${STATE_LINE#last_restart_at=}"
     elif [[ "${STATE_LINE}" =~ '^last_sync_at=[0-9]+$' ]]; then
       LAST_SYNC_AT="${STATE_LINE#last_sync_at=}"
+    elif [[ "${STATE_LINE}" =~ '^recovery_attempted=[01]$' ]]; then
+      RECOVERY_ATTEMPTED="${STATE_LINE#recovery_attempted=}"
     fi
   done
 fi
 
-write_state() {   # $1=stalled_since $2=last_restart_at $3=last_sync_at
+write_state() {   # $1=stalled_since $2=last_restart_at $3=last_sync_at $4=recovery_attempted
   if [[ "${DRY_RUN}" == "1" ]]; then
-    log_event "dry_run state_write_skipped stalled_since=$1 last_restart_at=$2 last_sync_at=$3"
+    log_event "dry_run state_write_skipped stalled_since=$1 last_restart_at=$2 last_sync_at=$3 recovery_attempted=$4"
     return 0
   fi
   local temp
   /bin/mkdir -p "${SUPPORT_DIRECTORY}"
   temp="$(/usr/bin/mktemp "${SUPPORT_DIRECTORY}/mi-rank-watchdog.state.XXXXXX")"
-  /usr/bin/printf 'stalled_since=%s\nlast_restart_at=%s\nlast_sync_at=%s\n' "$1" "$2" "$3" > "${temp}"
+  /usr/bin/printf 'stalled_since=%s\nlast_restart_at=%s\nlast_sync_at=%s\nrecovery_attempted=%s\n' \
+    "$1" "$2" "$3" "$4" > "${temp}"
   /bin/chmod 600 "${temp}"
   /bin/mv -f "${temp}" "${STATE_PATH}"
+}
+
+# 30분 임계는 신뢰 가능한 연속 관측이어야 한다. 네트워크/본문/제어면 관측이 끊기면
+# 정체 시계만 지운다. 이미 실행한 복구 latch 는 명시적인 ok:true 건강 관측 전까지
+# 보존해야 간헐적인 관측 장애가 같은 사고를 새 사고로 둔갑시키지 못한다.
+reset_recovery_observation() {
+  if (( STALLED_SINCE > 0 )); then
+    write_state 0 "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
+  fi
 }
 
 # ── 수집 진행 중 판정(드리프트 경로와 정체 재기동 경로가 함께 쓰는 단 하나의 구현) ──
@@ -202,7 +217,7 @@ chrome_restart_cycle() {   # $1 = 시작 로그 문구
     else
       log_event "chrome_quit_failed status=${QUIT_STATUS}"
     fi
-    write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}"
+    write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
     return 1
   fi
 
@@ -216,12 +231,12 @@ chrome_restart_cycle() {   # $1 = 시작 로그 문구
   OPEN_STATUS=$?
   if (( OPEN_STATUS != 0 )); then
     log_event "chrome_start_failed status=${OPEN_STATUS}"
-    write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}"
+    write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
     return "${OPEN_STATUS}"
   fi
 
   log_event "chrome_restarted profile=${PROFILE_DIRECTORY}"
-  write_state 0 "${NOW}" "${LAST_SYNC_AT}"
+  write_state 0 "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
   return 0
 }
 
@@ -328,7 +343,7 @@ runtime_drift_pass() {
     # 시계가 뒤로 점프해 last_sync_at 이 미래다. 남은 쿨다운을 계산할 수 없으므로
     # fail-closed 로 동기화를 보류하고 쿨다운 기준점만 현재 시각으로 재고정한다.
     log_event "sync_cooldown_clock_reset previous=${LAST_SYNC_AT}"
-    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}"
+    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}" "${RECOVERY_ATTEMPTED}"
     return 0
   fi
   if (( LAST_SYNC_AT > 0 && SYNC_ELAPSED < SYNC_COOLDOWN_SECONDS )); then
@@ -415,7 +430,7 @@ runtime_drift_pass() {
     /bin/mv -f "${BACKUP_PATH}" "${RUNTIME_COPY_PATH}"
     log_event "drift_sync_failed status=timeout"
     LAST_SYNC_AT="${NOW}"
-    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}"
+    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}" "${RECOVERY_ATTEMPTED}"
     return 0
   fi
   if (( INSTALL_STATUS != 0 )); then
@@ -424,13 +439,13 @@ runtime_drift_pass() {
     /bin/mv -f "${BACKUP_PATH}" "${RUNTIME_COPY_PATH}"
     log_event "drift_sync_failed status=${INSTALL_STATUS}"
     LAST_SYNC_AT="${NOW}"
-    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}"
+    write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}" "${RECOVERY_ATTEMPTED}"
     return 0
   fi
   /bin/rm -rf "${BACKUP_PATH}"
   log_event "drift_sync_ok files=${DRIFT_COUNT}"
   LAST_SYNC_AT="${NOW}"
-  write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}"
+  write_state "${STALLED_SINCE}" "${LAST_RESTART_AT}" "${NOW}" "${RECOVERY_ATTEMPTED}"
 
   # 동기화가 성공했을 때만 여기까지 온다. 확장 쪽 절반이 아직 남아 있다.
   # 확장은 사본으로 복사되지 않는다(installChromeBridge:229-232 는 manifest.json 을
@@ -490,12 +505,20 @@ BODY="$(/usr/bin/curl --fail --silent --show-error --location \
 CURL_STATUS=$?
 set -e
 if (( CURL_STATUS != 0 )); then
-  # 네트워크 장애는 정체가 아니다. 상태를 건드리지 않고 물러난다.
-  log_event "health_unreachable curl_status=${CURL_STATUS} action=none"
+  # 네트워크 장애는 정체가 아니다. 연속 관측을 끊고 물러난다.
+  log_event "health_unreachable curl_status=${CURL_STATUS} action=none continuity=reset"
+  reset_recovery_observation
   exit 0
 fi
-if ! print -r -- "${BODY}" | /usr/bin/grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
-  log_event "health_body_unusable action=none"
+if print -r -- "${BODY}" | /usr/bin/grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+  HEALTH_OK=1
+elif print -r -- "${BODY}" | /usr/bin/grep -Eq '"ok"[[:space:]]*:[[:space:]]*false'; then
+  # 장애 신호나 필수 관측 실패는 HTTP 200/ok:false 로 온다. 아래에서 알려진 복구
+  # 신호가 실제로 켜졌을 때만 제한된 복구를 시작한다.
+  HEALTH_OK=0
+else
+  log_event "health_body_unusable action=none continuity=reset"
+  reset_recovery_observation
   exit 0
 fi
 if print -r -- "${BODY}" | /usr/bin/grep -Eq '"queueStalled"[[:space:]]*:[[:space:]]*true'; then
@@ -503,8 +526,29 @@ if print -r -- "${BODY}" | /usr/bin/grep -Eq '"queueStalled"[[:space:]]*:[[:spac
 elif print -r -- "${BODY}" | /usr/bin/grep -Eq '"queueStalled"[[:space:]]*:[[:space:]]*false'; then
   QUEUE_STALLED=0
 else
-  log_event "health_body_unusable action=none"
+  log_event "health_body_unusable action=none continuity=reset"
+  reset_recovery_observation
   exit 0
+fi
+
+# 새 신호는 rolling deploy 중 구형 응답과 호환되도록 없으면 false 로 둔다. true/false 가
+# 명시되면 그 값을 사용한다. queue/worker 만 30분 연속 판정과 1회 복구 상태를 공유한다.
+# commit 정체는 Chrome 으로 풀 수 없는 서버/DB 진단 신호이므로 관측만 한다.
+WORKER_OUTDATED=0
+if print -r -- "${BODY}" | /usr/bin/grep -Eq '"workerOutdated"[[:space:]]*:[[:space:]]*true'; then
+  WORKER_OUTDATED=1
+fi
+COMMIT_STALLED=0
+if print -r -- "${BODY}" | /usr/bin/grep -Eq '"commitStalled"[[:space:]]*:[[:space:]]*true'; then
+  COMMIT_STALLED=1
+fi
+RECOVERY_REQUIRED=$(( QUEUE_STALLED || WORKER_OUTDATED ))
+RECOVERY_REASON=""
+if (( QUEUE_STALLED == 1 )); then
+  RECOVERY_REASON="queue"
+fi
+if (( WORKER_OUTDATED == 1 )); then
+  RECOVERY_REASON="${RECOVERY_REASON:+${RECOVERY_REASON}+}worker"
 fi
 # BSD sed(1) 은 라벨 없는 t 를 세미콜론으로 끝낼 수 없다. -n 과 p 플래그로 추출한다.
 STALLED_MINUTES="$(print -r -- "${BODY}" | /usr/bin/sed -n -E 's/.*"stalledMinutes"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p')"
@@ -513,10 +557,25 @@ if [[ -z "${STALLED_MINUTES}" ]]; then
 fi
 
 # ── 판정 ─────────────────────────────────────────────────────
-if (( QUEUE_STALLED == 0 )); then
+if (( RECOVERY_REQUIRED == 0 )); then
+  if (( COMMIT_STALLED == 1 )); then
+    log_event "commit_stalled action=none"
+    reset_recovery_observation
+    exit 0
+  fi
+  if (( HEALTH_OK == 0 )); then
+    # 필수 관측 query 실패나 수동복구 필요 상태처럼 ok:false 이지만 Chrome 으로
+    # 풀 수 있는 신호가 없는 경우다. 추측으로 재기동하지 않고 연속 관측을 끊는다.
+    log_event "health_not_recoverable action=none continuity=reset"
+    reset_recovery_observation
+    exit 0
+  fi
   if (( STALLED_SINCE > 0 )); then
     log_event "stall_cleared stalled_minutes=${STALLED_MINUTES}"
-    write_state 0 "${LAST_RESTART_AT}" "${LAST_SYNC_AT}"
+    write_state 0 "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" 0
+  elif (( RECOVERY_ATTEMPTED == 1 )); then
+    log_event "recovery_incident_cleared stalled_minutes=${STALLED_MINUTES}"
+    write_state 0 "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" 0
   else
     log_event "healthy stalled_minutes=${STALLED_MINUTES}"
   fi
@@ -525,15 +584,15 @@ fi
 
 if (( STALLED_SINCE <= 0 )); then
   # 첫 정체 관측만으로는 절대 재기동하지 않는다(맥 절전 복귀 오탐 차단).
-  log_event "stall_started stalled_minutes=${STALLED_MINUTES}"
-  write_state "${NOW}" "${LAST_RESTART_AT}" "${LAST_SYNC_AT}"
+  log_event "stall_started signal=${RECOVERY_REASON} stalled_minutes=${STALLED_MINUTES}"
+  write_state "${NOW}" "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
   exit 0
 fi
 
 STALLED_SECONDS=$(( NOW - STALLED_SINCE ))
 if (( STALLED_SECONDS < 0 )); then
   log_event "stall_clock_reset previous=${STALLED_SINCE}"
-  write_state "${NOW}" "${LAST_RESTART_AT}" "${LAST_SYNC_AT}"
+  write_state "${NOW}" "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
   exit 0
 fi
 if (( STALLED_SECONDS < STALL_REQUIRED_SECONDS )); then
@@ -546,7 +605,7 @@ if (( LAST_RESTART_AT > 0 && COOLDOWN_ELAPSED < 0 )); then
   # 시계가 뒤로 점프해 last_restart_at 이 미래다. 남은 쿨다운을 계산할 수 없으므로
   # fail-closed 로 재기동을 보류하고 쿨다운 기준점만 현재 시각으로 재고정한다.
   log_event "restart_cooldown_clock_reset previous=${LAST_RESTART_AT}"
-  write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}"
+  write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
   exit 0
 fi
 if (( LAST_RESTART_AT > 0 && COOLDOWN_ELAPSED < RESTART_COOLDOWN_SECONDS )); then
@@ -554,15 +613,21 @@ if (( LAST_RESTART_AT > 0 && COOLDOWN_ELAPSED < RESTART_COOLDOWN_SECONDS )); the
   exit 0
 fi
 
+# 한 사고에서 Chrome 복구는 성공·실패와 무관하게 최대 한 번이다. 신뢰 불가 관측은
+# 정체 시계만 끊으며 latch 를 지우지 않는다. 명시적인 ok:true 건강 관측만 위에서
+# latch 를 지우므로 네트워크가 흔들려도 두 번째 복구 시도가 생기지 않는다.
+if (( RECOVERY_ATTEMPTED == 1 )); then
+  log_event "restart_suppressed_incident_already_attempted stalled_seconds=${STALLED_SECONDS}"
+  exit 0
+fi
+
 # ── 재기동 무효/유해 가드 ────────────────────────────────────
-# 여기까지 왔다는 것은 "대기열 정체가 30분 이상 이어졌고 쿨다운도 비었다"는 뜻이다.
-# 그래도 Chrome 을 다시 여는 것이 유해하거나(수집을 도중에 절단) 무효인(레인은 살아
-# 있고 커밋만 없어 재기동으로는 아무것도 안 고쳐짐) 두 상태가 있다.
+# 여기까지 왔다는 것은 "복구 신호가 30분 이상 이어졌고 쿨다운도 비었다"는 뜻이다.
+# 그래도 Chrome 을 다시 열어 진행 중인 수집을 절단하면 유해하므로 먼저 물러난다.
 # 두 분기 모두 상태 파일을 쓰지 않는다 — 쿨다운(last_restart_at)을 태우면 정작 재기동이
 # 유효해지는 순간에 3시간을 손 놓게 되고, 정체 시작점(stalled_since)을 지우면 30분
 # 누적이 리셋돼 다음 틱이 다시 stall_started 부터 시작한다. 둘 다 이번 틱만 물러난다.
-# 판정 축은 지금도 queueStalled 하나뿐이다 — 아래 두 관측은 재기동을 '생략'시킬 뿐
-# 절대 '유발'하지 않으므로, 임계·쿨다운 판정을 모두 통과한 이 자리에서만 읽는다.
+# queue/worker 두 판정 축은 위에서 동일한 임계를 통과했다.
 
 # 가드 1 — 이 맥이 지금 수집 중이다. 드리프트 경로와 완전히 같은 판정을 그대로 쓴다.
 # 정체 판정은 서버가 본 전체 대기열 이야기이고, 이 신호는 "그 정체를 지금 풀고 있는
@@ -573,27 +638,22 @@ if collection_in_progress; then
   exit 0
 fi
 
-# 가드 2 — 레인이 살아 있다(= Chrome 재기동이 무효인 정체).
+# 가드 2 — queueStalled 단독인데 레인이 이미 살아 있다.
 # 헬스 본문 파싱은 이 스크립트의 기존 방식(jq 없이 grep/sed)을 그대로 따른다.
 # 신선 기준 15분은 서버의 WORKER_HEARTBEAT_STALE_MINUTES 와 같은 값이다
 # (src/server/naver-shopping/worker-runtime-expectation.mjs). 축이 갈라지면 한쪽은
 # 생존, 다른 쪽은 침묵이라고 동시에 보고하는 구간이 생긴다.
-# 두 신호 중 하나라도 서면 레인 생존으로 본다.
-#   · 하트비트가 15분 안쪽 — 수집기 프로세스는 매분 레인을 잡고 있다. Chrome 을 다시
-#     열어도 죽어 있던 것이 없으니 되살아날 것도 없다.
-#   · lanes.product.commitStalled — "레인은 잡히는데 커밋이 90분+ 없다"는 F11 축.
-#     2026-09-03 게이트 장애의 지문이고, 원인이 서버/게이트 쪽이라 맥 재기동으로는
-#     고쳐지지 않는다.
-# fail-safe: 파싱이 실패해 값이 비면 신선하다고 단정하지 않는다(= 재기동을 그대로
-# 진행). 이 가드의 오작동이 정체 감시를 멈추는 일은 없어야 한다.
+# 하트비트가 15분 안쪽이면 수집기 프로세스가 이미 queue 를 풀고 있으므로 이번 틱만
+# 물러난다. workerOutdated 가 직접 켜졌다면 신선한 하트비트가 바로 장애의 일부일 수
+# 있으므로 이 가드로 다시 숨기지 않는다. commitStalled 는 위에서 이미 재기동 없이
+# 종료했다. 파싱 실패도 생존으로 단정하지 않는다.
 HEARTBEAT_FRESH_MINUTES=15
 # BSD sed(1) 은 라벨 없는 t 를 세미콜론으로 끝낼 수 없다. -n 과 p 플래그로 추출한다.
 HEARTBEAT_AGE_MINUTES="$(print -r -- "${BODY}" | /usr/bin/sed -n -E 's/.*"heartbeatAgeMinutes"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p')"
 LANE_ALIVE=0
-if [[ "${HEARTBEAT_AGE_MINUTES}" =~ '^[0-9]+$' ]] && (( HEARTBEAT_AGE_MINUTES < HEARTBEAT_FRESH_MINUTES )); then
-  LANE_ALIVE=1
-fi
-if print -r -- "${BODY}" | /usr/bin/grep -Eq '"commitStalled"[[:space:]]*:[[:space:]]*true'; then
+if (( QUEUE_STALLED == 1 && WORKER_OUTDATED == 0 )) \
+  && [[ "${HEARTBEAT_AGE_MINUTES}" =~ '^[0-9]+$' ]] \
+  && (( HEARTBEAT_AGE_MINUTES < HEARTBEAT_FRESH_MINUTES )); then
   LANE_ALIVE=1
 fi
 if (( LANE_ALIVE == 1 )); then
@@ -607,6 +667,10 @@ if [[ "${DRY_RUN}" == "1" ]]; then
 fi
 
 # ── 재기동 ───────────────────────────────────────────────────
+# 실행 전 latch 와 시도 시각을 먼저 영구 저장한다. 프로세스가 재기동 중 끊기거나
+# Chrome 종료가 실패해도 다음 10분 틱이 같은 사고를 다시 실행하지 못한다.
+RECOVERY_ATTEMPTED=1
+write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
 set +e
 chrome_restart_cycle "restart_begin stalled_seconds=${STALLED_SECONDS}"
 RESTART_STATUS=$?

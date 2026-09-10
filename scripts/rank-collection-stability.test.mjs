@@ -28,12 +28,15 @@ import {
 import rankCollectionHealthHandler, {
   deliberateWorkerStopFromRow,
   rankCollectionHealthBody,
+  workerControlHealthyFromRow,
+  workerRecoverySuppressedFromRow,
 } from "../src/server/handlers/rank-collection-health.mjs";
 import {
   RANK_KEYWORD_GROUP_MAX_PAGES,
   RANK_KEYWORD_GROUP_PAGE_SIZE,
   countActiveProductKeywordGroups,
   normalizedRankKeywordKey,
+  observeActiveProductKeywordGroups,
 } from "../src/server/rank-capacity.mjs";
 import { placeTrackerPayload } from "../src/server/handlers/naver-place-rank-trackers.mjs";
 import {
@@ -856,8 +859,9 @@ const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
 const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
 // 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 앞 3키는 이름·순서·의미 불변.
 //   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). fail-safe null.
-//   commitStalled        — "하트비트 신선 AND 커밋 90분+ 없음 AND 활성 상품 추적기 > 0".
-//                          queueStalled 와 독립이고 최상위 ok 를 절대 뒤집지 않는다.
+//   commitStalled        — "의도된 정지 아님 AND 하트비트 신선 AND 커밋 90분+ 없음
+//                          AND 활성 상품 추적기 > 0".
+//                          queueStalled 와 독립이지만 수집 헬스 ok 는 false 로 뒤집는다.
 const HEALTH_PRODUCT_LANE_KEYS_IN_ORDER = [...HEALTH_LANE_KEYS_IN_ORDER, "lastCommitAgeMinutes", "commitStalled"];
 const HEALTH_FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
 const HEALTH_FAILSAFE_PRODUCT_LANE = Object.freeze({
@@ -924,6 +928,15 @@ test("F2: 응답 키 집합은 정확히 8개이며 순서까지 고정이다", 
   assert.deepEqual(declared, HEALTH_KEYS_SORTED, "verify-live 계약 배열은 정렬된 8키와 정확히 같아야 한다");
 });
 
+test("F2: 필수 관측 조회를 믿을 수 없으면 장애 불리언이 꺼져 있어도 ok:false 다", () => {
+  const body = rankCollectionHealthBody({ now: NOW, lanes: [], monitoringReliable: false });
+  assert.equal(body.queueStalled, false);
+  assert.equal(body.workerOutdated, false);
+  assert.equal(body.lanes.product.commitStalled, false);
+  assert.equal(body.ok, false);
+  assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER, "내부 reliability 판정은 공개 8키를 늘리지 않는다");
+});
+
 test("F2: 가장 오래된(worst) 레인이 lastSuccessAt 이다", () => {
   // 전제 반전. 옛 구현은 두 레인의 MAX 를 lastSuccessAt 으로 냈고, 이 입력에서
   // lastSuccessAt=-2시간 / stalledMinutes=120 / queueStalled=false 를 돌려주며
@@ -932,7 +945,7 @@ test("F2: 가장 오래된(worst) 레인이 lastSuccessAt 이다", () => {
     now: NOW,
     lanes: [lane("product", at(-10 * HOUR), true), lane("place", at(-2 * HOUR), false)],
   });
-  assert.equal(body.ok, true);
+  assert.equal(body.ok, false, "queueStalled 인 수집 헬스는 정상이 아니다");
   assert.equal(body.lastSuccessAt, at(-10 * HOUR));
   assert.equal(body.stalledMinutes, 600);
   assert.equal(body.queueStalled, true, "상품 레인이 10시간째 정체다");
@@ -1003,6 +1016,42 @@ test("F2: deliberateStop 이 참이면 queueStalled 를 눌러 둔다(상태 필
   );
 });
 
+test("F2/F11: deliberate cooldown 은 복구 신호를 억제하고 종료 직후 commit·worker 정체를 다시 드러낸다", () => {
+  const base = {
+    now: NOW,
+    lanes: [lane("product", at(-2 * HOUR), false), lane("place", at(-10 * 60 * 1000), false)],
+    primarySeenAt: at(-60_000),
+    lastSuccessAt: at(-2 * HOUR),
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-60_000),
+    trackers: { activeProduct: 1 },
+  };
+  const duringCooldown = rankCollectionHealthBody({
+    ...base,
+    deliberateStop: deliberateWorkerStopFromRow({ cooldown_until: at(HOUR) }, NOW),
+  });
+  assert.equal(duringCooldown.ok, false, "쿨다운은 안전한 정지이지만 정상 가동은 아니다");
+  assert.equal(duringCooldown.queueStalled, false);
+  assert.equal(duringCooldown.workerOutdated, false, "의도된 정지 중 Chrome 재기동 신호를 만들지 않는다");
+  assert.equal(duringCooldown.lanes.product.commitStalled, false);
+  assert.equal(duringCooldown.lanes.product.lastCommitAgeMinutes, 120, "커밋 나이 팩트는 보존한다");
+
+  const afterCooldown = rankCollectionHealthBody({
+    ...base,
+    deliberateStop: deliberateWorkerStopFromRow({ cooldown_until: at(-60_000) }, NOW),
+  });
+  assert.equal(afterCooldown.ok, false);
+  assert.equal(afterCooldown.workerOutdated, true, "쿨다운 종료 후 낡은 실행본 신호가 즉시 복원된다");
+  assert.equal(afterCooldown.lanes.product.commitStalled, true, "쿨다운 종료 후 커밋 정체가 즉시 복원된다");
+
+  const unreliableDuringCooldown = rankCollectionHealthBody({
+    ...base,
+    deliberateStop: true,
+    monitoringReliable: false,
+  });
+  assert.equal(unreliableDuringCooldown.ok, false, "의도된 정지가 query 신뢰도 실패까지 숨기면 안 된다");
+});
+
 test("F2: 의도된 정지는 쿨다운과 사람이 세운 사유 둘뿐이다(실행 검증)", () => {
   // 전제 반전. 옛 구현은 circuit_state 가 open/half_open 이면 무조건 "의도된 정지"로
   // 눌렀다. 회로가 열리는 사유 6종 중 5종은 수집기 자신의 실패로 자동 설정되고,
@@ -1032,6 +1081,33 @@ test("F2: 의도된 정지는 쿨다운과 사람이 세운 사유 둘뿐이다(
   assert.equal(deliberateWorkerStopFromRow({ cooldown_until: at(30 * 60 * 1000) }, NOW), true);
   assert.equal(deliberateWorkerStopFromRow({ cooldown_until: at(-30 * 60 * 1000) }, NOW), false);
   assert.equal(deliberateWorkerStopFromRow({ cooldown_until: "not-a-date" }, NOW), false);
+  assert.equal(workerControlHealthyFromRow({ cooldown_until: at(30 * 60 * 1000) }, NOW), false);
+  assert.equal(workerControlHealthyFromRow({ circuit_reason: "manual_stop" }, NOW), false);
+  assert.equal(workerControlHealthyFromRow({ cooldown_until: at(-30 * 60 * 1000) }, NOW), true);
+});
+
+test("F2: 수동복구 필요 terminal은 비정상이지만 Chrome 복구 신호는 억제한다", () => {
+  const row = { circuit_reason: "transient_recovery_manual_required" };
+  assert.equal(deliberateWorkerStopFromRow(row, NOW), false, "사람이 의도해 세운 정지는 아니다");
+  assert.equal(workerRecoverySuppressedFromRow(row, NOW), true);
+  assert.equal(workerControlHealthyFromRow(row, NOW), false);
+
+  const body = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [lane("product", at(-24 * HOUR), true)],
+    recoverySuppressed: true,
+    controlHealthy: false,
+    primarySeenAt: at(-24 * HOUR),
+    lastSuccessAt: at(-24 * HOUR),
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-60_000),
+    trackers: { activeProduct: 1 },
+  });
+  assert.equal(body.ok, false, "사람 판단이 필요한 terminal을 정상으로 보고하면 안 된다");
+  assert.equal(body.queueStalled, false);
+  assert.equal(body.workerOutdated, false);
+  assert.equal(body.lanes.product.commitStalled, false);
+  assert.equal(body.lanes.product.lastCommitAgeMinutes, 1440, "관측 팩트는 숨기지 않는다");
 });
 
 test("F2: 회로 사유 목록이 마이그레이션 원본과 일치한다", () => {
@@ -1060,16 +1136,19 @@ test("F2: 핸들러가 의도된 정지 상태를 실제로 읽어 전달한다"
   assert.ok(healthHandlerSource.includes("async function deliberateWorkerStop(ctx, now)"));
   // heartbeatAgeMinutes 의 두 재료를 같은 행에서 함께 읽는다 — 왕복은 늘리지 않는다.
   assert.ok(healthHandlerSource.includes('.select("circuit_state, circuit_reason, cooldown_until, primary_seen_at, last_success_at")'));
-  assert.ok(healthHandlerSource.includes("deliberateStop: deliberateWorkerStopFromRow(data, now),"));
+  assert.ok(healthHandlerSource.includes("const deliberateStop = deliberateWorkerStopFromRow(data, now);"));
+  assert.ok(healthHandlerSource.includes("recoverySuppressed: workerRecoverySuppressedFromRow(data, now),"));
+  assert.ok(healthHandlerSource.includes("controlHealthy: workerControlHealthyFromRow(data, now),"));
   assert.ok(healthHandlerSource.includes("deliberateWorkerStop(ctx, now),"));
   assert.ok(healthHandlerSource.includes("deliberateStop,"));
   // 컬럼이 아직 없는 환경에서는 cooldown_until 만 다시 읽는다.
   assert.ok(healthHandlerSource.includes('/circuit_state|circuit_reason|schema cache|does not exist/i.test(error.message || "")'));
   assert.ok(healthHandlerSource.includes('.select("cooldown_until")'));
-  // 읽기 실패는 "의도된 정지 아님"으로 두어 정체 감지를 죽이지 않는다.
-  // 반환이 객체가 된 뒤에도 안전 기본값(empty)의 deliberateStop 은 false 그대로다.
-  assert.ok(healthHandlerSource.includes("if (error || !data) return empty;"));
-  assert.ok(healthHandlerSource.includes('const empty = { deliberateStop: false, primarySeenAt: "", lastSuccessAt: "" };'));
+  // global 행 없음과 읽기 실패 모두 제어면을 증명할 수 없으므로 reliability 를 내린다.
+  assert.ok(healthHandlerSource.includes("if (error) return { ...empty, reliable: false };"));
+  assert.ok(healthHandlerSource.includes("if (!data) return { ...empty, reliable: false };"));
+  assert.ok(healthHandlerSource.includes("recoverySuppressed: false,"));
+  assert.ok(healthHandlerSource.includes("controlHealthy: true,"));
   // circuit_state 만으로 억제하던 옛 규칙은 남아 있으면 안 된다.
   assert.ok(!healthHandlerSource.includes('if (circuitState === "open" || circuitState === "half_open") return true;'));
 });
@@ -1210,7 +1289,7 @@ test("F11: 오늘 장애 재현 — primary_seen_at 신선·last_success_at 2시
   assert.equal(body.lanes.product.lastCommitAgeMinutes, 120);
   assert.equal(body.queueStalled, false, "commitStalled 는 queueStalled 와 독립이다");
   assert.equal(body.lanes.product.queueStalled, false);
-  assert.equal(body.ok, true, "최상위 ok 는 불변 — 판단은 소비자가 한다");
+  assert.equal(body.ok, false, "상품 커밋 정체를 정상으로 보고하지 않는다");
   assert.equal(body.heartbeatAgeMinutes, 1);
   assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER, "최상위 8키 이름·순서 불변");
   assert.deepEqual(Object.keys(body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
@@ -1344,7 +1423,7 @@ test("F7: 용량 모듈은 행 본문을 남기지 않고 정수만 돌려준다
   assert.ok(!rankCapacitySource.includes("JSON.stringify"), "행 본문을 직렬화하지 않는다");
   // 핸들러가 import 하는 경로·식별자에도 소문자 금지어가 없다.
   assert.ok(healthHandlerSource.includes('from "../rank-capacity.mjs"'));
-  assert.ok(healthHandlerSource.includes("countActiveProductKeywordGroups"));
+  assert.ok(healthHandlerSource.includes("observeActiveProductKeywordGroups"));
 
   // 성공 경로도 실패 경로도 반환은 언제나 정수다.
   const ok = await countActiveProductKeywordGroups(capacityClient([[{ keyword: "아이폰 케이스" }]]).client);
@@ -1504,8 +1583,8 @@ test("F2: 2026-09-01 사고 수치 재현 — 서명 54초 / 진척 14.4시간",
   });
   assert.equal(body.workerOutdated, true);
   assert.equal(body.heartbeatAgeMinutes, 864, "14.4시간 = 864분");
-  // 앞 4키는 이 신호에 전혀 영향받지 않는다 — 레인 표가 비었으므로 그대로 null·0·false.
-  assert.equal(body.ok, true);
+  // 레인 표가 비어도 낡은 작업기는 수집 헬스를 실패로 뒤집는다.
+  assert.equal(body.ok, false);
   assert.equal(body.lastSuccessAt, null);
   assert.equal(body.stalledMinutes, 0);
   assert.equal(body.queueStalled, false, "대기 중인 일이 없으면 정체가 아니다 — 그래서 사각지대였다");
@@ -1608,6 +1687,7 @@ test("F2: 핸들러가 두 관측 키를 실제 조회 결과로 채운다(사�
     assert.equal(response.status, 200);
     assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
     assert.equal(body.workerOutdated, true);
+    assert.equal(body.ok, false);
     assert.equal(body.heartbeatAgeMinutes, 864);
     // 왕복은 실제로 세 표를 모두 친다.
     assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_runs")));
@@ -1622,7 +1702,7 @@ test("F2: 핸들러가 두 관측 키를 실제 조회 결과로 채운다(사�
   }
 });
 
-test("F2: 관측 조회가 실패해도 200 을 503 으로 뒤집지 않는다", async () => {
+test("F2: 필수 관측 조회 실패는 200 표면을 유지하되 ok:false 로 거짓 정상을 막는다", async () => {
   const stub = stubHealthSupabase({
     naver_shopping_worker_runs: () => {
       // postgrest-js 는 fetch throw 를 3회 재시도하며 1s·2s·4s 를 실제로 기다린다
@@ -1641,12 +1721,121 @@ test("F2: 관측 조회가 실패해도 200 을 503 으로 뒤집지 않는다",
     const handler = await freshRankHealthHandler("degraded");
     const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
     const body = await response.json();
-    assert.equal(response.status, 200, "관측 조회 실패는 정체도 장애도 아니다");
-    assert.equal(body.ok, true);
+    assert.equal(response.status, 200, "부분 관측 실패로 엔드포인트 통신 자체를 끊지는 않는다");
+    assert.equal(body.ok, false, "읽지 못한 신호를 false 로 단정해 정상 처리하면 안 된다");
     assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
     assert.equal(body.workerOutdated, false, "신호가 없으면 단정하지 않는다");
     assert.equal(body.heartbeatAgeMinutes, 0);
     assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_runs")), "실제로 조회를 시도했다");
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: coordination 구형 축약 fallback 은 성공해도 전체 관측은 ok:false 다", async () => {
+  const stub = stubHealthRest((url) => {
+    if (url.pathname !== "/rest/v1/naver_shopping_worker_coordination") return null;
+    const select = url.searchParams.get("select") || "";
+    if (select.includes("circuit_state")) {
+      return new Response(
+        JSON.stringify({ message: "column naver_shopping_worker_coordination.circuit_state does not exist" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (select === "cooldown_until") return jsonRows([]);
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("successful-empty-fallback");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, false, "축약 조회는 heartbeat/commit 재료를 읽지 못한다");
+    assert.equal(body.heartbeatAgeMinutes, 0);
+    assert.equal(body.workerOutdated, false);
+    assert.equal(stub.calls.filter((call) => call.url.includes("naver_shopping_worker_coordination")).length, 2);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: coordination full 조회 성공이어도 global 행이 없으면 ok:false 다", async () => {
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") return countRows(0);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") return jsonRows([]);
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("full-query-empty-success");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, false, "필수 global 제어 행 소실을 정상 유휴로 단정하면 안 된다");
+    assert.equal(body.heartbeatAgeMinutes, 0);
+    assert.equal(body.workerOutdated, false);
+    assert.equal(stub.calls.filter((call) => call.url.includes("naver_shopping_worker_coordination")).length, 1);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: coordination manual-required는 200/ok:false이고 재기동 신호는 모두 꺼진다", async () => {
+  const now = Date.now();
+  const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") return countRows(0);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") {
+      return jsonRows([{
+        circuit_state: "open",
+        circuit_reason: "transient_recovery_manual_required",
+        cooldown_until: null,
+        primary_seen_at: iso(-24 * HOUR),
+        last_success_at: iso(-24 * HOUR),
+      }]);
+    }
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("manual-required-control");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    assert.equal(body.ok, false);
+    assert.equal(body.queueStalled, false);
+    assert.equal(body.workerOutdated, false);
+    assert.equal(body.lanes.product.commitStalled, false);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: active provider cooldown은 200/ok:false이며 Chrome 복구 신호만 억제한다", async () => {
+  const now = Date.now();
+  const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") return countRows(1);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") {
+      return jsonRows([{
+        circuit_state: "open",
+        circuit_reason: "collecting:provider_access_restricted",
+        cooldown_until: iso(HOUR),
+        primary_seen_at: iso(-60_000),
+        last_success_at: iso(-30 * 60 * 1000),
+      }]);
+    }
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("active-provider-cooldown-control");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    assert.equal(body.ok, false, "현재 수집이 차단된 쿨다운을 정상으로 승격하면 안 된다");
+    assert.equal(body.queueStalled, false);
+    assert.equal(body.workerOutdated, false);
+    assert.equal(body.lanes.product.commitStalled, false);
   } finally {
     stub.restore();
   }
@@ -1742,6 +1931,7 @@ test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상
     assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
     // 최상위는 최악(상품)만 말한다. 옛 6키 계약 그대로.
     assert.equal(body.queueStalled, true);
+    assert.equal(body.ok, false);
     assert.equal(body.stalledMinutes, 600);
     // lanes 가 어느 레인인지 말한다.
     assert.equal(body.lanes.product.queueStalled, true);
@@ -1870,8 +2060,8 @@ test("F11: 핸들러가 오늘 장애를 실제 조회로 재현한다 — prima
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
-    // 기존 감시축은 전부 "정상"이라고 말한다 — 바로 그것이 오늘의 사각지대였다.
-    assert.equal(body.ok, true);
+    // queueStalled 가 못 본 사각지대를 commitStalled 가 보완하고 ok 를 실패로 뒤집는다.
+    assert.equal(body.ok, false);
     assert.equal(body.queueStalled, false);
     assert.equal(body.workerOutdated, false);
     assert.equal(body.heartbeatAgeMinutes, 1);
@@ -1886,7 +2076,7 @@ test("F11: 핸들러가 오늘 장애를 실제 조회로 재현한다 — prima
   }
 });
 
-test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유지한다(fail-safe)", async () => {
+test("F2: 추적기 집계 조회 실패는 0 표면을 유지하되 ok:false 다", async () => {
   const stub = stubHealthRest((url, method) => {
     if (method === "HEAD") {
       return new Response(
@@ -1895,7 +2085,7 @@ test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유
       );
     }
     if (url.searchParams.get("select") === "keyword") {
-      // 열이 없는 환경으로 내려와도 관측 실패는 경보가 아니다.
+      // 공개 집계는 0 을 유지하지만 최상위 ok 는 false 여야 한다.
       return new Response(
         JSON.stringify({ message: "column naver_rank_trackers.keyword does not exist" }),
         { status: 400, headers: { "content-type": "application/json" } },
@@ -1907,8 +2097,8 @@ test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유
     const handler = await freshRankHealthHandler("trackers-degraded");
     const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
     const body = await response.json();
-    assert.equal(response.status, 200, "집계 조회 실패는 정체도 장애도 아니다");
-    assert.equal(body.ok, true);
+    assert.equal(response.status, 200, "집계 조회 실패로 통신 표면을 끊지는 않는다");
+    assert.equal(body.ok, false);
     assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
     assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
     assert.deepEqual(body.lanes, HEALTH_FAILSAFE_LANES);
@@ -1919,7 +2109,7 @@ test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유
   }
 });
 
-test("F2: 추적기 집계 fetch 가 throw 해도 200 을 유지한다(fail-safe)", async () => {
+test("F2: 추적기 집계 fetch throw 도 200/ok:false 로 표시한다", async () => {
   const stub = stubHealthRest((url, method) => {
     if (method === "HEAD") {
       const failure = new Error("count_unreachable");
@@ -1938,8 +2128,61 @@ test("F2: 추적기 집계 fetch 가 throw 해도 200 을 유지한다(fail-safe
     const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
     const body = await response.json();
     assert.equal(response.status, 200);
+    assert.equal(body.ok, false);
     assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
     assert.ok(stub.calls.some((call) => call.url.includes("select=keyword")));
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: 상품 그룹 조회만 실패해도 0 표면·200 을 유지하고 ok:false 다", async () => {
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") return countRows(0);
+    if (url.searchParams.get("select") === "keyword") {
+      return new Response(
+        JSON.stringify({ message: "capacity group read failed" }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
+    }
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("groups-only-degraded");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, false, "그룹 query 실패를 실제 0건으로 오인하면 안 된다");
+    assert.equal(body.trackers.activeProductKeywordGroups, 0);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: 상품 그룹 조회 성공 + 실제 빈 결과는 reliable 하며 ok:true 다", async () => {
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") return countRows(0);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") {
+      return jsonRows([{
+        circuit_state: null,
+        circuit_reason: null,
+        cooldown_until: null,
+        primary_seen_at: null,
+        last_success_at: null,
+      }]);
+    }
+    if (url.searchParams.get("select") === "keyword") return jsonRows([]);
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("groups-empty-success");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true, "성공한 query 의 0건은 관측 오류가 아니다");
+    assert.equal(body.trackers.activeProductKeywordGroups, 0);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
   } finally {
     stub.restore();
   }
@@ -2057,6 +2300,10 @@ test("F7: 최대 페이지에서 멈추고 그때까지의 하한값을 낸다",
   );
   // 상한에 닿아도 0 이 아니라 그때까지 센 수를 낸다 — 그 값이 하한이라는 사실을 주석이 말한다.
   assert.ok(rankCapacitySource.includes("하한"), "상한 도달 시 하한값이라는 사실을 주석에 남긴다");
+
+  const observation = await observeActiveProductKeywordGroups(capacityClient((index) => filledCapacityPage(`p${index}`)).client);
+  assert.equal(observation.value, total);
+  assert.equal(observation.reliable, false, "다음 페이지 유무를 확인하지 못한 하한값은 완전한 관측이 아니다");
 });
 
 test("F7: 어떤 조회 실패도 0 으로 접힌다(fail-safe)", async () => {
@@ -2070,6 +2317,20 @@ test("F7: 어떤 조회 실패도 0 으로 접힌다(fail-safe)", async () => {
   assert.equal(await countActiveProductKeywordGroups(notArray.client), 0);
   assert.equal(await countActiveProductKeywordGroups(undefined), 0, "클라이언트가 없어도 throw 하지 않는다");
   assert.equal(await countActiveProductKeywordGroups({ from() { throw new Error("no_table"); } }), 0);
+});
+
+test("F7: 그룹 observation 은 성공한 빈 결과와 조회 실패를 구분한다", async () => {
+  const empty = await observeActiveProductKeywordGroups(capacityClient([[]]).client);
+  assert.deepEqual(empty, { value: 0, reliable: true });
+
+  const error = await observeActiveProductKeywordGroups(capacityClient([[]], { errorAt: 0 }).client);
+  assert.deepEqual(error, { value: 0, reliable: false });
+
+  const notArray = await observeActiveProductKeywordGroups(capacityClient([], { notArrayAt: 0 }).client);
+  assert.deepEqual(notArray, { value: 0, reliable: false });
+
+  const thrown = await observeActiveProductKeywordGroups({ from() { throw new Error("no_table"); } });
+  assert.deepEqual(thrown, { value: 0, reliable: false });
 });
 
 test("F7: 표 이름은 인자로 받고 기본값은 상품 표다", async () => {
@@ -2403,13 +2664,17 @@ test("F2: 자가치유는 설치 스크립트를 CLI 로 부르지 않고 옵션
   );
 });
 
-test("F2: 엔드포인트 무응답이면 상태를 쓰지 않고 exit 0 이다", () => {
+test("F2: 엔드포인트 무응답이면 연속 장애 관측을 끊고 exit 0 이다", () => {
   const from = watchdogSource.indexOf('log_event "health_unreachable');
   assert.ok(from > 0);
   const to = watchdogSource.indexOf("\nfi", from);
   const branch = watchdogSource.slice(from, to);
-  assert.ok(!branch.includes("write_state"), "네트워크 실패는 상태를 건드리지 않는다");
+  assert.ok(branch.includes("reset_recovery_observation"), "관측 공백 뒤 즉시 재기동하지 않도록 연속성을 끊는다");
   assert.ok(branch.includes("exit 0"));
+  assert.ok(
+    watchdogSource.includes('write_state 0 "${LAST_RESTART_AT}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"'),
+    "신뢰 불가 관측은 정체 시계만 끊고 사고당 1회 latch 는 보존해야 한다",
+  );
 });
 
 test("F2: 첫 정체 관측만으로는 재기동하지 않는다", () => {
@@ -2441,16 +2706,23 @@ test("F2: 강제 종료 폴백이 없다", () => {
   }
 });
 
-test("F2/F12: 관측 키는 재기동을 '생략'할 때만 읽고 '유발'에는 절대 쓰지 않는다", () => {
-  // 재기동을 유발하는 판정 축은 지금도 queueStalled 하나뿐이다.
-  // workerOutdated 는 윈도우 워커가 낡은 실행본을 돌린다는 뜻이고, 맥에서 Chrome 을
-  // 다시 여는 것으로는 절대 고쳐지지 않는다. 고쳐지지도 않을 일에 재기동을 쓰면
-  // 3시간 쿨다운만 태워, 정작 진짜 대기열 정체가 왔을 때 손을 못 쓰게 된다.
-  assert.ok(!watchdogSource.includes("workerOutdated"), "워치독이 workerOutdated 를 읽으면 안 된다");
-  // F12: heartbeatAgeMinutes(및 lanes.product.commitStalled)는 정반대 방향으로만 읽는다 —
-  // "레인이 살아 있는데 커밋만 없는" 정체에서는 Chrome 재기동이 무효이므로 물러난다.
-  assert.ok(watchdogSource.includes('"heartbeatAgeMinutes"'), "F12: 재기동 생략 판정에 heartbeatAgeMinutes 를 읽는다");
-  assert.ok(watchdogSource.includes('"commitStalled"'), "F12: 재기동 생략 판정에 commitStalled 를 읽는다");
+test("F2/F12: queue·worker만 연속 관측 후 사고당 1회 복구하고 commit은 재기동하지 않는다", () => {
+  // queue/worker 는 같은 30분 연속 관측을 통과하되 한 연속 사고에서 딱 한 번만
+  // 재기동한다. commit 정체는 서버/DB 문제라 Chrome 복구 원인이 아니다.
+  assert.ok(watchdogSource.includes('"queueStalled"'));
+  assert.ok(watchdogSource.includes('"workerOutdated"'));
+  assert.ok(watchdogSource.includes('"commitStalled"'));
+  assert.ok(watchdogSource.includes("RECOVERY_REQUIRED=$(( QUEUE_STALLED || WORKER_OUTDATED ))"));
+  assert.ok(!watchdogSource.includes("RECOVERY_REQUIRED=$(( QUEUE_STALLED || WORKER_OUTDATED || COMMIT_STALLED ))"));
+  assert.ok(watchdogSource.includes('log_event "commit_stalled action=none"'));
+  assert.ok(watchdogSource.includes('log_event "restart_suppressed_incident_already_attempted'));
+  assert.ok(watchdogSource.includes("RECOVERY_ATTEMPTED=1"));
+  assert.ok(watchdogSource.includes("recovery_attempted=%s"));
+  assert.ok(watchdogSource.includes("STALL_REQUIRED_SECONDS=1800"));
+  assert.ok(!watchdogSource.includes("while (( RECOVERY_REQUIRED"), "장애 신호로 즉시 재시도 루프를 만들면 안 된다");
+  // F12: queueStalled 단독일 때는 신선한 하트비트가 "이미 복구 중"임을 뜻하므로 물러난다.
+  // workerOutdated 자체가 켜졌을 때만 이 억제로 신호를 다시 숨기지 않는다.
+  assert.ok(watchdogSource.includes('"heartbeatAgeMinutes"'), "F12: queue 단독 재기동 생략 판정에 heartbeatAgeMinutes 를 읽는다");
   assert.ok(watchdogSource.includes("HEARTBEAT_FRESH_MINUTES=15"), "신선 기준은 15분(WORKER_HEARTBEAT_STALE_MINUTES)이다");
   // 두 관측 키의 파싱은 재기동 임계(30분 연속)와 쿨다운 판정을 모두 통과한 뒤에만 나온다 —
   // 그 앞에서 읽으면 관측 키가 판정 축으로 승격될 위험이 생긴다.
@@ -2606,9 +2878,9 @@ function createWatchdogHome(state) {
   if (state) {
     // lastSyncAt 을 주지 않으면 웨이브 2 의 옛 2줄 형식을 그대로 쓴다. 아래 의사결정표
     // 9개 시나리오가 전부 옛 형식으로 도는 덕분에 하위호환이 표 전체로 증명된다.
-    const body = "lastSyncAt" in state
-      ? `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\nlast_sync_at=${state.lastSyncAt}\n`
-      : `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\n`;
+    let body = `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\n`;
+    if ("lastSyncAt" in state) body += `last_sync_at=${state.lastSyncAt}\n`;
+    if ("recoveryAttempted" in state) body += `recovery_attempted=${state.recoveryAttempted}\n`;
     fs.writeFileSync(path.join(supportDirectory, "mi-rank-watchdog.state"), body);
   }
   return home;
@@ -2727,27 +2999,31 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
   // F11 이후 상품 레인에는 lastCommitAgeMinutes·commitStalled 두 키가 더 실린다.
   // 정체 시나리오의 heartbeatAgeMinutes 기본값은 "Chrome 이 죽어 진척이 멈춘" 실제
   // 정체와 같은 낡은 값(700)이다 — 신선(<15)이면 F12 가드가 재기동을 생략한다.
-  const body = (queueStalled, stalledMinutes, options = {}) => JSON.stringify({
-    ok: true,
-    lastSuccessAt: new Date().toISOString(),
-    stalledMinutes,
-    queueStalled,
-    workerOutdated: options.workerOutdated === true,
-    heartbeatAgeMinutes: Number.isInteger(options.heartbeatAgeMinutes)
-      ? options.heartbeatAgeMinutes
-      : (queueStalled ? 700 : 0),
-    lanes: {
-      product: {
-        lastSuccessAt: new Date().toISOString(),
-        stalledMinutes,
-        queueStalled,
-        lastCommitAgeMinutes: Number.isInteger(options.lastCommitAgeMinutes) ? options.lastCommitAgeMinutes : null,
-        commitStalled: options.commitStalled === true,
+  const body = (queueStalled, stalledMinutes, options = {}) => {
+    const workerOutdated = options.workerOutdated === true;
+    const commitStalled = options.commitStalled === true;
+    return JSON.stringify({
+      ok: !(queueStalled || workerOutdated || commitStalled),
+      lastSuccessAt: new Date().toISOString(),
+      stalledMinutes,
+      queueStalled,
+      workerOutdated,
+      heartbeatAgeMinutes: Number.isInteger(options.heartbeatAgeMinutes)
+        ? options.heartbeatAgeMinutes
+        : (queueStalled ? 700 : 0),
+      lanes: {
+        product: {
+          lastSuccessAt: new Date().toISOString(),
+          stalledMinutes,
+          queueStalled,
+          lastCommitAgeMinutes: Number.isInteger(options.lastCommitAgeMinutes) ? options.lastCommitAgeMinutes : null,
+          commitStalled,
+        },
+        place: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 0, queueStalled: false },
       },
-      place: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 0, queueStalled: false },
-    },
-    trackers: { neverFound: 0, stuck: 0 },
-  });
+      trackers: { neverFound: 0, stuck: 0 },
+    });
+  };
 
   const scenarios = [
     { label: "(a) 정상 + 상태 없음", stalled: false, minutes: 3, state: null, expect: "healthy" },
@@ -2760,20 +3036,21 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
     { label: "(e) 정체 4000초 + 재기동 이력 없음", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, expect: "dry_run restart_would_run" },
     { label: "(f) 위 + 10분 전 재기동", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds - 600 }, expect: "restart_suppressed_cooldown" },
     { label: "(g) 위 + 시계 역행(미래 재기동 시각)", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds + 600 }, expect: "restart_cooldown_clock_reset" },
-    // 맥에서 Chrome 을 다시 열어도 윈도우 워커의 낡은 실행본은 고쳐지지 않는다. 고쳐지지도
-    // 않을 일에 재기동을 쓰면 3시간 쿨다운만 태워 진짜 정체 때 손을 못 쓴다. 관측 키가
-    // 켜져 있어도 대기열이 정상이면 워치독은 healthy 로 물러나야 한다.
-    { label: "(k) 낡은 워커 경보만 켜짐 + 대기열 정상", stalled: false, minutes: 3, state: null, options: { workerOutdated: true, heartbeatAgeMinutes: 864 }, expect: "healthy" },
+    // 낡은 워커도 즉시 재기동하지 않고 같은 30분 누적·3시간 쿨다운을 탄다.
+    { label: "(k) 낡은 워커 경보 첫 관측", stalled: false, minutes: 3, state: null, options: { workerOutdated: true, heartbeatAgeMinutes: 864 }, expect: "stall_started" },
+    { label: "(k2) 낡은 워커 4000초 지속", stalled: false, minutes: 3, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { workerOutdated: true, heartbeatAgeMinutes: 864 }, expect: "dry_run restart_would_run" },
+    { label: "(k3) 낡은 워커 + 10분 전 재기동", stalled: false, minutes: 3, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds - 600 }, options: { workerOutdated: true, heartbeatAgeMinutes: 864 }, expect: "restart_suppressed_cooldown" },
     // ── F12: 레인이 살아 있으면 Chrome 재기동은 무효다 ──
     // 오늘 장애의 모양: 정체 판정은 성립했는데 하트비트는 매분 갱신 중(레인 claim).
     // 이때 Chrome 을 다시 열어도 커밋은 돌아오지 않고 수집 사이클만 끊긴다.
     { label: "(l) 정체 4000초 + 하트비트 3분(레인 생존)", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 3 }, expect: "restart_skipped_lane_alive" },
-    { label: "(m) 정체 4000초 + commitStalled true", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 700, lastCommitAgeMinutes: 120, commitStalled: true }, expect: "restart_skipped_lane_alive" },
+    { label: "(m) commitStalled 단독", stalled: false, minutes: 120, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 3, lastCommitAgeMinutes: 120, commitStalled: true }, expect: "commit_stalled action=none" },
     // 15분 경계: 14분은 신선(생략), 15분부터는 낡음(재기동 진행).
     { label: "(n) 정체 4000초 + 하트비트 14분 — 경계 안쪽", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 14 }, expect: "restart_skipped_lane_alive" },
     { label: "(o) 정체 4000초 + 하트비트 15분 — 경계 바깥", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 15 }, expect: "dry_run restart_would_run" },
     // 가드보다 쿨다운 판정이 먼저다 — 순서가 뒤집히면 쿨다운 로그가 사라져 판독이 흐려진다.
     { label: "(p) 정체 4000초 + 10분 전 재기동 + 하트비트 3분", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds - 600 }, options: { heartbeatAgeMinutes: 3 }, expect: "restart_suppressed_cooldown" },
+    { label: "(q) 같은 연속 사고에서 이미 1회 시도", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0, recoveryAttempted: 1 }, expect: "restart_suppressed_incident_already_attempted" },
   ];
 
   for (const scenario of scenarios) {
@@ -2863,32 +3140,138 @@ test("F2: 워치독은 장애·불량 본문·허용목록 위반에서 안전�
   t.after(() => {
     for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
   });
-  const home = () => {
-    const created = createWatchdogHome(null);
+  const home = (state = null) => {
+    const created = createWatchdogHome(state);
     homes.push(created);
     return created;
   };
 
-  // (h) 엔드포인트가 죽어 있다 → 상태를 건드리지 않고 물러난다.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  // (h) 엔드포인트가 죽어 있다 → 이전 연속 관측을 끊고 물러난다.
   const closed = await startHealthServer(() => "{}");
   const deadUrl = `http://127.0.0.1:${closed.address().port}/api/rank-collection-health`;
   await new Promise((resolve) => closed.close(resolve));
-  const unreachable = await runWatchdog(home(), deadUrl);
+  const unreachable = await runWatchdog(home({
+    stalledSince: nowSeconds - 4000,
+    lastRestartAt: 0,
+    recoveryAttempted: 1,
+  }), deadUrl);
   assert.equal(unreachable.status, 0);
   assert.ok(unreachable.events[0].startsWith("health_unreachable"), unreachable.raw);
+  assert.ok(
+    unreachable.events.some((event) => event.includes("state_write_skipped stalled_since=0")
+      && event.includes("recovery_attempted=1")),
+    unreachable.raw,
+  );
 
-  // (i) 본문이 ok:true 가 아니다 → 판정하지 않는다.
-  const server = await startHealthServer(() => JSON.stringify({ ok: false, queueStalled: true, stalledMinutes: 900 }));
+  // (i) ok:false 인데 알려진 복구 신호가 하나도 없다 → 핵심 관측 실패로 보고 판정하지 않는다.
+  const server = await startHealthServer(() => JSON.stringify({
+    ok: false,
+    queueStalled: false,
+    workerOutdated: false,
+    stalledMinutes: 0,
+    lanes: { product: { commitStalled: false } },
+  }));
   const url = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
-  const unusable = await runWatchdog(home(), url);
+  const unusable = await runWatchdog(home({
+    stalledSince: nowSeconds - 4000,
+    lastRestartAt: 0,
+    recoveryAttempted: 1,
+  }), url);
   await new Promise((resolve) => server.close(resolve));
   assert.equal(unusable.status, 0);
-  assert.ok(unusable.events[0].startsWith("health_body_unusable"), unusable.raw);
+  assert.ok(unusable.events[0].startsWith("health_not_recoverable"), unusable.raw);
+  assert.ok(
+    unusable.events.some((event) => event.includes("state_write_skipped stalled_since=0")
+      && event.includes("recovery_attempted=1")),
+    unusable.raw,
+  );
 
   // (j) 허용목록 밖 URL → 프로브 자체를 하지 않고 exit 1.
   const invalid = await runWatchdog(home(), "http://example.com/api/rank-collection-health");
   assert.equal(invalid.status, 1);
   assert.ok(invalid.events[0].startsWith("health_url_invalid"), invalid.raw);
+});
+
+test("F2: 관측 공백이 있어도 같은 사고의 재기동 latch 는 건강 확인 전까지 유지된다", darwinOnly, async (t) => {
+  let responseBody = JSON.stringify({
+    ok: false,
+    queueStalled: false,
+    workerOutdated: false,
+    stalledMinutes: 0,
+    lanes: { product: { commitStalled: false } },
+  });
+  const server = await startHealthServer(() => responseBody);
+  const home = createWatchdogHome({
+    stalledSince: Math.floor(Date.now() / 1000) - 4000,
+    lastRestartAt: 0,
+    lastSyncAt: 0,
+    recoveryAttempted: 1,
+  });
+  t.after(() => {
+    server.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
+  const statePath = path.join(
+    home,
+    "Library/Application Support/MomentInsight/mi-rank-watchdog.state",
+  );
+
+  const unreliable = await runWatchdog(home, healthUrl);
+  assert.equal(unreliable.status, 0);
+  assert.ok(unreliable.events[0].startsWith("health_not_recoverable"), unreliable.raw);
+  assert.ok(
+    unreliable.events.some((event) => event.includes("stalled_since=0")
+      && event.includes("recovery_attempted=1")),
+    unreliable.raw,
+  );
+
+  // DRY_RUN 은 상태를 쓰지 않으므로 직전 분기가 기록하겠다고 증명한 값을 다음 틱의
+  // 입력으로 옮긴다. 실제 파일 파서와 실제 zsh 분기를 연속 세 틱 실행한다.
+  fs.writeFileSync(
+    statePath,
+    "stalled_since=0\nlast_restart_at=0\nlast_sync_at=0\nrecovery_attempted=1\n",
+  );
+  responseBody = JSON.stringify({
+    ok: false,
+    queueStalled: true,
+    workerOutdated: false,
+    heartbeatAgeMinutes: 700,
+    stalledMinutes: 700,
+    lanes: { product: { commitStalled: false } },
+  });
+  const firstReliable = await runWatchdog(home, healthUrl);
+  assert.ok(firstReliable.events.some((event) => event.startsWith("stall_started")), firstReliable.raw);
+  assert.ok(
+    firstReliable.events.some((event) => event.includes("recovery_attempted=1")),
+    firstReliable.raw,
+  );
+
+  fs.writeFileSync(
+    statePath,
+    `stalled_since=${Math.floor(Date.now() / 1000) - 4000}\nlast_restart_at=0\nlast_sync_at=0\nrecovery_attempted=1\n`,
+  );
+  const persistentFailure = await runWatchdog(home, healthUrl);
+  assert.ok(
+    persistentFailure.events.some((event) => event.startsWith("restart_suppressed_incident_already_attempted")),
+    persistentFailure.raw,
+  );
+
+  responseBody = JSON.stringify({
+    ok: true,
+    queueStalled: false,
+    workerOutdated: false,
+    heartbeatAgeMinutes: 0,
+    stalledMinutes: 0,
+    lanes: { product: { commitStalled: false } },
+  });
+  const healthy = await runWatchdog(home, healthUrl);
+  assert.ok(healthy.events.some((event) => event.startsWith("stall_cleared")), healthy.raw);
+  assert.ok(
+    healthy.events.some((event) => event.includes("recovery_attempted=0")),
+    healthy.raw,
+  );
 });
 
 test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정된다", darwinOnly, async (t) => {

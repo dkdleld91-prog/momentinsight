@@ -99,6 +99,10 @@ async function createSchedulerDatabase(worker = workerA) {
       last_failure_code text,
       runtime_version text,
       runtime_fingerprint text,
+      last_success_at timestamptz,
+      transient_standby_handoff_at timestamptz,
+      transient_standby_handoff_worker_id text,
+      transient_standby_handoff_success_at timestamptz,
       current_stage text,
       current_page integer not null default 0,
       current_job_kind text,
@@ -172,8 +176,11 @@ async function createSchedulerDatabase(worker = workerA) {
       claimed_cycle_id uuid
     );
 
-    insert into public.naver_shopping_worker_coordination(lane_key)
-    values ('global');
+    insert into public.naver_shopping_worker_coordination(
+      lane_key, runtime_version, runtime_fingerprint
+    ) values (
+      'global', '${runtimeVersion}', '${runtimeFingerprint}'
+    );
   `);
   await database.exec(queueFunction.sql);
   await database.exec(recoveryEligibilityFunction.sql);
@@ -188,9 +195,9 @@ async function createSchedulerDatabase(worker = workerA) {
 async function claimLane(database, worker) {
   const lane = await database.query(`
     select public.mi_claim_naver_shopping_worker_lane(
-      $1::text, 'primary'::text, $2::uuid, 600, 180
+      $1::text, 'primary'::text, $2::uuid, 600, 180, $3::text, $4::text
     ) as result
-  `, [worker.id, worker.token]);
+  `, [worker.id, worker.token, runtimeVersion, runtimeFingerprint]);
   return lane.rows[0].result;
 }
 

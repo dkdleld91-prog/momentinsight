@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "56c63d6e25e0c633ff36a97f5a0e7f830a3a847e1893e2a8ec5673f59cbe9323"
+      "sha256": "e07c1adcffa849225ea871180dfcb9877df00f9d29f6b1cec99797da126d065b"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -833,6 +833,12 @@
       "id": "shopping-runtime-neutral-admission-rpcs",
       "file": "supabase/migrations/20260903213000_naver_shopping_runtime_neutral_admission_rpcs.sql",
       "sha256": "e4f8345d24e100c846f924ca4887a5959555d1efdb79d9aedf84e1c64b805402",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-bounded-standby-half-open-handoff",
+      "file": "supabase/migrations/20260910055050_naver_shopping_bounded_standby_half_open_handoff.sql",
+      "sha256": "29d3f70370adacc21842271c7effb9bc6ea88dfc30ba86b7a4ddef2b198c2b16",
       "rankMigration": true
     }
   ]

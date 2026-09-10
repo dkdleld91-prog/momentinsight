@@ -722,6 +722,8 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_lease_token: LANE_TOKEN,
       p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
+      p_runtime_version: "1.1.21",
+      p_runtime_fingerprint: RUNTIME_FINGERPRINT,
     });
   });
 });

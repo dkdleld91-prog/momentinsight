@@ -31,7 +31,7 @@ const RANK_HEALTH_KEYS_SORTED = [
   "trackers",
   "workerOutdated",
 ];
-// verify-live.mjs 가 대조하는 8키를 응답 순서 그대로 담은 스텁 본문.
+// verify-live.mjs 가 대조하는 8키와 상품 수집 신선도를 담은 스텁 본문.
 const RANK_HEALTH_STUB_BODY = {
   ok: true,
   lastSuccessAt: "2026-09-03T00:00:00.000Z",
@@ -39,8 +39,23 @@ const RANK_HEALTH_STUB_BODY = {
   queueStalled: false,
   workerOutdated: false,
   heartbeatAgeMinutes: 0,
-  lanes: {},
-  trackers: { neverFound: 0, stuck: 0 },
+  lanes: {
+    product: {
+      lastSuccessAt: "2026-09-03T00:00:00.000Z",
+      stalledMinutes: 1,
+      queueStalled: false,
+      lastCommitAgeMinutes: 1,
+      commitStalled: false,
+    },
+    place: { lastSuccessAt: "2026-09-03T00:00:00.000Z", stalledMinutes: 1, queueStalled: false },
+  },
+  trackers: {
+    neverFound: 0,
+    stuck: 0,
+    placePartial: 0,
+    activeProduct: 1,
+    activeProductKeywordGroups: 1,
+  },
 };
 
 const HEALTH_ENV_KEYS = ["VERCEL_GIT_COMMIT_REF", "VERCEL_GIT_COMMIT_SHA", "GIT_COMMIT_SHA", "VERCEL_REGION"];
@@ -66,7 +81,7 @@ async function healthBody() {
 
 // 프로덕션 6항목을 그대로 흉내 내는 최소 스텁. 포트는 0 으로 받아 다른 세션과
 // 충돌하지 않게 한다.
-function startStubServer({ release }) {
+function startStubServer({ release, rankHealthBody = RANK_HEALTH_STUB_BODY }) {
   const server = http.createServer((request, response) => {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
     const sendJson = (status, body) => {
@@ -97,7 +112,7 @@ function startStubServer({ release }) {
       case "/api/session":
         return sendJson(401, { ok: false, error: "unauthorized" });
       case "/api/rank-collection-health":
-        return sendJson(200, RANK_HEALTH_STUB_BODY);
+        return sendJson(200, rankHealthBody);
       default:
         return sendJson(404, { ok: false, error: "not_found" });
     }
@@ -229,6 +244,87 @@ test("A2: release 가 어긋나면 1번 항목이 FAIL 이고 exit 1 이다", as
   }
 });
 
+test("A2: 순위 헬스 장애 boolean 또는 상품 커밋 노후화를 배포 성공으로 받지 않는다", async (t) => {
+  const release = "abc123def456";
+  const scenarios = [
+    { label: "ok false", patch: { ok: false } },
+    { label: "queue stalled", patch: { ok: false, queueStalled: true } },
+    { label: "worker outdated", patch: { ok: false, workerOutdated: true } },
+    {
+      label: "commit stalled",
+      patch: { ok: false },
+      lanePatch: { lastCommitAgeMinutes: 120, commitStalled: true },
+    },
+    { label: "commit age unknown", lanePatch: { lastCommitAgeMinutes: null } },
+    { label: "commit age stale", lanePatch: { lastCommitAgeMinutes: 91 } },
+    { label: "active product invalid", trackerPatch: { activeProduct: null } },
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.label, async () => {
+      const rankHealthBody = {
+        ...RANK_HEALTH_STUB_BODY,
+        ...scenario.patch,
+        lanes: {
+          ...RANK_HEALTH_STUB_BODY.lanes,
+          product: {
+            ...RANK_HEALTH_STUB_BODY.lanes.product,
+            ...scenario.lanePatch,
+          },
+        },
+        trackers: {
+          ...RANK_HEALTH_STUB_BODY.trackers,
+          ...scenario.trackerPatch,
+        },
+      };
+      const { server, url } = await startStubServer({ release, rankHealthBody });
+      try {
+        const result = await runVerifyLive(
+          verifyLiveEnv({ MI_VERIFY_LIVE_BASE_URL: url, MI_VERIFY_LIVE_RELEASE: release }),
+        );
+        assert.equal(result.code, 1, `stdout=${result.stdout} stderr=${result.stderr}`);
+        assert.match(result.stdout, /FAIL 4\)/u);
+      } finally {
+        await closeServer(server);
+      }
+    });
+  }
+});
+
+test("A2: 활성 상품 0건이면 commit 이력 없음·노후화는 정상 무작업으로 허용한다", async (t) => {
+  const release = "abc123def456";
+  for (const lastCommitAgeMinutes of [null, 999]) {
+    await t.test(`lastCommitAgeMinutes=${String(lastCommitAgeMinutes)}`, async () => {
+      const rankHealthBody = {
+        ...RANK_HEALTH_STUB_BODY,
+        lanes: {
+          ...RANK_HEALTH_STUB_BODY.lanes,
+          product: {
+            ...RANK_HEALTH_STUB_BODY.lanes.product,
+            lastCommitAgeMinutes,
+            commitStalled: false,
+          },
+        },
+        trackers: {
+          ...RANK_HEALTH_STUB_BODY.trackers,
+          activeProduct: 0,
+          activeProductKeywordGroups: 0,
+        },
+      };
+      const { server, url } = await startStubServer({ release, rankHealthBody });
+      try {
+        const result = await runVerifyLive(
+          verifyLiveEnv({ MI_VERIFY_LIVE_BASE_URL: url, MI_VERIFY_LIVE_RELEASE: release }),
+        );
+        assert.equal(result.code, 0, `stdout=${result.stdout} stderr=${result.stderr}`);
+        assert.match(result.stdout, /PASS 4\)/u);
+      } finally {
+        await closeServer(server);
+      }
+    });
+  }
+});
+
 test("A2: MI_VERIFY_LIVE_SKIP_FETCH 는 fetch 없이 origin/main 만 읽는다(base=checkout)", async (t) => {
   const release = localOriginMainRelease();
   if (!release) {
@@ -248,7 +344,7 @@ test("A2: MI_VERIFY_LIVE_SKIP_FETCH 는 fetch 없이 origin/main 만 읽는다(b
   }
 });
 
-test("A2: skip-fetch 분기는 소스에 남아 있고 8키 계약은 그대로다", () => {
+test("A2: skip-fetch 분기·8키·장애 boolean·상품 커밋 신선도 계약이 소스에 남아 있다", () => {
   const verifyLive = readRepoFile("scripts/verify-live.mjs");
   assert.match(verifyLive, /MI_VERIFY_LIVE_SKIP_FETCH/u);
   assert.match(verifyLive, /"checkout"/u);
@@ -256,6 +352,13 @@ test("A2: skip-fetch 분기는 소스에 남아 있고 8키 계약은 그대로�
   assert.match(verifyLive, /"override"/u);
   assert.match(verifyLive, /"fetch_failed"/u);
   assert.ok(verifyLive.includes("rankKeys.length === RANK_HEALTH_KEYS.length"));
+  assert.ok(verifyLive.includes("rankHealth.body?.ok === true"));
+  assert.ok(verifyLive.includes("rankHealth.body?.queueStalled === false"));
+  assert.ok(verifyLive.includes("rankHealth.body?.workerOutdated === false"));
+  assert.ok(verifyLive.includes("activeProductValid"));
+  assert.ok(verifyLive.includes("productCommitFresh"));
+  assert.ok(verifyLive.includes("productLane?.commitStalled === false"));
+  assert.ok(verifyLive.includes("lastCommitAgeMinutes <= WORKER_COMMIT_STALL_MINUTES"));
   const arrayStart = verifyLive.indexOf("const RANK_HEALTH_KEYS = [");
   const arrayEnd = verifyLive.indexOf("];", arrayStart);
   const declared = [...verifyLive.slice(arrayStart, arrayEnd).matchAll(/"([A-Za-z]+)"/gu)].map((match) => match[1]);

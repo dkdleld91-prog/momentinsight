@@ -3,7 +3,7 @@
 //   ① /health.release == git rev-parse --short=12 origin/main  (잘못된 브랜치·미배포 탐지)
 //   ② /ready ok:true                                            (의존성 준비 상태)
 //   ③ /admin·/client 200 · 비인증 /api/session 401              (화면 생존 + 인증 경계)
-//   ④ /api/rank-collection-health 200 + 워치독 8키 계약           (워치독이 읽는 표면)
+//   ④ /api/rank-collection-health 200 + 8키·장애 불리언·상품 커밋 신선도
 // 하나라도 실패하면 exit 1. 비교 기준은 MI_VERIFY_LIVE_RELEASE 로 덮어쓸 수 있다.
 // MI_VERIFY_LIVE_SKIP_FETCH 는 CI 전용 예외다. GitHub Actions 의 actions/checkout 은
 // fetch-depth: 0 으로 방금 모든 ref 를 받아 놓지만 persist-credentials: false 라
@@ -11,6 +11,7 @@
 // 인증 실패로 끝나고, 정상 배포가 fetch_failed 로 오진된다. 체크아웃이 방금 끝나
 // 신선하다는 것을 호출자가 보증할 때만 fetch 를 건너뛴다.
 import { execFileSync } from "node:child_process";
+import { WORKER_COMMIT_STALL_MINUTES } from "../src/server/naver-shopping/worker-runtime-expectation.mjs";
 
 const BASE = String(process.env.MI_VERIFY_LIVE_BASE_URL || "https://insight.momentlabs.co.kr").replace(/\/+$/, "");
 // 정렬된 8키 계약. 4키(ok, lastSuccessAt, stalledMinutes, queueStalled)는 워치독
@@ -92,10 +93,36 @@ record("3) 비인증 GET /api/session 401", session.status === 401, `http=${sess
 
 const rankHealth = await probe("/api/rank-collection-health");
 const rankKeys = rankHealth.body && typeof rankHealth.body === "object" ? Object.keys(rankHealth.body).sort() : [];
+const productLane = rankHealth.body?.lanes?.product;
+const lastCommitAgeMinutes = productLane?.lastCommitAgeMinutes;
+const activeProduct = rankHealth.body?.trackers?.activeProduct;
+const activeProductValid = Number.isInteger(activeProduct) && activeProduct >= 0;
+// 활성 상품이 있을 때만 최근 commit 이 필수다. activeProduct=0인 정상 무작업 환경은
+// 마지막 commit 이 없거나 오래된 것이 자연스럽지만, 음수/비정수 관측은 계약 위반이다.
+const productCommitFresh = activeProductValid
+  && productLane?.commitStalled === false
+  && (activeProduct === 0
+    ? (lastCommitAgeMinutes === null
+      || (Number.isInteger(lastCommitAgeMinutes) && lastCommitAgeMinutes >= 0))
+    : (Number.isInteger(lastCommitAgeMinutes)
+      && lastCommitAgeMinutes >= 0
+      && lastCommitAgeMinutes <= WORKER_COMMIT_STALL_MINUTES));
+const rankContractHealthy = rankHealth.status === 200
+  && rankKeys.length === RANK_HEALTH_KEYS.length
+  && rankKeys.every((key, index) => key === RANK_HEALTH_KEYS[index])
+  && rankHealth.body?.ok === true
+  && rankHealth.body?.queueStalled === false
+  && rankHealth.body?.workerOutdated === false
+  && productCommitFresh;
 record(
-  `4) /api/rank-collection-health 200 + 키 [${RANK_HEALTH_KEYS.join(",")}]`,
-  rankHealth.status === 200 && rankKeys.length === RANK_HEALTH_KEYS.length && rankKeys.every((key, index) => key === RANK_HEALTH_KEYS[index]),
-  `http=${rankHealth.status} keys=[${rankKeys.join(",")}]`,
+  `4) /api/rank-collection-health 정상 + 키 [${RANK_HEALTH_KEYS.join(",")}]`,
+  rankContractHealthy,
+  `http=${rankHealth.status} ok=${String(rankHealth.body?.ok)} queueStalled=${String(rankHealth.body?.queueStalled)}`
+    + ` workerOutdated=${String(rankHealth.body?.workerOutdated)}`
+    + ` commitStalled=${String(productLane?.commitStalled)}`
+    + ` activeProduct=${String(activeProduct)}`
+    + ` lastCommitAgeMinutes=${String(lastCommitAgeMinutes)} max=${WORKER_COMMIT_STALL_MINUTES}`
+    + ` keys=[${rankKeys.join(",")}]`,
 );
 
 console.log(`verify:live target=${BASE}`);

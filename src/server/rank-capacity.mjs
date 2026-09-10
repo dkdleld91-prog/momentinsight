@@ -1,13 +1,13 @@
 // 순위 수집 용량 가시화(2026-09-03, F7). 지금 활성 상품 추적기가 몇 개의 "검색어 묶음"을
-// 도는지를 수치로만 보여 준다. 상한 판단도, 경보도, 합격/불합격 판정도 하지 않는다 —
-// 이 모듈이 내는 값은 화면과 헬스 응답이 사람에게 읽히는 정수 하나뿐이다.
+// 도는지를 수치로 보여 준다. 집계값 자체로 상한·장애를 판정하지는 않지만, 조회 성공
+// 여부는 별도 reliability 로 돌려 헬스가 관측 실패를 정상으로 오인하지 않게 한다.
 //
 // 왜 헬스 핸들러가 아니라 별도 모듈인가:
 // /api/rank-collection-health 는 무인증 공개 표면이라 "핸들러 소스에 계정 데이터 열 이름이
 // 한 글자도 없어야 한다"는 가드가 테스트로 고정되어 있다(F2). 이 집계는 그 열을 실제로
-// 읽어야 하므로 읽는 코드를 여기로 분리하고, 핸들러는 정수만 돌려받는다. 파일명·export
-// 식별자에도 소문자 열 이름이 들어가지 않게 대문자 K 를 쓴다(import 경로가 핸들러
-// 소스에 그대로 남기 때문이다).
+// 읽어야 하므로 읽는 코드를 여기로 분리하고, 핸들러는 정수와 신뢰도만 돌려받는다.
+// 파일명·export 식별자에도 소문자 열 이름이 들어가지 않게 대문자 K 를 쓴다(import
+// 경로가 핸들러 소스에 그대로 남기 때문이다).
 //
 // 왜 페이지로 읽는가:
 // PostgREST 에는 count(distinct …) 가 없다. 그래서 활성 행의 해당 열만 페이지 단위로
@@ -32,16 +32,18 @@ export const RANK_KEYWORD_GROUP_MAX_PAGES = 10;
 
 // 활성 상품 추적기의 정규화 검색어 distinct 수. 관측 전용이다.
 //
-// 반환은 언제나 비음수 정수다. 어떤 실패(PostgREST error·체인 throw·배열이 아닌 data)도
-// 0 으로 접는다 — 이 값을 쓰는 헬스 엔드포인트의 규약이 "관측 실패는 경보가 아니다" 이고,
-// 실패를 추정치로 메우면 화면이 없는 사실을 단정하게 된다.
+// observation export 는 성공 여부를 값과 분리한다. 조회 성공 + 실제 빈 결과는
+// { value: 0, reliable: true }, PostgREST error·체인 throw·배열이 아닌 data 는
+// { value: 0, reliable: false } 다. 공개 헬스 표면의 정수 0 계약은 유지하되, 실패를
+// 실제 0건으로 오인해 ok:true 로 만드는 거짓 정상은 핸들러가 막을 수 있다.
 //
 // 최대 페이지에 닿아 멈춘 경우의 반환값은 실제 그룹 수가 아니라 그때까지 센 수, 즉
 // 하한값이다. 지금 규모(활성 약 71행)에서는 도달할 수 없는 경로이며, 도달한다면 그것
 // 자체가 규모가 설계 전제를 넘었다는 뜻이므로 0 으로 지우지 않고 본 만큼을 낸다.
-export async function countActiveProductKeywordGroups(supabaseAdmin, table = "naver_rank_trackers") {
+export async function observeActiveProductKeywordGroups(supabaseAdmin, table = "naver_rank_trackers") {
   try {
     const groups = new Set();
+    let complete = false;
     for (let page = 0; page < RANK_KEYWORD_GROUP_MAX_PAGES; page += 1) {
       const from = page * RANK_KEYWORD_GROUP_PAGE_SIZE;
       const { data, error } = await supabaseAdmin
@@ -49,17 +51,29 @@ export async function countActiveProductKeywordGroups(supabaseAdmin, table = "na
         .select("keyword")
         .eq("status", "active")
         .range(from, from + RANK_KEYWORD_GROUP_PAGE_SIZE - 1);
-      if (error || !Array.isArray(data)) return 0;
+      if (error || !Array.isArray(data)) return { value: 0, reliable: false };
       for (const row of data) {
         const key = normalizedRankKeywordKey(row?.keyword);
         // 빈 키는 그룹이 아니다. 세면 "정체 불명" 하나가 용량으로 둔갑한다.
         if (key) groups.add(key);
       }
       // 페이지가 덜 찼으면 마지막 페이지다. 꽉 찼을 때만 다음 페이지를 부른다.
-      if (data.length < RANK_KEYWORD_GROUP_PAGE_SIZE) break;
+      if (data.length < RANK_KEYWORD_GROUP_PAGE_SIZE) {
+        complete = true;
+        break;
+      }
     }
-    return groups.size;
+    // 마지막 허용 페이지도 꽉 찼으면 뒤에 행이 더 있는지 확인하지 못했다. 기존 정수
+    // export 는 하한값을 유지하지만 헬스는 이 불완전 관측을 정상으로 단정하지 않는다.
+    return { value: groups.size, reliable: complete };
   } catch {
-    return 0;
+    return { value: 0, reliable: false };
   }
+}
+
+// 기존 소비자의 비음수 정수 반환 계약은 그대로 둔다. 조회 신뢰도가 필요한 헬스
+// 핸들러만 위 observation export 를 사용한다.
+export async function countActiveProductKeywordGroups(supabaseAdmin, table = "naver_rank_trackers") {
+  const observation = await observeActiveProductKeywordGroups(supabaseAdmin, table);
+  return observation.value;
 }

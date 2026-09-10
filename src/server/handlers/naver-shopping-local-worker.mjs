@@ -380,13 +380,15 @@ async function recordWorkerFailure(ctx, body) {
 
 async function claimWorkerLane(ctx, body) {
   const lane = workerLaneInput(body, { requireRole: true });
-  workerControlInput(body);
+  const control = workerControlInput(body);
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_worker_lane", {
     p_worker_id: lane.workerId,
     p_worker_role: lane.workerRole,
     p_lease_token: lane.laneToken,
     p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
     p_primary_stale_seconds: 180,
+    p_runtime_version: control.runtimeVersion,
+    p_runtime_fingerprint: control.runtimeFingerprint,
   });
   if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.granted !== "boolean") {

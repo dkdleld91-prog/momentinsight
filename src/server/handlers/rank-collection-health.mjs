@@ -7,8 +7,8 @@ import {
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
 // 계정 데이터 열을 실제로 읽는 코드는 이 파일에 두지 않는다(아래 trackers 주석 참고).
-// 여기서는 집계된 정수 하나만 돌려받는다.
-import { countActiveProductKeywordGroups } from "../rank-capacity.mjs";
+// 여기서는 집계된 정수와 그 조회 신뢰도만 돌려받는다.
+import { observeActiveProductKeywordGroups } from "../rank-capacity.mjs";
 import {
   commitAgeMinutes,
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
@@ -38,6 +38,9 @@ const WORKER_NONCE_TABLE = "naver_shopping_worker_nonces";
 // 사람이 의도적으로 세울 때만 남는 사유. 그 외 circuit_reason 은 전부 수집기 자신의
 // 실패로 자동 설정된다(아래 deliberateWorkerStopFromRow 주석의 실측 근거 참고).
 const DELIBERATE_CIRCUIT_REASONS = new Set(["manual_stop", "manual_canary"]);
+// 자동 복구 종료 후 사람 판단이 필요한 상태다. 정상은 아니므로 ok는 false 지만,
+// Chrome 재기동으로 풀 수 없으므로 queue/worker/commit 복구 신호는 억제한다.
+const MANUAL_RECOVERY_CIRCUIT_REASON = "transient_recovery_manual_required";
 
 // ready.mjs 와 같은 모양의 인프로세스 캐시. 10분 주기 워치독 폴링을 CDN 과 함께 흡수한다.
 // 엔트리에 status 와 헤더를 함께 담아 캐시 히트 시 원래 응답(200/503)을 그대로 재현한다.
@@ -51,9 +54,9 @@ const FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, qu
 //                          lastSuccessAt(last_checked_at)과 이름만 비슷할 뿐 축이 다르다.
 //                          판독 불가는 null — 0 으로 접으면 "방금 커밋했다"는 정반대
 //                          단정이 되므로 trackers 의 0-fail-safe 규약을 따르지 않는다.
-//   commitStalled        — "하트비트 신선(<15분) AND 커밋 90분+ 없음 AND 활성 상품
-//                          추적기 > 0". queueStalled 와 독립인 새 불리언이고 최상위
-//                          ok 를 절대 뒤집지 않는다 — 판단은 소비자(워치독·사람)가 한다.
+//   commitStalled        — "의도된 정지 아님 AND 하트비트 신선(<15분) AND 커밋 90분+
+//                          없음 AND 활성 상품 추적기 > 0". queueStalled 와 독립인 새
+//                          불리언이며 이 상태도 최상위 ok 를 false 로 뒤집는다.
 // 이 축이 필요한 이유(2026-09-03 게이트 장애 2시간): 트래커 격리 코드로 전 키워드가
 // 실패하면 레인 claim(primary_seen_at)은 매분 갱신되는데 커밋은 0 이다. 그 상태에서
 // 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해 아래 queueStalled 조건 (1)이 영원히
@@ -64,8 +67,8 @@ const FAILSAFE_PRODUCT_LANE = Object.freeze({
   commitStalled: false,
 });
 
-// trackers 집계 정수의 안전 변환. 조회 실패·null·NaN·음수·무한대는 전부 0 이다 —
-// "모른다" 를 0 으로 내는 것은 이 엔드포인트의 fail-safe 규약(관측 실패는 경보가 아니다)이다.
+// trackers 집계 정수의 안전 변환. 공개 값은 null·NaN·음수·무한대를 0 으로 접지만,
+// 실제 조회 실패 여부는 별도 reliability 로 보존해 최상위 ok 를 false 로 만든다.
 function nonNegativeInteger(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
@@ -133,15 +136,15 @@ function nonNegativeInteger(value) {
 //                             (테스트 F2)를 받으므로 읽는 코드를 그쪽에 두고 정수만 받는다.
 //                             수집 1회전이 도는 묶음 수, 즉 용량 감각의 재료다 —
 //                             상한 판단도 경보도 하지 않는다. 수치만 낸다.
-//              다섯 집계 모두 관측 전용이라 조회 실패는 0 으로 접히고(fail-safe) 절대 503 을
-//              만들지 않는다. 식별자·문구 없이 정수만 낸다.
+//              다섯 집계 모두 조회 실패 시 공개 값은 0, HTTP 는 200 을 유지하되 내부
+//              reliability 로 ok:false 를 만든다. 식별자·문구 없이 정수만 낸다.
 // 2026-09-01: 윈도우 수집 작업기가 서버 기대 실행본보다 낮은 버전이라 서버가 요청을
 // 전부 400 으로 거부했다. 거부는 claim RPC 앞에서 일어나므로 진척 표식은 얼어붙는데,
 // 작업기 자신은 1분마다 서명을 계속 보내 살아 있었다. 실측(2026-09-01T08:30Z):
 // 최신 nonce 54초 전 / primary_seen_at 14.4시간 전. 앞 4키만으로는 이 상태가
 // "정상 유휴"와 구분되지 않는다 — queueStalled 는 대기 중인 일이 없으면 거짓이고,
 // stalledMinutes 는 레인 표에서 나오므로 작업기의 거부 사실을 담지 못한다.
-//   workerOutdated      — 위 두 신호의 AND 로만 참이 되는 집계 불리언.
+//   workerOutdated      — 의도된 정지가 아닐 때 위 두 신호의 AND 로 참인 집계 불리언.
 //   heartbeatAgeMinutes — 코디네이션 진척이 몇 분째 멈춰 있는지의 정수.
 // 두 키 모두 버전 문자열도, 작업기/기기 식별자도 절대 담지 않는다. 이 엔드포인트는
 // 무인증 공개 표면이므로 노출은 집계 값까지만 허용된다.
@@ -166,17 +169,19 @@ export function rankCollectionHealthBody(input = {}) {
     : null;
 
   const deliberateStop = Boolean(input.deliberateStop);
+  const recoverySuppressed = input.recoverySuppressed === undefined
+    ? deliberateStop
+    : Boolean(input.recoverySuppressed);
   const trackersInput = input.trackers && typeof input.trackers === "object" ? input.trackers : {};
   const activeProduct = nonNegativeInteger(trackersInput.activeProduct);
   // F11 커밋 축. 판정은 전부 순수 모듈(workerCommitStalledFromSignals)이 하고 여기서는
   // 조회 결과를 넘기기만 한다. 세 번째 조건(활성 상품 추적기 > 0)만 이 자리의 몫이다 —
-  // 추적기가 하나도 없으면 커밋이 없는 것이 정상이라 단정하지 않는다. 관측 실패는
-  // activeProduct 가 0 으로 접혀(fail-safe) 자연히 거짓이 된다.
-  // deliberateStop 으로 누르지 않는다 — queueStalled 와 달리 이 키는 재기동을 유발하는
-  // 축이 아니라 "재기동이 무효인 정체"를 알리는 관측이고, 워치독 grep 계약(queueStalled
-  // 문자열)과도 겹치지 않는다.
+  // 추적기가 하나도 없으면 커밋이 없는 것이 정상이라 단정하지 않는다. 조회 실패 때도
+  // 공개 activeProduct 는 0 이지만 monitoringReliable=false 로 거짓 정상을 막는다.
+  // 커밋 나이는 팩트로 유지하되 deliberateStop 중에는 복구 불리언을 누른다. Naver 제한
+  // cooldown·수동 정지 중 watchdog 이 Chrome 을 다시 깨우면 안 되기 때문이다.
   const lastCommitAgeMinutes = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now });
-  const commitStalled = activeProduct > 0 && workerCommitStalledFromSignals({
+  const commitStalled = !recoverySuppressed && activeProduct > 0 && workerCommitStalledFromSignals({
     primarySeenAt: input.primarySeenAt,
     lastSuccessAt: input.lastSuccessAt,
     now,
@@ -190,24 +195,38 @@ export function rankCollectionHealthBody(input = {}) {
     const base = !found || !(found.lastCheckedAt > 0) ? { ...FAILSAFE_LANE } : {
       lastSuccessAt: new Date(found.lastCheckedAt).toISOString(),
       stalledMinutes: Math.max(0, Math.floor((now - found.lastCheckedAt) / 60000)),
-      queueStalled: found.laneStalled && !deliberateStop,
+      queueStalled: found.laneStalled && !recoverySuppressed,
     };
     if (key !== "product") return base;
     return { ...base, lastCommitAgeMinutes, commitStalled };
   };
+  const queueStalled = lanes.some((lane) => lane.laneStalled) && !recoverySuppressed;
+  // workerOutdated 도 실행 자체가 의도적으로 멈춘 동안에는 복구 신호로 내지 않는다.
+  // pause 종료 다음 요청에서 같은 원자료로 즉시 다시 판정한다. 이는 Naver 제한 중
+  // 재기동하지 않는 queue/commit 정책과 일관된다.
+  const workerOutdated = !recoverySuppressed && workerOutdatedFromSignals({
+    lastRunRuntimeVersion: input.lastRunRuntimeVersion,
+    lastSignatureAt: input.lastSignatureAt,
+    now,
+  });
+  const monitoringReliable = input.monitoringReliable !== false;
+  // 복구 억제는 "Chrome 을 지금 다시 열지 말라"는 뜻이지 정상이라는 뜻이 아니다.
+  // provider cooldown·수동 정지·manual-required 모두 수집이 실제로 차단된 상태이므로
+  // 별도 입력이 없을 때도 ok:false 로 닫는다. 관측 신호는 위에서 억제된 채 유지된다.
+  const controlHealthy = input.controlHealthy === undefined
+    ? !recoverySuppressed
+    : Boolean(input.controlHealthy);
 
   return {
-    ok: true,
+    // HTTP 200 은 핵심 집계 조회가 완료됐다는 뜻이고, ok 는 수집이 실제 정상인지다.
+    // 핵심 레인 조회 실패는 아래 catch 의 503, 보조 필수 관측 실패는 200/ok:false 다.
+    ok: monitoringReliable && controlHealthy && !(queueStalled || workerOutdated || commitStalled),
     lastSuccessAt: worst ? new Date(worst.lastCheckedAt).toISOString() : null,
     stalledMinutes: worst ? Math.max(0, Math.floor((now - worst.lastCheckedAt) / 60000)) : 0,
     // 타임스탬프가 있는 레인이 하나도 없으면 laneStalled 도 전부 거짓이므로 자연히 false 다.
-    queueStalled: lanes.some((lane) => lane.laneStalled) && !deliberateStop,
+    queueStalled,
     // 판정은 전부 순수 모듈이 한다. 여기서는 조회 결과를 그대로 넘기기만 한다.
-    workerOutdated: workerOutdatedFromSignals({
-      lastRunRuntimeVersion: input.lastRunRuntimeVersion,
-      lastSignatureAt: input.lastSignatureAt,
-      now,
-    }),
+    workerOutdated,
     // 주의: input.lastSuccessAt 은 코디네이션 행의 last_success_at 이고, 위 출력 키
     // lastSuccessAt(레인 표의 worst.lastCheckedAt 에서 나온다)과는 완전히 다른 값이다.
     // 이름이 겹칠 뿐 서로 섞이지 않으며, 새 입력이 기존 출력 키를 바꾸지 않는다.
@@ -257,44 +276,69 @@ export function deliberateWorkerStopFromRow(row, now) {
   return DELIBERATE_CIRCUIT_REASONS.has(String(row.circuit_reason || "").trim().toLowerCase());
 }
 
+export function workerRecoverySuppressedFromRow(row, now) {
+  return deliberateWorkerStopFromRow(row, now)
+    || String(row?.circuit_reason || "").trim().toLowerCase() === MANUAL_RECOVERY_CIRCUIT_REASON;
+}
+
+export function workerControlHealthyFromRow(row, now) {
+  return !workerRecoverySuppressedFromRow(row, now);
+}
+
 // 조회만 담당하는 얇은 래퍼. 판정은 전부 위 순수 함수가 한다(테스트가 실행 검증한다).
-// 읽기에 실패하거나 행이 없으면 "의도된 정지 아님"으로 두어 정체 감지 자체는 살려 둔다.
+// 필수 global 행이 없거나 읽기 실패면 공개 값은 안전값으로 두되 reliable=false 로
+// 전달해 제어면 소실을 정상 유휴로 단정하지 않는다.
 // 같은 행에 heartbeatAgeMinutes 의 두 재료(primary_seen_at, last_success_at)가 있으므로
 // 왕복을 늘리지 않고 select 만 넓혀 함께 읽는다. 반환은 불리언이 아니라 객체다.
 // 열이 아직 없는 환경으로 내려오면 cooldown_until 만 다시 읽는 축약 경로가 그대로
 // 살아 있고, 그 경로에서는 두 표식이 단순히 비어 있다(= heartbeat 신호 없음 → 0).
 async function deliberateWorkerStop(ctx, now) {
-  const empty = { deliberateStop: false, primarySeenAt: "", lastSuccessAt: "" };
+  const empty = {
+    deliberateStop: false,
+    recoverySuppressed: false,
+    controlHealthy: true,
+    primarySeenAt: "",
+    lastSuccessAt: "",
+    reliable: true,
+  };
   try {
+    let fullObservation = true;
     let { data, error } = await ctx.supabaseAdmin
       .from(WORKER_COORDINATION_TABLE)
       .select("circuit_state, circuit_reason, cooldown_until, primary_seen_at, last_success_at")
       .eq("lane_key", "global")
       .maybeSingle();
     if (error && /circuit_state|circuit_reason|schema cache|does not exist/i.test(error.message || "")) {
+      fullObservation = false;
       ({ data, error } = await ctx.supabaseAdmin
         .from(WORKER_COORDINATION_TABLE)
         .select("cooldown_until")
         .eq("lane_key", "global")
         .maybeSingle());
     }
-    if (error || !data) return empty;
+    if (error) return { ...empty, reliable: false };
+    // global 행은 worker control-plane migration이 필수로 만든다. full 조회가
+    // 성공해도 행이 없으면 정상 유휴가 아니라 제어면 소실이므로 fail closed 한다.
+    // 구형 축약 fallback 또한 heartbeat/commit 재료를 못 읽으므로 신뢰 불가다.
+    if (!data) return { ...empty, reliable: false };
+    if (typeof data !== "object" || Array.isArray(data)) return { ...empty, reliable: false };
+    const deliberateStop = deliberateWorkerStopFromRow(data, now);
     return {
-      deliberateStop: deliberateWorkerStopFromRow(data, now),
+      deliberateStop,
+      recoverySuppressed: workerRecoverySuppressedFromRow(data, now),
+      controlHealthy: workerControlHealthyFromRow(data, now),
       primarySeenAt: String(data.primary_seen_at || ""),
       lastSuccessAt: String(data.last_success_at || ""),
+      reliable: fullObservation,
     };
   } catch {
-    return empty;
+    return { ...empty, reliable: false };
   }
 }
 
-// 아래 두 조회는 관측 전용이다. 어떤 실패도 200 을 503 으로 뒤집어서는 안 된다.
-// 표가 없든, PostgREST 가 권한을 거부하든, 클라이언트 체인이 throw 하든 결과는 하나 —
-// 빈 문자열, 즉 "신호 없음"이다. 신호가 없으면 workerOutdatedFromSignals 가 false 로
-// 물러나므로 판독 실패가 거짓 경보로 번지지 않는다. latestCheckedAt/hasOverdueActive 가
-// throw 를 그대로 올려 503 을 내는 것과는 의도적으로 반대 방향이다: 저 둘은 이 응답의
-// 본체이고, 이 둘은 곁다리 관측이다.
+// 아래 두 조회는 관측 전용이라 실패해도 HTTP 200 표면은 유지한다. 대신 빈 안전값과
+// reliable=false 를 함께 반환해 workerOutdated=false 가 곧 ok:true 로 오인되지 않게 한다.
+// latestCheckedAt/hasOverdueActive 의 핵심 조회 실패는 기존대로 503 이다.
 async function latestWorkerRunVersion(ctx) {
   try {
     const { data, error } = await ctx.supabaseAdmin
@@ -302,11 +346,11 @@ async function latestWorkerRunVersion(ctx) {
       .select("runtime_version")
       .order("started_at", { ascending: false })
       .limit(1);
-    if (error) return "";
-    const row = Array.isArray(data) ? data[0] : data;
-    return String(row?.runtime_version || "");
+    if (error || !Array.isArray(data)) return { value: "", reliable: false };
+    const row = data[0];
+    return { value: String(row?.runtime_version || ""), reliable: true };
   } catch {
-    return "";
+    return { value: "", reliable: false };
   }
 }
 
@@ -320,17 +364,17 @@ async function latestWorkerSignatureAt(ctx) {
       .select("created_at")
       .order("created_at", { ascending: false })
       .limit(1);
-    if (error) return "";
-    const row = Array.isArray(data) ? data[0] : data;
-    return String(row?.created_at || "");
+    if (error || !Array.isArray(data)) return { value: "", reliable: false };
+    const row = data[0];
+    return { value: String(row?.created_at || ""), reliable: true };
   } catch {
-    return "";
+    return { value: "", reliable: false };
   }
 }
 
 // trackers 집계 넷이 쓰는 관측 전용 카운트(표는 상품·플레이스 둘 다 온다).
-// select head + count=exact 로 행 본문을 받지 않고 개수만 받는다. 위 두 관측 조회와 같은 fail-safe 방향이다 — 표·열이 없든,
-// 권한이 거부되든, 체인이 throw 하든 결과는 0(신호 없음)이고 절대 503 으로 번지지 않는다.
+// select head + count=exact 로 행 본문을 받지 않는다. 실패해도 공개 값 0/HTTP 200 은
+// 유지하지만 reliable=false 로 최상위 ok 를 실패시킨다.
 async function countActiveTrackers(ctx, table, applyFilters) {
   try {
     const base = ctx.supabaseAdmin
@@ -338,10 +382,12 @@ async function countActiveTrackers(ctx, table, applyFilters) {
       .select("id", { count: "exact", head: true })
       .eq("status", "active");
     const { count, error } = await applyFilters(base);
-    if (error) return 0;
-    return nonNegativeInteger(count);
+    if (error || count === null || count === undefined || !Number.isFinite(Number(count)) || Number(count) < 0) {
+      return { value: 0, reliable: false };
+    }
+    return { value: nonNegativeInteger(count), reliable: true };
   } catch {
-    return 0;
+    return { value: 0, reliable: false };
   }
 }
 
@@ -353,7 +399,11 @@ async function latestCheckedAt(ctx, table) {
     .order("last_checked_at", { ascending: false })
     .limit(1);
   if (error) throw error;
-  return data && data[0] ? data[0].last_checked_at : "";
+  if (!Array.isArray(data)) throw new Error("rank_collection_health_latest_response_invalid");
+  if (!data[0]) return "";
+  const observedAt = String(data[0].last_checked_at || "");
+  if (!Number.isFinite(Date.parse(observedAt))) throw new Error("rank_collection_health_latest_timestamp_invalid");
+  return observedAt;
 }
 
 async function hasOverdueActive(ctx, table, cutoffIso) {
@@ -366,7 +416,8 @@ async function hasOverdueActive(ctx, table, cutoffIso) {
     .order("next_check_at", { ascending: true })
     .limit(1);
   if (error) throw error;
-  return Boolean(data && data.length);
+  if (!Array.isArray(data)) throw new Error("rank_collection_health_overdue_response_invalid");
+  return data.length > 0;
 }
 
 export default {
@@ -395,13 +446,13 @@ export default {
         productOverdue,
         placeOverdue,
         coordination,
-        lastRunRuntimeVersion,
-        lastSignatureAt,
-        neverFoundTrackers,
-        stuckTrackers,
-        placePartialTrackers,
-        activeProductTrackers,
-        activeProductKeywordGroups,
+        lastRunObservation,
+        lastSignatureObservation,
+        neverFoundObservation,
+        stuckObservation,
+        placePartialObservation,
+        activeProductObservation,
+        activeProductKeywordGroupsObservation,
       ] = await Promise.all([
         latestCheckedAt(ctx, RANK_TABLES[0]),
         latestCheckedAt(ctx, RANK_TABLES[1]),
@@ -426,9 +477,19 @@ export default {
           .gte("retry_count", RANK_PLACE_PARTIAL_MIN_RETRIES)),
         // 용량의 분모. 필터는 status 하나뿐이다.
         countActiveTrackers(ctx, RANK_TABLES[0], (query) => query),
-        // 용량의 분자. 읽기·집계는 전부 별도 모듈이 하고 여기로는 정수만 돌아온다.
-        countActiveProductKeywordGroups(ctx.supabaseAdmin, RANK_TABLES[0]),
+        // 용량의 분자. 공개 값은 정수지만 조회 신뢰도도 내부 observation 으로 받는다.
+        observeActiveProductKeywordGroups(ctx.supabaseAdmin, RANK_TABLES[0]),
       ]);
+      const monitoringReliable = [
+        coordination,
+        lastRunObservation,
+        lastSignatureObservation,
+        neverFoundObservation,
+        stuckObservation,
+        placePartialObservation,
+        activeProductObservation,
+        activeProductKeywordGroupsObservation,
+      ].every((observation) => observation.reliable === true);
       const body = rankCollectionHealthBody({
         now,
         lanes: [
@@ -436,18 +497,21 @@ export default {
           { key: "place", lastCheckedAt: placeLatest, overdue: placeOverdue },
         ],
         deliberateStop: coordination.deliberateStop,
+        recoverySuppressed: coordination.recoverySuppressed,
+        controlHealthy: coordination.controlHealthy,
         primarySeenAt: coordination.primarySeenAt,
         // 코디네이션 행의 last_success_at 이다. 위 lanes 에서 나오는 출력 키
         // lastSuccessAt 과 이름만 같을 뿐 heartbeatAgeMinutes 에만 쓰인다.
         lastSuccessAt: coordination.lastSuccessAt,
-        lastRunRuntimeVersion,
-        lastSignatureAt,
+        lastRunRuntimeVersion: lastRunObservation.value,
+        lastSignatureAt: lastSignatureObservation.value,
+        monitoringReliable,
         trackers: {
-          neverFound: neverFoundTrackers,
-          stuck: stuckTrackers,
-          placePartial: placePartialTrackers,
-          activeProduct: activeProductTrackers,
-          activeProductKeywordGroups,
+          neverFound: neverFoundObservation.value,
+          stuck: stuckObservation.value,
+          placePartial: placePartialObservation.value,
+          activeProduct: activeProductObservation.value,
+          activeProductKeywordGroups: activeProductKeywordGroupsObservation.value,
         },
       });
       cached = {

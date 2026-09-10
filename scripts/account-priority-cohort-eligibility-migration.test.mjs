@@ -15,6 +15,8 @@ function migrationSource(name) {
 const baseMigrationName = "20260831033617_naver_shopping_account_one_shot_priority.sql";
 const handoffMigrationName =
   "20260831050000_naver_shopping_account_priority_cycle_handoff.sql";
+const canonicalCycleMigrationName =
+  "20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql";
 const triggerGateMigrationName =
   "20260831100525_naver_shopping_account_priority_rank_catch_up_gate.sql";
 const runtimeNeutralGateMigrationName =
@@ -24,6 +26,7 @@ const cohortMigrationName =
 
 const baseMigration = migrationSource(baseMigrationName);
 const handoffMigration = migrationSource(handoffMigrationName);
+const canonicalCycleMigration = migrationSource(canonicalCycleMigrationName);
 const triggerGateMigration = migrationSource(triggerGateMigrationName);
 const runtimeNeutralGateMigration = migrationSource(runtimeNeutralGateMigrationName);
 const cohortMigration = migrationSource(cohortMigrationName);
@@ -44,10 +47,13 @@ const ids = Object.freeze({
   run3: "40000000-0000-4000-8000-000000000003",
   run4: "40000000-0000-4000-8000-000000000004",
   run5: "40000000-0000-4000-8000-000000000005",
+  run6: "40000000-0000-4000-8000-000000000006",
+  run7: "40000000-0000-4000-8000-000000000007",
   mmlA: "50000000-0000-4000-8000-000000000001",
   mmlB: "50000000-0000-4000-8000-000000000002",
   mmlGone: "50000000-0000-4000-8000-000000000003",
   mmlNew: "50000000-0000-4000-8000-000000000004",
+  mmlLate: "50000000-0000-4000-8000-000000000009",
   otherHead: "50000000-0000-4000-8000-000000000005",
   otherCursor: "50000000-0000-4000-8000-000000000006",
   otherTail1: "50000000-0000-4000-8000-000000000007",
@@ -70,6 +76,16 @@ function executableBaseMigration() {
         runtimeFingerprint,
       ),
   );
+}
+
+function canonicalCycleClaimSource() {
+  const signature =
+    "create or replace function public.mi_claim_naver_shopping_cycle_keyword(";
+  const start = canonicalCycleMigration.indexOf(signature);
+  assert.notEqual(start, -1, "canonical cycle claim RPC must exist");
+  const end = canonicalCycleMigration.indexOf("\n$$;", start);
+  assert.notEqual(end, -1, "canonical cycle claim RPC must have a complete body");
+  return canonicalCycleMigration.slice(start, end + 4);
 }
 
 async function createDatabase() {
@@ -427,71 +443,14 @@ async function createDatabase() {
     after update on public.naver_shopping_worker_coordination
     for each row execute function public.test_cycle_completed_event();
 
-    -- Mirrors the ordinary cohort selector of the installed cycle claim RPC:
-    -- strictly after the cursor first, then the bounded wrap.
-    create function public.test_next_ordinary_tracker()
-    returns uuid language plpgsql security invoker set search_path = '' as $$
-    declare
-      current_row public.naver_shopping_worker_coordination%rowtype;
-      seed public.naver_rank_trackers%rowtype;
-      v_now timestamptz := clock_timestamp();
-    begin
-      select * into current_row
-      from public.naver_shopping_worker_coordination
-      where lane_key = 'global';
-
-      select * into seed
-      from public.naver_rank_trackers as tracker
-      where tracker.status = 'active'
-        and exists (
-          select 1
-          from public.naver_shopping_scheduler_events as roster
-          where roster.event_type = 'cycle_rostered'
-            and roster.cycle_id = current_row.scheduler_cycle_id
-            and roster.tracker_id = tracker.id
-            and roster.roster_state is distinct from 'new_after_start'
-        )
-        and tracker.worker_last_cycle_id is distinct from current_row.scheduler_cycle_id
-        and (tracker.worker_quarantined_until is null
-          or tracker.worker_quarantined_until <= v_now)
-        and (tracker.processing_until is null or tracker.processing_until <= v_now)
-        and (
-          current_row.scheduler_cycle_cursor_tracker_id is null
-          or (tracker.sort_order, tracker.created_at, tracker.id) >
-             (current_row.scheduler_cycle_cursor_sort_order,
-              current_row.scheduler_cycle_cursor_created_at,
-              current_row.scheduler_cycle_cursor_tracker_id)
-        )
-      order by tracker.sort_order asc, tracker.created_at asc, tracker.id asc
-      limit 1;
-      if seed.id is not null then
-        return seed.id;
-      end if;
-
-      select * into seed
-      from public.naver_rank_trackers as tracker
-      where tracker.status = 'active'
-        and exists (
-          select 1
-          from public.naver_shopping_scheduler_events as roster
-          where roster.event_type = 'cycle_rostered'
-            and roster.cycle_id = current_row.scheduler_cycle_id
-            and roster.tracker_id = tracker.id
-            and roster.roster_state is distinct from 'new_after_start'
-        )
-        and tracker.worker_last_cycle_id is distinct from current_row.scheduler_cycle_id
-        and (tracker.worker_quarantined_until is null
-          or tracker.worker_quarantined_until <= v_now)
-        and (tracker.processing_until is null or tracker.processing_until <= v_now)
-      order by tracker.sort_order asc, tracker.created_at asc, tracker.id asc
-      limit 1;
-      return seed.id;
-    end;
-    $$;
   `);
 
   await database.exec(executableBaseMigration());
   await database.exec(stripInstallOnly(handoffMigration));
+  // Install the deployed selector body before the account trigger gate moves
+  // it behind the public wrapper. This makes ordinary-order assertions execute
+  // the canonical cursor/claim mutation instead of a fixture-only mirror.
+  await database.exec(canonicalCycleClaimSource());
   await database.exec(stripInstallOnly(triggerGateMigration));
   await database.exec(runtimeNeutralGateMigration);
   return database;
@@ -659,18 +618,6 @@ async function resumePoints(database) {
     from public.naver_shopping_account_priority_cycle_resume_points
     order by handoff_cycle_number
   `)).rows;
-}
-
-async function transportCalls(database) {
-  return Object.fromEntries((await database.query(`
-    select transport, call_count from public.test_transport_calls
-  `)).rows.map((row) => [row.transport, row.call_count]));
-}
-
-async function nextOrdinaryTracker(database) {
-  return (await database.query(`
-    select public.test_next_ordinary_tracker()::text as tracker_id
-  `)).rows[0].tracker_id;
 }
 
 test("정적 계약: 새 마이그레이션에 런타임 버전·지문 리터럴이 없다", () => {
@@ -899,7 +846,6 @@ test("② 취소 RPC 가 즉시 해제하고 다음 claim 이 정상 동작한�
   assert.equal(stuck.reason, "account_members_not_yet_eligible");
   const blockedCycle = await cycleClaim(database, ids.run1);
   assert.equal(blockedCycle.reason, "account_priority_active");
-  const callsWhileActive = await transportCalls(database);
 
   const cancelled = (await database.query(`
     select public.mi_cancel_naver_shopping_account_priority($1::uuid) as result
@@ -925,12 +871,17 @@ test("② 취소 RPC 가 즉시 해제하고 다음 claim 이 정상 동작한�
 
   // 취소 직후 같은 레인에서 일반 수집이 재개된다.
   const resumed = await cycleClaim(database, ids.run1);
-  assert.equal(resumed.status, "no_cycle");
-  assert.equal(resumed.reason, undefined);
-  assert.equal(
-    (await transportCalls(database)).cycle,
-    callsWhileActive.cycle + 1,
-  );
+  assert.equal(resumed.status, "claimed");
+  assert.equal(resumed.priority, "normal");
+  assert.deepEqual(resumed.claims.map((entry) => entry.trackerId), [ids.otherHead]);
+  assert.equal((await coordination(database)).cursor_tracker_id, ids.otherHead);
+  assert.equal((await database.query(`
+    select count(*)::integer as count
+    from public.naver_shopping_scheduler_events
+    where event_type = 'tracker_claimed'
+      and run_id = $1::uuid
+      and tracker_id = $2::uuid
+  `, [ids.run1, ids.otherHead])).rows[0].count, 1);
   const legacyRepair = await claim(database, ids.run1);
   assert.equal(legacyRepair.legacy, true);
   assert.equal((await coordination(database)).cycle_status, "active");
@@ -983,7 +934,6 @@ test("③ 핸드오프 뒤 원래 커서부터 이어서 순회한다", async (t
     where sort_order <= 50;
   `);
   await enqueue(database);
-  assert.equal(await nextOrdinaryTracker(database), ids.otherTail1);
 
   await startRun(database, ids.run1);
   const handoff = await claim(database, ids.run1);
@@ -1011,8 +961,8 @@ test("③ 핸드오프 뒤 원래 커서부터 이어서 순회한다", async (t
   assert.equal(points[0].restored_cycle_id, after.cycle_id);
   assert.equal(Number(points[0].restored_cycle_number), 48);
 
-  // 커서를 이어받았으므로 새 사이클의 첫 일반 대상은 건너뛴 후미 계정이다.
-  assert.equal(await nextOrdinaryTracker(database), ids.otherTail1);
+  // 실제 selector의 복원 커서 이후 선택은 아래 ordinary-order 회귀에서
+  // public cycle RPC와 claim event까지 함께 실행해 검증한다.
 });
 
 test("③ 커서 복원은 핸드오프 직후 한 사이클에만 적용된다", async (t) => {
@@ -1093,6 +1043,166 @@ test("④ 회귀: 정상 코호트는 전원 처리되고 요청이 성공으로
   ]);
   assert.deepEqual(await resumePoints(database), []);
   assert.equal((await coordination(database)).cycle_status, "active");
+});
+
+test("④ 회귀: 실패 뒤 다음 고정 순서로 재개하고 실행 중 신규 추적기는 끼어들지 않는다", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await applyCohortMigration(database);
+  await database.exec(`
+    delete from public.test_unrostered_trackers;
+    insert into public.naver_shopping_scheduler_events(
+      event_type, cycle_id, cycle_number, tracker_id, agency_code, roster_state
+    )
+    select 'cycle_rostered', '${ids.cycle}', 47, tracker.id,
+           tracker.agency_code, 'eligible'
+    from public.naver_rank_trackers as tracker
+    where tracker.id = '${ids.mmlNew}'
+  `);
+  await enqueue(database);
+
+  // 요청이 코호트를 동결한 뒤 더 앞선 sort_order 로 새 추적기가 등록돼도
+  // 이미 시작한 요청의 순서와 멤버십을 바꾸면 안 된다.
+  await database.exec(`
+    insert into public.naver_rank_trackers(
+      id, agency_code, keyword, sort_order, created_at
+    ) values (
+      '${ids.mmlLate}', 'mml93-a01', '실행 중 신규 키워드', 10, '2026-01-05'
+    );
+    insert into public.naver_shopping_scheduler_events(
+      event_type, cycle_id, cycle_number, tracker_id, agency_code, roster_state
+    ) values (
+      'cycle_rostered', '${ids.cycle}', 47, '${ids.mmlLate}',
+      'mml93-a01', 'eligible'
+    )
+  `);
+
+  await collectMember(database, ids.run1, ids.mmlA);
+
+  await startRun(database, ids.run2);
+  const failed = await claim(database, ids.run2);
+  assert.deepEqual(failed.claims.map((entry) => entry.trackerId), [ids.mmlB]);
+  await recordNavigatingRun(database, ids.run2);
+  await terminal(database, ids.mmlB, "job_failed");
+  await releaseLane(database);
+
+  // 실패한 B를 다시 잡거나 새로 등록된 mmlLate로 되돌아가지 않고,
+  // 동결 당시 다음 위치였던 기존 멤버부터 이어서 처리한다.
+  await collectMember(database, ids.run3, ids.mmlGone);
+  await collectMember(database, ids.run4, ids.mmlNew);
+
+  await startRun(database, ids.run5);
+  const reconciled = await claim(database, ids.run5);
+  assert.equal(reconciled.reason, "account_priority_reconciled");
+  assert.deepEqual(await request(database), {
+    state: "completed",
+    completed: true,
+    expired: false,
+    succeeded: false,
+  });
+  assert.deepEqual((await members(database)).map((row) => ({
+    tracker_id: row.tracker_id,
+    state: row.state,
+  })), [
+    { tracker_id: ids.mmlA, state: "terminal_success" },
+    { tracker_id: ids.mmlB, state: "terminal_failure" },
+    { tracker_id: ids.mmlGone, state: "terminal_success" },
+    { tracker_id: ids.mmlNew, state: "terminal_success" },
+  ]);
+
+  const claimOrder = (await database.query(`
+    select tracker_id::text as tracker_id
+    from public.naver_shopping_scheduler_events
+    where event_type = 'tracker_claimed'
+      and tracker_id = any($1::uuid[])
+    order by event_id
+  `, [[ids.mmlA, ids.mmlB, ids.mmlGone, ids.mmlNew, ids.mmlLate]])).rows;
+  assert.deepEqual(claimOrder.map((row) => row.tracker_id), [
+    ids.mmlA,
+    ids.mmlB,
+    ids.mmlGone,
+    ids.mmlNew,
+  ]);
+  assert.equal(
+    (await database.query(`
+      select count(*)::integer as count
+      from public.naver_shopping_account_priority_members
+      where request_id = $1::uuid and tracker_id = $2::uuid
+    `, [ids.request, ids.mmlLate])).rows[0].count,
+    0,
+  );
+  const repairEligibility = (await database.query(`
+    select tracker.id::text as tracker_id,
+           public.mi_naver_shopping_cycle_runtime_recovery_eligible(
+             tracker.id, $1::uuid, $2::text, $3::text
+           ) as runtime_recovery,
+           public.mi_naver_shopping_cycle_orphan_recovery_eligible(
+             tracker.id, $1::uuid
+           ) as orphan_recovery
+    from public.naver_rank_trackers as tracker
+    where tracker.worker_last_cycle_id = $1::uuid
+    order by tracker.sort_order, tracker.created_at, tracker.id
+  `, [ids.cycle, runtimeVersion, runtimeFingerprint])).rows;
+  assert.deepEqual(repairEligibility, [
+    { tracker_id: ids.mmlA, runtime_recovery: false, orphan_recovery: false },
+    { tracker_id: ids.mmlB, runtime_recovery: false, orphan_recovery: false },
+    { tracker_id: ids.mmlGone, runtime_recovery: false, orphan_recovery: false },
+    { tracker_id: ids.mmlNew, runtime_recovery: false, orphan_recovery: false },
+  ]);
+  // 요청 종료 뒤에는 배포된 실제 cycle selector RPC를 호출한다. 커서와
+  // immutable claim ledger가 함께 전진하며, 기존 일반 순서 다음에 late row가
+  // 도달하는지 확인한다. worker_last_cycle_id를 테스트에서 직접 조작하지 않는다.
+  const ordinarySequence = [
+    [ids.run5, ids.otherHead],
+    [ids.run6, ids.otherCursor],
+    [ids.run7, ids.mmlLate],
+  ];
+  for (const [index, [runId, trackerId]] of ordinarySequence.entries()) {
+    if (index > 0) await startRun(database, runId);
+    await recordNavigatingRun(database, runId);
+    const ordinary = await cycleClaim(database, runId);
+    assert.equal(ordinary.status, "claimed");
+    assert.equal(ordinary.priority, "normal");
+    assert.deepEqual(
+      ordinary.claims.map((entry) => entry.trackerId),
+      [trackerId],
+    );
+    assert.equal((await coordination(database)).cursor_tracker_id, trackerId);
+
+    const claimEvents = (await database.query(`
+      select event_type, tracker_id::text as tracker_id, priority
+      from public.naver_shopping_scheduler_events
+      where run_id = $1::uuid
+        and event_type in ('group_claimed', 'tracker_claimed')
+      order by event_id
+    `, [runId])).rows;
+    assert.deepEqual(claimEvents, [
+      { event_type: "group_claimed", tracker_id: null, priority: "normal" },
+      { event_type: "tracker_claimed", tracker_id: trackerId, priority: "normal" },
+    ]);
+
+    await database.query(`
+      insert into public.naver_shopping_scheduler_events(
+        event_type, cycle_id, cycle_number, claim_id, run_id, worker_id,
+        tracker_id, agency_code, priority, lease_started_at, lease_until
+      )
+      select
+        'tracker_committed', claimed.cycle_id, claimed.cycle_number,
+        claimed.claim_id, claimed.run_id, claimed.worker_id,
+        claimed.tracker_id, claimed.agency_code, claimed.priority,
+        claimed.lease_started_at, claimed.lease_until
+      from public.naver_shopping_scheduler_events as claimed
+      where claimed.event_type = 'tracker_claimed'
+        and claimed.run_id = $1::uuid
+        and claimed.tracker_id = $2::uuid
+    `, [runId, trackerId]);
+    await database.query(`
+      update public.naver_rank_trackers
+      set processing_started_at = null, processing_until = null
+      where id = $1::uuid
+    `, [trackerId]);
+    await releaseLane(database);
+  }
 });
 
 test("④ 회귀: 24h 만료 reconcile 은 그대로 pending 만 만료시킨다", async (t) => {
@@ -1177,7 +1287,10 @@ test("정체된 요청은 24h 을 기다리지 않고 여섯 케이던스 뒤 �
     "account_priority_request_stalled",
     "account_priority_request_stalled",
   ]);
-  assert.equal((await cycleClaim(database, ids.run1)).status, "no_cycle");
+  const resumed = await cycleClaim(database, ids.run1);
+  assert.equal(resumed.status, "claimed");
+  assert.equal(resumed.priority, "normal");
+  assert.deepEqual(resumed.claims.map((entry) => entry.trackerId), [ids.otherHead]);
 });
 
 test("정체 판정은 진행 중인 클레임을 잘라내지 않는다", async (t) => {

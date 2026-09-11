@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "b70f0281724be7d3ead20789d21625c4c4aca8508c7a5e4a57034d09b9f25314"
+      "sha256": "42274b31c954ae3d8778e9fbd8254930ff0902df1da12340c036d13084b18e23"
     },
     {
       "id": "product-organic-rank-server",

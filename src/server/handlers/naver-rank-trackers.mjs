@@ -2712,11 +2712,41 @@ export async function handleRankTrackersRequest(request, ctx) {
     if (request.method === "POST") return handlePost(request, ctx);
     return json(request, { ok: false, message: "Method not allowed" }, 405);
   } catch (error) {
+    // 2026-09-11: this catch used to swallow the cause entirely, so every
+    // tracker-page failure reached the person as the generic "서버 처리 중 오류"
+    // with nothing in the function logs to investigate. Log a bounded, secret-
+    // free record (the runtime's request id ties it to the response header) and
+    // answer with a stable code so the page can say what actually happened.
+    console.error(JSON.stringify({
+      level: "error",
+      event: "naver_rank_trackers_failed",
+      requestId: rankTrackersRequestId(request),
+      method: request.method,
+      action: rankTrackersActionLabel(request),
+      errorType: error instanceof Error ? error.name : "UnknownError",
+      errorCode: String(error?.code || "").slice(0, 80),
+      message: String(error?.message || "").replace(/\s+/gu, " ").slice(0, 200),
+    }));
     return json(request, {
       ok: false,
-      message: "네이버 상품 순위 추적 처리 중 오류가 발생했습니다.",
+      code: "NAVER_RANK_TRACKERS_FAILED",
+      message: "순위 추적 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
       detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
     }, 500);
+  }
+}
+
+function rankTrackersRequestId(request) {
+  const supplied = String(request?.headers?.get?.("x-request-id") || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u.test(supplied) ? supplied : "";
+}
+
+function rankTrackersActionLabel(request) {
+  try {
+    const url = new URL(request.url);
+    return String(url.searchParams.get("action") || url.pathname.split("/").pop() || "").slice(0, 40);
+  } catch {
+    return "";
   }
 }
 

@@ -54,6 +54,29 @@ test("keeps an explicit readiness failure as HTTP 503", () => {
   assert.equal(result, null);
 });
 
+test("keeps handler-authored tracker failures and collector-unavailable responses (2026-09-11)", () => {
+  for (const [status, field, code] of [
+    [500, "code", "NAVER_RANK_TRACKERS_FAILED"],
+    [503, "errorCode", "SHOPPING_RANK_SOURCE_UNAVAILABLE"],
+  ]) {
+    const response = new Response(null, { status });
+    const result = safeErrorPayload(response, JSON.stringify({
+      ok: false,
+      [field]: code,
+      message: "순위 추적 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    }));
+    assert.equal(result, null, code);
+  }
+  // A secret in the body still forces the sanitized envelope.
+  const leaking = safeErrorPayload(new Response(null, { status: 500 }), JSON.stringify({
+    ok: false,
+    code: "NAVER_RANK_TRACKERS_FAILED",
+    message: "SUPABASE_SERVICE_ROLE_KEY invalid",
+  }));
+  assert.equal(leaking.status, 503);
+  assert.equal(leaking.body.code, "SERVER_CONFIGURATION_PENDING");
+});
+
 test("keeps a benign Supabase availability message without treating the product name as a secret", () => {
   const response = new Response(null, { status: 503 });
   const result = safeErrorPayload(response, JSON.stringify({

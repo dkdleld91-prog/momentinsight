@@ -104,7 +104,15 @@ export function safeErrorPayload(response, text) {
     const statuses = Object.values(payload?.sourceStatus || {});
     const isExpectedConfigPending = /_NOT_CONFIGURED$/.test(code)
       || statuses.some((item) => item?.status === "not_configured");
-    expectedServerResponse = isExpectedConfigPending || code === "SERVER_NOT_READY";
+    // Handler-authored failures that already carry a person-facing message and
+    // a stable code keep it (2026-09-11: tracker-page failures and a
+    // disconnected collector both surfaced as the generic server error).
+    const handlerCode = code || String(payload?.errorCode || "");
+    const isHandlerAuthoredFailure = handlerCode === "NAVER_RANK_TRACKERS_FAILED"
+      || handlerCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE";
+    expectedServerResponse = isExpectedConfigPending
+      || code === "SERVER_NOT_READY"
+      || isHandlerAuthoredFailure;
     if (SAFE_REQUEST_ID.test(String(payload?.requestId || ""))) requestId = String(payload.requestId);
     if (response.status === 502 && code === NAVER_RANK_CRON_ITEM_FAILURE) {
       safeRankCronFailure = safeNaverRankCronSummary(payload?.summary);

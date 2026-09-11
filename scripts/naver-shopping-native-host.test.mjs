@@ -852,6 +852,40 @@ function renderedOrderSameProductSeamPages() {
   });
 }
 
+// 1.1.24 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
+// every cycle): page 2 opens with page 1's second-to-last product, not its last.
+function renderedOrderBoundaryReorderSeamPages() {
+  return renderedOrderDriftPages((pages) => {
+    const firstPageList = JSON.parse(pages[0].nextDataText).props.pageProps.compositeList.list;
+    const secondToLast = renderedOrganicEntries(firstPageList).at(-2);
+    mutateRenderedPage(pages, 2, (entries) => {
+      const organicIndexes = entries
+        .map((entry, index) => (entry.type === "product" && !entry.item.adId ? index : -1))
+        .filter((index) => index >= 0);
+      // The repeated product carries page 2's own opening raw number; the page
+      // still lists 40 organic rows, so its last one drops off.
+      const repeated = JSON.parse(JSON.stringify(secondToLast));
+      repeated.item.rank = entries[organicIndexes[0]].item.rank;
+      entries.splice(organicIndexes.at(-1), 1);
+      entries.splice(organicIndexes[0], 0, repeated);
+      for (let position = 1; position < organicIndexes.length; position += 1) {
+        // Keep the remaining organic raw numbers contiguous after the shift.
+        entries[organicIndexes[position]].item.rank = entries[organicIndexes[position - 1]].item.rank + 1;
+      }
+    });
+  });
+}
+
+test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.24)", async () => {
+  const nowMs = Date.parse("2026-09-11T12:00:00.000Z");
+  const { provider, messages } = renderedRecoveryProvider(() => renderedOrderBoundaryReorderSeamPages(), "boundary-reorder", nowMs);
+  const result = await provider.collect(request(nowMs));
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(result.items.map((item) => item.organicRank), Array.from({ length: 300 }, (_, index) => index + 1));
+  assert.equal(new Set(result.items.map((item) => item.productId)).size, 300);
+});
+
 test("native provider absorbs Naver's same-product page seam and still proves 300 distinct contiguous ranks", async () => {
   const nowMs = Date.parse("2026-09-11T00:00:00.000Z");
   const pages = renderedOrderSameProductSeamPages();
@@ -882,7 +916,7 @@ test("native provider absorbs Naver's same-product page seam and still proves 30
   assert.equal(result.renderedOrderProof?.passCount, 2);
 });
 
-// 1.1.23 (2026-09-11 production shapes): the rendered-order recovery must
+// 1.1.24 (2026-09-11 production shapes): the rendered-order recovery must
 // absorb Naver's live market counter, twin listings and ad-consumed first
 // numbers, while every regression beyond the evidence stays fatal.
 function renderedRecoveryProvider(pagesFactory, label, nowMs) {
@@ -2232,7 +2266,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.23");
+  assert.equal(manifest.version, "1.1.24");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3540,7 +3574,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.23");
+  assert.equal(manifest.version, "1.1.24");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3715,7 +3749,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.23",
+    runtimeVersion: "1.1.24",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

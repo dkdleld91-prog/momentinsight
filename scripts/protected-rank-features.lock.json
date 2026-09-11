@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "42274b31c954ae3d8778e9fbd8254930ff0902df1da12340c036d13084b18e23"
+      "sha256": "e3995b2c72fbfdc0d89d5cd8061a994ac6317da570a1a9566f2771bc34117888"
     },
     {
       "id": "product-organic-rank-server",
@@ -212,7 +212,7 @@
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "8f599bdfc0438a1ce7191cf4ed25220c94901dfe0bc4c4862f8ce7692426e53f"
+      "sha256": "0b7288aac42fec639e705daa92822f57f26234fa1821288c4ca395729dbc8ea1"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "b5a3e7c245407dc0081cc9b758133a75c9f703e8494d109170498f07be7480ef"
+      "sha256": "c980699122965a842395f37a4b214cc6d7abbddbb2c677688bc933001b7d1e75"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "0530a9a04a9c5490631ed2b2a249f935b944c11ea1f46873cdd11b215248e529"
+      "sha256": "a843da365efd91a9a7e088013e58884f6f1f95734bba7cebceb222839b9fe865"
     },
     {
       "id": "shopping-cloud-worker",
@@ -625,7 +625,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "cafadb52bec15d00391d88ab7217d06012a4ba7bdef3ae71241880e990940343"
+      "sha256": "90ac2239ba6cec4cca4bcec3e55b2a989dcb14c68cff7f31b30d31183b3a66e2"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -857,6 +857,12 @@
       "id": "shopping-standby-repair-admission",
       "file": "supabase/migrations/20260911110000_naver_shopping_standby_repair_admission.sql",
       "sha256": "790fd16d5c4023be41ef8849bd36043ebe201bb0780b43148bf6300a9982ff62",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-runtime-1-1-24-failure-evidence",
+      "file": "supabase/migrations/20260911120000_naver_shopping_runtime_1_1_24_failure_evidence.sql",
+      "sha256": "4cd5ae2995da55eb5ff556842ec7bf441ee3d9f0fa35e2d3179c11962bd77775",
       "rankMigration": true
     }
   ]

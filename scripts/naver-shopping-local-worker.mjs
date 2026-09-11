@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.23";
+const EXPECTED_RUNTIME_VERSION = "1.1.24";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -396,6 +396,21 @@ function workerEndpoint(env) {
   return url;
 }
 
+// 2026-09-11: a detail outside the known list used to be dropped, which left
+// the DB ledger with a bare code (three `provider_stable_rendered_order_unproven`
+// entries on the first 1.1.23 evening) and every investigation needing a
+// console run. Unknown details are now recorded in the same safe charset
+// instead of erased; scope classification only reads the base code.
+function sanitizedFailureDetail(baseCode, detail) {
+  const normalized = String(detail || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_:-]+/gu, "_")
+    .replace(/^_+|_+$/gu, "")
+    .slice(0, Math.max(0, 79 - baseCode.length));
+  return normalized ? `${baseCode}:${normalized}`.slice(0, 80) : baseCode;
+}
+
 function safeFailureCode(error) {
   const code = String(error?.result?.code || error?.code || error?.message || "")
     .trim()
@@ -426,13 +441,13 @@ function safeFailureCode(error) {
       .replaceAll(".", "_");
     return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|page_budget|market_total|invalid_window|page_boundary:[1-8](?::g(?:m?[0-9]{1,3}):l[0-9]{1,3})?|renderedorderproof_duplicate_identity)$/u.test(detail)
       ? `${baseCode}:${detail}`
-      : baseCode;
+      : sanitizedFailureDetail(baseCode, detail);
   }
   if (baseCode === "provider_rendered_order_candidate_invalid") {
     const detail = String(error?.detail || "").trim().toLowerCase();
     return /^(?:[1-8]:(?:organic_count|raw_rank_span)|[1-8]:[0-9]{1,2}:(?:helper|ad_classification|raw_rank|duplicate_slot))$/u.test(detail)
       ? `${baseCode}:${detail}`
-      : baseCode;
+      : sanitizedFailureDetail(baseCode, detail);
   }
   if (!SAFE_FAILURE_CODES.has(code) && !INTERNAL_FAILURE_CODE_PATTERN.test(code)) {
     return "local_worker_collection_failed";

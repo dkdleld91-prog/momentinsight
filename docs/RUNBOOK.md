@@ -105,7 +105,13 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
-- **버전 이력**: 1.1.23 (2026-09-11, 마이그레이션 `20260911090000_naver_shopping_runtime_1_1_23_rendered_page_tolerance.sql`)
+- **버전 이력**: 1.1.24 (2026-09-11, 마이그레이션 `20260911120000_naver_shopping_runtime_1_1_24_failure_evidence.sql`)
+  — 정렬 복구 경로에서 다음 페이지 머리(앞 2행)에 앞 페이지 꼬리(뒤 3행) 상품이 다시 나오면 이음매로
+  건너뜀(복부찜질기 `2:7:page_overlap:1` 매 사이클 실패 해소, `SEAM_LEADING_ORGANIC_ROWS`·
+  `SEAM_TRAILING_ORGANIC_ROWS`); 워커가 목록 밖 정렬 복구 실패 사유를 지우지 않고 같은 안전 문자셋으로 기록(사유 없는
+  `provider_stable_rendered_order_unproven` 근절). 같은 페이지 판매자 중복(`duplicate_row`)은 창 계약이
+  동일 식별자 중복을 금지하므로 그대로 실패 유지(계약 변경 없이는 커밋 불가).
+  1.1.23 (2026-09-11, 마이그레이션 `20260911090000_naver_shopping_runtime_1_1_23_rendered_page_tolerance.sql`)
   — 정렬 복구 경로를 네이버 실제 페이지에 맞춤: 전체 상품 수는 실시간 집계라 8페이지 동일 대신 1% 이내
   (`MARKET_TOTAL_TOLERANCE_RATIO`), 한 페이지 안 같은 상품 두 번 노출은 한 슬롯으로 건너뜀(페이지당 최대
   `MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS`=2), 1페이지는 자기 광고 슬롯 수만큼 뒤에서 시작 가능, 이음매는 최대 2칸

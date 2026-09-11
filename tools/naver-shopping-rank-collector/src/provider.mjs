@@ -1278,6 +1278,13 @@ function identitySignals(item) {
 // Bounded number of page-seam product repeats (last organic of page N shown
 // again as the first organic of page N+1) that one window may absorb.
 export const MAX_SEAM_REPEAT_SKIPS = 2;
+// A seam repeat is only recognised within this many leading organic rows of
+// the next page (the boundary set Naver re-orders is one or two products).
+export const SEAM_LEADING_ORGANIC_ROWS = 2;
+// …and only for a product that sat within this many trailing organic rows of
+// the previous page. A product from anywhere else on the previous page is a
+// real list shift and stays fatal.
+export const SEAM_TRAILING_ORGANIC_ROWS = 3;
 
 // Naver may list one product twice on a single rendered page (a supersaving
 // twin next to its ranked card: 2026-09-10 실측 raw ranks "1,1,2,…,15,9,16",
@@ -1332,6 +1339,13 @@ export function appendNormalizedPage(state, pageResult, {
     ? state.seamRepeatSkipCount
     : 0;
   let added = 0;
+  let seamSkipsOnThisPage = 0;
+  // Identity signals of the previous page's trailing organic rows (set at the
+  // end of the previous call); the leading-row seam tolerance below is limited
+  // to those products.
+  const previousPageTailSignals = state.previousPageTailSignals instanceof Set
+    ? state.previousPageTailSignals
+    : new Set();
   for (let index = 0; index < pageResult.rows.length && state.items.length < limit; index += 1) {
     const item = normalizeBrowserRow(pageResult.rows[index], { pageIndex, rowIndex: index });
     if (localExtractionKeys.has(item.extractionKey)) continue;
@@ -1360,14 +1374,32 @@ export function appendNormalizedPage(state, pageResult, {
       const collisionKind = origin?.pageIndex === pageIndex
         ? "duplicate_row"
         : "page_overlap";
+      // 1.1.24 (production 2026-09-10 23:03 → 2026-09-11 20:09, keyword group
+      // 복부찜질기/허리찜질기: `provider_duplicate_identity:2:7:page_overlap:1` on
+      // every cycle): the product Naver repeats at the top of page N+1 is not
+      // always the exact last product of page N — the boundary set of one or
+      // two products can be re-ordered between the two page loads. Any product
+      // from the immediately preceding page that shows up within the leading
+      // organic rows of the next page is the same single seam product, so it
+      // is skipped under the same bounded budget — but only in the rendered-
+      // order candidate pass, where the two-capture direct-ID digest still has
+      // to reproduce the order. The strict pass keeps the exact-last-product
+      // rule so a genuine cross-page overlap still raises the signal that
+      // starts the stable full-window proof. Repeats deeper in the page, or
+      // from a page further back, keep the fail-closed rejection everywhere.
       const previousItem = state.items[state.items.length - 1];
+      const exactSeamRepeat = previousItem != null
+        && identitySignals(previousItem).includes(repeatedSignal);
+      const leadingSeamRepeat = rejectAllIdentityDuplicates
+        && (added + seamSkipsOnThisPage) < SEAM_LEADING_ORGANIC_ROWS
+        && previousPageTailSignals.has(repeatedSignal);
       const seamRepeat = collisionKind === "page_overlap"
         && origin?.pageIndex === pageIndex - 1
-        && previousItem != null
-        && identitySignals(previousItem).includes(repeatedSignal)
+        && (exactSeamRepeat || leadingSeamRepeat)
         && state.seamRepeatSkipCount < MAX_SEAM_REPEAT_SKIPS;
       if (seamRepeat) {
         state.seamRepeatSkipCount += 1;
+        seamSkipsOnThisPage += 1;
         continue;
       }
       if (rejectAllIdentityDuplicates) {
@@ -1401,6 +1433,9 @@ export function appendNormalizedPage(state, pageResult, {
     });
     added += 1;
   }
+  state.previousPageTailSignals = new Set(
+    state.items.slice(-SEAM_TRAILING_ORGANIC_ROWS).flatMap((item) => identitySignals(item)),
+  );
   return added;
 }
 

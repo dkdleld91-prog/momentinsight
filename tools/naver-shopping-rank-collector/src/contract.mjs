@@ -297,10 +297,16 @@ function renderedOrderIdentitySignal(item) {
     }
     return `catalog:${item.catalogId}`;
   }
-  if (!item.sellerProductId) {
-    throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
-  }
-  return `seller:${item.sellerProductId}`;
+  if (item.sellerProductId) return `seller:${item.sellerProductId}`;
+  // 1.1.25 (production 2026-09-12 01:55 KST, keyword 배찜질기: every rendered-order
+  // recovery for this window failed with `renderedOrderProof.direct_identity`):
+  // a seller card whose mall product id is not numeric carries no
+  // sellerProductId, but its canonical product URL is the same direct identity
+  // the strict path already trusts (identitySignals above). Only a card with
+  // neither seller id nor product link stays unprovable.
+  const [urlSignal] = identitySignals({ ...item, sellerProductId: "", productId: "", catalogId: "" });
+  if (urlSignal && urlSignal.startsWith("url:")) return urlSignal;
+  throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
 }
 
 function stableRenderedOrderRankSlot(item) {

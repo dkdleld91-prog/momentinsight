@@ -105,7 +105,10 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
-- **버전 이력**: 1.1.24 (2026-09-11, 마이그레이션 `20260911120000_naver_shopping_runtime_1_1_24_failure_evidence.sql`)
+- **버전 이력**: 1.1.25 (2026-09-12, 마이그레이션 `20260911170000_naver_shopping_runtime_1_1_25_rendered_identity.sql`)
+  — 정렬 복구 증명의 직접 식별자: 판매자 상품번호가 숫자가 아닌 카드는 정규 상품 URL로 식별(1.1.24가 드러낸
+  `renderedorderproof_direct_identity` 실패 해소, 배찜질기 그룹).
+  1.1.24 (2026-09-11, 마이그레이션 `20260911120000_naver_shopping_runtime_1_1_24_failure_evidence.sql`)
   — 정렬 복구 경로에서 다음 페이지 머리(앞 2행)에 앞 페이지 꼬리(뒤 3행) 상품이 다시 나오면 이음매로
   건너뜀(복부찜질기 `2:7:page_overlap:1` 매 사이클 실패 해소, `SEAM_LEADING_ORGANIC_ROWS`·
   `SEAM_TRAILING_ORGANIC_ROWS`); 워커가 목록 밖 정렬 복구 실패 사유를 지우지 않고 같은 안전 문자셋으로 기록(사유 없는

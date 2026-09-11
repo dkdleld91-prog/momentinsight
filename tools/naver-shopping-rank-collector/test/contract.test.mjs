@@ -303,18 +303,19 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
     "renderedOrderProof.duplicate_identity",
   );
 
-  for (const weakIdentity of [
-    { sellerProductId: "" },
-    { sellerProductId: "", link: "" },
-  ]) {
-    const weakSeller = structuredClone(window);
-    Object.assign(weakSeller.items[0], weakIdentity);
-    assertContractError(
-      () => validateProviderWindow({ ...weakSeller, renderedOrderProof: proof }, request),
-      "invalid_provider_response",
-      "renderedOrderProof.direct_identity",
-    );
-  }
+  // 1.1.25: a seller card without a numeric seller id is still directly
+  // identified by its canonical product URL; only a card with neither stays
+  // unprovable.
+  const weakSeller = structuredClone(window);
+  Object.assign(weakSeller.items[0], { sellerProductId: "", link: "" });
+  assertContractError(
+    () => validateProviderWindow({ ...weakSeller, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.direct_identity",
+  );
+  const urlIdentified = structuredClone(window);
+  Object.assign(urlIdentified.items[0], { sellerProductId: "" });
+  assert.equal(typeof stableRenderedOrderWindowDigest(urlIdentified.items, { keyword: request.keyword }), "string");
 
   const weakCatalog = structuredClone(window);
   weakCatalog.items[0] = {

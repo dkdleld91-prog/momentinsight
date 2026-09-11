@@ -155,7 +155,7 @@ test("허용목록은 런타임 입구 게이트 하나뿐이고 사유가 붙�
     (entry) => entry.function === "public.mi_report_naver_shopping_worker_progress",
   );
   assert.notEqual(gate, undefined);
-  assert.deepEqual(gate.versions, ["1.1.24"]);
+  assert.deepEqual(gate.versions, ["1.1.25"]);
 });
 
 test("계정 우선 등록·케이던스 RPC 는 더 이상 리터럴을 쓰지 않는다", () => {

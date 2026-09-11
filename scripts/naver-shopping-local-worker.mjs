@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.24";
+const EXPECTED_RUNTIME_VERSION = "1.1.25";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",

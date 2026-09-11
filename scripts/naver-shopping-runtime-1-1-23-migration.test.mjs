@@ -44,7 +44,7 @@ test("keeps the archived runtime 1.1.23 migration pinned to its historical finge
     .filter((entry) => /_naver_shopping_runtime_1_1_\d+_/u.test(entry))
     .sort();
   assert.ok(runtimeMigrations.includes(migrationName));
-  assert.equal(runtimeMigrations.indexOf(migrationName), runtimeMigrations.length - 2);
+  assert.ok(runtimeMigrations.indexOf(migrationName) < runtimeMigrations.length - 1);
   assert.equal(NEW_RUNTIME.fingerprint, "26231beb6eb5cdd127afd3e216e96564d8923ee5195331723c5bc7f7443bc870");
   assert.equal(typeof calculateN30RuntimeFingerprint, "function");
 });

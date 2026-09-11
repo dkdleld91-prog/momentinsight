@@ -852,6 +852,12 @@
       "file": "supabase/migrations/20260911090000_naver_shopping_runtime_1_1_23_rendered_page_tolerance.sql",
       "sha256": "246963a177718fcee10c34f805a9b2030466d808de17a2510e6723feaeb30cf9",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-standby-repair-admission",
+      "file": "supabase/migrations/20260911110000_naver_shopping_standby_repair_admission.sql",
+      "sha256": "790fd16d5c4023be41ef8849bd36043ebe201bb0780b43148bf6300a9982ff62",
+      "rankMigration": true
     }
   ]
 }

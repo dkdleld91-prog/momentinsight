@@ -80,7 +80,7 @@
 ## ⑦ 런타임 버전 불일치 (서명은 오는데 수집이 멈춤)
 
 - **판정 기준**: `workerOutdated: true` 또는 `heartbeatAgeMinutes`가 계속 커지는데 nonce 서명은 매분
-  들어온다. 서버·DB·확장(맥/윈도우) 세 곳의 런타임 버전(예: `1.1.21`)이 하나라도 다르면 이 증상이다.
+  들어온다. 서버·DB·확장(맥/윈도우) 세 곳의 런타임 버전(예: `1.1.22`)이 하나라도 다르면 이 증상이다.
   서버 코드만 새 버전이면 HTTP 관문은 통과하지만 progress RPC 상수가 옛 버전이라
   `LOCAL_WORKER_LANE_LOST(409)`가 반복되고, DB만 새 버전이면 HTTP 관문이
   `LOCAL_WORKER_RUNTIME_IDENTITY_INVALID(400)`으로 끊는다. 2026-09-01의 17시간 정지가 정확히 이 증상이다.
@@ -96,6 +96,12 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
+- **버전 이력**: 1.1.22 (2026-09-11, 마이그레이션 `20260911003000_naver_shopping_runtime_1_1_22_seam_repeat_and_login_redirect.sql`)
+  — 페이지 이음매에서 같은 상품이 두 번 나오면 창을 실패시키지 않고 한 번만 건너뛴다(창당 최대 2회,
+  `provider.mjs`의 `MAX_SEAM_REPEAT_SKIPS`), 수집 프로필이 `nid.naver.com`으로 리다이렉트되면
+  `naver_page_script_failed` 대신 `naver_verification_required`(보호 대기 + 탭 노출)로 보고한다.
+  1.1.21 (2026-09-03) 유한 창 일반화·이음매 허용. 마이그레이션은 런타임 식별자(유한 창 대상 행·coordination 행·
+  progress 입구 게이트)만 옮기며, 관문이 직전 버전의 유휴 제어 평면을 요구하므로 반드시 위 순서 ③ 다음에 적용한다.
 - **재발 방지**: 버전 인상 시 account-priority 게이트 등 runtime 리터럴을 품은 DB 함수를 전수 grep 한다 (`grep -rn "runtime_version is distinct from '" supabase/migrations` — 최종 정의의 무버전 유지는 `npm run check:release` 의 `shoppingAccountPriorityGateRuntimeNeutralOnRuntimeBump` 검사가 강제).
 - **안 되면 다음**: 마이그레이션 관문이 `requires_idle_control_plane`으로 거부하면 lease 만료(최대 35분,
   `WORKER_COLLECTION_LEASE_SECONDS`)를 기다린 뒤 재적용한다. 되돌려야 하면 사전에 작성한 역전환 SQL을

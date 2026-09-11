@@ -16,7 +16,7 @@ const FAILURE_TEXT = {
   rank_worker_unavailable: "순위 작업기를 다시 연결하지 못했습니다. Chrome을 다시 실행해 주세요",
   local_worker_disabled: "순위 작업기가 비활성화되어 있습니다. 설치 상태를 확인해 주세요",
   already_running: "이미 안전 갱신이 진행 중입니다",
-  naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
+  naver_verification_required: "열린 네이버 로그인·보안확인 탭을 완료한 뒤 다시 눌러 주세요",
   naver_verification_cooldown: "보안확인 후 자동 갱신이 다시 이어집니다",
   naver_network_restricted: "네이버 쇼핑 접속 제한을 감지해 자동 재시도를 기다립니다",
   naver_network_retry_wait: "네이버 쇼핑 접속 제한을 보호 대기 중입니다",

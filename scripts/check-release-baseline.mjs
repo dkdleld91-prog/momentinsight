@@ -235,6 +235,7 @@ const shoppingStableFiniteWindowRuntime1118Migration = read("supabase/migrations
 const shoppingStableRenderedOrderRuntime1119Migration = read("supabase/migrations/20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql");
 const shoppingRenderedBoundaryConsensusRuntime1120Migration = read("supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql");
 const shoppingFiniteGeneralRuntime1121Migration = read("supabase/migrations/20260903090000_naver_shopping_runtime_1_1_21_finite_general_and_seam_tolerance.sql");
+const shoppingSeamRepeatRuntime1122Migration = read("supabase/migrations/20260911003000_naver_shopping_runtime_1_1_22_seam_repeat_and_login_redirect.sql");
 // account-priority 트리거 게이트의 최종 재선언(2026-09-03 핫픽스 정식 편입본).
 // 게이트를 재선언하는 마이그레이션이 새로 생기면 아래 파일명 대조가 실패하므로,
 // 런타임 범프 때 이 상수와 무버전 리터럴 검사를 함께 갱신·검토해야 한다.
@@ -297,9 +298,11 @@ const shoppingWorkerRuntime1119Fingerprint =
   "631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e";
 const shoppingWorkerRuntime1120Fingerprint =
   "4e0f5fbde16a892e44986b2325865f33d61bdf7a5a13d3d7adcd501608aa8e5b";
-const shoppingWorkerRuntime1121Fingerprint = calculateN30RuntimeFingerprint({
+const shoppingWorkerRuntime1121Fingerprint =
+  "84334f5a68291a170b57c999840d50b42c0ef1301b2c3e817190bc7f242f20e0";
+const shoppingWorkerRuntime1122Fingerprint = calculateN30RuntimeFingerprint({
   repositoryRoot: process.cwd(),
-  version: "1.1.21",
+  version: "1.1.22",
 }).fingerprint;
 const shoppingErrorTaxonomyLookupBranch = shoppingErrorTaxonomyHardeningMigration.match(
   /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/u,
@@ -1698,7 +1701,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.21"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.22"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1711,9 +1714,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.21";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.21";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.22";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.22";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.22";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -2154,8 +2157,19 @@ const checks = {
     && !shoppingFiniteGeneralRuntime1121Migration.includes("create or replace function public.mi_commit_naver_shopping_worker_result(")
     && shoppingFiniteGeneralRuntime1121Migration.includes("security invoker")
     && shoppingFiniteGeneralRuntime1121Migration.includes("set search_path = ''")
-    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.21";')
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1121Fingerprint)
+    && shoppingSeamRepeatRuntime1122Migration.includes("current_row.runtime_version is distinct from '1.1.21'")
+    && shoppingSeamRepeatRuntime1122Migration.includes(shoppingWorkerRuntime1121Fingerprint)
+    && shoppingSeamRepeatRuntime1122Migration.includes("set runtime_version = '1.1.22'")
+    && shoppingSeamRepeatRuntime1122Migration.includes(shoppingWorkerRuntime1122Fingerprint)
+    && shoppingSeamRepeatRuntime1122Migration.includes("expected_runtime_version constant text := '1.1.22'")
+    && shoppingSeamRepeatRuntime1122Migration.includes("naver_shopping_runtime_1_1_22_requires_completed_account_priority")
+    && shoppingSeamRepeatRuntime1122Migration.includes("create or replace function public.mi_report_naver_shopping_worker_progress(")
+    && !shoppingSeamRepeatRuntime1122Migration.includes("create or replace function public.mi_commit_naver_shopping_worker_result(")
+    && !shoppingSeamRepeatRuntime1122Migration.includes("create or replace function public.mi_enqueue_naver_shopping_account_priority(")
+    && shoppingSeamRepeatRuntime1122Migration.includes("security invoker")
+    && shoppingSeamRepeatRuntime1122Migration.includes("set search_path = ''")
+    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.22";')
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1122Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
@@ -2194,7 +2208,7 @@ const checks = {
     && migrationRuntimeLiteralAudit.carriers[0].function
       === "public.mi_report_naver_shopping_worker_progress"
     && migrationRuntimeLiteralAudit.carriers[0].fingerprints
-      .includes(shoppingWorkerRuntime1121Fingerprint),
+      .includes(shoppingWorkerRuntime1122Fingerprint),
   // 런타임 리터럴을 걷어낸 재선언본 자체의 계약 고정.  세 RPC 만 재선언하고,
   // 호출자 런타임은 형식 검사로만 받으며(실제 일치는 coordination 현재값 대조가
   // 지킨다), 실행 권한은 service_role 로만 남는다.
@@ -2318,7 +2332,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.21"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.22"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

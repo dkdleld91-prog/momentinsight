@@ -783,6 +783,104 @@ test("native provider accepts one zero-gap page seam as a valid capture without 
   );
 });
 
+// 2026-09-11 production shape (logged-in profile): page 1's last organic product
+// is shown again as page 2's first organic product with the same raw rank, and
+// page 2 then continues with the next raw rank. The strict parser still rejects
+// the window (raw-rank drift elsewhere on the page), the rendered-order pass
+// must absorb the one-product seam and still deliver 300 distinct products.
+function renderedOrderSameProductSeamPages() {
+  return renderedOrderDriftPages((pages) => {
+    const firstPageList = JSON.parse(pages[0].nextDataText).props.pageProps.compositeList.list;
+    const lastOrganic = renderedOrganicEntries(firstPageList).at(-1);
+    mutateRenderedPage(pages, 2, (entries) => {
+      const organicIndexes = entries
+        .map((entry, index) => (entry.type === "product" && !entry.item.adId ? index : -1))
+        .filter((index) => index >= 0);
+      entries.splice(organicIndexes.at(-1), 1);
+      entries.splice(organicIndexes[0], 0, JSON.parse(JSON.stringify(lastOrganic)));
+    });
+  });
+}
+
+test("native provider absorbs Naver's same-product page seam and still proves 300 distinct contiguous ranks", async () => {
+  const nowMs = Date.parse("2026-09-11T00:00:00.000Z");
+  const pages = renderedOrderSameProductSeamPages();
+  assert.throws(
+    () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+    (error) => error?.code === "naver_next_data_rank_drift",
+    "the strict first pass keeps rejecting the drifting fixture",
+  );
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return { type: "collection", captureId: `same-product-seam-${messages.length}`, pages };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  const productIds = result.items.map((item) => item.productId);
+  assert.equal(new Set(productIds).size, productIds.length, "the seam product appears exactly once");
+  assert.equal(result.renderedOrderProof?.passCount, 2);
+});
+
+test("readNextData maps a tab that Chrome refuses to script (Naver login redirect) to the verification code", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const start = serviceWorker.indexOf("function classifyOffHostTab(");
+  const end = serviceWorker.indexOf("async function saveCollectionProgress(");
+  assert.ok(start >= 0 && end > start);
+  const build = (executeScriptImpl, tabUrl) => runInNewContext(`
+    const PAGE_SCRIPT_TIMEOUT_MS = 1000;
+    async function withTimeout(promise) { return promise; }
+    ${serviceWorker.slice(start, end)}
+    ({ readNextData, classifyOffHostTab });
+  `, {
+    chrome: {
+      scripting: { executeScript: executeScriptImpl },
+      tabs: { get: async () => ({ url: tabUrl }) },
+    },
+  });
+  const refused = async () => {
+    throw new Error('Cannot access contents of url "https://nid.naver.com/nidlogin.login?url=https%3A%2F%2Fsearch.shopping.naver.com". Extension manifest must request permission to access this host.');
+  };
+
+  const login = build(refused, "https://nid.naver.com/nidlogin.login?url=x");
+  await assert.rejects(() => login.readNextData(7), (error) => error?.message === "naver_verification_required");
+  assert.equal(login.classifyOffHostTab("https://ncpt.naver.com/v1/captcha"), "naver_verification_required");
+  assert.equal(login.classifyOffHostTab("chrome-error://chromewebdata/"), "naver_page_navigation_failed");
+  assert.equal(login.classifyOffHostTab(""), "naver_page_navigation_failed");
+  assert.equal(login.classifyOffHostTab("https://search.shopping.naver.com/search/all?query=a"), null);
+  assert.equal(login.classifyOffHostTab("https://example.com/"), null);
+
+  // A script failure that is not a host-permission refusal keeps its original error.
+  const other = build(async () => { throw new Error("boom"); }, "https://nid.naver.com/nidlogin.login");
+  await assert.rejects(() => other.readNextData(7), (error) => error?.message === "boom");
+
+  // A refusal on a host we cannot classify is still the generic script failure.
+  const unknown = build(refused, "https://example.com/");
+  await assert.rejects(
+    () => unknown.readNextData(7),
+    (error) => /Cannot access contents of url/u.test(String(error?.message)),
+  );
+
+  // Successful injection keeps the existing classification order.
+  const restricted = build(async () => [{ result: { restricted: true, blocked: false, nextDataText: "", url: "https://search.shopping.naver.com/" } }], "");
+  await assert.rejects(() => restricted.readNextData(7), (error) => error?.message === "naver_network_restricted");
+  const healthy = build(async () => [{ result: { restricted: false, blocked: false, nextDataText: "{}", url: "https://search.shopping.naver.com/search/all" } }], "");
+  assert.equal(await healthy.readNextData(7), "{}");
+});
+
 test("native provider proves a deterministic zero-gap seam from two matching captures", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   // The Production `page_boundary:2:g0:l29` signature repeats identically on
@@ -2010,7 +2108,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.21");
+  assert.equal(manifest.version, "1.1.22");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3318,7 +3416,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.21");
+  assert.equal(manifest.version, "1.1.22");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3493,7 +3591,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.21",
+    runtimeVersion: "1.1.22",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

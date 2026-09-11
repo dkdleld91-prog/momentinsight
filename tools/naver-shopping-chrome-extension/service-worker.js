@@ -572,8 +572,47 @@ function waitForTabComplete(tabId) {
   });
 }
 
+// A search tab that ended on a host outside the extension's permission (Naver
+// login `nid.naver.com`, a security check) cannot be scripted at all; Chrome
+// rejects `executeScript` with "Cannot access contents of url". That is a
+// human-required access state, not a page script fault, so it maps to the
+// existing verification code (cooldown + the tab is surfaced for the person).
+// 2026-09-10 outage: a logged-out collector profile was redirected to login for
+// 16 hours and every attempt was recorded as `naver_page_script_failed`.
+function classifyOffHostTab(tabUrl) {
+  const url = String(tabUrl || "");
+  if (/^https:\/\/nid\.naver\.com\//u.test(url)) return "naver_verification_required";
+  if (/^https:\/\/[a-z0-9.-]*naver\.com\//u.test(url)
+    && !url.startsWith("https://search.shopping.naver.com/")) {
+    return "naver_verification_required";
+  }
+  if (url === "" || url.startsWith("chrome-error://")) return "naver_page_navigation_failed";
+  return null;
+}
+
 async function readNextData(tabId) {
-  const results = await withTimeout(chrome.scripting.executeScript({
+  let results;
+  try {
+    results = await readNextDataScript(tabId);
+  } catch (error) {
+    if (!/Cannot access contents of (the page|url)/iu.test(String(error?.message || ""))) throw error;
+    const tabUrl = await chrome.tabs.get(tabId).then((tab) => String(tab?.url || "")).catch(() => "");
+    const offHostCode = classifyOffHostTab(tabUrl);
+    if (offHostCode) throw new Error(offHostCode);
+    throw error;
+  }
+  const value = results?.[0]?.result || {};
+  if (value.restricted) throw new Error("naver_network_restricted");
+  if (value.blocked) throw new Error("naver_verification_required");
+  if (!value.nextDataText) throw new Error("naver_next_data_missing");
+  if (!String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
+    throw new Error("naver_navigation_invalid");
+  }
+  return value.nextDataText;
+}
+
+async function readNextDataScript(tabId) {
+  return withTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
       const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
@@ -588,14 +627,6 @@ async function readNextData(tabId) {
       };
     },
   }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
-  const value = results?.[0]?.result || {};
-  if (value.restricted) throw new Error("naver_network_restricted");
-  if (value.blocked) throw new Error("naver_verification_required");
-  if (!value.nextDataText) throw new Error("naver_next_data_missing");
-  if (!String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
-    throw new Error("naver_navigation_invalid");
-  }
-  return value.nextDataText;
 }
 
 async function saveCollectionProgress(pageIndex) {

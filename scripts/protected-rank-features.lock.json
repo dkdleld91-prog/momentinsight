@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "fb0b3c626ef3705377f9a02e5cd84e9fc2307a09dd823c28f5352a4b49e1f012"
+      "sha256": "6a90d67e7441f043134ec04490482d013e0a9466dd21269d8a7ed0bd78d028ae"
     },
     {
       "id": "product-organic-rank-server",
@@ -212,7 +212,7 @@
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "493f53e25fcc6cf38f333e32d7d5fff4798026ed57f739d9f23894ff33cae4b5"
+      "sha256": "8c13e5233d231bb61e52c77813a0ace8dafee3689e4e58a610c5375bb76ed3bd"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "e07c1adcffa849225ea871180dfcb9877df00f9d29f6b1cec99797da126d065b"
+      "sha256": "ed9cf85d7331d028ddf1f9596e6266f9b71651fc3ba81444799eea3fec39bf0b"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "7708eaebec78acae80a64e6b7446c1b46dbb3f906272da5b50f2d598fe263bed"
+      "sha256": "a1080c84775da8c149ad00f69070b790f06aae2b04d12921b3fee28795ba177a"
     },
     {
       "id": "shopping-cloud-worker",
@@ -625,12 +625,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "475d16f64b8ead92ec19e563c111617e99a3f9bef87aba9192dd3552474dcc20"
+      "sha256": "6e15f2e260a44b8c7359e0064d3e2b053ed9d82ec29bf30eb56c37fa70902ab6"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "2477d7a6250fe09dfc4b2ceb9b91182108ce0cc9da1fad2f1cc3c98618a87422"
+      "sha256": "1198b30daeef57ea5637c5e56bca011611794292e694d640d5196b67613b0acd"
     },
     {
       "id": "shopping-local-worker-session-boundary",
@@ -839,6 +839,12 @@
       "id": "shopping-bounded-standby-half-open-handoff",
       "file": "supabase/migrations/20260910055050_naver_shopping_bounded_standby_half_open_handoff.sql",
       "sha256": "29d3f70370adacc21842271c7effb9bc6ea88dfc30ba86b7a4ddef2b198c2b16",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-runtime-1-1-22-seam-repeat-login-redirect",
+      "file": "supabase/migrations/20260911003000_naver_shopping_runtime_1_1_22_seam_repeat_and_login_redirect.sql",
+      "sha256": "541e95d8a60d3a0219dd002b000f9aa0a879dd96b3d0288b652b76a3faa74f45",
       "rankMigration": true
     }
   ]

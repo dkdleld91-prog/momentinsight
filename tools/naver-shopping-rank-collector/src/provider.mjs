@@ -1253,6 +1253,10 @@ function identitySignals(item) {
   return [];
 }
 
+// Bounded number of page-seam product repeats (last organic of page N shown
+// again as the first organic of page N+1) that one window may absorb.
+export const MAX_SEAM_REPEAT_SKIPS = 2;
+
 export function appendNormalizedPage(state, pageResult, {
   pageIndex = 1,
   limit = 300,
@@ -1271,6 +1275,19 @@ export function appendNormalizedPage(state, pageResult, {
     ? state.identityOrigins
     : new Map();
   state.identityOrigins = identityOrigins;
+  // Naver (2026-09-11, logged-in profile evidence: page 1 ends at raw rank 41
+  // "오가니크라프트 60수 목화솜", page 2 opens with the same product at raw rank 41)
+  // repeats the last organic product of a page as the first organic product of
+  // the next page. That is one product shown twice, not a moving boundary, so
+  // it is skipped instead of rejected. The skip is bounded per window and only
+  // accepted when the repeat is exactly the previously appended product coming
+  // from the immediately preceding page; every other cross-page repeat keeps
+  // the existing fail-closed behaviour. Rendered-order pages number their
+  // organic rows positionally, so later rows on the same page carry the skip
+  // as a constant shift when compared against the appended position.
+  state.seamRepeatSkipCount = Number.isSafeInteger(state.seamRepeatSkipCount)
+    ? state.seamRepeatSkipCount
+    : 0;
   let added = 0;
   for (let index = 0; index < pageResult.rows.length && state.items.length < limit; index += 1) {
     const item = normalizeBrowserRow(pageResult.rows[index], { pageIndex, rowIndex: index });
@@ -1284,10 +1301,13 @@ export function appendNormalizedPage(state, pageResult, {
     if (preserveStableCrossPage && item.sourceRank == null) {
       throw new ProviderError("naver_next_data_rank_drift", `${pageIndex}:${index}:absolute_rank_missing`);
     }
-    if (item.sourceRank != null && item.sourceRank !== state.items.length + 1) {
+    const effectiveSourceRank = item.sourceRank == null
+      ? null
+      : item.sourceRank - state.seamRepeatSkipCount;
+    if (effectiveSourceRank != null && effectiveSourceRank !== state.items.length + 1) {
       throw new ProviderError(
         "naver_next_data_rank_drift",
-        `${pageIndex}:${index}:${item.sourceRank}!=${state.items.length + 1}`,
+        `${pageIndex}:${index}:${effectiveSourceRank}!=${state.items.length + 1}`,
       );
     }
     const signals = identitySignals(item);
@@ -1297,6 +1317,16 @@ export function appendNormalizedPage(state, pageResult, {
       const collisionKind = origin?.pageIndex === pageIndex
         ? "duplicate_row"
         : "page_overlap";
+      const previousItem = state.items[state.items.length - 1];
+      const seamRepeat = collisionKind === "page_overlap"
+        && origin?.pageIndex === pageIndex - 1
+        && previousItem != null
+        && identitySignals(previousItem).includes(repeatedSignal)
+        && state.seamRepeatSkipCount < MAX_SEAM_REPEAT_SKIPS;
+      if (seamRepeat) {
+        state.seamRepeatSkipCount += 1;
+        continue;
+      }
       if (rejectAllIdentityDuplicates) {
         throw new ProviderError(
           "provider_duplicate_identity",

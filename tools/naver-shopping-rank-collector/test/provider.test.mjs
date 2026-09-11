@@ -15,6 +15,7 @@ import {
   NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE,
   ProviderError,
   appendNormalizedPage,
+  MAX_SEAM_REPEAT_SKIPS,
   buildStableFullWindowProof,
   buildNaverShoppingFrontendUrl,
   buildNaverShoppingSearchUrl,
@@ -1130,6 +1131,61 @@ test("verifies absolute __NEXT_DATA__ ranks across pages before appending one wi
   assert.equal(state.items[41].title, "NEXT 상품 42");
 });
 
+// 2026-09-11 production evidence (logged-in collector profile, keyword 침대패드):
+// page 1 ends with raw rank 41 "오가니크라프트 60수 목화솜" and page 2 opens with the
+// very same product at raw rank 41 before continuing with 42. One product shown
+// twice at the seam is skipped; every other cross-page repeat stays rejected.
+test("skips Naver's same-product page seam (last organic of page N repeated first on page N+1) and keeps ranks contiguous", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(state, { rows: [rawProduct(1), rawProduct(2), rawProduct(3)] }, { pageIndex: 1, limit: 300 });
+  appendNormalizedPage(state, { rows: [rawProduct(3), rawProduct(4), rawProduct(5)] }, { pageIndex: 2, limit: 300 });
+
+  assert.deepEqual(state.items.map((item) => item.title), ["검증 상품 1", "검증 상품 2", "검증 상품 3", "검증 상품 4", "검증 상품 5"]);
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3, 4, 5]);
+  assert.equal(state.seamRepeatSkipCount, 1);
+  assert.equal(state.rawCount, 6, "the repeated row is still a raw row, just not an organic slot");
+  assert.equal(state.excludedAdCount, 0);
+});
+
+test("skips the seam repeat even when every other identity duplicate is rejected (rendered-order pass)", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(state, { rows: [rawProduct(1), rawProduct(2)] }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
+  appendNormalizedPage(state, { rows: [rawProduct(2), rawProduct(3)] }, { pageIndex: 2, limit: 300, rejectAllIdentityDuplicates: true });
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3]);
+  assert.equal(state.items[2].title, "검증 상품 3");
+});
+
+test("still rejects a cross-page repeat that is not the previously appended product", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(state, { rows: [rawProduct(1), rawProduct(2), rawProduct(3)] }, { pageIndex: 1, limit: 300 });
+  assert.throws(
+    () => appendNormalizedPage(state, { rows: [rawProduct(4), rawProduct(2)] }, { pageIndex: 2, limit: 300 }),
+    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:1:page_overlap:1",
+  );
+  assert.equal(state.seamRepeatSkipCount, 0);
+});
+
+test("still rejects a seam repeat that skips a page (origin two pages back) or exceeds the bounded skip count", () => {
+  const skipped = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(skipped, { rows: [rawProduct(1)] }, { pageIndex: 1, limit: 300 });
+  appendNormalizedPage(skipped, { rows: [rawProduct(2)] }, { pageIndex: 2, limit: 300 });
+  assert.throws(
+    () => appendNormalizedPage(skipped, { rows: [rawProduct(1)] }, { pageIndex: 3, limit: 300 }),
+    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "3:0:page_overlap:1",
+  );
+
+  const capped = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(capped, { rows: [rawProduct(1)] }, { pageIndex: 1, limit: 300 });
+  appendNormalizedPage(capped, { rows: [rawProduct(1), rawProduct(2)] }, { pageIndex: 2, limit: 300 });
+  appendNormalizedPage(capped, { rows: [rawProduct(2), rawProduct(3)] }, { pageIndex: 3, limit: 300 });
+  assert.equal(capped.seamRepeatSkipCount, MAX_SEAM_REPEAT_SKIPS);
+  assert.throws(
+    () => appendNormalizedPage(capped, { rows: [rawProduct(3), rawProduct(4)] }, { pageIndex: 4, limit: 300 }),
+    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "4:0:page_overlap:3",
+  );
+  assert.deepEqual(capped.items.map((item) => item.organicRank), [1, 2, 3]);
+});
+
 test("keeps a catalog card and its linked seller card as two distinct organic results", () => {
   const sharedCatalogId = "71000000001";
   const parsed = parseNaverNextDataPage(nextDataFixture({
@@ -1661,11 +1717,13 @@ test("excludes explicit advertisements before assigning contiguous organic ranks
 test("deduplicates repeated extraction but rejects strong duplicate identities with collision scope", () => {
   const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   appendNormalizedPage(state, {
-    rows: [rawProduct(1), rawProduct(1)],
+    rows: [rawProduct(1), rawProduct(1), rawProduct(2)],
   }, { pageIndex: 1, limit: 3 });
-  assert.equal(state.items.length, 1);
+  assert.equal(state.items.length, 2);
   assert.equal(state.items[0].organicRank, 1);
 
+  // Product 1 is not the previously appended product (product 2 is), so this is
+  // not the bounded page seam — it stays a rejected cross-page duplicate.
   assert.throws(() => appendNormalizedPage(state, {
     rows: [rawProduct(1, { extractionKey: "another-real-card" })],
   }, { pageIndex: 2, limit: 3 }), (error) => (
@@ -1673,7 +1731,7 @@ test("deduplicates repeated extraction but rejects strong duplicate identities w
     && error.code === "provider_duplicate_identity"
     && error.detail === "2:0:page_overlap:1"
   ));
-  assert.equal(state.items.length, 1, "a duplicate result must fail instead of compressing later organic ranks");
+  assert.equal(state.items.length, 2, "a duplicate result must fail instead of compressing later organic ranks");
 });
 
 test("keeps distinct seller cards when only their weak provider productId collides", () => {

@@ -713,28 +713,14 @@ test("finite ledger CHECK and snapshot audit accept not-found terminals and keep
   assert.match(audit, /pg_catalog\.jsonb_strip_nulls\(pg_catalog\.jsonb_build_object\(\s*'matched', snapshot\.matched/u);
 });
 
-test("runtime fingerprint and live surfaces are 1.1.21 while archived evidence stays pinned", () => {
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.21"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-    "src/server/naver-shopping/worker-runtime-expectation.mjs",
-  ]) {
-    assert.match(read(relativePath), /1\.1\.21/u, relativePath);
-    assert.doesNotMatch(read(relativePath), /1\.1\.20/u, relativePath);
-  }
-  for (const relativePath of [
-    "scripts/naver-shopping-candidate-performance-audit.mjs",
-    "scripts/naver-shopping-account-rank-health-audit.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.21"/u, relativePath);
-    assert.match(read(relativePath), new RegExp(NEW_RUNTIME.fingerprint, "u"), relativePath);
-  }
+test("keeps the archived runtime 1.1.21 migration pinned to its historical fingerprint", () => {
+  // 1.1.21 is archived evidence since the 1.1.22 bump (2026-09-11): its
+  // migration keeps the fingerprint of the runtime that produced it and never
+  // learns about the 1.1.22 successor. Live surfaces are asserted by the 1.1.22
+  // migration test instead.
+  assert.match(migration, new RegExp(NEW_RUNTIME.fingerprint, "u"));
+  assert.match(migration, /set runtime_version = '1\.1\.21'/u);
+  assert.doesNotMatch(migration, /1\.1\.22/u);
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.21/u);
   const finalAudit = read("scripts/naver-shopping-account-priority-final-audit.mjs");

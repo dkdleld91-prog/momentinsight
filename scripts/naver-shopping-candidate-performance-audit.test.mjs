@@ -64,10 +64,10 @@ function isExactFiniteNeutralFailureFixture(fixture) {
 }
 
 test("builds one fixed-wall read-only candidate audit with the full integrity contract", () => {
-  assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.22");
+  assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.23");
   assert.equal(
     N30_TARGET_RUNTIME_FINGERPRINT,
-    "98f404a50ac89ce34092b0906a0923d197a3ca14024e098e1e4d4e510020509e",
+    "26231beb6eb5cdd127afd3e216e96564d8923ee5195331723c5bc7f7443bc870",
   );
   const sql = buildN30CandidatePerformanceAuditSql(validOptions);
 

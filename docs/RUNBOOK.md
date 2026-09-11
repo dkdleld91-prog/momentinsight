@@ -105,7 +105,12 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
-- **버전 이력**: 1.1.22 (2026-09-11, 마이그레이션 `20260911003000_naver_shopping_runtime_1_1_22_seam_repeat_and_login_redirect.sql`)
+- **버전 이력**: 1.1.23 (2026-09-11, 마이그레이션 `20260911090000_naver_shopping_runtime_1_1_23_rendered_page_tolerance.sql`)
+  — 정렬 복구 경로를 네이버 실제 페이지에 맞춤: 전체 상품 수는 실시간 집계라 8페이지 동일 대신 1% 이내
+  (`MARKET_TOTAL_TOLERANCE_RATIO`), 한 페이지 안 같은 상품 두 번 노출은 한 슬롯으로 건너뜀(페이지당 최대
+  `MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS`=2), 1페이지는 자기 광고 슬롯 수만큼 뒤에서 시작 가능, 이음매는 최대 2칸
+  후퇴 허용. 실패 사유 `page_budget`·`invalid_window`·`duplicate_slot`이 코드에 붙어 기록됨.
+  1.1.22 (2026-09-11, 마이그레이션 `20260911003000_naver_shopping_runtime_1_1_22_seam_repeat_and_login_redirect.sql`)
   — 페이지 이음매에서 같은 상품이 두 번 나오면 창을 실패시키지 않고 한 번만 건너뛴다(창당 최대 2회,
   `provider.mjs`의 `MAX_SEAM_REPEAT_SKIPS`), 수집 프로필이 `nid.naver.com`으로 리다이렉트되면
   `naver_page_script_failed` 대신 `naver_verification_required`(보호 대기 + 탭 노출)로 보고한다.

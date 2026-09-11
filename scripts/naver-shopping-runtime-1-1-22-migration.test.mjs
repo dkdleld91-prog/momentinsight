@@ -37,15 +37,17 @@ function functionSql(source, name) {
   ))?.[0] || "";
 }
 
-test("1.1.22 is the newest runtime migration and the live fingerprint matches its pin", () => {
+// Archived 2026-09-11 (superseded by runtime 1.1.23): the live tree no longer
+// carries the 1.1.22 identity, so only the migration text and its historical
+// fingerprint are pinned here.
+test("keeps the archived runtime 1.1.22 migration pinned to its historical fingerprint", () => {
   const runtimeMigrations = fs.readdirSync(migrationDirectory)
     .filter((entry) => /_naver_shopping_runtime_1_1_\d+_/u.test(entry))
     .sort();
-  assert.equal(runtimeMigrations.at(-1), migrationName);
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
+  assert.ok(runtimeMigrations.includes(migrationName));
+  assert.equal(runtimeMigrations.indexOf(migrationName), runtimeMigrations.length - 2);
+  assert.equal(NEW_RUNTIME.fingerprint, "98f404a50ac89ce34092b0906a0923d197a3ca14024e098e1e4d4e510020509e");
+  assert.equal(typeof calculateN30RuntimeFingerprint, "function");
 });
 
 test("migration moves only the runtime identity pins from 1.1.21 to 1.1.22", () => {
@@ -91,30 +93,12 @@ test("the runtime literal audit still passes with the 1.1.22 progress gate as th
   assert.deepEqual(result.violations, []);
 });
 
-test("live surfaces are 1.1.22 while the archived 1.1.21 evidence keeps its historical identity", () => {
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.22"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-    "src/server/naver-shopping/worker-runtime-expectation.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.22"/u, relativePath);
-    assert.doesNotMatch(read(relativePath), /"1\.1\.21"/u, relativePath);
-  }
-  for (const relativePath of [
-    "scripts/naver-shopping-candidate-performance-audit.mjs",
-    "scripts/naver-shopping-account-rank-health-audit.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.22"/u, relativePath);
-    assert.match(read(relativePath), new RegExp(NEW_RUNTIME.fingerprint, "u"), relativePath);
-    assert.doesNotMatch(read(relativePath), new RegExp(OLD_RUNTIME.fingerprint, "u"), relativePath);
-  }
+test("the archived 1.1.21 evidence keeps its historical identity", () => {
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.22/u);
 });
 
-test("1.1.22 collector behaviour is present in the fingerprinted runtime files", () => {
+test("1.1.22 collector behaviour is still present in the fingerprinted runtime files", () => {
   const provider = read("tools/naver-shopping-rank-collector/src/provider.mjs");
   assert.match(provider, /export const MAX_SEAM_REPEAT_SKIPS = 2;/u);
   assert.match(provider, /state\.seamRepeatSkipCount/u);

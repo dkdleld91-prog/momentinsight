@@ -11,10 +11,12 @@ import {
   validateRankRequest,
 } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 import {
+  MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS,
   ProviderError,
   appendNormalizedPage,
   buildStableRenderedOrderProof,
   buildStableFullWindowProof,
+  marketTotalsWithinTolerance,
   parseNaverNextDataPage,
   parseNaverRenderedOrderCandidatePage,
 } from "../tools/naver-shopping-rank-collector/src/provider.mjs";
@@ -168,6 +170,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     identities: new Set(),
   };
   let marketTotal = null;
+  let marketTotalAnchor = null;
   let marketTotalVerified = true;
   let sourceExhausted = false;
   let previousRankStructureSummary = null;
@@ -203,12 +206,19 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
       const boundaryGap = previousRenderedStructureSummary
         ? structure.firstOrganicRawRank - previousRenderedStructureSummary.lastOrganicRawRank
         : structure.firstOrganicRawRank;
+      // Ranked paid slots consume raw numbers, on the first page as well as
+      // across a seam (2026-09-11 실측: page 1 with 14 ad slots opened at raw
+      // rank 3). The first page may therefore start after its own ad slots.
       const boundaryLimit = previousRenderedStructureSummary
         ? previousRenderedStructureSummary.adSlotCount + structure.adSlotCount + 1
-        : 1;
-      // Only a seam between two pages may reuse a raw number; the first page
-      // must still start at raw rank 1 or later.
-      const seamOverlap = previousRenderedStructureSummary != null && boundaryGap === 0;
+        : structure.adSlotCount + 1;
+      // A seam may reuse the previous page's last raw number, or step back by
+      // the duplicate slots that page carried (a twin listing pushes the raw
+      // numbers of the page it sits on: 2026-09-11 실측 `page_boundary:2:gm1`).
+      // Anything further back is a regression and stays fatal.
+      const seamOverlap = previousRenderedStructureSummary != null
+        && boundaryGap <= 0
+        && boundaryGap >= -MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS;
       if (seamOverlap) seamOverlapCount += 1;
       if (structure.mode !== "rendered_order_candidate_v1"
         || structure.helperSlotCount !== 0
@@ -235,10 +245,20 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
       previousRenderedStructureSummary = structure;
     }
     previousRankStructureSummary = parsed.rankStructureSummary;
-    if (marketTotal == null) marketTotal = parsed.marketTotal;
-    else if (marketTotal !== parsed.marketTotal) {
+    // The live counter drifts a few dozen products between pages. Every page
+    // is compared with the first page's total (an anchor, not a rolling
+    // value, so the drift stays bounded over the whole window); only a total
+    // outside MARKET_TOTAL_TOLERANCE_RATIO marks the window unverified. The
+    // reported total is the most recent page's count.
+    if (marketTotalAnchor == null) {
+      marketTotalAnchor = parsed.marketTotal;
+      marketTotal = parsed.marketTotal;
+    } else if (marketTotalVerified
+      && !marketTotalsWithinTolerance(marketTotalAnchor, parsed.marketTotal)) {
       marketTotal = null;
       marketTotalVerified = false;
+    } else if (marketTotalVerified) {
+      marketTotal = parsed.marketTotal;
     }
     appendNormalizedPage(state, parsed, {
       pageIndex: page.pageIndex,

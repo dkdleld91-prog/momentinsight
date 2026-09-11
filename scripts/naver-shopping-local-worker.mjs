@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.22";
+const EXPECTED_RUNTIME_VERSION = "1.1.23";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -424,13 +424,13 @@ function safeFailureCode(error) {
       .trim()
       .toLowerCase()
       .replaceAll(".", "_");
-    return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|market_total|page_boundary:[1-8](?::g(?:m?[0-9]{1,3}):l[0-9]{1,3})?|renderedorderproof_duplicate_identity)$/u.test(detail)
+    return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|page_budget|market_total|invalid_window|page_boundary:[1-8](?::g(?:m?[0-9]{1,3}):l[0-9]{1,3})?|renderedorderproof_duplicate_identity)$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }
   if (baseCode === "provider_rendered_order_candidate_invalid") {
     const detail = String(error?.detail || "").trim().toLowerCase();
-    return /^(?:[1-8]:(?:organic_count|raw_rank_span)|[1-8]:[0-9]{1,2}:(?:helper|ad_classification|raw_rank))$/u.test(detail)
+    return /^(?:[1-8]:(?:organic_count|raw_rank_span)|[1-8]:[0-9]{1,2}:(?:helper|ad_classification|raw_rank|duplicate_slot))$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }

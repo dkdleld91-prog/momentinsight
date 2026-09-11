@@ -735,6 +735,8 @@ function parseNaverNextDataPageInternal(payload, {
   let previousOrganicRawRank = null;
   let firstOrganicRawRank = null;
   const organicRawRanks = [];
+  const renderedOrganicProductIds = new Set();
+  let duplicateOrganicSlotCount = 0;
   let supersavingSincePreviousOrganicCount = 0;
   let firstSupersavingSincePreviousOrganicIndex = null;
   let lastSupersavingSincePreviousOrganicIndex = null;
@@ -807,6 +809,24 @@ function parseNaverNextDataPageInternal(payload, {
         isOrganic: false,
       });
       continue;
+    }
+
+    if (renderedOrderCandidate) {
+      // A second listing of a product already ranked on this page is one
+      // displayed slot, not a second product. Skip it before any raw-rank
+      // proof so its repeated or out-of-order number cannot poison the page.
+      const renderedProductId = nextDataNumericId(item.id, `${entryDetail}.item.id`, { required: true });
+      if (renderedOrganicProductIds.has(renderedProductId)) {
+        duplicateOrganicSlotCount += 1;
+        if (duplicateOrganicSlotCount > MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS) {
+          throw new ProviderError(
+            "provider_rendered_order_candidate_invalid",
+            `${expectedPage}:${index}:duplicate_slot`,
+          );
+        }
+        continue;
+      }
+      renderedOrganicProductIds.add(renderedProductId);
     }
 
     const expectedRank = expectedStartRank + organicCount;
@@ -999,7 +1019,8 @@ function parseNaverNextDataPageInternal(payload, {
     const rawRankSpan = firstOrganicRawRank == null || previousOrganicRawRank == null
       ? null
       : previousOrganicRawRank - firstOrganicRawRank + 1;
-    if (rawRankSpan == null || rawRankSpan > organicCount + adSlotCount) {
+    if (rawRankSpan == null
+      || rawRankSpan > organicCount + adSlotCount + duplicateOrganicSlotCount) {
       throw new ProviderError(
         "provider_rendered_order_candidate_invalid",
         `${expectedPage}:raw_rank_span`,
@@ -1016,6 +1037,7 @@ function parseNaverNextDataPageInternal(payload, {
         mode: "rendered_order_candidate_v1",
         firstOrganicRawRank,
         organicCount,
+        duplicateOrganicSlotCount,
         rawRankDigest: sha256(organicRawRanks.join(",")),
       } : {}),
       lastOrganicRawRank: previousOrganicRawRank,
@@ -1256,6 +1278,27 @@ function identitySignals(item) {
 // Bounded number of page-seam product repeats (last organic of page N shown
 // again as the first organic of page N+1) that one window may absorb.
 export const MAX_SEAM_REPEAT_SKIPS = 2;
+
+// Naver may list one product twice on a single rendered page (a supersaving
+// twin next to its ranked card: 2026-09-10 실측 raw ranks "1,1,2,…,15,9,16",
+// 2026-09-11 실측 42 organic entries on page 1). Only the rendered-order
+// candidate parser absorbs the second occurrence, bounded per page; the strict
+// parser keeps proving every rank slot.
+export const MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS = 2;
+
+// Naver's market total is a live counter, not a snapshot: one 8-page window
+// on 2026-09-11 reported 2,017,140 → 2,017,342 (+0.01%, rising every page).
+// Pages of one window must agree within this relative bound; byte-equality
+// across eight pages can never hold and made every rendered-order recovery
+// fail with `market_total`.
+export const MARKET_TOTAL_TOLERANCE_RATIO = 0.01;
+
+export function marketTotalsWithinTolerance(first, second) {
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(second)
+    || first < 0 || second < 0) return false;
+  const upper = Math.max(first, second);
+  return upper - Math.min(first, second) <= Math.ceil(upper * MARKET_TOTAL_TOLERANCE_RATIO);
+}
 
 export function appendNormalizedPage(state, pageResult, {
   pageIndex = 1,
@@ -1920,6 +1963,7 @@ export function createPlaywrightProvider(options = {}) {
       page = await context.newPage();
       const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
       let marketTotal = null;
+      let marketTotalAnchor = null;
       let marketTotalVerified = true;
       let sourceExhausted = false;
       const pageLimit = Math.min(
@@ -1942,10 +1986,12 @@ export function createPlaywrightProvider(options = {}) {
           if (!Number.isSafeInteger(pageResult.marketTotal) || pageResult.marketTotal < 0) {
             marketTotalVerified = false;
             marketTotal = null;
-          } else if (marketTotal != null && marketTotal !== pageResult.marketTotal) {
+          } else if (marketTotalAnchor != null
+            && !marketTotalsWithinTolerance(marketTotalAnchor, pageResult.marketTotal)) {
             marketTotalVerified = false;
             marketTotal = null;
           } else {
+            if (marketTotalAnchor == null) marketTotalAnchor = pageResult.marketTotal;
             marketTotal = pageResult.marketTotal;
           }
         }

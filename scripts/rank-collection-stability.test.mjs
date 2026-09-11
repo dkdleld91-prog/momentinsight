@@ -2864,6 +2864,29 @@ test("F2: 기존 n30 스케줄러 파일은 손대지 않는다", () => {
   assert.ok(watchdogSource.includes("'^(Default|Profile [1-9][0-9]{0,2})$'"));
 });
 
+test("F2: Chrome 이 이미 떠 있으면 실행파일로 프로필 로드를 넘기고 로드 여부를 기록한다", () => {
+  // 2026-09-10 09:46 ~ 09-11 12:04 실측: 대표가 다른 프로필로 Chrome 을 쓰는 동안
+  // `open --args` 는 인자를 버려 대기 프로필이 26시간 열리지 않았다. 스케줄러와
+  // 워치독 둘 다 실행 중 인스턴스에는 Chrome 실행파일로 명령줄을 전달해야 한다.
+  const scheduler = readRepoFile("scripts/run-naver-shopping-chrome-scheduler.sh");
+  for (const [label, source] of [["scheduler", scheduler], ["watchdog", watchdogSource]]) {
+    assert.ok(source.includes("/usr/bin/pgrep -x 'Google Chrome'"), label);
+    assert.ok(source.includes('"${CHROME_EXECUTABLE}" \\'), label);
+    assert.ok(source.includes('"--profile-directory=${PROFILE_DIRECTORY}" \\\n'), label);
+    assert.ok(source.includes("--no-startup-window"), label);
+    assert.ok(source.includes("chrome_profile_forwarded profile=${PROFILE_DIRECTORY}"), label);
+    assert.ok(source.includes("chrome_profile_forward_failed status="), label);
+    // 전달 분기는 open 분기보다 먼저 온다(실행 중이면 open 을 타지 않는다).
+    assert.ok(source.indexOf("/usr/bin/pgrep -x 'Google Chrome'") < source.indexOf('/usr/bin/open -gj "${CHROME_APPLICATION_PATH}" --args \\'), label);
+  }
+  // 스케줄러는 프로필이 실제로 열렸는지 lsof 로 확인해 loaded= 로 남긴다.
+  assert.ok(scheduler.includes("/usr/sbin/lsof -p \"${CHROME_MAIN_PID}\""));
+  assert.ok(scheduler.includes("loaded=${PROFILE_LOADED}"));
+  // 워치독은 종료가 안 된 재시작을 chrome_restarted 로 위장하지 않는다.
+  assert.ok(watchdogSource.includes('log_event "chrome_quit_incomplete"'));
+  assert.ok(watchdogSource.indexOf('log_event "chrome_quit_incomplete"') < watchdogSource.indexOf('log_event "chrome_restarted profile=${PROFILE_DIRECTORY}"'));
+});
+
 // ─────────────────────────────────────────────────────────────
 // (G) F2 워치독 드라이런 — 판정 로직을 실제로 실행한다
 // 반드시 MI_RANK_WATCHDOG_DRY_RUN=1 로만 돌린다(실제 Chrome 을 종료하지 않는다).

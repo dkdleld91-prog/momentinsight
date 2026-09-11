@@ -76,6 +76,15 @@
   워치독은 헬스 엔드포인트가 401이면 조용히 물러나므로, 증상 ①의 401이 먼저 풀려야 의미가 있다.
 - **안 되면 다음**: 워치독은 증상을 알리는 장치일 뿐이다 — 수집 자체는 증상 ①,
   서버는 증상 ③, 배포는 증상 ②로 각각 판정한다.
+- **맥 대기 프로필이 안 열리는 경우(2026-09-11 실측)**: 대표가 다른 프로필로 Chrome을 쓰는 동안
+  `/usr/bin/open --args --profile-directory=…`는 인자를 버리고 기존 창만 활성화한다 → 대기 프로필(Profile 5)이
+  26시간 동안 열리지 않았고 `chrome_ready`만 찍혔다. 스케줄러·워치독은 Chrome이 떠 있으면 실행파일로
+  명령줄을 전달해 프로필을 로드한다(`chrome_profile_forwarded profile=… loaded=1`). `loaded=0`이 반복되면
+  `lsof -p $(pgrep -x -o 'Google Chrome') | grep 'Chrome/Profile 5/'`로 직접 확인. 워치독의 `chrome_quit_incomplete`는
+  종료가 안 돼 확장 파일 재로딩이 안 된 상태이므로 대표가 Chrome을 완전히 종료(⌘Q)해야 새 확장이 실린다.
+  대기 프로필은 네이버에 "로그인 상태 유지"로 로그인돼 있어야 한다(로그아웃 상태로 인계되면
+  `naver_verification_required` → 레인 1시간 보호 대기가 주 작업기까지 막는다). 확인: 네이티브 호스트 로그
+  `~/Library/Logs/MomentInsight/naver-shopping-native-host.log`에 1분마다 `start`가 찍혀야 대기기가 살아 있는 것.
 
 ## ⑦ 런타임 버전 불일치 (서명은 오는데 수집이 멈춤)
 

@@ -223,6 +223,31 @@ chrome_restart_cycle() {   # $1 = 시작 로그 문구
 
   /bin/sleep "${QUIT_SETTLE_SECONDS}"
 
+  # `quit app` returns 0 as soon as Chrome accepts the event; a beforeunload
+  # prompt or the owner's own windows can keep the process alive. In that case
+  # /usr/bin/open --args would only re-activate the surviving instance and drop the
+  # profile argument (2026-09-11 10:58 실측: chrome_restarted 를 찍었지만 10:29 에
+  # 뜬 프로세스가 그대로였고 Profile 5 는 열리지 않음). Hand the profile launch
+  # to the running instance instead and say so; the extension files are reloaded
+  # only by a real restart, so this is logged as incomplete, not as restarted.
+  if /usr/bin/pgrep -x 'Google Chrome' >/dev/null 2>&1; then
+    log_event "chrome_quit_incomplete"
+    "${CHROME_EXECUTABLE}" \
+      "--profile-directory=${PROFILE_DIRECTORY}" \
+      --no-startup-window \
+      --no-first-run \
+      --no-default-browser-check >/dev/null 2>&1
+    local FORWARD_STATUS=$?
+    if (( FORWARD_STATUS != 0 )); then
+      log_event "chrome_profile_forward_failed status=${FORWARD_STATUS}"
+      write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
+      return 1
+    fi
+    log_event "chrome_profile_forwarded profile=${PROFILE_DIRECTORY}"
+    write_state "${STALLED_SINCE}" "${NOW}" "${LAST_SYNC_AT}" "${RECOVERY_ATTEMPTED}"
+    return 1
+  fi
+
   local OPEN_STATUS=0
   /usr/bin/open -gj "${CHROME_APPLICATION_PATH}" --args \
     "--profile-directory=${PROFILE_DIRECTORY}" \

@@ -595,7 +595,7 @@
     {
       "id": "shopping-chrome-scheduler-wrapper",
       "file": "scripts/run-naver-shopping-chrome-scheduler.sh",
-      "sha256": "a4d10fc62629822695bd45722b4a8c380e6447bb0f08919f07540723f5cbd262"
+      "sha256": "72802d3eeee22e591afba7ce64ef29b2023d92a76dfc0f8ea8d1ec2eb2736fa8"
     },
     {
       "id": "shopping-windows-installer-entrypoint",

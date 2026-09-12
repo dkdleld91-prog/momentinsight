@@ -105,7 +105,10 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
-- **버전 이력**: 1.1.27 (2026-09-12, 마이그레이션 `20260912150000_naver_shopping_runtime_1_1_27_same_page_twins.sql`)
+- **버전 이력**: 1.1.28 (2026-09-13, 마이그레이션 `20260912160000_naver_shopping_runtime_1_1_28_same_page_twins_unbounded.sql`)
+  — 같은 페이지 판매자 쌍둥이 상한(창당 2건) 제거: 1.1.27 첫 런(00:24, 콘트로이친)이 `5:48:duplicate_row:5`로
+  여전히 실패 → 한 페이지에 같은 판매자 상품이 3회 이상 노출됨. 엄격 경로와 동일하게 무제한 보존, 페이지 간 반복은 계속 거부.
+  1.1.27 (2026-09-12, 마이그레이션 `20260912150000_naver_shopping_runtime_1_1_27_same_page_twins.sql`)
   — 같은 페이지 판매자 쌍둥이(한 판매자 상품이 상품번호 둘로 한 페이지에 두 번 노출) 허용: 엄격 경로처럼
   정렬 복구 후보·증명도 두 슬롯 모두 보존(창당 2건 상한, 페이지 간 반복은 계속 거부). 콘트로이친 8사이클 연속
   `5:4x:duplicate_row:5` 해소.

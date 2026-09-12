@@ -1766,9 +1766,10 @@ test("deduplicates repeated extraction but rejects strong duplicate identities w
   assert.equal(state.items.length, 2, "a duplicate result must fail instead of compressing later organic ranks");
 });
 
-test("rendered-order candidate keeps up to two same-page twins and rejects the third", () => {
-  // 1.1.27 (콘트로이친 page 5): one seller product rendered twice on one page
-  // under two Naver product ids keeps both rank slots in the candidate pass.
+test("rendered-order candidate keeps every same-page twin and still rejects cross-page repeats", () => {
+  // 1.1.27/1.1.28 (콘트로이친 page 5): one seller product rendered several
+  // times on one page under distinct Naver product ids keeps every rank slot
+  // in the candidate pass; a bound of two (1.1.27) still failed production.
   const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   const twin = (index, key) => rawProduct(index, { extractionKey: key });
   appendNormalizedPage(state, {
@@ -1777,14 +1778,18 @@ test("rendered-order candidate keeps up to two same-page twins and rejects the t
   assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3, 4, 5]);
   assert.equal(state.items[1].sellerProductId, state.items[0].sellerProductId);
   assert.equal(state.items[3].sellerProductId, state.items[2].sellerProductId);
+  appendNormalizedPage(state, {
+    rows: [rawProduct(4), twin(4, "twin-4a"), twin(4, "twin-4b"), twin(4, "twin-4c")],
+  }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(state.items.filter((item) => item.sellerProductId === state.items[5].sellerProductId).length, 4);
   assert.throws(() => appendNormalizedPage(state, {
-    rows: [rawProduct(4), twin(4, "twin-4")],
-  }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true }), (error) => (
+    rows: [rawProduct(5), twin(2, "twin-2-next-page")],
+  }, { pageIndex: 2, limit: 300, rejectAllIdentityDuplicates: true }), (error) => (
     error instanceof ProviderError
     && error.code === "provider_duplicate_identity"
-    && error.detail === "1:1:duplicate_row:1"
+    && error.detail === "2:1:page_overlap:1"
   ));
-  assert.equal(state.items.length, 6, "the third twin fails the window instead of being compressed");
 });
 
 test("keeps distinct seller cards when only their weak provider productId collides", () => {

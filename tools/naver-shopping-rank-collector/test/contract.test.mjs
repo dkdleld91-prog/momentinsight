@@ -294,9 +294,9 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
     "renderedOrderProof.mismatch",
   );
 
-  // 1.1.27: a same-page twin (one seller product rendered twice on one page)
-  // keeps both rank slots and stays provable — up to two twins per window.
-  // A third twin or a repeat across pages still fails closed.
+  // 1.1.27/1.1.28: same-page twins (one seller product rendered several times
+  // on one page) keep every rank slot and stay provable, without a per-window
+  // bound. A repeat across pages still fails closed.
   const samePageTwin = structuredClone(window);
   for (const index of [1, 2]) {
     samePageTwin.items[index].sellerProductId = samePageTwin.items[0].sellerProductId;
@@ -315,14 +315,16 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
   }, request);
   assert.equal(twinResult.items.length, 300);
   assert.equal(twinResult.items[2].sellerProductId, twinResult.items[0].sellerProductId);
-  const excessTwins = structuredClone(samePageTwin);
-  excessTwins.items[3].sellerProductId = excessTwins.items[0].sellerProductId;
-  excessTwins.items[3].link = excessTwins.items[0].link;
-  assertContractError(
-    () => stableRenderedOrderWindowDigest(excessTwins.items, { keyword: window.keyword }),
-    "invalid_provider_response",
-    "renderedOrderProof.duplicate_identity",
-  );
+  const manyTwins = structuredClone(samePageTwin);
+  for (const index of [3, 4, 5]) {
+    manyTwins.items[index].sellerProductId = manyTwins.items[0].sellerProductId;
+    manyTwins.items[index].link = manyTwins.items[0].link;
+  }
+  const manyTwinsDigest = stableRenderedOrderWindowDigest(manyTwins.items, { keyword: window.keyword });
+  assert.equal(validateProviderWindow({
+    ...manyTwins,
+    renderedOrderProof: { ...proof, passDigests: [manyTwinsDigest, manyTwinsDigest] },
+  }, request).items.length, 300);
   const crossPageTwin = structuredClone(window);
   crossPageTwin.items[40].sellerProductId = crossPageTwin.items[0].sellerProductId;
   crossPageTwin.items[40].link = crossPageTwin.items[0].link;

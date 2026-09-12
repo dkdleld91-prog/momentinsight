@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.27",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.28",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -700,7 +700,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.27");
+          assert.equal(args.p_runtime_version, "1.1.28");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -722,7 +722,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_lease_token: LANE_TOKEN,
       p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
-      p_runtime_version: "1.1.27",
+      p_runtime_version: "1.1.28",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
     });
   });
@@ -828,7 +828,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.27",
+      runtimeVersion: "1.1.28",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -888,7 +888,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.27",
+      runtimeVersion: "1.1.28",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -930,7 +930,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.27",
+      runtimeVersion: "1.1.28",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -972,7 +972,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.27",
+      runtimeVersion: "1.1.28",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1061,7 +1061,7 @@ test("claim resets the exact signed idle envelope after touch and before repair 
       p_page: 0,
       p_job_kind: null,
       p_tracker_id: null,
-      p_runtime_version: "1.1.27",
+      p_runtime_version: "1.1.28",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
       p_run_trigger: "rank-catch-up",
     });

@@ -6,8 +6,6 @@ export const RANK_EVIDENCE = "naver_shopping_organic_list";
 export const STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1";
 export const STABLE_FINITE_WINDOW_PROOF_VERSION = "stable-finite-window-v1";
 export const STABLE_RENDERED_ORDER_PROOF_VERSION = "stable-rendered-order-v1";
-// 1.1.27: same-page seller twins the rendered-order proof keeps per window.
-export const MAX_RENDERED_ORDER_SAME_PAGE_TWINS = 2;
 const MAX_RANK_LIMIT = 300;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_PAGE_COUNT = 8;
@@ -350,10 +348,12 @@ export function stableRenderedOrderWindowDigest(items, options = {}) {
   // Naver renders one seller product twice on one SSR page under two product
   // ids. The strict window already keeps both rank slots of such a same-page
   // twin (validateProviderWindow rejects only cross-page repeats), so the
-  // rendered-order proof does the same, bounded per window. A repeat across
-  // pages is still a moving boundary and stays rejected.
+  // rendered-order proof does the same. 1.1.28: without a per-window bound —
+  // the 1.1.27 limit of two still failed the same page (`5:48:duplicate_row:5`,
+  // 2026-09-13 00:24 KST), i.e. Naver lists that seller product three or more
+  // times on one page; the strict path has never bounded this either. A
+  // repeat across pages is still a moving boundary and stays rejected.
   const identityOrigins = new Map();
-  let samePageTwins = 0;
   for (const item of normalizedItems) {
     const signal = renderedOrderIdentitySignal(item);
     const originRank = identityOrigins.get(signal);
@@ -361,10 +361,8 @@ export function stableRenderedOrderWindowDigest(items, options = {}) {
       identityOrigins.set(signal, item.organicRank);
       continue;
     }
-    const samePage = Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
-      === Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE);
-    if (samePage) samePageTwins += 1;
-    if (!samePage || samePageTwins > MAX_RENDERED_ORDER_SAME_PAGE_TWINS) {
+    if (Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
+      !== Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)) {
       throw new ContractError("invalid_provider_response", "renderedOrderProof.duplicate_identity");
     }
   }

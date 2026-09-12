@@ -290,22 +290,16 @@ function stableRankSlot(item) {
 }
 
 function renderedOrderIdentitySignal(item) {
-  const isCatalogResult = [1, 4, 7, 10].includes(Number(item.productType));
-  if (isCatalogResult) {
-    if (!item.catalogId) {
-      throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
-    }
-    return `catalog:${item.catalogId}`;
-  }
-  if (item.sellerProductId) return `seller:${item.sellerProductId}`;
-  // 1.1.25 (production 2026-09-12 01:55 KST, keyword 배찜질기: every rendered-order
-  // recovery for this window failed with `renderedOrderProof.direct_identity`):
-  // a seller card whose mall product id is not numeric carries no
-  // sellerProductId, but its canonical product URL is the same direct identity
-  // the strict path already trusts (identitySignals above). Only a card with
-  // neither seller id nor product link stays unprovable.
-  const [urlSignal] = identitySignals({ ...item, sellerProductId: "", productId: "", catalogId: "" });
-  if (urlSignal && urlSignal.startsWith("url:")) return urlSignal;
+  // 1.1.26 (production 2026-09-12 12:53–13:33 KST, keywords 찜질기·탄소매트:
+  // six windows in a row failed with `renderedOrderProof.direct_identity`
+  // even after 1.1.25's URL fallback): the card in question carries neither a
+  // numeric seller id nor a product link, only Naver's product id. The
+  // rendered-order proof now identifies a card exactly like the strict path
+  // (seller id → catalog id → canonical URL → product id); the two-capture
+  // digest and the window-wide duplicate check still guard the result. Only a
+  // card with no identity at all stays unprovable.
+  const [signal] = identitySignals(item);
+  if (signal) return signal;
   throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
 }
 

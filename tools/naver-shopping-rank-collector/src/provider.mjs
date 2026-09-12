@@ -1280,11 +1280,13 @@ function identitySignals(item) {
 export const MAX_SEAM_REPEAT_SKIPS = 2;
 // A seam repeat is only recognised within this many leading organic rows of
 // the next page (the boundary set Naver re-orders is one or two products).
-export const SEAM_LEADING_ORGANIC_ROWS = 2;
+// 1.1.26: widened from 2/3 after production `2:9:page_overlap:1` (2026-09-12
+// 13:23·13:43, keywords 허리찜질기·어깨찜질기) landed on the third organic row.
+export const SEAM_LEADING_ORGANIC_ROWS = 3;
 // …and only for a product that sat within this many trailing organic rows of
 // the previous page. A product from anywhere else on the previous page is a
 // real list shift and stays fatal.
-export const SEAM_TRAILING_ORGANIC_ROWS = 3;
+export const SEAM_TRAILING_ORGANIC_ROWS = 5;
 
 // Naver may list one product twice on a single rendered page (a supersaving
 // twin next to its ranked card: 2026-09-10 실측 raw ranks "1,1,2,…,15,9,16",

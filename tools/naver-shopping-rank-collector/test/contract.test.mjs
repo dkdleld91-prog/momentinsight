@@ -303,31 +303,19 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
     "renderedOrderProof.duplicate_identity",
   );
 
-  // 1.1.25: a seller card without a numeric seller id is still directly
-  // identified by its canonical product URL; only a card with neither stays
-  // unprovable.
-  const weakSeller = structuredClone(window);
-  Object.assign(weakSeller.items[0], { sellerProductId: "", link: "" });
-  assertContractError(
-    () => validateProviderWindow({ ...weakSeller, renderedOrderProof: proof }, request),
-    "invalid_provider_response",
-    "renderedOrderProof.direct_identity",
-  );
-  const urlIdentified = structuredClone(window);
-  Object.assign(urlIdentified.items[0], { sellerProductId: "" });
-  assert.equal(typeof stableRenderedOrderWindowDigest(urlIdentified.items, { keyword: request.keyword }), "string");
-
-  const weakCatalog = structuredClone(window);
-  weakCatalog.items[0] = {
-    ...weakCatalog.items[0],
-    productType: 1,
-    catalogId: "",
-  };
-  assertContractError(
-    () => validateProviderWindow({ ...weakCatalog, renderedOrderProof: proof }, request),
-    "invalid_provider_response",
-    "renderedOrderProof.direct_identity",
-  );
+  // 1.1.26: the rendered-order proof identifies a card exactly like the strict
+  // path (seller id → catalog id → URL → product id), so a card without a
+  // numeric seller id, without a link, or a catalog card without a catalog id
+  // is still provable through the identity the window already validated.
+  for (const fallback of [
+    { sellerProductId: "" },
+    { sellerProductId: "", link: "", productId: "70000000001" },
+    { productType: 1, catalogId: "", productId: "70000000001" },
+  ]) {
+    const identified = structuredClone(window);
+    Object.assign(identified.items[0], fallback);
+    assert.equal(typeof stableRenderedOrderWindowDigest(identified.items, { keyword: request.keyword }), "string");
+  }
 
   assertContractError(
     () => validateProviderWindow({ ...validWindow(2), renderedOrderProof: proof },

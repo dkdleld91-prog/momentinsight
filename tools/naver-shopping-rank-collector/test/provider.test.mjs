@@ -1172,17 +1172,17 @@ test("rendered-order pass skips a leading next-page repeat of any previous-page 
   // A previous-page product that was not in that page's trailing rows is a
   // real list shift and stays fatal even at the head of the next page.
   const shifted = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
-  appendNormalizedPage(shifted, { rows: [rawProduct(1), rawProduct(2), rawProduct(3), rawProduct(4), rawProduct(5)] }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
+  appendNormalizedPage(shifted, { rows: [1, 2, 3, 4, 5, 6, 7].map((index) => rawProduct(index)) }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
   assert.throws(
-    () => appendNormalizedPage(shifted, { rows: [rawProduct(1), rawProduct(6)] }, rendered),
+    () => appendNormalizedPage(shifted, { rows: [rawProduct(1), rawProduct(8)] }, rendered),
     (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:0:page_overlap:1",
   );
   // Deeper than the leading rows it stays fatal even in the rendered pass.
   const deep = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   appendNormalizedPage(deep, { rows: [rawProduct(1), rawProduct(2), rawProduct(3)] }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
   assert.throws(
-    () => appendNormalizedPage(deep, { rows: [rawProduct(4), rawProduct(5), rawProduct(2)] }, rendered),
-    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:2:page_overlap:1",
+    () => appendNormalizedPage(deep, { rows: [rawProduct(4), rawProduct(5), rawProduct(6), rawProduct(2)] }, rendered),
+    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:3:page_overlap:1",
   );
 });
 

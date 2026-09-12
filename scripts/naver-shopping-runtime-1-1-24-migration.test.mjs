@@ -96,7 +96,7 @@ test("1.1.24 worker behaviour is still present in the fingerprinted runtime file
   const provider = read("tools/naver-shopping-rank-collector/src/provider.mjs");
   assert.match(provider, /export const MAX_RENDERED_DUPLICATE_ORGANIC_SLOTS = 2;/u);
   assert.match(provider, /export const MARKET_TOTAL_TOLERANCE_RATIO = 0\.01;/u);
-  assert.match(provider, /export const SEAM_LEADING_ORGANIC_ROWS = 2;/u);
-  assert.match(provider, /export const SEAM_TRAILING_ORGANIC_ROWS = 3;/u);
+  assert.match(provider, /export const SEAM_LEADING_ORGANIC_ROWS = \d+;/u);
+  assert.match(provider, /export const SEAM_TRAILING_ORGANIC_ROWS = \d+;/u);
   assert.match(provider, /previousPageTailSignals\.has\(repeatedSignal\)/u);
 });

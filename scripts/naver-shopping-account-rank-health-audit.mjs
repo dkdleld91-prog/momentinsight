@@ -2,9 +2,9 @@ const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/u;
 
 export const N30_ACCOUNT_HEALTH_AGENCY_CODE = "mml93-a01";
 export const N30_ACCOUNT_HEALTH_WORKER_ID = "windows-desktop-primary";
-export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1.1.26";
+export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1.1.27";
 export const N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT =
-  "6033788f59076da8d625a078a5066385347e9d7fa9d679f48189605596857013";
+  "f153198fd05fe6d79efffa0ca39da7a4ff5e65a84d96a2c3de89526e988cdbc8";
 
 function requireObservedAt(value) {
   if (typeof value !== "string" || !ISO_UTC_PATTERN.test(value) || !Number.isFinite(Date.parse(value))) {

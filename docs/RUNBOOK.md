@@ -105,7 +105,11 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
-- **버전 이력**: 1.1.26 (2026-09-12, 마이그레이션 `20260912060000_naver_shopping_runtime_1_1_26_rendered_identity_fallback.sql`)
+- **버전 이력**: 1.1.27 (2026-09-12, 마이그레이션 `20260912150000_naver_shopping_runtime_1_1_27_same_page_twins.sql`)
+  — 같은 페이지 판매자 쌍둥이(한 판매자 상품이 상품번호 둘로 한 페이지에 두 번 노출) 허용: 엄격 경로처럼
+  정렬 복구 후보·증명도 두 슬롯 모두 보존(창당 2건 상한, 페이지 간 반복은 계속 거부). 콘트로이친 8사이클 연속
+  `5:4x:duplicate_row:5` 해소.
+  1.1.26 (2026-09-12, 마이그레이션 `20260912060000_naver_shopping_runtime_1_1_26_rendered_identity_fallback.sql`)
   — 정렬 복구 증명의 식별자를 엄격 경로와 동일하게(판매자번호→원부→URL→상품번호); 1.1.25의 URL 대체로도
   못 잡던 카드(링크도 판매자번호도 없음, 찜질기·탄소매트 6연속 실패) 해소. 이음매 허용 폭 앞 3행·뒤 5행.
   1.1.25 (2026-09-12, 마이그레이션 `20260911170000_naver_shopping_runtime_1_1_25_rendered_identity.sql`)

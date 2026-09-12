@@ -299,6 +299,23 @@ function renderedOrderDuplicateSlotPages(duplicateCount = 2, pageIndex = 1) {
   });
 }
 
+// 2026-09-11/12 production shape (콘트로이친, page 5, eight cycles): one seller
+// product rendered twice on one page under two Naver product ids, each with
+// its own raw number — a same-page twin, not a repeated slot.
+function renderedOrderSamePageTwinPages(twinCount = 1, pageIndex = 5) {
+  return renderedOrderDriftPages((pages) => {
+    mutateRenderedPage(pages, pageIndex, (entries) => {
+      const organic = renderedOrganicEntries(entries);
+      for (let offset = 0; offset < twinCount; offset += 1) {
+        const source = organic[offset * 2].item;
+        const twin = organic[(offset * 2) + 1].item;
+        twin.mallProductId = source.mallProductId;
+        twin.mallPcUrl = source.mallPcUrl;
+      }
+    });
+  });
+}
+
 // 2026-09-11 production shape: ranked paid slots consume the first raw
 // numbers, so page 1 opens at raw rank 3 after two ad rows.
 function renderedOrderFirstPageAdOffsetPages(offset = 2) {
@@ -852,7 +869,7 @@ function renderedOrderSameProductSeamPages() {
   });
 }
 
-// 1.1.26 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
+// 1.1.27 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
 // every cycle): page 2 opens with page 1's second-to-last product, not its last.
 function renderedOrderBoundaryReorderSeamPages() {
   return renderedOrderDriftPages((pages) => {
@@ -876,7 +893,7 @@ function renderedOrderBoundaryReorderSeamPages() {
   });
 }
 
-test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.26)", async () => {
+test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.27)", async () => {
   const nowMs = Date.parse("2026-09-11T12:00:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(() => renderedOrderBoundaryReorderSeamPages(), "boundary-reorder", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -916,7 +933,7 @@ test("native provider absorbs Naver's same-product page seam and still proves 30
   assert.equal(result.renderedOrderProof?.passCount, 2);
 });
 
-// 1.1.26 (2026-09-11 production shapes): the rendered-order recovery must
+// 1.1.27 (2026-09-11 production shapes): the rendered-order recovery must
 // absorb Naver's live market counter, twin listings and ad-consumed first
 // numbers, while every regression beyond the evidence stays fatal.
 function renderedRecoveryProvider(pagesFactory, label, nowMs) {
@@ -948,6 +965,28 @@ test("native provider still fails a window whose market total moves more than 1%
   await assert.rejects(
     provider.collect(request(nowMs)),
     (error) => error?.code === "provider_stable_rendered_order_unproven" && error?.detail === "market_total",
+  );
+});
+
+test("native provider keeps a same-page seller twin in the rendered-order proof (콘트로이친 page 5)", async () => {
+  const nowMs = Date.parse("2026-09-12T09:43:00.000Z");
+  const { provider, messages } = renderedRecoveryProvider(() => renderedOrderSamePageTwinPages(1, 5), "same-page-twin", nowMs);
+  const result = await provider.collect(request(nowMs));
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.ok(result.renderedOrderProof);
+  const twins = result.items.filter((item) => item.sellerProductId === result.items[160].sellerProductId);
+  assert.deepEqual(twins.map((item) => item.organicRank), [161, 162]);
+  assert.equal(new Set(result.items.map((item) => item.productId)).size, 300);
+});
+
+test("native provider still rejects a third same-page twin in one window", async () => {
+  const nowMs = Date.parse("2026-09-12T09:43:00.000Z");
+  const { provider } = renderedRecoveryProvider(() => renderedOrderSamePageTwinPages(3, 5), "excess-twins", nowMs);
+  await assert.rejects(
+    provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && /^5:\d{1,2}:duplicate_row:5$/u.test(String(error?.detail)),
   );
 });
 
@@ -2266,7 +2305,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.26");
+  assert.equal(manifest.version, "1.1.27");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3574,7 +3613,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.26");
+  assert.equal(manifest.version, "1.1.27");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3749,7 +3788,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.26",
+    runtimeVersion: "1.1.27",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

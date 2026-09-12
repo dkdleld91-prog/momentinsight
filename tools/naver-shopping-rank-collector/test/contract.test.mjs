@@ -294,11 +294,40 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
     "renderedOrderProof.mismatch",
   );
 
-  const duplicateIdentity = structuredClone(window);
-  duplicateIdentity.items[1].sellerProductId = duplicateIdentity.items[0].sellerProductId;
-  duplicateIdentity.items[1].link = duplicateIdentity.items[0].link;
+  // 1.1.27: a same-page twin (one seller product rendered twice on one page)
+  // keeps both rank slots and stays provable — up to two twins per window.
+  // A third twin or a repeat across pages still fails closed.
+  const samePageTwin = structuredClone(window);
+  for (const index of [1, 2]) {
+    samePageTwin.items[index].sellerProductId = samePageTwin.items[0].sellerProductId;
+    samePageTwin.items[index].link = samePageTwin.items[0].link;
+  }
+  const twinDigest = stableRenderedOrderWindowDigest(samePageTwin.items, { keyword: window.keyword });
+  assert.notEqual(twinDigest, passDigest);
   assertContractError(
-    () => validateProviderWindow({ ...duplicateIdentity, renderedOrderProof: proof }, request),
+    () => validateProviderWindow({ ...samePageTwin, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.mismatch",
+  );
+  const twinResult = validateProviderWindow({
+    ...samePageTwin,
+    renderedOrderProof: { ...proof, passDigests: [twinDigest, twinDigest] },
+  }, request);
+  assert.equal(twinResult.items.length, 300);
+  assert.equal(twinResult.items[2].sellerProductId, twinResult.items[0].sellerProductId);
+  const excessTwins = structuredClone(samePageTwin);
+  excessTwins.items[3].sellerProductId = excessTwins.items[0].sellerProductId;
+  excessTwins.items[3].link = excessTwins.items[0].link;
+  assertContractError(
+    () => stableRenderedOrderWindowDigest(excessTwins.items, { keyword: window.keyword }),
+    "invalid_provider_response",
+    "renderedOrderProof.duplicate_identity",
+  );
+  const crossPageTwin = structuredClone(window);
+  crossPageTwin.items[40].sellerProductId = crossPageTwin.items[0].sellerProductId;
+  crossPageTwin.items[40].link = crossPageTwin.items[0].link;
+  assertContractError(
+    () => stableRenderedOrderWindowDigest(crossPageTwin.items, { keyword: window.keyword }),
     "invalid_provider_response",
     "renderedOrderProof.duplicate_identity",
   );

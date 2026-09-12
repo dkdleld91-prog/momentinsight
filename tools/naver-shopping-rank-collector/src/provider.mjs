@@ -8,6 +8,7 @@ import {
   SCHEMA_VERSION,
   SOURCE,
   STABLE_FULL_WINDOW_PROOF_VERSION,
+  MAX_RENDERED_ORDER_SAME_PAGE_TWINS,
   STABLE_RENDERED_ORDER_PROOF_VERSION,
   stableRenderedOrderWindowDigest,
   stableFullWindowEvidence,
@@ -1405,10 +1406,22 @@ export function appendNormalizedPage(state, pageResult, {
         continue;
       }
       if (rejectAllIdentityDuplicates) {
-        throw new ProviderError(
-          "provider_duplicate_identity",
-          `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
-        );
+        // 1.1.27 (production 2026-09-11 → 09-12, 콘트로이친 page 5, eight
+        // cycles of `duplicate_row`): one seller product rendered twice on one
+        // SSR page under two product ids keeps both rank slots in the
+        // rendered-order candidate too, exactly like the strict path below;
+        // the per-window bound mirrors the rendered-order proof's.
+        state.samePageTwinCount = Number.isSafeInteger(state.samePageTwinCount)
+          ? state.samePageTwinCount
+          : 0;
+        if (collisionKind === "duplicate_row") state.samePageTwinCount += 1;
+        if (collisionKind !== "duplicate_row"
+          || state.samePageTwinCount > MAX_RENDERED_ORDER_SAME_PAGE_TWINS) {
+          throw new ProviderError(
+            "provider_duplicate_identity",
+            `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
+          );
+        }
       }
       // `compositeList.list` is one authoritative SSR page and every organic
       // row above already proved its absolute Naver rank. If Naver itself

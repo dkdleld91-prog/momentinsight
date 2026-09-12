@@ -6,6 +6,8 @@ export const RANK_EVIDENCE = "naver_shopping_organic_list";
 export const STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1";
 export const STABLE_FINITE_WINDOW_PROOF_VERSION = "stable-finite-window-v1";
 export const STABLE_RENDERED_ORDER_PROOF_VERSION = "stable-rendered-order-v1";
+// 1.1.27: same-page seller twins the rendered-order proof keeps per window.
+export const MAX_RENDERED_ORDER_SAME_PAGE_TWINS = 2;
 const MAX_RANK_LIMIT = 300;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_PAGE_COUNT = 8;
@@ -343,13 +345,28 @@ export function stableWindowDigest(items, options = {}) {
 export function stableRenderedOrderWindowDigest(items, options = {}) {
   const normalizedItems = stableWindowItems(items);
   const keyword = stableProofKeyword(options.keyword);
-  const identities = new Set();
+  // 1.1.27 (production 2026-09-11 02:19 → 2026-09-12 18:43 KST, keyword
+  // 콘트로이친: eight cycles in a row failed with `5:4x:duplicate_row:5`):
+  // Naver renders one seller product twice on one SSR page under two product
+  // ids. The strict window already keeps both rank slots of such a same-page
+  // twin (validateProviderWindow rejects only cross-page repeats), so the
+  // rendered-order proof does the same, bounded per window. A repeat across
+  // pages is still a moving boundary and stays rejected.
+  const identityOrigins = new Map();
+  let samePageTwins = 0;
   for (const item of normalizedItems) {
     const signal = renderedOrderIdentitySignal(item);
-    if (identities.has(signal)) {
+    const originRank = identityOrigins.get(signal);
+    if (originRank == null) {
+      identityOrigins.set(signal, item.organicRank);
+      continue;
+    }
+    const samePage = Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
+      === Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE);
+    if (samePage) samePageTwins += 1;
+    if (!samePage || samePageTwins > MAX_RENDERED_ORDER_SAME_PAGE_TWINS) {
       throw new ContractError("invalid_provider_response", "renderedOrderProof.duplicate_identity");
     }
-    identities.add(signal);
   }
   return crypto.createHash("sha256").update([
     STABLE_RENDERED_ORDER_PROOF_VERSION,

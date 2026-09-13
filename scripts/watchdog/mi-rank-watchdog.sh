@@ -29,6 +29,7 @@ LOG_MAX_BYTES=1048576
 DRY_RUN="${MI_RANK_WATCHDOG_DRY_RUN:-0}"
 SYNC_COOLDOWN_SECONDS=10800
 SYNC_INSTALL_TIMEOUT_SECONDS=180
+SYNC_FETCH_TIMEOUT_SECONDS=60
 RUNTIME_COPY_PATH="${SUPPORT_DIRECTORY}/NaverShoppingBridge"
 SYNC_CONF_PATH="${SUPPORT_DIRECTORY}/mi-rank-runtime-sync.conf"
 SYNC_DISABLED="${MI_RANK_WATCHDOG_SYNC_DISABLED:-0}"
@@ -274,6 +275,88 @@ NOW="$(/bin/date -u '+%s')"
 # 반환값: 0 = 헬스 프로브로 계속 진행, 10 = 이번 틱 종료.
 # 이 함수는 절대 exit 하지 않는다. 어떤 실패도 로그 한 줄로 강등되고, 정체 감시는
 # 그대로 이어진다.
+# ── 동기화 원본 fast-forward ──────────────────────────────────
+# 2026-09-12 14:10 → 09-13 13:27 사고: 서버 런타임은 1.1.26→1.1.28 로 올라갔는데 이 맥의
+# 동기화 원본(체크아웃)은 1.1.25 에 머물렀다. 워치독은 "원본과 사본이 같다"(runtime_in_sync)
+# 만 보므로 둘 다 낡은 상태를 정상으로 읽었고, 대기기는 매분 신원 불일치(exit 1)로 죽은 채
+# 윈도우가 꺼진 12시간 동안 인계하지 못했다. 이제 원본이 배포 브랜치(origin/main)보다
+# 뒤처지면 여기서 fast-forward 하고, 이어지는 드리프트 동기화가 사본·Chrome 을 갱신한다.
+# 손대지 않는 경우: origin 이 없음(조용히), main 이 아님, 원격과 갈라짐(로컬 커밋 있음),
+# 런타임 파일이 더러움, 수집 진행 중, 드라이런. fast-forward 는 git 이 덮어쓸 로컬 변경이
+# 있으면 스스로 거부하므로 사람의 작업을 잃는 경로는 없다.
+sync_source_fast_forward() {   # $1 = SYNC_SOURCE_PATH
+  setopt localoptions
+  set +e
+  local SOURCE="$1"
+  /usr/bin/git -C "${SOURCE}" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  /usr/bin/git -C "${SOURCE}" remote get-url origin >/dev/null 2>&1 || return 0
+  local BRANCH=""
+  BRANCH="$(/usr/bin/git -C "${SOURCE}" symbolic-ref --short -q HEAD 2>/dev/null)" || BRANCH=""
+  if [[ "${BRANCH}" != "main" ]]; then
+    log_event "sync_source_pull_skipped reason=not_on_main"
+    return 0
+  fi
+  # macOS 에는 timeout(1) 이 없다. 설치기와 같은 방식으로 상한까지 센다(ssh 원격은 저속
+  # 제한이 없어 무한 대기가 가능하다).
+  local FETCH_PID=0 FETCH_WAITED=0 FETCH_STATUS=0
+  /usr/bin/git -C "${SOURCE}" fetch --quiet origin main >/dev/null 2>&1 &
+  FETCH_PID=$!
+  while (( FETCH_WAITED < SYNC_FETCH_TIMEOUT_SECONDS )); do
+    kill -0 "${FETCH_PID}" 2>/dev/null || break
+    /bin/sleep 1
+    FETCH_WAITED=$(( FETCH_WAITED + 1 ))
+  done
+  if kill -0 "${FETCH_PID}" 2>/dev/null; then
+    kill "${FETCH_PID}" 2>/dev/null
+    wait "${FETCH_PID}" 2>/dev/null
+    log_event "sync_source_fetch_failed status=timeout"
+    return 0
+  fi
+  wait "${FETCH_PID}"
+  FETCH_STATUS=$?
+  if (( FETCH_STATUS != 0 )); then
+    log_event "sync_source_fetch_failed status=${FETCH_STATUS}"
+    return 0
+  fi
+  local LOCAL_HEAD="" REMOTE_HEAD=""
+  LOCAL_HEAD="$(/usr/bin/git -C "${SOURCE}" rev-parse --short=7 HEAD 2>/dev/null)" || LOCAL_HEAD=""
+  REMOTE_HEAD="$(/usr/bin/git -C "${SOURCE}" rev-parse --short=7 origin/main 2>/dev/null)" || REMOTE_HEAD=""
+  if [[ -z "${LOCAL_HEAD}" || -z "${REMOTE_HEAD}" || "${LOCAL_HEAD}" == "${REMOTE_HEAD}" ]]; then
+    return 0
+  fi
+  if ! /usr/bin/git -C "${SOURCE}" merge-base --is-ancestor HEAD origin/main >/dev/null 2>&1; then
+    log_event "sync_source_behind action=none reason=diverged local=${LOCAL_HEAD} origin=${REMOTE_HEAD}"
+    return 0
+  fi
+  local PORCELAIN="" PORCELAIN_STATUS=0
+  PORCELAIN="$(/usr/bin/git -C "${SOURCE}" status --porcelain -- \
+    "${RUNTIME_SYNC_FILES[@]}" "tools/naver-shopping-chrome-extension" 2>/dev/null)"
+  PORCELAIN_STATUS=$?
+  if (( PORCELAIN_STATUS != 0 )) || [[ -n "${PORCELAIN}" ]]; then
+    log_event "sync_source_behind action=none reason=repository_dirty local=${LOCAL_HEAD} origin=${REMOTE_HEAD}"
+    return 0
+  fi
+  # Chrome 은 확장을 이 체크아웃에서 언팩으로 읽는다. 수집 중에 파일을 바꾸면 새 콘텐츠
+  # 스크립트가 옛 서비스워커와 섞이므로 드리프트 동기화와 같은 가드로 이번 틱은 미룬다.
+  if collection_in_progress; then
+    log_event "sync_source_behind action=deferred reason=collection_active local=${LOCAL_HEAD} origin=${REMOTE_HEAD}"
+    return 0
+  fi
+  if [[ "${DRY_RUN}" == "1" ]]; then
+    log_event "dry_run sync_source_would_fast_forward local=${LOCAL_HEAD} origin=${REMOTE_HEAD}"
+    return 0
+  fi
+  local MERGE_STATUS=0
+  /usr/bin/git -C "${SOURCE}" merge --ff-only --quiet origin/main >/dev/null 2>&1
+  MERGE_STATUS=$?
+  if (( MERGE_STATUS != 0 )); then
+    log_event "sync_source_fast_forward_failed status=${MERGE_STATUS} local=${LOCAL_HEAD} origin=${REMOTE_HEAD}"
+    return 0
+  fi
+  log_event "sync_source_fast_forwarded from=${LOCAL_HEAD} to=${REMOTE_HEAD}"
+  return 0
+}
+
 runtime_drift_pass() {
   setopt localoptions
   set +e
@@ -298,6 +381,9 @@ runtime_drift_pass() {
     log_event "sync_check_failed reason=sync_source_unresolved"
     return 0
   fi
+
+  # guard 0 — 원본 저장소가 배포 브랜치보다 뒤처졌으면 먼저 따라잡는다(위 함수 주석).
+  sync_source_fast_forward "${SYNC_SOURCE_PATH}"
 
   # 사본이 아예 없는 것은 드리프트가 아니다. 최초 설치는 소유자의 일이지
   # 워치독의 일이 아니다.

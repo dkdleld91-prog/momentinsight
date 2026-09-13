@@ -2755,7 +2755,7 @@ test("F12: 수집-중 판정은 드리프트 경로와 같은 단일 구현을 �
   // 죽이는" 비대칭이 재발한다. 함수 하나를 두 경로가 함께 호출해야 한다.
   assert.ok(watchdogSource.includes("collection_in_progress()"), "판정 함수가 있어야 한다");
   const callCount = (watchdogSource.match(/if collection_in_progress; then/g) || []).length;
-  assert.equal(callCount, 2, "드리프트 경로와 정체 재기동 경로가 각각 한 번씩 부른다");
+  assert.equal(callCount, 3, "드리프트 경로·동기화 원본 fast-forward(F13)·정체 재기동 경로가 각각 한 번씩 부른다");
   // 신호 두 개(네이티브 호스트 프로세스 + 워커 잠금 디렉터리)는 함수 안에 그대로 있다.
   assert.ok(watchdogSource.includes("naver-shopping-native-host\\.mjs"));
   assert.ok(watchdogSource.includes("moment-insight-n-shopping-worker.lock"));
@@ -3364,6 +3364,114 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
         `${scenario.label} 은 ${scenario.verdict} 판정까지 도달해야 한다 :: ${raw}`,
       );
     }
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// (G2) F13 동기화 원본 fast-forward — 2026-09-12 14:10 → 09-13 13:27 사고 재현
+// 서버 런타임은 1.1.26→1.1.28 로 올라갔는데 맥 체크아웃(동기화 원본)은 1.1.25 에 머물러
+// "원본=사본" 이라 runtime_in_sync 만 찍히고 대기기는 매분 신원 불일치로 죽어 있었다.
+// ─────────────────────────────────────────────────────────────
+test("F13: 워치독은 드리프트 비교 전에 동기화 원본을 origin/main 으로 fast-forward 한다(정적)", () => {
+  const callIndex = watchdogSource.indexOf('sync_source_fast_forward "${SYNC_SOURCE_PATH}"');
+  const driftLoopIndex = watchdogSource.indexOf('for REL in "${RUNTIME_SYNC_FILES[@]}"; do');
+  assert.ok(callIndex > 0 && driftLoopIndex > callIndex, "fast-forward 는 14개 해시 비교보다 앞서야 한다");
+  for (const guard of [
+    'remote get-url origin >/dev/null 2>&1 || return 0',
+    'if [[ "${BRANCH}" != "main" ]]; then',
+    "merge-base --is-ancestor HEAD origin/main",
+    'reason=repository_dirty',
+    'reason=collection_active',
+    'dry_run sync_source_would_fast_forward',
+    "merge --ff-only --quiet origin/main",
+    "SYNC_FETCH_TIMEOUT_SECONDS=60",
+  ]) {
+    assert.ok(watchdogSource.includes(guard), `워치독에 가드가 있어야 한다: ${guard}`);
+  }
+  // 드라이런 분기는 실제 merge 보다 앞에 있어야 한다(테스트가 실제 저장소를 절대 움직이지 않도록).
+  assert.ok(
+    watchdogSource.indexOf("dry_run sync_source_would_fast_forward") < watchdogSource.indexOf("merge --ff-only --quiet origin/main"),
+  );
+});
+
+// 임시 $HOME 안에 "원본 체크아웃 + bare origin" 한 쌍을 만든다. 실제 저장소는 절대 건드리지 않는다.
+function seedRemoteSync(home, options = {}) {
+  const { behind = false, diverged = false, notOnMain = false, dirty = false, brokenRemote = false } = options;
+  const source = seedRuntimeSync(home, { gitInit: true });
+  const gitEnv = { ...process.env, HOME: home };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_GLOBAL"]) delete gitEnv[key];
+  const git = (cwd, ...args) => execFileSync(
+    "git",
+    ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
+    { cwd, stdio: "pipe", env: gitEnv },
+  ).toString().trim();
+  const origin = path.join(home, "origin.git");
+  git(home, "clone", "-q", "--bare", source, origin);
+  git(source, "remote", "add", "origin", brokenRemote ? path.join(home, "no-such-origin.git") : origin);
+  if (!brokenRemote) git(source, "fetch", "-q", "origin");
+  if (behind) {
+    const pusher = path.join(home, "pusher");
+    git(home, "clone", "-q", origin, pusher);
+    fs.writeFileSync(path.join(pusher, "RELEASE.md"), "release\n");
+    git(pusher, "add", "-A");
+    git(pusher, "commit", "-q", "-m", "release");
+    git(pusher, "push", "-q", "origin", "main");
+  }
+  if (diverged) {
+    fs.writeFileSync(path.join(source, "LOCAL.md"), "local\n");
+    git(source, "add", "-A");
+    git(source, "commit", "-q", "-m", "local");
+  }
+  if (notOnMain) git(source, "checkout", "-q", "-b", "feature");
+  if (dirty) writeSeedFile(source, SYNC_EXTENSION_MANIFEST, '{"manifest_version":3,"dirty":true}\n');
+  return source;
+}
+
+test("F13: 동기화 원본 fast-forward 판정이 실제 실행으로 고정된다(드라이런)", darwinOnly, async (t) => {
+  const server = await startHealthServer(() => JSON.stringify({
+    ok: true,
+    lastSuccessAt: new Date().toISOString(),
+    stalledMinutes: 3,
+    queueStalled: false,
+    workerOutdated: false,
+    heartbeatAgeMinutes: 0,
+  }));
+  const homes = [];
+  t.after(() => {
+    server.close();
+    for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+  });
+  const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
+
+  const scenarios = [
+    // 사고 재현: 원본이 origin/main 보다 뒤처지고 깨끗하다 → fast-forward 대상. 드라이런이라
+    // 실제로 당기지는 않으므로 이어지는 드리프트 비교는 그대로 runtime_in_sync 다.
+    { label: "(a) 뒤처짐 + 깨끗", seed: { behind: true }, expect: "dry_run sync_source_would_fast_forward local=", verdict: "runtime_in_sync files=14" },
+    { label: "(b) 원격과 갈라짐(로컬 커밋)", seed: { behind: true, diverged: true }, expect: "sync_source_behind action=none reason=diverged" },
+    { label: "(c) main 이 아닌 브랜치", seed: { behind: true, notOnMain: true }, expect: "sync_source_pull_skipped reason=not_on_main" },
+    { label: "(d) 뒤처짐 + 런타임 파일 더러움", seed: { behind: true, dirty: true }, expect: "sync_source_behind action=none reason=repository_dirty" },
+    { label: "(e) origin 과 동일", seed: {}, expect: "runtime_in_sync files=14" },
+    { label: "(f) fetch 실패(원격 경로 없음)", seed: { brokenRemote: true }, expect: "sync_source_fetch_failed status=", verdict: "runtime_in_sync files=14" },
+  ];
+
+  for (const scenario of scenarios) {
+    const home = createWatchdogHome(null);
+    homes.push(home);
+    const syncSourcePath = seedRemoteSync(home, scenario.seed);
+    // eslint-disable-next-line no-await-in-loop
+    const { status, events, raw } = await runWatchdog(home, healthUrl, { syncSourcePath });
+    assert.equal(status, 0, `${scenario.label} 은 exit 0 이어야 한다 :: ${raw}`);
+    assert.ok(events.length > 0, `${scenario.label} 은 반드시 한 줄을 남긴다`);
+    assert.ok(
+      events[0].startsWith(scenario.expect),
+      `${scenario.label} → "${scenario.expect}" 로 시작해야 하는데 "${events[0]}" 였다`
+        + " (reason=collection_active 가 나왔다면 이 맥에서 실제 수집이 돌고 있는 것이다 — 단언을 약화하지 말고 그대로 보고할 것)",
+    );
+    if (scenario.verdict) {
+      assert.ok(events.some((event) => event.startsWith(scenario.verdict)), `${scenario.label} 은 ${scenario.verdict} 까지 도달해야 한다 :: ${raw}`);
+    }
+    // 드라이런은 원본 저장소를 절대 움직이지 않는다.
+    assert.ok(!events.some((event) => event.startsWith("sync_source_fast_forwarded")), `${scenario.label} :: ${raw}`);
   }
 });
 

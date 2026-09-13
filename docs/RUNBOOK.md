@@ -105,6 +105,13 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
+- **맥 대기기는 자동으로 따라온다(2026-09-13)**: 워치독이 10분마다 동기화 원본(맥 체크아웃 `main`)을
+  `origin/main`으로 fast-forward 한 뒤(`sync_source_fast_forwarded from=… to=…`) 드리프트 동기화·Chrome
+  재기동을 이어서 한다. 수동 `git pull`은 더 이상 필요 없다. 보류 로그 `sync_source_behind action=none
+  reason=diverged|repository_dirty` 또는 `sync_source_pull_skipped reason=not_on_main`이 보이면 체크아웃을
+  사람이 정리해야 한다(로컬 커밋·더러운 런타임 파일·다른 브랜치). `sync_source_fetch_failed`는 네트워크/ssh.
+  사고 기록: 2026-09-12 14:10(1.1.26 라이브)부터 09-13 13:27까지 체크아웃이 1.1.25에 머물러 대기기가 매분
+  신원 불일치(exit 1)였고, 윈도우가 꺼진 00:45~13:20 사이 12.5시간 수집이 멈췄다.
 - **버전 이력**: 1.1.28 (2026-09-13, 마이그레이션 `20260912160000_naver_shopping_runtime_1_1_28_same_page_twins_unbounded.sql`)
   — 같은 페이지 판매자 쌍둥이 상한(창당 2건) 제거: 1.1.27 첫 런(00:24, 콘트로이친)이 `5:48:duplicate_row:5`로
   여전히 실패 → 한 페이지에 같은 판매자 상품이 3회 이상 노출됨. 엄격 경로와 동일하게 무제한 보존, 페이지 간 반복은 계속 거부.

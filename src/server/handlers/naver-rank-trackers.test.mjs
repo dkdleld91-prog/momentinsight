@@ -10,6 +10,7 @@ import {
   handleRankTrackersRequest,
   loadKeywordVolumes,
   loadShoppingWorkerOperations,
+  loadTrackerListDetails,
   loadShoppingWorkerStatus,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
@@ -230,6 +231,50 @@ test("owner operations normalize control-plane evidence and derive release gates
   assert.equal(operations.controls.canRunCanary, true);
   assert.equal(operations.controls.canaryTrackerId, canaryTrackerId);
   assert.deepEqual(operations.alerts.map((alert) => alert.code).sort(), ["queue_delayed", "runtime_mismatch"]);
+});
+
+// 2026-09-13 서버 안정화: 목록 상세 다섯 단계는 차례가 아니라 동시에 읽는다. 스냅샷 조회는
+// 코디네이션 조회가 "이미 시작된 뒤"에만 끝나도록 묶어, 차례로 기다리면 절대 끝나지 않게 한다.
+test("tracker list details are loaded concurrently, not one after another", async () => {
+  let releaseSnapshots = null;
+  const snapshotsGate = new Promise((resolve) => { releaseSnapshots = resolve; });
+  const calls = [];
+  const builder = (table) => {
+    const chain = new Proxy({}, {
+      get(_target, key) {
+        if (key === "then") {
+          return (resolve, reject) => {
+            const result = table === "naver_rank_snapshots"
+              ? snapshotsGate.then(() => ({ data: [], error: null, count: 0 }))
+              : Promise.resolve({ data: table === "naver_shopping_worker_coordination" ? { circuit_state: "closed" } : [], error: null, count: 0 });
+            return result.then(resolve, reject);
+          };
+        }
+        return () => chain;
+      },
+    });
+    return chain;
+  };
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        calls.push(table);
+        if (table === "naver_shopping_worker_coordination") releaseSnapshots();
+        return builder(table);
+      },
+      async rpc() { return { data: null, error: new Error("unavailable") }; },
+    },
+  };
+  const rows = [{ id: "11111111-1111-4111-8111-111111111111", keyword: "테스트", group_name: null }];
+  const details = await Promise.race([
+    loadTrackerListDetails(ctx, rows, { owner: true }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("list details ran sequentially")), 2000)),
+  ]);
+  assert.ok(calls.includes("naver_rank_snapshots") && calls.includes("naver_shopping_worker_coordination"));
+  assert.equal(details.rows.length, 1);
+  assert.ok(details.snapshots instanceof Map);
+  assert.ok(details.keywordVolumes instanceof Map);
+  assert.equal(details.workerOperations?.available, false);
 });
 
 test("worker operations stay unavailable instead of breaking the owner tracker list", async () => {

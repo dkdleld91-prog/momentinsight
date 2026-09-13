@@ -314,7 +314,7 @@ const checks = {
   ])
     && [adminProductRequest, adminPlaceRequest].every((block) => includesAll(block, [
       'headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {}',
-      "var response = await miFetch(url, options)",
+      "response = await miFetch(url, options)",
     ]))
     && !includesAll(adminSource, ['"x-demo-admin-code": adminCode'])
     && !includesAll(adminSource, ['"x-mi-rank-access-code": adminCode'])
@@ -327,7 +327,7 @@ const checks = {
       "var requestScope = verifiedRankTrackerScope()",
       'headers: {}',
       'new URLSearchParams({ limit: "500" })',
-      "var response = await miFetch(url, options)",
+      "response = await miFetch(url, options)",
     ]))
     && !clientSource.includes('"x-mi-rank-access-code": accessCode'),
   clientRankAccessLifecycleConnected: includesAll(clientSource, [
@@ -488,7 +488,8 @@ const checks = {
   ])) && [adminSource, clientSource].every((source) => source.includes('new CustomEvent("mi:rank-scope-changed")')),
   trackerRequestsBoundedAndComplete: [adminProductRequest, clientProductRequest].every((block) => includesAll(block, [
     'new URLSearchParams({ limit: "500" })',
-    "? 120000 : 20000",
+    '? 120000 : (method === "GET" ? 30000 : 20000)',
+    "catch (firstError)",
   ])) && [adminPlaceRequest, clientPlaceRequest].every((block) => includesAll(block, [
     'new URLSearchParams({ limit: "500" })',
     "? 270000 : 20000",

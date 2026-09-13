@@ -171,3 +171,12 @@
 - 수집기 증거 우회: `MI_ALLOW_STALE_WORKER_PROOF=1` (`scripts/check-naver-shopping-collector-live.mjs`).
 - 배포 후 검증: `npm run verify:live` (`scripts/verify-live.mjs`).
 - 잔존 실패 감시: `scripts/check-rank-residual-failures.mjs` + `.github/workflows/naver-rank-residual-audit.yml`.
+
+## 순위 목록 조회 안정화 (2026-09-13)
+- 증상: 추적 화면에 "순위 추적 서버 연결 실패로 마지막 정상 순위와 이력을 유지합니다" — 브라우저의 목록 GET 이
+  던져진 경우(시간 초과·네트워크)다. 5xx JSON 응답은 이 배너가 아니라 "전체 순위 목록 검증에 실패…"로 나온다.
+- 서버: `listTrackers` 가 그룹·스냅샷·검색량·워커 상태·운영 정보를 동시에 읽는다(`loadTrackerListDetails`). 검색량은
+  목록에서 2.5초 예산만 쓴다(`MI_RANK_LIST_KEYWORD_VOLUME_BUDGET_MS`). 2초 이상 걸린 목록은 Vercel 로그에
+  `naver_rank_trackers_list_slow` 한 줄(accessMs·trackersMs·detailsMs·totalMs)로 남는다(`MI_RANK_LIST_SLOW_LOG_MS`).
+- 브라우저: 목록 GET 제한 30초, 실패 시 1.5초 뒤 1회 재시도, 배너에 사유(시간 초과/네트워크) 표기.
+- 다음 재현 시: 배너 사유와 시각을 받아 Vercel 로그의 `naver_rank_trackers_list_slow`/`naver_rank_trackers_failed` 와 대조한다.

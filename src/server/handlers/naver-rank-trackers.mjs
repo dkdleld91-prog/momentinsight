@@ -61,6 +61,9 @@ const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
 const SNAPSHOT_TRACKER_BATCH_SIZE = 50;
 const SNAPSHOT_QUERY_CONCURRENCY = 4;
 const TRACKER_LIST_MAX = 500;
+// 목록 한 번에 검색량 조회가 쓸 수 있는 시간. 기본 예산(8초)은 검색량 전용 조회용이다.
+const TRACKER_LIST_KEYWORD_VOLUME_BUDGET_MS = Number(process.env.MI_RANK_LIST_KEYWORD_VOLUME_BUDGET_MS) || 2500;
+const TRACKER_LIST_SLOW_LOG_MS = Number(process.env.MI_RANK_LIST_SLOW_LOG_MS) || 2000;
 const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1;
 const DEFAULT_RANK_GROUP = "기본 그룹";
 const SHOPPING_WORKER_BLOCK_CODES = new Set([
@@ -1145,11 +1148,33 @@ export async function loadShoppingWorkerOperations(ctx, now = Date.now()) {
   }
 }
 
+// 목록 상세(그룹·스냅샷·검색량·워커 상태·운영 정보)는 서로 독립이라 동시에 읽는다.
+// 2026-09-13 이전에는 다섯 단계를 차례로 기다려(검색량 예산 8초 포함) 느린 날 목록이 브라우저
+// 제한을 넘겼다. 검색량은 목록 응답을 붙잡지 않도록 짧은 예산만 쓰고, 예산 뒤 도착한 값은
+// 캐시에 남아 다음 조회에서 즉시 나온다(loadKeywordVolumes 참조).
+export async function loadTrackerListDetails(ctx, queriedRows, options = {}) {
+  const groupsPromise = attachTrackerGroups(ctx, queriedRows);
+  const ids = queriedRows.map((row) => row.id);
+  const [rows, snapshots, keywordVolumes, workerStatus, workerOperations] = await Promise.all([
+    groupsPromise,
+    loadSnapshots(ctx, ids),
+    loadKeywordVolumes(queriedRows.map((row) => row.keyword), {
+      budgetMs: options.keywordVolumeBudgetMs ?? TRACKER_LIST_KEYWORD_VOLUME_BUDGET_MS,
+    }),
+    loadShoppingWorkerStatus(ctx),
+    options.owner === true ? loadShoppingWorkerOperations(ctx) : Promise.resolve(null),
+  ]);
+  return { rows, snapshots, keywordVolumes, workerStatus, workerOperations };
+}
+
 async function listTrackers(request, ctx) {
+  const listStartedAt = Date.now();
   const access = await requireRankAccess(request, ctx, {}, { read: true });
+  const accessMs = Date.now() - listStartedAt;
   if (!access.ok) return access.response;
   const agencyCode = access.agencyCode;
 
+  const trackersQueryStartedAt = Date.now();
   const { data, error, count } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT, { count: "exact" })
@@ -1158,17 +1183,34 @@ async function listTrackers(request, ctx) {
     .order("created_at", { ascending: false })
     .limit(TRACKER_LIST_QUERY_LIMIT);
 
+  const trackersQueryMs = Date.now() - trackersQueryStartedAt;
   if (error) throw error;
   if (!Number.isSafeInteger(count) || count < 0) throw new Error("rank_tracker_count_unavailable");
 
   const queriedRows = data || [];
   const hasMore = count > TRACKER_LIST_MAX || queriedRows.length > TRACKER_LIST_MAX;
-  const rows = await attachTrackerGroups(ctx, queriedRows.slice(0, TRACKER_LIST_MAX));
-  const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
-  const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
+  const detailStartedAt = Date.now();
+  const { rows, snapshots, keywordVolumes, workerStatus, workerOperations } = await loadTrackerListDetails(
+    ctx,
+    queriedRows.slice(0, TRACKER_LIST_MAX),
+    { owner: access.owner === true },
+  );
   const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
-  const workerStatus = await loadShoppingWorkerStatus(ctx);
-  const workerOperations = access.owner ? await loadShoppingWorkerOperations(ctx) : null;
+  const totalMs = Date.now() - listStartedAt;
+  if (totalMs >= TRACKER_LIST_SLOW_LOG_MS) {
+    // 2026-09-13: 목록 요청이 브라우저 제한(30초)에 걸리는 원인을 Vercel 로그에서 단계별로 읽기 위한 한 줄.
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "naver_rank_trackers_list_slow",
+      requestId: rankTrackersRequestId(request),
+      scope: normalizeAgencyCode(agencyCode),
+      trackers: rows.length,
+      accessMs: accessMs,
+      trackersMs: trackersQueryMs,
+      detailsMs: Date.now() - detailStartedAt,
+      totalMs,
+    }));
+  }
   return json(request, {
     ok: true,
     ...rankSource,

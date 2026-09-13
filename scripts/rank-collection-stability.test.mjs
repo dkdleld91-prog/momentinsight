@@ -2924,7 +2924,7 @@ function writeSeedFile(root, relative, content) {
 // 임시 $HOME 안에 가짜 "저장소 + 설치본" 한 쌍을 만든다. 실제 저장소도 실제 설치본도
 // 절대 건드리지 않는다(드라이런이라 설치 스크립트 자체는 어차피 돌지 않는다).
 function seedRuntimeSync(home, options = {}) {
-  const { drift = false, missingFile = false, gitInit = false, dirty = false, copyMissing = false } = options;
+  const { drift = false, missingFile = false, gitInit = false, dirty = false, copyMissing = false, releaseDrift = false } = options;
   const source = path.join(home, "sync-source");
   const runtimeCopy = path.join(home, "Library/Application Support/MomentInsight/NaverShoppingBridge");
 
@@ -2940,6 +2940,11 @@ function seedRuntimeSync(home, options = {}) {
       writeSeedFile(runtimeCopy, relative, `// seed ${relative}\n`);
     }
     if (drift) writeSeedFile(runtimeCopy, first, `// drifted ${first}\n`);
+    if (releaseDrift) {
+      const worker = "scripts/naver-shopping-local-worker.mjs";
+      writeSeedFile(source, worker, 'const EXPECTED_RUNTIME_VERSION = "1.1.29";\n');
+      writeSeedFile(runtimeCopy, worker, 'const EXPECTED_RUNTIME_VERSION = "1.1.28";\n');
+    }
     if (missingFile) fs.rmSync(path.join(runtimeCopy, first), { force: true });
   }
 
@@ -3328,6 +3333,10 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
     { label: "(g) 동기화 원본이 없는 경로", sourceOverride: "no-such-sync-source", expect: "sync_check_failed reason=sync_source_unresolved" },
     { label: "(h) 탈출구 환경변수로 끔", seed: { drift: true, gitInit: true }, syncDisabled: "1", expect: "sync_disabled" },
     { label: "(i) 드리프트 + 1시간 전 동기화", seed: { drift: true, gitInit: true }, state: { stalledSince: 0, lastRestartAt: 0, lastSyncAt: nowSeconds - 3600 }, expect: "drift_detected", contains: "sync_suppressed_cooldown" },
+    // F14 (2026-09-13 13:56 실측): 원본·사본의 EXPECTED_RUNTIME_VERSION 이 다르면 릴리스다 —
+    // 동기화 쿨다운을 이번 틱만 건너뛰고 드라이런 동기화 판정까지 간다.
+    { label: "(i2) 릴리스 드리프트 + 1시간 전 동기화", seed: { releaseDrift: true, gitInit: true }, state: { stalledSince: 0, lastRestartAt: 0, lastSyncAt: nowSeconds - 3600 }, expect: "sync_cooldown_bypassed reason=runtime_version_drift source=1.1.29 copy=1.1.28", verdict: "dry_run drift_sync_would_run files=1" },
+    { label: "(i3) 릴리스 드리프트 + 쿨다운 없음", seed: { releaseDrift: true, gitInit: true }, expect: "dry_run drift_sync_would_run files=1" },
     { label: "(j) 드리프트 + 시계 역행(미래 동기화 시각)", seed: { drift: true, gitInit: true }, state: { stalledSince: 0, lastRestartAt: 0, lastSyncAt: nowSeconds + 600 }, expect: "sync_cooldown_clock_reset" },
     // 옛 2줄 상태 파일이 그대로 읽혀야 한다. stalled_since 가 실제로 읽혔다는 증거로
     // stall_cleared 까지 확인한다(안 읽혔다면 healthy 가 찍힌다).
@@ -3372,6 +3381,16 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
 // 서버 런타임은 1.1.26→1.1.28 로 올라갔는데 맥 체크아웃(동기화 원본)은 1.1.25 에 머물러
 // "원본=사본" 이라 runtime_in_sync 만 찍히고 대기기는 매분 신원 불일치로 죽어 있었다.
 // ─────────────────────────────────────────────────────────────
+test("F14: 릴리스 드리프트는 동기화·Chrome 재기동 쿨다운을 이번 틱만 건너뛴다(정적)", () => {
+  assert.ok(watchdogSource.includes("runtime_version_of() {"));
+  assert.ok(watchdogSource.includes('sync_cooldown_bypassed reason=runtime_version_drift source=${SOURCE_RUNTIME_VERSION} copy=${COPY_RUNTIME_VERSION}'));
+  assert.ok(watchdogSource.includes('sync_chrome_restart_cooldown_bypassed reason=runtime_version_drift'));
+  // 릴리스 판정은 두 파일 모두 버전 리터럴이 있고 서로 다를 때만 참이다(빈 값은 릴리스가 아니다).
+  assert.ok(watchdogSource.includes('[[ -n "${SOURCE_RUNTIME_VERSION}" && -n "${COPY_RUNTIME_VERSION}"'));
+  // 시계 역행 분기는 그대로 fail-closed 다(우회 대상이 아니다).
+  assert.ok(watchdogSource.indexOf("sync_cooldown_clock_reset") < watchdogSource.indexOf("sync_cooldown_bypassed"));
+});
+
 test("F13: 워치독은 드리프트 비교 전에 동기화 원본을 origin/main 으로 fast-forward 한다(정적)", () => {
   const callIndex = watchdogSource.indexOf('sync_source_fast_forward "${SYNC_SOURCE_PATH}"');
   const driftLoopIndex = watchdogSource.indexOf('for REL in "${RUNTIME_SYNC_FILES[@]}"; do');

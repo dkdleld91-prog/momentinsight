@@ -284,6 +284,15 @@ NOW="$(/bin/date -u '+%s')"
 # 손대지 않는 경우: origin 이 없음(조용히), main 이 아님, 원격과 갈라짐(로컬 커밋 있음),
 # 런타임 파일이 더러움, 수집 진행 중, 드라이런. fast-forward 는 git 이 덮어쓸 로컬 변경이
 # 있으면 스스로 거부하므로 사람의 작업을 잃는 경로는 없다.
+# 런타임 버전 리터럴(scripts/naver-shopping-local-worker.mjs 의 EXPECTED_RUNTIME_VERSION).
+# 원본과 사본이 다르면 "릴리스 드리프트"다 — 쿨다운은 흔들리는 저장소가 설치기를 10분마다
+# 돌리는 것을 막는 장치이지 릴리스를 3시간 미루라는 뜻이 아니다(2026-09-13 13:56 실측:
+# fast-forward 직후 사본 동기화가 sync_suppressed_cooldown 으로 16:27까지 밀림).
+runtime_version_of() {   # $1 = file
+  /usr/bin/sed -n -E 's/^const EXPECTED_RUNTIME_VERSION = "([0-9]+\.[0-9]+\.[0-9]+)";.*/\1/p' "$1" 2>/dev/null \
+    | /usr/bin/head -n 1
+}
+
 sync_source_fast_forward() {   # $1 = SYNC_SOURCE_PATH
   setopt localoptions
   set +e
@@ -448,6 +457,15 @@ runtime_drift_pass() {
     return 0
   fi
 
+  # 릴리스 드리프트 판정(위 runtime_version_of 주석). 아래 두 쿨다운을 이번 틱만 건너뛴다.
+  local SOURCE_RUNTIME_VERSION="" COPY_RUNTIME_VERSION="" RELEASE_DRIFT=0
+  SOURCE_RUNTIME_VERSION="$(runtime_version_of "${SYNC_SOURCE_PATH}/scripts/naver-shopping-local-worker.mjs")"
+  COPY_RUNTIME_VERSION="$(runtime_version_of "${RUNTIME_COPY_PATH}/scripts/naver-shopping-local-worker.mjs")"
+  if [[ -n "${SOURCE_RUNTIME_VERSION}" && -n "${COPY_RUNTIME_VERSION}" \
+    && "${SOURCE_RUNTIME_VERSION}" != "${COPY_RUNTIME_VERSION}" ]]; then
+    RELEASE_DRIFT=1
+  fi
+
   # guard 4 — 쿨다운.
   local SYNC_ELAPSED=$(( NOW - LAST_SYNC_AT ))
   if (( LAST_SYNC_AT > 0 && SYNC_ELAPSED < 0 )); then
@@ -458,8 +476,12 @@ runtime_drift_pass() {
     return 0
   fi
   if (( LAST_SYNC_AT > 0 && SYNC_ELAPSED < SYNC_COOLDOWN_SECONDS )); then
-    log_event "drift_detected files=${DRIFT_COUNT} sync_suppressed_cooldown seconds_left=$(( SYNC_COOLDOWN_SECONDS - SYNC_ELAPSED ))"
-    return 0
+    if (( RELEASE_DRIFT == 1 )); then
+      log_event "sync_cooldown_bypassed reason=runtime_version_drift source=${SOURCE_RUNTIME_VERSION} copy=${COPY_RUNTIME_VERSION}"
+    else
+      log_event "drift_detected files=${DRIFT_COUNT} sync_suppressed_cooldown seconds_left=$(( SYNC_COOLDOWN_SECONDS - SYNC_ELAPSED ))"
+      return 0
+    fi
   fi
 
   if [[ "${DRY_RUN}" == "1" ]]; then
@@ -575,8 +597,12 @@ runtime_drift_pass() {
   fi
   local SYNC_RESTART_ELAPSED=$(( NOW - LAST_RESTART_AT ))
   if (( LAST_RESTART_AT > 0 && SYNC_RESTART_ELAPSED >= 0 && SYNC_RESTART_ELAPSED < RESTART_COOLDOWN_SECONDS )); then
-    log_event "sync_chrome_restart_suppressed_cooldown seconds_left=$(( RESTART_COOLDOWN_SECONDS - SYNC_RESTART_ELAPSED ))"
-    return 10
+    if (( RELEASE_DRIFT == 1 )); then
+      log_event "sync_chrome_restart_cooldown_bypassed reason=runtime_version_drift source=${SOURCE_RUNTIME_VERSION} copy=${COPY_RUNTIME_VERSION}"
+    else
+      log_event "sync_chrome_restart_suppressed_cooldown seconds_left=$(( RESTART_COOLDOWN_SECONDS - SYNC_RESTART_ELAPSED ))"
+      return 10
+    fi
   fi
   # 재기동 성패와 무관하게 이번 틱은 exit 0 으로 끝낸다. 드리프트 기능이 워치독
   # 자체를 실패(비영 종료)로 만들면 안 된다. 함수는 이미 chrome_restarted /

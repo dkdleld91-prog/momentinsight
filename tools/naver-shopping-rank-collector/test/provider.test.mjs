@@ -1169,21 +1169,22 @@ test("rendered-order pass skips a leading next-page repeat of any previous-page 
   appendNormalizedPage(second, { rows: [rawProduct(3), rawProduct(1), rawProduct(4)] }, rendered);
   assert.deepEqual(second.items.map((item) => item.organicRank), [1, 2, 3, 4]);
   assert.equal(second.seamRepeatSkipCount, 1);
-  // A previous-page product that was not in that page's trailing rows is a
-  // real list shift and stays fatal even at the head of the next page.
+  // 1.1.29: a previous-page product that was not in that page's trailing rows
+  // is not a seam — it is kept as a second rank slot (Naver lists one seller
+  // product in several slots; the two-capture digest proves it), not skipped.
   const shifted = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   appendNormalizedPage(shifted, { rows: [1, 2, 3, 4, 5, 6, 7].map((index) => rawProduct(index)) }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
-  assert.throws(
-    () => appendNormalizedPage(shifted, { rows: [rawProduct(1), rawProduct(8)] }, rendered),
-    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:0:page_overlap:1",
-  );
-  // Deeper than the leading rows it stays fatal even in the rendered pass.
+  appendNormalizedPage(shifted, { rows: [rawProduct(1), rawProduct(8)] }, rendered);
+  assert.deepEqual(shifted.items.map((item) => item.organicRank), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.equal(shifted.items[7].sellerProductId, shifted.items[0].sellerProductId);
+  assert.equal(shifted.seamRepeatSkipCount, 0);
+  // Deeper than the leading rows it is kept the same way.
   const deep = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   appendNormalizedPage(deep, { rows: [rawProduct(1), rawProduct(2), rawProduct(3)] }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
-  assert.throws(
-    () => appendNormalizedPage(deep, { rows: [rawProduct(4), rawProduct(5), rawProduct(6), rawProduct(2)] }, rendered),
-    (error) => error?.code === "provider_duplicate_identity" && error?.detail === "2:3:page_overlap:1",
-  );
+  appendNormalizedPage(deep, { rows: [rawProduct(4), rawProduct(5), rawProduct(6), rawProduct(2)] }, rendered);
+  assert.deepEqual(deep.items.map((item) => item.organicRank), [1, 2, 3, 4, 5, 6, 7]);
+  assert.equal(deep.items[6].sellerProductId, deep.items[1].sellerProductId);
+  assert.equal(deep.seamRepeatSkipCount, 0);
 });
 
 test("still rejects a cross-page repeat that is not the previously appended product", () => {
@@ -1766,10 +1767,11 @@ test("deduplicates repeated extraction but rejects strong duplicate identities w
   assert.equal(state.items.length, 2, "a duplicate result must fail instead of compressing later organic ranks");
 });
 
-test("rendered-order candidate keeps every same-page twin and still rejects cross-page repeats", () => {
+test("rendered-order candidate keeps every same-page twin and every cross-page repeat (strict pass still rejects)", () => {
   // 1.1.27/1.1.28 (콘트로이친 page 5): one seller product rendered several
   // times on one page under distinct Naver product ids keeps every rank slot
   // in the candidate pass; a bound of two (1.1.27) still failed production.
+  // 1.1.29 (`6:7:page_overlap:4`): the same product also sits on pages 4 and 6.
   const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   const twin = (index, key) => rawProduct(index, { extractionKey: key });
   appendNormalizedPage(state, {
@@ -1783,9 +1785,18 @@ test("rendered-order candidate keeps every same-page twin and still rejects cros
   }, { pageIndex: 1, limit: 300, rejectAllIdentityDuplicates: true });
   assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
   assert.equal(state.items.filter((item) => item.sellerProductId === state.items[5].sellerProductId).length, 4);
-  assert.throws(() => appendNormalizedPage(state, {
+  appendNormalizedPage(state, {
     rows: [rawProduct(5), twin(2, "twin-2-next-page")],
-  }, { pageIndex: 2, limit: 300, rejectAllIdentityDuplicates: true }), (error) => (
+  }, { pageIndex: 2, limit: 300, rejectAllIdentityDuplicates: true });
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  assert.equal(state.items[10].sellerProductId, state.items[2].sellerProductId);
+  // The strict pass keeps rejecting the cross-page repeat: that rejection is
+  // the signal that starts the stable full-window proof.
+  const strict = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(strict, { rows: [rawProduct(1), rawProduct(2), rawProduct(3)] }, { pageIndex: 1, limit: 300 });
+  assert.throws(() => appendNormalizedPage(strict, {
+    rows: [rawProduct(4), twin(2, "twin-2-strict")],
+  }, { pageIndex: 2, limit: 300 }), (error) => (
     error instanceof ProviderError
     && error.code === "provider_duplicate_identity"
     && error.detail === "2:1:page_overlap:1"

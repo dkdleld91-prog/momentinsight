@@ -348,24 +348,17 @@ export function stableRenderedOrderWindowDigest(items, options = {}) {
   // Naver renders one seller product twice on one SSR page under two product
   // ids. The strict window already keeps both rank slots of such a same-page
   // twin (validateProviderWindow rejects only cross-page repeats), so the
-  // rendered-order proof does the same. 1.1.28: without a per-window bound —
-  // the 1.1.27 limit of two still failed the same page (`5:48:duplicate_row:5`,
-  // 2026-09-13 00:24 KST), i.e. Naver lists that seller product three or more
-  // times on one page; the strict path has never bounded this either. A
-  // repeat across pages is still a moving boundary and stays rejected.
-  const identityOrigins = new Map();
-  for (const item of normalizedItems) {
-    const signal = renderedOrderIdentitySignal(item);
-    const originRank = identityOrigins.get(signal);
-    if (originRank == null) {
-      identityOrigins.set(signal, item.organicRank);
-      continue;
-    }
-    if (Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
-      !== Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)) {
-      throw new ContractError("invalid_provider_response", "renderedOrderProof.duplicate_identity");
-    }
-  }
+  // rendered-order proof does the same. 1.1.28 removed the per-window bound.
+  // 1.1.29 (2026-09-13 13:25 KST, 콘트로이친 `6:7:page_overlap:4` right after
+  // 1.1.28 accepted its page-5 twins): the same seller product is also listed
+  // on pages 4 and 6, so the proof no longer rejects repeats across pages
+  // either. The strict path keeps every slot of such a repeat under the stable
+  // full-window proof, and this proof is the same kind of two-capture
+  // stability proof: the digest carries every slot (rank, identity, type,
+  // catalog), so a repeat is part of what both captures must reproduce, and a
+  // moving pagination boundary would not. Only a card without any identity
+  // stays unprovable.
+  for (const item of normalizedItems) renderedOrderIdentitySignal(item);
   return crypto.createHash("sha256").update([
     STABLE_RENDERED_ORDER_PROOF_VERSION,
     keyword,
@@ -656,7 +649,14 @@ export function validateProviderWindow(value, request) {
     if (request.limit !== MAX_RANK_LIMIT || items.length !== MAX_RANK_LIMIT) {
       throw new ContractError("invalid_provider_response", "duplicate_identity");
     }
-    crossPageProof = validateStableFullWindowProof(value.crossPageProof, items, request.keyword);
+    // 1.1.29: a window that carries a rendered-order proof proves its
+    // cross-page repeats through that proof (validated below); it must not
+    // also carry a stable full-window proof.
+    if (value.renderedOrderProof === undefined) {
+      crossPageProof = validateStableFullWindowProof(value.crossPageProof, items, request.keyword);
+    } else if (value.crossPageProof !== undefined) {
+      throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
+    }
   } else if (value.crossPageProof !== undefined) {
     throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
   }
@@ -684,7 +684,6 @@ export function validateProviderWindow(value, request) {
       || marketTotalStatus !== "verified"
       || !Number.isInteger(marketTotal)
       || marketTotal < MAX_RANK_LIMIT
-      || crossPageDuplicate
       || crossPageProof
       || finiteWindowProof) {
       throw new ContractError("invalid_provider_response", "renderedOrderProof.coverage");

@@ -869,7 +869,7 @@ function renderedOrderSameProductSeamPages() {
   });
 }
 
-// 1.1.28 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
+// 1.1.29 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
 // every cycle): page 2 opens with page 1's second-to-last product, not its last.
 function renderedOrderBoundaryReorderSeamPages() {
   return renderedOrderDriftPages((pages) => {
@@ -893,7 +893,7 @@ function renderedOrderBoundaryReorderSeamPages() {
   });
 }
 
-test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.28)", async () => {
+test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.29)", async () => {
   const nowMs = Date.parse("2026-09-11T12:00:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(() => renderedOrderBoundaryReorderSeamPages(), "boundary-reorder", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -933,7 +933,7 @@ test("native provider absorbs Naver's same-product page seam and still proves 30
   assert.equal(result.renderedOrderProof?.passCount, 2);
 });
 
-// 1.1.28 (2026-09-11 production shapes): the rendered-order recovery must
+// 1.1.29 (2026-09-11 production shapes): the rendered-order recovery must
 // absorb Naver's live market counter, twin listings and ad-consumed first
 // numbers, while every regression beyond the evidence stays fatal.
 function renderedRecoveryProvider(pagesFactory, label, nowMs) {
@@ -980,7 +980,35 @@ test("native provider keeps a same-page seller twin in the rendered-order proof 
   assert.equal(new Set(result.items.map((item) => item.productId)).size, 300);
 });
 
-test("native provider keeps three same-page twins in one window (1.1.28, 콘트로이친 `5:48:duplicate_row:5`)", async () => {
+// 2026-09-13 13:25 production shape (콘트로이친 `6:7:page_overlap:4`): the seller
+// product twinned on page 5 is also listed on pages 4 and 6 under its own
+// Naver product ids — a cross-page repeat, not a moving boundary.
+function renderedOrderCrossPageRepeatPages() {
+  return renderedOrderDriftPages((pages) => {
+    let source = null;
+    mutateRenderedPage(pages, 4, (entries) => { source = renderedOrganicEntries(entries)[0].item; });
+    mutateRenderedPage(pages, 6, (entries) => {
+      const repeat = renderedOrganicEntries(entries)[7].item;
+      repeat.mallProductId = source.mallProductId;
+      repeat.mallPcUrl = source.mallPcUrl;
+    });
+  });
+}
+
+test("native provider keeps a cross-page repeat in the rendered-order proof (1.1.29, 콘트로이친 `6:7:page_overlap:4`)", async () => {
+  const nowMs = Date.parse("2026-09-13T04:25:00.000Z");
+  const { provider, messages } = renderedRecoveryProvider(renderedOrderCrossPageRepeatPages, "cross-page-repeat", nowMs);
+  const result = await provider.collect(request(nowMs));
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.ok(result.renderedOrderProof);
+  assert.equal(result.crossPageProof, undefined);
+  const repeated = result.items.filter((item) => item.sellerProductId === result.items[120].sellerProductId);
+  assert.deepEqual(repeated.map((item) => item.organicRank), [121, 208]);
+  assert.equal(new Set(result.items.map((item) => item.productId)).size, 300);
+});
+
+test("native provider keeps three same-page twins in one window (1.1.29, 콘트로이친 `5:48:duplicate_row:5`)", async () => {
   const nowMs = Date.parse("2026-09-12T15:24:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(() => renderedOrderSamePageTwinPages(3, 5), "three-twins", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -1398,6 +1426,8 @@ test("native provider rejects every unsafe third rendered-order pass without a f
       expectedDetail: /^page_boundary:4:g0:l[0-9]{1,3}$/u,
     },
     {
+      // 1.1.29: a cross-page repeat is kept as a rank slot, so a third pass
+      // that shows one where the valid pass did not is an order mismatch.
       name: "cross-page direct identity overlap",
       thirdPages() {
         return renderedOrderDriftPages((pages) => {
@@ -1410,7 +1440,8 @@ test("native provider rejects every unsafe third rendered-order pass without a f
           });
         });
       },
-      expectedCode: "provider_duplicate_identity",
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "digest_mismatch",
     },
     {
       name: "partial third pass",
@@ -1589,8 +1620,11 @@ test("native provider fails closed for every unsafe rendered-order second pass w
       secondPages: () => renderedOrderDriftPages(),
     },
     {
+      // 1.1.29: a cross-page repeat is kept as a rank slot, so a second pass
+      // that shows one where the first did not is an order mismatch.
       name: "cross-page direct identity overlap",
-      expectedCode: "provider_duplicate_identity",
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "digest_mismatch",
       secondPages() {
         return renderedOrderDriftPages((pages) => {
           mutateRenderedPage(pages, 2, (entries) => {
@@ -2308,7 +2342,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.28");
+  assert.equal(manifest.version, "1.1.29");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3616,7 +3650,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.28");
+  assert.equal(manifest.version, "1.1.29");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3791,7 +3825,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.28",
+    runtimeVersion: "1.1.29",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

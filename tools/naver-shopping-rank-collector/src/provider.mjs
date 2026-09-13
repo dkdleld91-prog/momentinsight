@@ -1404,24 +1404,22 @@ export function appendNormalizedPage(state, pageResult, {
         seamSkipsOnThisPage += 1;
         continue;
       }
-      if (rejectAllIdentityDuplicates && collisionKind !== "duplicate_row") {
-        // 1.1.27/1.1.28 (production 2026-09-11 → 09-13, 콘트로이친 page 5, nine
-        // cycles of `duplicate_row`): one seller product rendered several
-        // times on one SSR page under distinct product ids keeps every rank
-        // slot in the rendered-order candidate too, exactly like the strict
-        // path below (1.1.27's bound of two per window still failed at
-        // `5:48:duplicate_row:5`). Only cross-page repeats stay rejected here.
-        throw new ProviderError(
-          "provider_duplicate_identity",
-          `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
-        );
-      }
       // `compositeList.list` is one authoritative SSR page and every organic
       // row above already proved its absolute Naver rank. If Naver itself
       // places the same strong identity twice on that one page, preserve both
-      // rank slots. Cross-page repetition is still rejected because pages are
-      // fetched at different times and can represent a moving boundary.
-      if (collisionKind !== "duplicate_row" && !preserveStableCrossPage) {
+      // rank slots. In the strict pass a cross-page repetition is rejected
+      // because pages are fetched at different times and can represent a
+      // moving boundary; that rejection is the signal that starts the stable
+      // full-window proof, which then keeps every slot.
+      // 1.1.27–1.1.29 (production 2026-09-11 → 09-13, 콘트로이친: nine cycles of
+      // `5:4x:duplicate_row:5`, then `6:7:page_overlap:4` the moment the
+      // same-page twins were accepted): the rendered-order candidate pass
+      // (rejectAllIdentityDuplicates) keeps every repeat as well — Naver lists
+      // one seller product in several rank slots on one page and across
+      // pages — because its two-capture digest proof plays the role the stable
+      // full-window proof plays for the strict pass. Only the bounded page
+      // seam above is skipped rather than kept.
+      if (collisionKind !== "duplicate_row" && !preserveStableCrossPage && !rejectAllIdentityDuplicates) {
         throw new ProviderError(
           "provider_duplicate_identity",
           `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,

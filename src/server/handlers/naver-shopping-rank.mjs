@@ -737,14 +737,31 @@ function trustedCollectorWindow(payload, options = {}) {
     }
     return signals.join("|");
   }).filter(Boolean);
+  // 1.1.29: a rendered-order proof (two independent captures reproducing the
+  // whole ordered window) also proves cross-page repeats, exactly as the
+  // stable full-window proof does for the strict pass. A window carrying it
+  // must not also carry a stable full-window proof.
+  const stableRenderedOrderProof = expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && checkedCount === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && items?.length === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && marketTotalStatus === "verified"
+    && Number.isInteger(marketTotal)
+    && marketTotal >= NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    ? trustedStableRenderedOrderProof(payload?.renderedOrderProof, items, keyword)
+    : null;
+  const renderedOrderEvidenceValid = payload?.renderedOrderProof === undefined
+    || Boolean(stableRenderedOrderProof);
   const stableCrossPageProof = crossPageDuplicate
+    && payload?.renderedOrderProof === undefined
     && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     && checkedCount === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     && items?.length === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     ? trustedStableCrossPageProof(payload?.crossPageProof, items, keyword)
     : null;
   const duplicateEvidenceValid = crossPageDuplicate
-    ? Boolean(stableCrossPageProof)
+    ? (payload?.renderedOrderProof === undefined
+      ? Boolean(stableCrossPageProof)
+      : payload?.crossPageProof === undefined && Boolean(stableRenderedOrderProof))
     : payload?.crossPageProof === undefined;
   const stableFiniteWindowProof = !crossPageDuplicate
     && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
@@ -758,17 +775,6 @@ function trustedCollectorWindow(payload, options = {}) {
     : null;
   const finiteEvidenceValid = payload?.finiteWindowProof === undefined
     || Boolean(stableFiniteWindowProof);
-  const stableRenderedOrderProof = !crossPageDuplicate
-    && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
-    && checkedCount === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
-    && items?.length === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
-    && marketTotalStatus === "verified"
-    && Number.isInteger(marketTotal)
-    && marketTotal >= NAVER_SHOPPING_ORGANIC_WINDOW_MAX
-    ? trustedStableRenderedOrderProof(payload?.renderedOrderProof, items, keyword)
-    : null;
-  const renderedOrderEvidenceValid = payload?.renderedOrderProof === undefined
-    || Boolean(stableRenderedOrderProof);
   const coverageComplete = checkedCount >= expectedLimit || sourceExhausted;
   if (
     !payload

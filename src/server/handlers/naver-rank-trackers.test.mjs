@@ -252,7 +252,7 @@ test("candidate readiness remains informational while activation stays canonical
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.28",
+            runtime_version: "1.1.29",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -279,7 +279,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.28",
+              runtime_version: "1.1.29",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -2925,6 +2925,29 @@ test("rendered-order evidence stays fail-closed at the handler and records only 
       renderedOrderProof: { ...renderedOrderProof, ...proofOverride },
     }, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
   }
+
+  // 1.1.29 (콘트로이친 `6:7:page_overlap:4`): a cross-page repeat is proven by the
+  // rendered-order proof itself; the window must not also carry a stable
+  // full-window proof, and without any proof it stays untrusted.
+  const crossPageRepeat = structuredClone(window);
+  crossPageRepeat.items[207].sellerProductId = crossPageRepeat.items[120].sellerProductId;
+  crossPageRepeat.items[207].link = crossPageRepeat.items[120].link;
+  const crossPageDigest = stableRenderedOrderWindowDigest(crossPageRepeat.items, { keyword });
+  crossPageRepeat.renderedOrderProof = { ...renderedOrderProof, passDigests: [crossPageDigest, crossPageDigest] };
+  const trustedCrossPage = trustedCollectorWindow(crossPageRepeat, { keyword, maxRank: 300 });
+  assert.equal(trustedCrossPage.items.length, 300);
+  assert.equal(trustedCrossPage.items[207].sellerProductId, trustedCrossPage.items[120].sellerProductId);
+  assert.equal("crossPageProof" in trustedCrossPage, false);
+  assert.throws(() => trustedCollectorWindow({
+    ...crossPageRepeat,
+    crossPageProof: { version: "stable-full-window-v1" },
+  }, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
+  assert.throws(() => trustedCollectorWindow({
+    ...crossPageRepeat,
+    renderedOrderProof: renderedOrderProof,
+  }, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
+  const { renderedOrderProof: _omitted, ...crossPageUnproven } = crossPageRepeat;
+  assert.throws(() => trustedCollectorWindow(crossPageUnproven, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
 
   const directIdentityDrift = structuredClone(window);
   directIdentityDrift.items[0].sellerProductId = "99999999999";

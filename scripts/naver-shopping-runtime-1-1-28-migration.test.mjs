@@ -35,15 +35,15 @@ function functionSql(source, name) {
   ))?.[0] || "";
 }
 
-test("1.1.28 is the newest runtime migration and the live fingerprint matches its pin", () => {
+// Archived 2026-09-13 (superseded by runtime 1.1.29).
+test("keeps the archived runtime 1.1.28 migration pinned to its historical fingerprint", () => {
   const runtimeMigrations = fs.readdirSync(migrationDirectory)
     .filter((entry) => /_naver_shopping_runtime_1_1_\d+_/u.test(entry))
     .sort();
-  assert.equal(runtimeMigrations.at(-1), migrationName);
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
+  assert.ok(runtimeMigrations.includes(migrationName));
+  assert.ok(runtimeMigrations.indexOf(migrationName) < runtimeMigrations.length - 1);
+  assert.equal(NEW_RUNTIME.fingerprint, "6bf207914784d28c8cff9ebb857614d3244684e06b4749453f3f7ee845c2fe88");
+  assert.equal(typeof calculateN30RuntimeFingerprint, "function");
 });
 
 test("migration moves only the runtime identity pins from 1.1.27 to 1.1.28", () => {
@@ -84,34 +84,15 @@ test("the runtime literal audit still passes with the 1.1.28 progress gate as th
   assert.deepEqual(result.violations, []);
 });
 
-test("live surfaces are 1.1.28 while the archived 1.1.27 evidence keeps its historical identity", () => {
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.28"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-    "src/server/naver-shopping/worker-runtime-expectation.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.28"/u, relativePath);
-    assert.doesNotMatch(read(relativePath), /"1\.1\.27"/u, relativePath);
-  }
-  for (const relativePath of [
-    "scripts/naver-shopping-candidate-performance-audit.mjs",
-    "scripts/naver-shopping-account-rank-health-audit.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.28"/u, relativePath);
-    assert.match(read(relativePath), new RegExp(NEW_RUNTIME.fingerprint, "u"), relativePath);
-    assert.doesNotMatch(read(relativePath), new RegExp(OLD_RUNTIME.fingerprint, "u"), relativePath);
-  }
+test("the archived 1.1.27 evidence keeps its historical identity", () => {
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.28/u);
 });
 
-test("1.1.28 unbounded same-page twin allowance is present in the fingerprinted runtime files", () => {
+test("1.1.28 unbounded same-page twin allowance is still present in the fingerprinted runtime files (cross-page repeats added in 1.1.29)", () => {
   const contract = read("tools/naver-shopping-rank-collector/src/contract.mjs");
   assert.doesNotMatch(contract, /MAX_RENDERED_ORDER_SAME_PAGE_TWINS/u);
-  assert.match(contract, /if \(Math\.ceil\(originRank \/ NAVER_SHOPPING_PAGE_SIZE\)\n      !== Math\.ceil\(item\.organicRank \/ NAVER_SHOPPING_PAGE_SIZE\)\) \{\n      throw new ContractError\("invalid_provider_response", "renderedOrderProof\.duplicate_identity"\);/u);
   const provider = read("tools/naver-shopping-rank-collector/src/provider.mjs");
   assert.doesNotMatch(provider, /samePageTwinCount/u);
-  assert.match(provider, /if \(rejectAllIdentityDuplicates && collisionKind !== "duplicate_row"\) \{/u);
+  assert.match(provider, /collisionKind !== "duplicate_row"/u);
 });

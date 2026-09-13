@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.28";
+const EXPECTED_RUNTIME_VERSION = "1.1.29";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -431,6 +431,15 @@ function safeFailureCode(error) {
   if (baseCode === "provider_stable_window_unproven") {
     const detail = String(error?.detail || "").trim().toLowerCase();
     return /^(?:capture_ids|digest_mismatch|page_budget)$/u.test(detail)
+      ? `${baseCode}:${detail}`
+      : baseCode;
+  }
+  if (baseCode === "provider_stable_finite_window_unproven") {
+    // 1.1.29: the finite-market arbitration reason was invisible in production
+    // (2026-09-11 22:45, 09-13 13:24, 일신한일의료기 탄소매트) — pass the fixed
+    // vocabulary through so the failure can be read from the event row.
+    const detail = String(error?.detail || "").trim().toLowerCase();
+    return /^(?:capture_ids|coverage|count_mismatch|digest_mismatch|digest_invalid|page_budget)$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }

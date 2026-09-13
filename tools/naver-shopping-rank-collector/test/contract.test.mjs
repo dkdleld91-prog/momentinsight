@@ -325,13 +325,38 @@ test("fails closed for replayed, digest-mismatched, malformed, duplicate, and ex
     ...manyTwins,
     renderedOrderProof: { ...proof, passDigests: [manyTwinsDigest, manyTwinsDigest] },
   }, request).items.length, 300);
+  // 1.1.29 (콘트로이친 `6:7:page_overlap:4`): a repeat across pages is proven by
+  // the rendered-order proof itself — the window then must not also carry a
+  // stable full-window proof, and without any proof it still fails closed.
   const crossPageTwin = structuredClone(window);
   crossPageTwin.items[40].sellerProductId = crossPageTwin.items[0].sellerProductId;
   crossPageTwin.items[40].link = crossPageTwin.items[0].link;
+  const crossPageDigest = stableRenderedOrderWindowDigest(crossPageTwin.items, { keyword: window.keyword });
+  const crossPageProofed = validateProviderWindow({
+    ...crossPageTwin,
+    renderedOrderProof: { ...proof, passDigests: [crossPageDigest, crossPageDigest] },
+  }, request);
+  assert.equal(crossPageProofed.items.length, 300);
+  assert.equal(crossPageProofed.items[40].sellerProductId, crossPageProofed.items[0].sellerProductId);
+  assert.equal(crossPageProofed.crossPageProof, undefined);
   assertContractError(
-    () => stableRenderedOrderWindowDigest(crossPageTwin.items, { keyword: window.keyword }),
+    () => validateProviderWindow(crossPageTwin, request),
     "invalid_provider_response",
-    "renderedOrderProof.duplicate_identity",
+    "crossPageProof",
+  );
+  assertContractError(
+    () => validateProviderWindow({
+      ...crossPageTwin,
+      renderedOrderProof: { ...proof, passDigests: [crossPageDigest, crossPageDigest] },
+      crossPageProof: { version: STABLE_FULL_WINDOW_PROOF_VERSION },
+    }, request),
+    "invalid_provider_response",
+    "crossPageProof.unexpected",
+  );
+  assertContractError(
+    () => validateProviderWindow({ ...crossPageTwin, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.mismatch",
   );
 
   // 1.1.26: the rendered-order proof identifies a card exactly like the strict

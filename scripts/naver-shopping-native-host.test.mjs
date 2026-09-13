@@ -20,6 +20,9 @@ import {
   buildNativeWindowFromPages,
   buildNativeWindowFromRows,
   createChromeNativeProvider,
+  COLLECTION_EVIDENCE_VERSION,
+  buildCollectionEvidence,
+  summarizeCollectionPages,
   createNativePageStreamCollector,
   resolveNativeExchangeWait,
   validateCollectionProtocolAck,
@@ -315,6 +318,80 @@ function renderedOrderSamePageTwinPages(twinCount = 1, pageIndex = 5) {
     });
   });
 }
+
+// 2026-09-13 production shape (일신한일의료기 탄소매트, 215 products): a finite
+// market whose pages also drift (paid slots consume raw numbers). Pages past the
+// end carry ads but no organic rows.
+function renderedOrderFiniteDriftPages(total) {
+  return renderedOrderDriftPages((pages) => {
+    pages.forEach((page, index) => {
+      const payload = JSON.parse(page.nextDataText);
+      const list = payload.props.pageProps.compositeList.list;
+      const keep = Math.max(0, Math.min(40, total - (index * 40)));
+      let seen = 0;
+      payload.props.pageProps.compositeList.list = list.filter((entry) => {
+        if (entry.type !== "product" || entry.item.adId) return true;
+        seen += 1;
+        return seen <= keep;
+      });
+      payload.props.pageProps.compositeList.total = total;
+      page.nextDataText = JSON.stringify(payload);
+    });
+  });
+}
+
+test("native provider proves a finite market whose pages drift (1.1.30, 탄소매트 `partial_window:215_300`)", async () => {
+  const nowMs = Date.parse("2026-09-13T05:21:00.000Z");
+  const { provider, messages } = renderedRecoveryProvider(() => renderedOrderFiniteDriftPages(215), "finite-drift", nowMs);
+  const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 215);
+  assert.equal(result.marketTotal, 215);
+  assert.equal(result.sourceExhausted, true);
+  assert.equal(result.finiteWindowProof?.version, "stable-finite-window-v1");
+  assert.equal(result.renderedOrderProof, undefined);
+  assert.deepEqual(result.items.map((item) => item.organicRank), Array.from({ length: 215 }, (_, index) => index + 1));
+});
+
+test("native provider still fails a drifting finite market when finite arbitration is not allowed", async () => {
+  const nowMs = Date.parse("2026-09-13T05:21:00.000Z");
+  const { provider } = renderedRecoveryProvider(() => renderedOrderFiniteDriftPages(215), "finite-drift-lookup", nowMs);
+  await assert.rejects(
+    provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_partial_window" && error?.detail === "215/300",
+  );
+});
+
+test("native provider attaches bounded collection evidence to a failed collection (1.1.30)", async () => {
+  const nowMs = Date.parse("2026-09-13T05:21:00.000Z");
+  const { provider } = renderedRecoveryProvider(() => renderedOrderDriftingTotalPages(400), "evidence", nowMs);
+  let caught = null;
+  try { await provider.collect(request(nowMs)); } catch (error) { caught = error; }
+  assert.equal(caught?.code, "provider_stable_rendered_order_unproven");
+  const evidence = caught.evidence;
+  assert.equal(evidence.version, COLLECTION_EVIDENCE_VERSION);
+  assert.equal(evidence.keyword, KEYWORD);
+  assert.equal(evidence.passes.length, 2);
+  assert.equal(evidence.passes[0].length, 8);
+  const first = evidence.passes[0][0];
+  assert.equal(first.p, 1);
+  assert.equal(first.total, 204582);
+  assert.ok(first.rows.some((row) => row[0] === "a"), "ad rows are kept as [\"a\", rank]");
+  assert.ok(first.rows.some((row) => Number.isSafeInteger(row[0]) && /^s:\d+$/u.test(row[1])), "organic rows are [rank, identity]");
+  assert.ok(first.rows.every((row) => row.length <= 2 && row.every((cell) => cell === null || typeof cell === "number" || typeof cell === "string")));
+  assert.ok(JSON.stringify(evidence).length <= 12000);
+});
+
+test("collection evidence stays within its size bound by trimming rows and passes", () => {
+  const passes = Array.from({ length: 3 }, () => renderedOrderDriftPages());
+  const evidence = buildCollectionEvidence(request(0), passes);
+  assert.ok(JSON.stringify(evidence).length <= 12000);
+  assert.equal(evidence.truncated, true);
+  assert.ok(evidence.passes.length >= 1);
+  const summary = summarizeCollectionPages(renderedOrderDriftPages().slice(0, 1), 3);
+  assert.equal(summary.length, 1);
+  assert.equal(summary[0].rows.length, 3);
+});
 
 // 2026-09-11 production shape: ranked paid slots consume the first raw
 // numbers, so page 1 opens at raw rank 3 after two ad rows.
@@ -869,7 +946,7 @@ function renderedOrderSameProductSeamPages() {
   });
 }
 
-// 1.1.29 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
+// 1.1.30 (production 2026-09-11, 복부찜질기 `provider_duplicate_identity:2:7:page_overlap:1`
 // every cycle): page 2 opens with page 1's second-to-last product, not its last.
 function renderedOrderBoundaryReorderSeamPages() {
   return renderedOrderDriftPages((pages) => {
@@ -893,7 +970,7 @@ function renderedOrderBoundaryReorderSeamPages() {
   });
 }
 
-test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.29)", async () => {
+test("native provider absorbs a re-ordered boundary product at the head of the next page (1.1.30)", async () => {
   const nowMs = Date.parse("2026-09-11T12:00:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(() => renderedOrderBoundaryReorderSeamPages(), "boundary-reorder", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -933,7 +1010,7 @@ test("native provider absorbs Naver's same-product page seam and still proves 30
   assert.equal(result.renderedOrderProof?.passCount, 2);
 });
 
-// 1.1.29 (2026-09-11 production shapes): the rendered-order recovery must
+// 1.1.30 (2026-09-11 production shapes): the rendered-order recovery must
 // absorb Naver's live market counter, twin listings and ad-consumed first
 // numbers, while every regression beyond the evidence stays fatal.
 function renderedRecoveryProvider(pagesFactory, label, nowMs) {
@@ -995,7 +1072,7 @@ function renderedOrderCrossPageRepeatPages() {
   });
 }
 
-test("native provider keeps a cross-page repeat in the rendered-order proof (1.1.29, 콘트로이친 `6:7:page_overlap:4`)", async () => {
+test("native provider keeps a cross-page repeat in the rendered-order proof (1.1.30, 콘트로이친 `6:7:page_overlap:4`)", async () => {
   const nowMs = Date.parse("2026-09-13T04:25:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(renderedOrderCrossPageRepeatPages, "cross-page-repeat", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -1008,7 +1085,7 @@ test("native provider keeps a cross-page repeat in the rendered-order proof (1.1
   assert.equal(new Set(result.items.map((item) => item.productId)).size, 300);
 });
 
-test("native provider keeps three same-page twins in one window (1.1.29, 콘트로이친 `5:48:duplicate_row:5`)", async () => {
+test("native provider keeps three same-page twins in one window (1.1.30, 콘트로이친 `5:48:duplicate_row:5`)", async () => {
   const nowMs = Date.parse("2026-09-12T15:24:00.000Z");
   const { provider, messages } = renderedRecoveryProvider(() => renderedOrderSamePageTwinPages(3, 5), "three-twins", nowMs);
   const result = await provider.collect(request(nowMs));
@@ -1426,7 +1503,7 @@ test("native provider rejects every unsafe third rendered-order pass without a f
       expectedDetail: /^page_boundary:4:g0:l[0-9]{1,3}$/u,
     },
     {
-      // 1.1.29: a cross-page repeat is kept as a rank slot, so a third pass
+      // 1.1.30: a cross-page repeat is kept as a rank slot, so a third pass
       // that shows one where the valid pass did not is an order mismatch.
       name: "cross-page direct identity overlap",
       thirdPages() {
@@ -1620,7 +1697,7 @@ test("native provider fails closed for every unsafe rendered-order second pass w
       secondPages: () => renderedOrderDriftPages(),
     },
     {
-      // 1.1.29: a cross-page repeat is kept as a rank slot, so a second pass
+      // 1.1.30: a cross-page repeat is kept as a rank slot, so a second pass
       // that shows one where the first did not is an order mismatch.
       name: "cross-page direct identity overlap",
       expectedCode: "provider_stable_rendered_order_unproven",
@@ -2342,7 +2419,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.29");
+  assert.equal(manifest.version, "1.1.30");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3650,7 +3727,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.29");
+  assert.equal(manifest.version, "1.1.30");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3825,7 +3902,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.29",
+    runtimeVersion: "1.1.30",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

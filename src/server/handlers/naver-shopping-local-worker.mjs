@@ -33,7 +33,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.29";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.30";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -348,12 +348,63 @@ async function recordWorkerSuccess(ctx, body) {
   return data;
 }
 
+// 1.1.30: bounded collection evidence (identities and raw numbers of every capture)
+// rides along with a failure report and is kept 30 days for diagnosis. It is best
+// effort: a rejected or failed insert never changes the failure outcome.
+const FAILURE_EVIDENCE_MAX_CHARS = 16000;
+const FAILURE_EVIDENCE_VERSION = "collection-evidence-v1";
+function validatedFailureEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.version !== FAILURE_EVIDENCE_VERSION || !Array.isArray(value.passes) || value.passes.length > 3) return null;
+  const allowed = new Set(["version", "keyword", "passes", "truncated"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  for (const pass of value.passes) {
+    if (!Array.isArray(pass) || pass.length > 8) return null;
+    for (const page of pass) {
+      if (!page || typeof page !== "object" || !Array.isArray(page.rows) || page.rows.length > 120) return null;
+      if (Object.keys(page).some((key) => !["p", "total", "rows"].includes(key))) return null;
+      for (const row of page.rows) {
+        if (!Array.isArray(row) || row.length > 2) return null;
+        if (row.some((cell) => !(cell === null || Number.isSafeInteger(cell) || (typeof cell === "string" && cell.length <= 90)))) return null;
+      }
+    }
+  }
+  const evidence = {
+    version: FAILURE_EVIDENCE_VERSION,
+    keyword: String(value.keyword ?? "").slice(0, 80),
+    passes: value.passes,
+    truncated: value.truncated === true,
+  };
+  return JSON.stringify(evidence).length <= FAILURE_EVIDENCE_MAX_CHARS ? evidence : null;
+}
+
+async function storeFailureEvidence(ctx, { control, job, trackerId, errorCode, scope, evidence }) {
+  try {
+    const { error } = await ctx.supabaseAdmin
+      .from("naver_shopping_failure_evidence")
+      .insert({
+        worker_id: control.workerId,
+        run_id: control.runId,
+        runtime_version: control.runtimeVersion,
+        tracker_id: trackerId,
+        keyword: String(job?.keyword ?? "").slice(0, 80),
+        error_code: errorCode,
+        scope,
+        evidence,
+      });
+    if (error) console.warn(JSON.stringify({ level: "warn", event: "naver_shopping_failure_evidence_rejected", message: String(error.message || "").slice(0, 160) }));
+  } catch (error) {
+    console.warn(JSON.stringify({ level: "warn", event: "naver_shopping_failure_evidence_failed", message: String(error?.message || "").slice(0, 160) }));
+  }
+}
+
 async function recordWorkerFailure(ctx, body) {
   const control = workerControlInput(body);
   const job = validateLocalWorkerJob(body?.job);
   const trackerId = trackerIdFromJob(job);
   const errorCode = String(body?.errorCode || "").trim().toLowerCase();
   const scope = String(body?.scope || "").trim().toLowerCase();
+  const evidence = body?.evidence === undefined ? null : validatedFailureEvidence(body.evidence);
   if (!SAFE_FAILURE_PATTERN.test(errorCode)
     || !["system", "tracker", "lookup", "security"].includes(scope)
     || (scope === "tracker" && !trackerId)
@@ -375,6 +426,7 @@ async function recordWorkerFailure(ctx, body) {
   if (!data || typeof data !== "object" || Array.isArray(data) || data.recorded !== true) {
     throw workerError("LOCAL_WORKER_FAILURE_NOT_RECORDED", 409);
   }
+  if (evidence) await storeFailureEvidence(ctx, { control, job, trackerId, errorCode, scope, evidence });
   return data;
 }
 

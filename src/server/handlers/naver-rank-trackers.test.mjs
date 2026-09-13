@@ -297,7 +297,7 @@ test("candidate readiness remains informational while activation stays canonical
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.29",
+            runtime_version: "1.1.30",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -324,7 +324,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.29",
+              runtime_version: "1.1.30",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -2971,7 +2971,7 @@ test("rendered-order evidence stays fail-closed at the handler and records only 
     }, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
   }
 
-  // 1.1.29 (콘트로이친 `6:7:page_overlap:4`): a cross-page repeat is proven by the
+  // 1.1.30 (콘트로이친 `6:7:page_overlap:4`): a cross-page repeat is proven by the
   // rendered-order proof itself; the window must not also carry a stable
   // full-window proof, and without any proof it stays untrusted.
   const crossPageRepeat = structuredClone(window);

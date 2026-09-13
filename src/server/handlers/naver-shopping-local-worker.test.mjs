@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.29",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.30",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -700,7 +700,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.29");
+          assert.equal(args.p_runtime_version, "1.1.30");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -722,7 +722,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_lease_token: LANE_TOKEN,
       p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
-      p_runtime_version: "1.1.29",
+      p_runtime_version: "1.1.30",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
     });
   });
@@ -828,7 +828,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.29",
+      runtimeVersion: "1.1.30",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -888,7 +888,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.29",
+      runtimeVersion: "1.1.30",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -903,6 +903,58 @@ test("records typed tracker failures without changing rank data in the HTTP hand
     assert.equal(failureArgs.p_scope, "tracker");
     assert.equal(failureArgs.p_tracker_id, TRACKER_ID);
     assert.equal(Object.hasOwn(failureArgs, "current_rank"), false);
+  });
+});
+
+test("stores validated collection evidence beside a failure report and never lets it change the outcome (1.1.30)", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    const evidence = { version: "collection-evidence-v1", keyword: "온열찜질기", passes: [[{ p: 1, total: 215, rows: [["a", 1], [2, "s:13000000001"], ["h"]] }]], truncated: false };
+    const scenarios = [
+      { label: "valid", evidence, insertError: null, expectInsert: true },
+      { label: "extra key", evidence: { ...evidence, titles: ["x"] }, insertError: null, expectInsert: false },
+      { label: "too many passes", evidence: { ...evidence, passes: [[], [], [], []] }, insertError: null, expectInsert: false },
+      { label: "insert rejected", evidence, insertError: new Error("relation missing"), expectInsert: true },
+    ];
+    for (const scenario of scenarios) {
+      let inserted = null;
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name) {
+            if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+            assert.equal(name, "mi_record_naver_shopping_worker_failure");
+            return { data: { recorded: true, circuitState: "closed", failureStreak: 1 }, error: null };
+          },
+          from(table) {
+            assert.equal(table, "naver_shopping_failure_evidence");
+            return { async insert(row) { inserted = row; return { error: scenario.insertError }; } };
+          },
+        },
+      };
+      const response = await handleLocalWorkerRequest(signedRequest({
+        action: "record-failure",
+        workerId: WORKER_ID,
+        laneToken: LANE_TOKEN,
+        runId: RUN_ID,
+        runtimeVersion: "1.1.30",
+        runtimeFingerprint: RUNTIME_FINGERPRINT,
+        job: { keyword: "온열찜질기", limit: 300, claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }] },
+        errorCode: "provider_stable_finite_window_unproven:count_mismatch",
+        scope: "tracker",
+        evidence: scenario.evidence,
+      }), ctx);
+      assert.equal(response.status, 200, scenario.label);
+      assert.equal((await response.json()).failureStreak, 1, scenario.label);
+      if (scenario.expectInsert) {
+        assert.equal(inserted?.tracker_id, TRACKER_ID, scenario.label);
+        assert.equal(inserted?.error_code, "provider_stable_finite_window_unproven:count_mismatch", scenario.label);
+        assert.equal(inserted?.keyword, "온열찜질기", scenario.label);
+        assert.deepEqual(inserted?.evidence, evidence, scenario.label);
+      } else {
+        assert.equal(inserted, null, scenario.label);
+      }
+    }
   });
 });
 
@@ -930,7 +982,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.29",
+      runtimeVersion: "1.1.30",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -972,7 +1024,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.29",
+      runtimeVersion: "1.1.30",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1061,7 +1113,7 @@ test("claim resets the exact signed idle envelope after touch and before repair 
       p_page: 0,
       p_job_kind: null,
       p_tracker_id: null,
-      p_runtime_version: "1.1.29",
+      p_runtime_version: "1.1.30",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
       p_run_trigger: "rank-catch-up",
     });

@@ -1015,7 +1015,9 @@ function parseNaverNextDataPageInternal(payload, {
       }),
     );
   }
-  if (renderedOrderCandidate) {
+  // 1.1.30: a page past the end of a finite market has no organic rows; it
+  // carries no raw-rank span to prove.
+  if (renderedOrderCandidate && organicCount > 0) {
     const rawRankSpan = firstOrganicRawRank == null || previousOrganicRawRank == null
       ? null
       : previousOrganicRawRank - firstOrganicRawRank + 1;

@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.29";
+const EXPECTED_RUNTIME_VERSION = "1.1.30";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -409,6 +409,22 @@ function sanitizedFailureDetail(baseCode, detail) {
     .replace(/^_+|_+$/gu, "")
     .slice(0, Math.max(0, 79 - baseCode.length));
   return normalized ? `${baseCode}:${normalized}`.slice(0, 80) : baseCode;
+}
+
+// 1.1.30: the native host summarises every capture of a failed collection onto the
+// error (identities and raw numbers only). It rides along with the failure report so
+// the cause can be read from data; it never changes what is reported as the failure.
+const FAILURE_EVIDENCE_MAX_CHARS = 16000;
+function boundedFailureEvidence(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (value.version !== "collection-evidence-v1" || !Array.isArray(value.passes)) return null;
+  const evidence = {
+    version: value.version,
+    keyword: String(value.keyword ?? "").slice(0, 80),
+    passes: value.passes.slice(0, 3),
+    truncated: value.truncated === true,
+  };
+  return JSON.stringify(evidence).length <= FAILURE_EVIDENCE_MAX_CHARS ? evidence : null;
 }
 
 function safeFailureCode(error) {
@@ -927,6 +943,8 @@ export async function runLocalShoppingWorker(options = {}) {
         }
       } catch (error) {
         const failureCode = safeFailureCode(error);
+        const failureEvidence = boundedFailureEvidence(error?.evidence);
+        const evidencePayload = failureEvidence ? { evidence: failureEvidence } : {};
         if (resultAccounted) {
           restoreBaselineCadence(summary);
           summary.status = "control_plane_failed";
@@ -936,6 +954,7 @@ export async function runLocalShoppingWorker(options = {}) {
             try {
               const failureReport = await action({
                 action: "record-failure",
+            ...evidencePayload,
                 ...lanePayload,
                 job,
                 errorCode: "local_worker_post_commit_control_failed",
@@ -991,6 +1010,7 @@ export async function runLocalShoppingWorker(options = {}) {
             try {
               const failureReport = await action({
                 action: "record-failure",
+            ...evidencePayload,
                 ...lanePayload,
                 job,
                 errorCode: "local_worker_submit_outcome_unknown",
@@ -1052,6 +1072,7 @@ export async function runLocalShoppingWorker(options = {}) {
           try {
             const failureReport = await action({
               action: "record-failure",
+            ...evidencePayload,
               ...lanePayload,
               job,
               errorCode: "local_worker_post_commit_control_failed",
@@ -1099,6 +1120,7 @@ export async function runLocalShoppingWorker(options = {}) {
             // eslint-disable-next-line no-await-in-loop
             failureReport = await action({
               action: "record-failure",
+            ...evidencePayload,
               ...lanePayload,
               job: failureJob,
               errorCode: effectiveFailureCode,

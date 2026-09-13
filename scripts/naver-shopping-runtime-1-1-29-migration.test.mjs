@@ -35,15 +35,15 @@ function functionSql(source, name) {
   ))?.[0] || "";
 }
 
-test("1.1.29 is the newest runtime migration and the live fingerprint matches its pin", () => {
+// Archived 2026-09-13 (superseded by runtime 1.1.30).
+test("keeps the archived runtime 1.1.29 migration pinned to its historical fingerprint", () => {
   const runtimeMigrations = fs.readdirSync(migrationDirectory)
     .filter((entry) => /_naver_shopping_runtime_1_1_\d+_/u.test(entry))
     .sort();
-  assert.equal(runtimeMigrations.at(-1), migrationName);
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
+  assert.ok(runtimeMigrations.includes(migrationName));
+  assert.ok(runtimeMigrations.indexOf(migrationName) < runtimeMigrations.length - 1);
+  assert.equal(NEW_RUNTIME.fingerprint, "3e7a09a0045518c507c3104b5f056a44c722114c85d134039c7bae8c9b9a0b77");
+  assert.equal(typeof calculateN30RuntimeFingerprint, "function");
 });
 
 test("migration moves only the runtime identity pins from 1.1.28 to 1.1.29", () => {
@@ -84,25 +84,7 @@ test("the runtime literal audit still passes with the 1.1.29 progress gate as th
   assert.deepEqual(result.violations, []);
 });
 
-test("live surfaces are 1.1.29 while the archived 1.1.28 evidence keeps its historical identity", () => {
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.29"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-    "src/server/naver-shopping/worker-runtime-expectation.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.29"/u, relativePath);
-    assert.doesNotMatch(read(relativePath), /"1\.1\.28"/u, relativePath);
-  }
-  for (const relativePath of [
-    "scripts/naver-shopping-candidate-performance-audit.mjs",
-    "scripts/naver-shopping-account-rank-health-audit.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.29"/u, relativePath);
-    assert.match(read(relativePath), new RegExp(NEW_RUNTIME.fingerprint, "u"), relativePath);
-    assert.doesNotMatch(read(relativePath), new RegExp(OLD_RUNTIME.fingerprint, "u"), relativePath);
-  }
+test("the archived 1.1.28 evidence keeps its historical identity", () => {
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.29/u);
 });

@@ -23,6 +23,7 @@ const MAX_CRON_BATCH = 10;
 const PLACE_RANK_HISTORY_DAYS = 30;
 const PLACE_RANK_HISTORY_MAX_SNAPSHOTS = 120;
 const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
+const SNAPSHOT_QUERY_MAX_PAGES = 64;
 const SNAPSHOT_TRACKER_BATCH_SIZE = 50;
 const SNAPSHOT_QUERY_CONCURRENCY = 4;
 const TRACKER_LIST_MAX = 500;
@@ -71,7 +72,9 @@ const TRACKER_SELECT = [
   "updated_at",
 ].join(", ");
 
-const SNAPSHOT_SELECT = [
+// top_places is written for diagnostics but is not part of the list response.
+// Exclude it only from the hot read projection; write-return reads stay intact.
+const SNAPSHOT_LIST_SELECT = [
   "id",
   "tracker_id",
   "checked_at",
@@ -80,11 +83,11 @@ const SNAPSHOT_SELECT = [
   "checked_count",
   "total",
   "place",
-  "top_places",
   "message",
   "source",
   "created_at",
 ].join(", ");
+const SNAPSHOT_SELECT = `${SNAPSHOT_LIST_SELECT}, top_places`;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -716,45 +719,84 @@ async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
 async function loadSnapshotBatch(ctx, trackerIds, perTrackerLimit, checkedAfter, checkedBefore) {
   const grouped = new Map();
   const seenSnapshotIds = new Set();
-  let offset = 0;
-  let expectedTotal = null;
+  const remainingTrackerIds = new Set(trackerIds);
+  let cursor = null;
 
-  while (true) {
-    const { data, error, count } = await ctx.supabaseAdmin
+  for (let page = 0; page < SNAPSHOT_QUERY_MAX_PAGES; page += 1) {
+    let query = ctx.supabaseAdmin
       .from("naver_place_rank_snapshots")
-      .select(SNAPSHOT_SELECT, { count: "exact" })
-      .in("tracker_id", trackerIds)
+      .select(SNAPSHOT_LIST_SELECT)
+      .in("tracker_id", Array.from(remainingTrackerIds))
       .gte("checked_at", checkedAfter)
       .lte("checked_at", checkedBefore)
       .order("checked_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(offset, offset + SNAPSHOT_QUERY_PAGE_SIZE - 1);
+      .limit(SNAPSHOT_QUERY_PAGE_SIZE);
+
+    if (cursor) {
+      query = query.or(
+        `checked_at.lt.${cursor.checkedAt},and(checked_at.eq.${cursor.checkedAt},id.lt.${cursor.id})`,
+      );
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
-    if (!Number.isSafeInteger(count) || count < 0) throw new Error("place_rank_snapshot_count_unavailable");
-    if (expectedTotal === null) expectedTotal = count;
-    else if (count !== expectedTotal) throw new Error("place_rank_snapshot_pagination_changed");
     const rows = data || [];
-    let newSnapshotCount = 0;
+    if (rows.length === 0) return grouped;
+
+    let previousKey = cursor;
     for (const row of rows) {
       if (!row?.id || !row?.tracker_id) throw new Error("place_rank_snapshot_identity_missing");
-      if (seenSnapshotIds.has(row.id)) continue;
+      const rowKey = snapshotPaginationKey(row, "place_rank_snapshot");
+      if (previousKey && previousKey.checkedAt === rowKey.checkedAt && previousKey.id === rowKey.id) {
+        throw new Error("place_rank_snapshot_pagination_stalled");
+      }
+      if (previousKey && !snapshotKeyIsAfter(previousKey, rowKey)) {
+        throw new Error("place_rank_snapshot_pagination_order_invalid");
+      }
+      if (seenSnapshotIds.has(row.id)) throw new Error("place_rank_snapshot_pagination_duplicate");
       seenSnapshotIds.add(row.id);
-      newSnapshotCount += 1;
+      previousKey = rowKey;
       const trackerSnapshots = grouped.get(row.tracker_id) || [];
       if (trackerSnapshots.length < perTrackerLimit) {
         trackerSnapshots.push(row);
         grouped.set(row.tracker_id, trackerSnapshots);
+        if (trackerSnapshots.length >= perTrackerLimit) remainingTrackerIds.delete(row.tracker_id);
       }
     }
 
-    if (rows.length > 0 && newSnapshotCount === 0) throw new Error("place_rank_snapshot_pagination_stalled");
-    if (trackerIds.every((trackerId) => (grouped.get(trackerId)?.length || 0) >= perTrackerLimit)) break;
-    if (offset + rows.length >= expectedTotal) break;
-    if (rows.length === 0) throw new Error("place_rank_snapshot_pagination_stalled");
-    offset += rows.length;
+    if (remainingTrackerIds.size === 0) return grouped;
+    const nextCursor = snapshotPaginationKey(rows.at(-1), "place_rank_snapshot");
+    if (cursor && cursor.checkedAt === nextCursor.checkedAt && cursor.id === nextCursor.id) {
+      throw new Error("place_rank_snapshot_pagination_stalled");
+    }
+    cursor = nextCursor;
   }
-  return grouped;
+
+  throw new Error("place_rank_snapshot_pagination_limit_exceeded");
+}
+
+function snapshotPaginationKey(row, errorPrefix) {
+  const checkedAt = String(row?.checked_at || "");
+  const id = String(row?.id || "");
+  const checkedAtMs = Date.parse(checkedAt);
+  if (!Number.isFinite(checkedAtMs) || !/^[A-Za-z0-9_-]{1,128}$/u.test(id)) {
+    throw new Error(`${errorPrefix}_pagination_cursor_invalid`);
+  }
+  return { checkedAt, checkedAtMicros: timestampMicros(checkedAt, checkedAtMs), id };
+}
+
+function timestampMicros(value, parsedMs) {
+  const fraction = String(value).match(/\.(\d+)(?=Z$|[+-]\d{2}:?\d{2}$)/u)?.[1] || "";
+  const subMillisecondMicros = Number(`${fraction}000000`.slice(3, 6) || 0);
+  return BigInt(Math.trunc(parsedMs)) * 1000n + BigInt(subMillisecondMicros);
+}
+
+function snapshotKeyIsAfter(previous, next) {
+  if (next.checkedAtMicros < previous.checkedAtMicros) return true;
+  if (next.checkedAtMicros > previous.checkedAtMicros) return false;
+  return next.id < previous.id;
 }
 
 export async function loadSnapshots(ctx, trackerIds, requestedLimit = PLACE_RANK_HISTORY_MAX_SNAPSHOTS) {
@@ -1689,24 +1731,26 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
 }
 
 async function listTrackers(request, ctx) {
-  const access = await requirePlaceRankAccess(request, ctx, {}, { read: true });
+  const access = await placeTrackerListRead("access", () => requirePlaceRankAccess(request, ctx, {}, { read: true }));
   if (!access.ok) return access.response;
 
-  const { data, error, count } = await ctx.supabaseAdmin
+  const { data, error, count } = await placeTrackerListRead("trackers", () => ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
     .select(TRACKER_SELECT, { count: "exact" })
     .in("agency_code", agencyCodeScope(access.agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
-    .limit(TRACKER_LIST_QUERY_LIMIT);
+    .limit(TRACKER_LIST_QUERY_LIMIT));
 
-  if (error) throw error;
-  if (!Number.isSafeInteger(count) || count < 0) throw new Error("place_rank_tracker_count_unavailable");
+  if (error) throw placeTrackerReadError(error, "trackers");
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw placeTrackerReadError(new Error("place_rank_tracker_count_unavailable"), "trackers");
+  }
 
   const queriedRows = data || [];
   const hasMore = count > TRACKER_LIST_MAX || queriedRows.length > TRACKER_LIST_MAX;
-  const rows = await attachTrackerGroups(ctx, queriedRows.slice(0, TRACKER_LIST_MAX));
-  const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
+  const rows = await placeTrackerListRead("groups", () => attachTrackerGroups(ctx, queriedRows.slice(0, TRACKER_LIST_MAX)));
+  const snapshots = await placeTrackerListRead("snapshots", () => loadSnapshots(ctx, rows.map((row) => row.id)));
   return json(request, {
     ok: true,
     scopeKey: normalizeAgencyCode(access.agencyCode),
@@ -1721,6 +1765,24 @@ async function listTrackers(request, ctx) {
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     trackers: rows.map((row) => placeTrackerPayload(row, snapshots.get(row.id) || [])),
   });
+}
+
+async function placeTrackerListRead(stage, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error && typeof error === "object" && !error.placeTrackerReadStage) {
+      try {
+        Object.defineProperty(error, "placeTrackerReadStage", {
+          value: stage,
+          configurable: true,
+        });
+      } catch {
+        // Frozen third-party errors still propagate through the same safe path.
+      }
+    }
+    throw error;
+  }
 }
 
 async function createTracker(request, ctx, body, access = {}) {
@@ -2049,16 +2111,51 @@ export async function handlePlaceRankTrackersRequest(request, ctx) {
   }) });
 
   try {
-    if (request.method === "GET") return listTrackers(request, ctx);
-    if (request.method === "POST") return handlePost(request, ctx);
+    if (request.method === "GET") return await listTrackers(request, ctx);
+    if (request.method === "POST") return await handlePost(request, ctx);
     return json(request, { ok: false, message: "Method not allowed" }, 405);
   } catch (error) {
+    console.error(JSON.stringify({
+      level: "error",
+      event: "naver_place_rank_trackers_failed",
+      requestId: placeRankTrackersRequestId(request),
+      method: request.method,
+      stage: String(error?.placeTrackerReadStage || "").slice(0, 24),
+      errorType: safePlaceRankErrorType(error),
+      errorCode: safePlaceRankErrorCode(error),
+    }));
     return json(request, {
       ok: false,
+      code: "NAVER_PLACE_RANK_TRACKERS_FAILED",
       message: "네이버 플레이스 순위 추적 처리 중 오류가 발생했습니다.",
-      detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
     }, 500);
   }
+}
+
+function placeRankTrackersRequestId(request) {
+  const supplied = String(request?.headers?.get?.("x-request-id") || "").trim();
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u.test(supplied) ? supplied : "";
+}
+
+function safePlaceRankErrorType(error) {
+  const name = error instanceof Error ? String(error.name || "Error") : "UnknownError";
+  return /^[A-Za-z]{1,40}$/u.test(name) ? name : "UnknownError";
+}
+
+function safePlaceRankErrorCode(error) {
+  const code = String(error?.code || "");
+  return /^[A-Z0-9_]{1,32}$/u.test(code) ? code : "";
+}
+
+function placeTrackerReadError(error, stage) {
+  if (error && typeof error === "object" && !error.placeTrackerReadStage) {
+    try {
+      Object.defineProperty(error, "placeTrackerReadStage", { value: stage, configurable: true });
+    } catch {
+      // The original error remains authoritative even when it is frozen.
+    }
+  }
+  return error;
 }
 
 export default {

@@ -282,8 +282,8 @@ test("서버가 대표 코드로 풀어 되돌려 준 내부 범위 응답을 �
 });
 
 test("N 30일과 N 플레이스 30일이 같은 범위 계약을 쓴다", () => {
-  const productLoad = block("async function loadRankTrackers(silent) {", "async function refreshAllRankTrackers(refreshAllButton) {");
-  const placeLoad = block("async function loadPlaceTrackers(silent) {", "function syncPlaceKeywordFromMain() {");
+  const productLoad = block("async function loadRankTrackers(silent, forceFresh, skipAutoSyncOnce) {", "async function refreshAllRankTrackers(refreshAllButton) {");
+  const placeLoad = block("async function loadPlaceTrackers(silent, forceFresh, skipAutoSyncOnce) {", "function syncPlaceKeywordFromMain() {");
   for (const [name, loadSource] of [["product", productLoad], ["place", placeLoad]]) {
     assert.ok(loadSource.includes("completeRankTrackerPayload(payload, scope)"), `${name} load lost the scope guard`);
   }

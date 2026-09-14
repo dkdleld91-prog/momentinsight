@@ -58,6 +58,10 @@ const RANK_TRACKER_LEASE_MS = Number.isFinite(configuredRankTrackerLeaseMs)
 const PRODUCT_RANK_HISTORY_DAYS = 30;
 const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120;
 const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
+// Keyset pagination normally finishes after a handful of pages. Keep an
+// explicit ceiling so a malformed/continuously backfilled result set can never
+// hold one server request forever.
+const SNAPSHOT_QUERY_MAX_PAGES = 64;
 const SNAPSHOT_TRACKER_BATCH_SIZE = 50;
 const SNAPSHOT_QUERY_CONCURRENCY = 4;
 const TRACKER_LIST_MAX = 500;
@@ -113,7 +117,10 @@ const TRACKER_SELECT = [
   "updated_at",
 ].join(", ");
 
-const SNAPSHOT_SELECT = [
+// The list response never serializes top_items. Keep the larger write-return
+// projection below so collector/storage behavior is unchanged while the hot
+// read path avoids transferring the largest JSON column.
+const SNAPSHOT_LIST_SELECT = [
   "id",
   "tracker_id",
   "checked_at",
@@ -124,11 +131,11 @@ const SNAPSHOT_SELECT = [
   "checked_count",
   "total",
   "item",
-  "top_items",
   "message",
   "source",
   "created_at",
 ].join(", ");
+const SNAPSHOT_SELECT = `${SNAPSHOT_LIST_SELECT}, top_items`;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -804,45 +811,86 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
 async function loadSnapshotBatch(ctx, trackerIds, perTrackerLimit, checkedAfter, checkedBefore) {
   const grouped = new Map();
   const seenSnapshotIds = new Set();
-  let offset = 0;
-  let expectedTotal = null;
+  const remainingTrackerIds = new Set(trackerIds);
+  let cursor = null;
 
-  while (true) {
-    const { data, error, count } = await ctx.supabaseAdmin
+  for (let page = 0; page < SNAPSHOT_QUERY_MAX_PAGES; page += 1) {
+    let query = ctx.supabaseAdmin
       .from("naver_rank_snapshots")
-      .select(SNAPSHOT_SELECT, { count: "exact" })
-      .in("tracker_id", trackerIds)
+      .select(SNAPSHOT_LIST_SELECT)
+      .in("tracker_id", Array.from(remainingTrackerIds))
       .gte("checked_at", checkedAfter)
       .lte("checked_at", checkedBefore)
       .order("checked_at", { ascending: false })
       .order("id", { ascending: false })
-      .range(offset, offset + SNAPSHOT_QUERY_PAGE_SIZE - 1);
+      .limit(SNAPSHOT_QUERY_PAGE_SIZE);
+
+    if (cursor) {
+      query = query.or(
+        `checked_at.lt.${cursor.checkedAt},and(checked_at.eq.${cursor.checkedAt},id.lt.${cursor.id})`,
+      );
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
-    if (!Number.isSafeInteger(count) || count < 0) throw new Error("rank_snapshot_count_unavailable");
-    if (expectedTotal === null) expectedTotal = count;
-    else if (count !== expectedTotal) throw new Error("rank_snapshot_pagination_changed");
     const rows = data || [];
-    let newSnapshotCount = 0;
+    if (rows.length === 0) return grouped;
+
+    let previousKey = cursor;
     for (const row of rows) {
       if (!row?.id || !row?.tracker_id) throw new Error("rank_snapshot_identity_missing");
-      if (seenSnapshotIds.has(row.id)) continue;
+      const rowKey = snapshotPaginationKey(row, "rank_snapshot");
+      if (previousKey && previousKey.checkedAt === rowKey.checkedAt && previousKey.id === rowKey.id) {
+        throw new Error("rank_snapshot_pagination_stalled");
+      }
+      if (previousKey && !snapshotKeyIsAfter(previousKey, rowKey)) {
+        throw new Error("rank_snapshot_pagination_order_invalid");
+      }
+      if (seenSnapshotIds.has(row.id)) throw new Error("rank_snapshot_pagination_duplicate");
       seenSnapshotIds.add(row.id);
-      newSnapshotCount += 1;
+      previousKey = rowKey;
       const trackerSnapshots = grouped.get(row.tracker_id) || [];
       if (trackerSnapshots.length < perTrackerLimit) {
         trackerSnapshots.push(row);
         grouped.set(row.tracker_id, trackerSnapshots);
+        if (trackerSnapshots.length >= perTrackerLimit) remainingTrackerIds.delete(row.tracker_id);
       }
     }
 
-    if (rows.length > 0 && newSnapshotCount === 0) throw new Error("rank_snapshot_pagination_stalled");
-    if (trackerIds.every((trackerId) => (grouped.get(trackerId)?.length || 0) >= perTrackerLimit)) break;
-    if (offset + rows.length >= expectedTotal) break;
-    if (rows.length === 0) throw new Error("rank_snapshot_pagination_stalled");
-    offset += rows.length;
+    if (remainingTrackerIds.size === 0) return grouped;
+    const nextCursor = snapshotPaginationKey(rows.at(-1), "rank_snapshot");
+    if (cursor && cursor.checkedAt === nextCursor.checkedAt && cursor.id === nextCursor.id) {
+      throw new Error("rank_snapshot_pagination_stalled");
+    }
+    cursor = nextCursor;
   }
-  return grouped;
+
+  throw new Error("rank_snapshot_pagination_limit_exceeded");
+}
+
+function snapshotPaginationKey(row, errorPrefix) {
+  const checkedAt = String(row?.checked_at || "");
+  const id = String(row?.id || "");
+  const checkedAtMs = Date.parse(checkedAt);
+  if (!Number.isFinite(checkedAtMs) || !/^[A-Za-z0-9_-]{1,128}$/u.test(id)) {
+    throw new Error(`${errorPrefix}_pagination_cursor_invalid`);
+  }
+  return { checkedAt, checkedAtMicros: timestampMicros(checkedAt, checkedAtMs), id };
+}
+
+function timestampMicros(value, parsedMs) {
+  const fraction = String(value).match(/\.(\d+)(?=Z$|[+-]\d{2}:?\d{2}$)/u)?.[1] || "";
+  const subMillisecondMicros = Number(`${fraction}000000`.slice(3, 6) || 0);
+  return BigInt(Math.trunc(parsedMs)) * 1000n + BigInt(subMillisecondMicros);
+}
+
+// Rows are ordered checked_at DESC, id DESC. A next row must therefore have a
+// strictly smaller tuple than the previous row/cursor.
+function snapshotKeyIsAfter(previous, next) {
+  if (next.checkedAtMicros < previous.checkedAtMicros) return true;
+  if (next.checkedAtMicros > previous.checkedAtMicros) return false;
+  return next.id < previous.id;
 }
 
 export async function loadSnapshots(ctx, trackerIds, requestedLimit = PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS) {
@@ -1153,48 +1201,69 @@ export async function loadShoppingWorkerOperations(ctx, now = Date.now()) {
 // 제한을 넘겼다. 검색량은 목록 응답을 붙잡지 않도록 짧은 예산만 쓰고, 예산 뒤 도착한 값은
 // 캐시에 남아 다음 조회에서 즉시 나온다(loadKeywordVolumes 참조).
 export async function loadTrackerListDetails(ctx, queriedRows, options = {}) {
-  const groupsPromise = attachTrackerGroups(ctx, queriedRows);
   const ids = queriedRows.map((row) => row.id);
   const [rows, snapshots, keywordVolumes, workerStatus, workerOperations] = await Promise.all([
-    groupsPromise,
-    loadSnapshots(ctx, ids),
-    loadKeywordVolumes(queriedRows.map((row) => row.keyword), {
+    rankTrackerListRead("groups", () => attachTrackerGroups(ctx, queriedRows)),
+    rankTrackerListRead("snapshots", () => loadSnapshots(ctx, ids)),
+    rankTrackerListRead("keyword-volumes", () => loadKeywordVolumes(queriedRows.map((row) => row.keyword), {
       budgetMs: options.keywordVolumeBudgetMs ?? TRACKER_LIST_KEYWORD_VOLUME_BUDGET_MS,
-    }),
-    loadShoppingWorkerStatus(ctx),
-    options.owner === true ? loadShoppingWorkerOperations(ctx) : Promise.resolve(null),
+    })),
+    rankTrackerListRead("worker-status", () => loadShoppingWorkerStatus(ctx)),
+    options.owner === true
+      ? rankTrackerListRead("worker-operations", () => loadShoppingWorkerOperations(ctx))
+      : Promise.resolve(null),
   ]);
   return { rows, snapshots, keywordVolumes, workerStatus, workerOperations };
 }
 
+async function rankTrackerListRead(stage, operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error && typeof error === "object" && !error.rankTrackerReadStage) {
+      try {
+        Object.defineProperty(error, "rankTrackerReadStage", {
+          value: stage,
+          configurable: true,
+        });
+      } catch {
+        // Frozen third-party errors still propagate through the same safe path.
+      }
+    }
+    throw error;
+  }
+}
+
 async function listTrackers(request, ctx) {
   const listStartedAt = Date.now();
-  const access = await requireRankAccess(request, ctx, {}, { read: true });
+  const access = await rankTrackerListRead("access", () => requireRankAccess(request, ctx, {}, { read: true }));
   const accessMs = Date.now() - listStartedAt;
   if (!access.ok) return access.response;
   const agencyCode = access.agencyCode;
 
   const trackersQueryStartedAt = Date.now();
-  const { data, error, count } = await ctx.supabaseAdmin
+  const { data, error, count } = await rankTrackerListRead("trackers", () => ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT, { count: "exact" })
     .in("agency_code", agencyCodeScope(agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
-    .limit(TRACKER_LIST_QUERY_LIMIT);
+    .limit(TRACKER_LIST_QUERY_LIMIT));
 
   const trackersQueryMs = Date.now() - trackersQueryStartedAt;
-  if (error) throw error;
-  if (!Number.isSafeInteger(count) || count < 0) throw new Error("rank_tracker_count_unavailable");
+  if (error) throw rankTrackerReadError(error, "trackers");
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw rankTrackerReadError(new Error("rank_tracker_count_unavailable"), "trackers");
+  }
 
   const queriedRows = data || [];
   const hasMore = count > TRACKER_LIST_MAX || queriedRows.length > TRACKER_LIST_MAX;
   const detailStartedAt = Date.now();
-  const { rows, snapshots, keywordVolumes, workerStatus, workerOperations } = await loadTrackerListDetails(
+  const { rows, snapshots, keywordVolumes, workerStatus, workerOperations } = await rankTrackerListRead("details", () => loadTrackerListDetails(
     ctx,
     queriedRows.slice(0, TRACKER_LIST_MAX),
     { owner: access.owner === true },
-  );
+  ));
   const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
   const totalMs = Date.now() - listStartedAt;
   if (totalMs >= TRACKER_LIST_SLOW_LOG_MS) {
@@ -2750,8 +2819,8 @@ export async function handleRankTrackersRequest(request, ctx) {
   }) });
 
   try {
-    if (request.method === "GET") return listTrackers(request, ctx);
-    if (request.method === "POST") return handlePost(request, ctx);
+    if (request.method === "GET") return await listTrackers(request, ctx);
+    if (request.method === "POST") return await handlePost(request, ctx);
     return json(request, { ok: false, message: "Method not allowed" }, 405);
   } catch (error) {
     // 2026-09-11: this catch used to swallow the cause entirely, so every
@@ -2765,15 +2834,14 @@ export async function handleRankTrackersRequest(request, ctx) {
       requestId: rankTrackersRequestId(request),
       method: request.method,
       action: rankTrackersActionLabel(request),
-      errorType: error instanceof Error ? error.name : "UnknownError",
-      errorCode: String(error?.code || "").slice(0, 80),
-      message: String(error?.message || "").replace(/\s+/gu, " ").slice(0, 200),
+      stage: String(error?.rankTrackerReadStage || "").slice(0, 24),
+      errorType: safeRankErrorType(error),
+      errorCode: safeRankErrorCode(error),
     }));
     return json(request, {
       ok: false,
       code: "NAVER_RANK_TRACKERS_FAILED",
       message: "순위 추적 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.",
-      detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
     }, 500);
   }
 }
@@ -2786,10 +2854,32 @@ function rankTrackersRequestId(request) {
 function rankTrackersActionLabel(request) {
   try {
     const url = new URL(request.url);
-    return String(url.searchParams.get("action") || url.pathname.split("/").pop() || "").slice(0, 40);
+    const action = String(url.searchParams.get("action") || url.pathname.split("/").pop() || "").slice(0, 40);
+    return /^[a-z0-9-]{1,40}$/u.test(action) ? action : "";
   } catch {
     return "";
   }
+}
+
+function safeRankErrorType(error) {
+  const name = error instanceof Error ? String(error.name || "Error") : "UnknownError";
+  return /^[A-Za-z]{1,40}$/u.test(name) ? name : "UnknownError";
+}
+
+function safeRankErrorCode(error) {
+  const code = String(error?.code || "");
+  return /^[A-Z0-9_]{1,32}$/u.test(code) ? code : "";
+}
+
+function rankTrackerReadError(error, stage) {
+  if (error && typeof error === "object" && !error.rankTrackerReadStage) {
+    try {
+      Object.defineProperty(error, "rankTrackerReadStage", { value: stage, configurable: true });
+    } catch {
+      // The original error remains authoritative even when it is frozen.
+    }
+  }
+  return error;
 }
 
 export default {

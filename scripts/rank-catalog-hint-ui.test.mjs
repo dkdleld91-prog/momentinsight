@@ -601,8 +601,8 @@ test("C5d: renderOwnerCodeList 는 운영팀·광고주 행 뒤에 집계 행을
 // ─────────────────────────────────────────────────────────────
 // refreshRankCollectionHealthSignal 을 fetch·document·window 스텁 위에서 실제로 실행한다.
 // 서버 lanes.<key>.stalledMinutes 는 수집 사이클 사이에 매 분 1씩 오르므로, 그 값을
-// changed 판정에 넣으면 60초 폴링마다 mi:rank-scope-changed 가 발행돼 목록 재조회가
-// 무한히 돈다(함수 위 주석이 금지한 상황). 렌더 분기에 쓰이는 값만 대조해야 한다.
+// changed 판정에 넣으면 60초 폴링마다 재렌더가 반복된다. 헬스 이벤트는 조회 범위
+// 변경과 분리하고, 렌더 분기에 쓰이는 값만 대조해야 한다.
 async function refreshSandboxRun(payloads) {
   const context = {};
   vm.createContext(context);
@@ -644,7 +644,7 @@ function healthPayload(overrides) {
   }, overrides || {});
 }
 
-test("C5c(리뷰): stalledMinutes 만 오른 payload 를 거듭 넣어도 재조회 이벤트가 다시 발행되지 않는다", async () => {
+test("C5c(리뷰): stalledMinutes 만 오른 payload 를 거듭 넣어도 헬스 재렌더 이벤트가 다시 발행되지 않는다", async () => {
   const base = healthPayload();
   const minuteLater = healthPayload({
     lanes: {
@@ -660,13 +660,13 @@ test("C5c(리뷰): stalledMinutes 만 오른 payload 를 거듭 넣어도 재조
   });
   const result = await refreshSandboxRun([base, minuteLater, twoMinutesLater]);
   // 첫 응답은 기본값(ok:false, trackers 0)과 다르므로 1회 발행된다. 그 뒤 분 단위 증가는 무시한다.
-  assert.deepEqual(result.dispatched, ["mi:rank-scope-changed"]);
+  assert.deepEqual(result.dispatched, ["mi:rank-health-updated"]);
   // 신호 사본 자체는 최신 값으로 갱신된다(발행만 억제한다).
   assert.equal(result.signal.lanes.product.stalledMinutes, 12);
   assert.equal(result.signal.lanes.place.stalledMinutes, 14);
 });
 
-test("C5c(리뷰): 레인 queueStalled 가 뒤집히거나 추적기 집계가 바뀌면 재조회 이벤트가 발행된다", async () => {
+test("C5c(리뷰): 레인 queueStalled 가 뒤집히거나 추적기 집계가 바뀌면 헬스 재렌더 이벤트가 발행된다", async () => {
   const base = healthPayload();
   const productStalled = healthPayload({
     lanes: {
@@ -675,22 +675,32 @@ test("C5c(리뷰): 레인 queueStalled 가 뒤집히거나 추적기 집계가 �
     },
   });
   const flipped = await refreshSandboxRun([base, productStalled]);
-  assert.deepEqual(flipped.dispatched, ["mi:rank-scope-changed", "mi:rank-scope-changed"]);
+  assert.deepEqual(flipped.dispatched, ["mi:rank-health-updated", "mi:rank-health-updated"]);
 
   const moreNeverFound = healthPayload({ trackers: { neverFound: 3, stuck: 0 } });
   const counted = await refreshSandboxRun([base, moreNeverFound]);
-  assert.deepEqual(counted.dispatched, ["mi:rank-scope-changed", "mi:rank-scope-changed"]);
+  assert.deepEqual(counted.dispatched, ["mi:rank-health-updated", "mi:rank-health-updated"]);
 
   // 마지막 성공 기록이 없음 → 생김 은 문장("성공 기록 없음")이 바뀌므로 발행한다.
   const noRecord = healthPayload({
     lanes: { product: { lastSuccessAt: null, stalledMinutes: 0, queueStalled: false }, place: base.lanes.place },
   });
   const recorded = await refreshSandboxRun([noRecord, base]);
-  assert.deepEqual(recorded.dispatched, ["mi:rank-scope-changed", "mi:rank-scope-changed"]);
+  assert.deepEqual(recorded.dispatched, ["mi:rank-health-updated", "mi:rank-health-updated"]);
+
+  // 실제 새 성공 시각은 둘 다 non-null 이어도 상태 문장을 다시 그려야 한다.
+  const newerSuccess = healthPayload({
+    lanes: {
+      product: { lastSuccessAt: at(-2 * 60 * 1000), stalledMinutes: 2, queueStalled: false },
+      place: base.lanes.place,
+    },
+  });
+  const succeededAgain = await refreshSandboxRun([base, newerSuccess]);
+  assert.deepEqual(succeededAgain.dispatched, ["mi:rank-health-updated", "mi:rank-health-updated"]);
 
   // 완전히 같은 payload 두 번은 1회다(기존 규약).
   const same = await refreshSandboxRun([base, base]);
-  assert.deepEqual(same.dispatched, ["mi:rank-scope-changed"]);
+  assert.deepEqual(same.dispatched, ["mi:rank-health-updated"]);
 });
 
 test("C5c(리뷰): refresh 의 changed 판정은 stalledMinutes 를 읽지 않는다", () => {

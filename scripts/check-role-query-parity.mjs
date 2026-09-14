@@ -189,8 +189,9 @@ const sharedPageMarkers = [
   "function duePlaceTrackers",
   "async function syncDuePlaceTrackersIfNeeded",
   'action: "sync-due"',
-  "await syncDueRankTrackersIfNeeded(silent, scope, generation)",
-  "await syncDuePlaceTrackersIfNeeded(silent, scope, generation)",
+  "if (!loadState.skipAutoSync)",
+  "await syncDueRankTrackersIfNeeded(!loadState.announce, scope, generation)",
+  "await syncDuePlaceTrackersIfNeeded(!loadState.announce, scope, generation)",
   "maxRank: 300",
 ];
 

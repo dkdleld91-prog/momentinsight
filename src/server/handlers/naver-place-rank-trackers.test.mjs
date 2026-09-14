@@ -180,6 +180,7 @@ class MockQuery {
     this.columns = "*";
     this.selectOptions = {};
     this.values = null;
+    this.snapshotTrackerIds = null;
   }
 
   select(columns = "*", options = {}) {
@@ -211,6 +212,7 @@ class MockQuery {
   }
 
   in(column, values) {
+    if (this.table === SNAPSHOTS && column === "tracker_id") this.snapshotTrackerIds = [...values];
     this.filters.push((row) => values.includes(row[column]));
     return this;
   }
@@ -240,9 +242,23 @@ class MockQuery {
 
   or(expression) {
     const leaseMatch = String(expression).match(/^processing_until\.is\.null,processing_until\.lte\.(.+)$/);
-    if (!leaseMatch) throw new Error(`unsupported mock or expression: ${expression}`);
-    const expected = new Date(leaseMatch[1]).getTime();
-    this.filters.push((row) => !row.processing_until || new Date(row.processing_until).getTime() <= expected);
+    if (leaseMatch) {
+      const expected = new Date(leaseMatch[1]).getTime();
+      this.filters.push((row) => !row.processing_until || new Date(row.processing_until).getTime() <= expected);
+      return this;
+    }
+    const cursorMatch = String(expression).match(
+      /^checked_at\.lt\.([^,]+),and\(checked_at\.eq\.([^,]+),id\.lt\.([A-Za-z0-9_-]+)\)$/u,
+    );
+    if (!cursorMatch || cursorMatch[1] !== cursorMatch[2]) {
+      throw new Error(`unsupported mock or expression: ${expression}`);
+    }
+    const [, checkedAt, , id] = cursorMatch;
+    if (this.state.snapshotCursorStall) {
+      this.filters.push((row) => row.checked_at === checkedAt && row.id === id);
+    } else {
+      this.filters.push((row) => row.checked_at < checkedAt || (row.checked_at === checkedAt && row.id < id));
+    }
     return this;
   }
 
@@ -276,6 +292,13 @@ class MockQuery {
   }
 
   async execute(mode = "many") {
+    if (this.table === SNAPSHOTS && this.operation === "select") {
+      this.state.snapshotQueries.push({
+        columns: this.columns,
+        limit: this.limitValue,
+        trackerIds: this.snapshotTrackerIds ? [...this.snapshotTrackerIds] : [],
+      });
+    }
     const groupColumnRequested = this.table === TRACKERS && (
       String(this.columns).includes("group_name") ||
       Object.prototype.hasOwnProperty.call(this.values || {}, "group_name")
@@ -316,8 +339,24 @@ class MockQuery {
       });
     }
     const totalCount = rows.length;
-    if (Number.isFinite(this.limitValue)) rows = rows.slice(0, this.limitValue);
+    if (Number.isFinite(this.limitValue)) {
+      const effectiveLimit = this.table === SNAPSHOTS && Number.isFinite(this.state.snapshotServerCap)
+        ? Math.min(this.limitValue, this.state.snapshotServerCap)
+        : this.limitValue;
+      rows = rows.slice(0, effectiveLimit);
+    }
     if (Number.isFinite(this.rangeEnd)) rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
+
+    if (
+      this.table === SNAPSHOTS &&
+      this.operation === "select" &&
+      this.state.snapshotQueries.length === 1 &&
+      this.state.snapshotLiveInsertAfterFirst &&
+      !this.state.snapshotLiveInsertApplied
+    ) {
+      tableRows.push({ ...this.state.snapshotLiveInsertAfterFirst });
+      this.state.snapshotLiveInsertApplied = true;
+    }
 
     if (this.selectOptions.count === "exact" && this.selectOptions.head) {
       return { data: null, count: totalCount, error: null };
@@ -339,9 +378,14 @@ class MockQuery {
 function testContext(rows = [], options = {}) {
   const state = {
     missingGroupColumn: Boolean(options.missingGroupColumn),
+    snapshotServerCap: Number(options.snapshotServerCap),
+    snapshotLiveInsertAfterFirst: options.snapshotLiveInsertAfterFirst || null,
+    snapshotLiveInsertApplied: false,
+    snapshotCursorStall: Boolean(options.snapshotCursorStall),
     nextId: 10,
     lastRpcParams: null,
     ranges: [],
+    snapshotQueries: [],
     tables: {
       [TRACKERS]: rows.map((row) => trackerRow(row)),
       [SNAPSHOTS]: (options.snapshots || []).map((row) => ({ ...row })),
@@ -801,10 +845,178 @@ test("place snapshot loading paginates recent history instead of applying one gl
   const grouped = await loadPlaceSnapshots(ctx, trackerIds);
   trackerIds.forEach((trackerId) => assert.equal(grouped.get(trackerId).length, 100));
   assert.equal(Array.from(grouped.values()).flat().some((snapshot) => snapshot.id.endsWith("-old")), false);
-  assert.deepEqual(
-    state.ranges.filter((entry) => entry.table === SNAPSHOTS).map(({ from, to }) => [from, to]),
-    [[0, 999], [1000, 1999]],
+  assert.equal(state.snapshotQueries.length, 3);
+  assert.equal(state.snapshotQueries.every(({ columns }) => !columns.includes("top_places")), true);
+});
+
+test("place snapshot keyset preserves same-time ties and sub-millisecond order below a provider cap", async () => {
+  const second = new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/u, "");
+  const dominantRows = Array.from({ length: 1002 }, (_, index) => ({
+    id: `place-tie-${String(index).padStart(4, "0")}`,
+    tracker_id: "place-dominant",
+    checked_at: `${second}.${String(999999 - Math.floor(index / 2)).padStart(6, "0")}Z`,
+  }));
+  const laterRow = {
+    id: "place-later-row",
+    tracker_id: "place-later",
+    checked_at: new Date(Date.now() - 62_000).toISOString(),
+  };
+  const { ctx, state } = testContext([], {
+    snapshots: [...dominantRows, laterRow],
+    snapshotServerCap: 251,
+  });
+
+  const grouped = await loadPlaceSnapshots(ctx, ["place-dominant", "place-later"]);
+  assert.equal(grouped.get("place-dominant").length, 120);
+  assert.deepEqual(grouped.get("place-later").map(({ id }) => id), ["place-later-row"]);
+  assert.equal(new Set(Array.from(grouped.values()).flat().map(({ id }) => id)).size, 121);
+  assert.ok(state.snapshotQueries.length <= 3);
+  assert.equal(state.snapshotQueries.slice(1).every(({ trackerIds }) => (
+    trackerIds.length === 1 && trackerIds[0] === "place-later"
+  )), true);
+});
+
+test("place snapshot keyset ignores a live head insert without shifting or losing older rows", async () => {
+  const now = Date.now();
+  const existingRows = [
+    ...Array.from({ length: 300 }, (_, index) => ({
+      id: `place-existing-${String(index).padStart(4, "0")}`,
+      tracker_id: "place-dominant",
+      checked_at: new Date(now - 10_000 - index * 1000).toISOString(),
+    })),
+    {
+      id: "place-older-sparse-row",
+      tracker_id: "place-sparse",
+      checked_at: new Date(now - 400_000).toISOString(),
+    },
+  ];
+  const liveInsert = {
+    id: "place-live-head-insert",
+    tracker_id: "place-dominant",
+    checked_at: new Date(now - 1000).toISOString(),
+  };
+  const { ctx, state } = testContext([], {
+    snapshots: existingRows,
+    snapshotServerCap: 100,
+    snapshotLiveInsertAfterFirst: liveInsert,
+  });
+
+  const grouped = await loadPlaceSnapshots(ctx, ["place-dominant", "place-sparse"]);
+  assert.equal(grouped.get("place-dominant").length, 120);
+  assert.deepEqual(grouped.get("place-sparse").map(({ id }) => id), ["place-older-sparse-row"]);
+  assert.equal(Array.from(grouped.values()).flat().some(({ id }) => id === liveInsert.id), false);
+  assert.equal(state.snapshotLiveInsertApplied, true);
+});
+
+test("place snapshot pagination fails closed when the cursor does not advance", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 1000 }, (_, index) => ({
+      id: `place-stall-${String(index).padStart(4, "0")}`,
+      tracker_id: "place-dominant",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "place-stall-sparse",
+      tracker_id: "place-sparse",
+      checked_at: new Date(now - 2_000_000).toISOString(),
+    },
+  ];
+  const { ctx } = testContext([], {
+    snapshots: rows,
+    snapshotCursorStall: true,
+    snapshotServerCap: 100,
+  });
+
+  await assert.rejects(
+    loadPlaceSnapshots(ctx, ["place-dominant", "place-sparse"]),
+    /place_rank_snapshot_pagination_stalled/,
   );
+});
+
+test("place snapshot pagination has a finite page ceiling", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      id: `place-bounded-${String(index).padStart(3, "0")}`,
+      tracker_id: "place-dominant",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "place-bounded-sparse",
+      tracker_id: "place-sparse",
+      checked_at: new Date(now - 100_000).toISOString(),
+    },
+  ];
+  const { ctx } = testContext([], { snapshots: rows, snapshotServerCap: 1 });
+
+  await assert.rejects(
+    loadPlaceSnapshots(ctx, ["place-dominant", "place-sparse"]),
+    /place_rank_snapshot_pagination_limit_exceeded/,
+  );
+});
+
+test("place snapshot pagination drops saturated trackers before the page ceiling", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      id: `place-saturated-${String(index).padStart(3, "0")}`,
+      tracker_id: "place-saturated",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "place-saturated-test-sparse",
+      tracker_id: "place-sparse",
+      checked_at: new Date(now - 100_000).toISOString(),
+    },
+  ];
+  const { ctx, state } = testContext([], { snapshots: rows, snapshotServerCap: 1 });
+
+  const grouped = await loadPlaceSnapshots(ctx, ["place-saturated", "place-sparse"], 1);
+  assert.deepEqual(grouped.get("place-saturated").map(({ id }) => id), ["place-saturated-000"]);
+  assert.deepEqual(grouped.get("place-sparse").map(({ id }) => id), ["place-saturated-test-sparse"]);
+  assert.equal(state.snapshotQueries.length, 2);
+  assert.deepEqual(state.snapshotQueries[1].trackerIds, ["place-sparse"]);
+});
+
+test("place GET awaits rejected reads and returns a bounded handler error", async () => {
+  const secret = "place-db-secret-that-must-not-leak";
+  const dbError = Object.assign(new Error(secret), { code: "XX002" });
+  let query;
+  query = new Proxy({}, {
+    get(_target, key) {
+      if (key === "then") {
+        return (resolve, reject) => Promise.reject(dbError).then(resolve, reject);
+      }
+      return () => query;
+    },
+  });
+  const ctx = { supabaseAdmin: { from: () => query } };
+  const targetRequest = new Request(`http://localhost/api/naver-place-rank-trackers?agencyCode=${AGENCY_CODE}`, {
+    headers: {
+      "x-demo-admin-code": ADMIN_CODE,
+      "x-mi-agency-code": AGENCY_CODE,
+      "x-request-id": "request-place-123",
+    },
+  });
+  const logged = [];
+  const previousConsoleError = console.error;
+  console.error = (value) => logged.push(String(value));
+  try {
+    const response = await handlePlaceRankTrackersRequest(targetRequest, ctx);
+    const body = await response.json();
+    assert.equal(response.status, 500);
+    assert.equal(body.code, "NAVER_PLACE_RANK_TRACKERS_FAILED");
+    assert.equal(JSON.stringify(body).includes(secret), false);
+    assert.equal(logged.length, 1);
+    const log = JSON.parse(logged[0]);
+    assert.equal(log.event, "naver_place_rank_trackers_failed");
+    assert.equal(log.stage, "trackers");
+    assert.equal(log.requestId, "request-place-123");
+    assert.equal(logged[0].includes(secret), false);
+  } finally {
+    console.error = previousConsoleError;
+  }
 });
 
 test("accepts only HTTPS Naver place hosts before resolving them", async () => {

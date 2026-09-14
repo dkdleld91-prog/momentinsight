@@ -23277,9 +23277,9 @@
       // refreshRankCollectionHealthSignal 의 changed 판정 전용이다. stalledMinutes 는 넣지
       // 않는다 — 서버가 floor((now - lastCheckedAt)/60000) 으로 계산하므로 수집 사이클
       // (09:00/15:00) 사이에 매 분 1씩 오르고, 그 값을 대조하면 60초 폴링마다 changed 가 참이
-      // 되어 mi:rank-scope-changed → 목록 재조회가 무한히 돈다. 레인 문장의 분 표기는 다른
-      // 이유로 재렌더될 때 자연히 갱신된다. lastSuccessAt 은 유무만 본다("성공 기록 없음"
-      // 문장 분기가 그 유무에 걸린다).
+      // 되어 큰 순위판 전체가 계속 재렌더된다. 레인 문장의 분 표기는 다른
+      // 이유로 재렌더될 때 자연히 갱신된다. lastSuccessAt 은 실제 새 성공이 생겼을 때만
+      // 재렌더되도록 정규화된 시각 문자열을 비교한다.
       function rankCollectionHealthRenderKey(lanes, trackers) {
         var source = lanes && typeof lanes === "object" ? lanes : {};
         var product = rankCollectionHealthLane(source.product);
@@ -23287,9 +23287,9 @@
         var counts = trackers && typeof trackers === "object" ? trackers : {};
         return [
           product.queueStalled ? 1 : 0,
-          product.lastSuccessAt ? 1 : 0,
+          product.lastSuccessAt || "",
           place.queueStalled ? 1 : 0,
-          place.lastSuccessAt ? 1 : 0,
+          place.lastSuccessAt || "",
           rankCollectionHealthCount(counts.neverFound),
           rankCollectionHealthCount(counts.stuck),
         ].join("|");
@@ -23556,8 +23556,8 @@
       // 수집기 건강 신호를 읽어 화면 사본(rankCollectionHealthSignal)만 갱신한다.
       // 어떤 실패(네트워크·비200·JSON 파손)에서도 기존 값을 그대로 두고 throw 하지 않는다 —
       // 신호를 못 읽은 것을 "이상 없음"이나 "이상 있음" 어느 쪽으로도 단정하지 않는다.
-      // 재렌더는 새 통로를 만들지 않고 이미 있는 mi:rank-scope-changed 이벤트를 쓴다
-      // (잠금 초기화 함수가 이 이벤트로 loadRankTrackers(false) 를 돌린다).
+      // 재렌더는 조회 범위 변경과 분리된 mi:rank-health-updated 이벤트를 쓴다.
+      // 헬스 폴링이 목록 GET 및 sync-due POST를 다시 시작해서는 안 된다.
       async function refreshRankCollectionHealthSignal() {
         var payload = null;
         try {
@@ -23581,17 +23581,19 @@
         var previous = rankCollectionHealthSignal || {};
         // lanes·trackers 는 전체 비교가 아니라 렌더 분기 값만 대조한다(rankCollectionHealthRenderKey).
         // lanes.<key>.stalledMinutes 는 매 분 오르므로 전체 비교하면 매 폴링이 changed 가 된다.
+        var previousHeartbeatStale = Math.max(0, Math.floor(Number(previous.heartbeatAgeMinutes) || 0)) > RANK_HEARTBEAT_STALE_MINUTES;
+        var nextHeartbeatStale = next.heartbeatAgeMinutes > RANK_HEARTBEAT_STALE_MINUTES;
         var changed = previous.workerOutdated !== next.workerOutdated
-          || previous.heartbeatAgeMinutes !== next.heartbeatAgeMinutes
+          || previousHeartbeatStale !== nextHeartbeatStale
           || previous.ok !== next.ok
           || rankCollectionHealthRenderKey(previous.lanes, previous.trackers) !== rankCollectionHealthRenderKey(next.lanes, next.trackers);
         rankCollectionHealthSignal = next;
-        // 값이 그대로면 재렌더하지 않는다. 매 폴링마다 발행하면 60초마다 목록 재조회가
-        // 무한히 돈다. 마운트된 순위 카드가 없을 때도 발행하지 않는다.
+        // 값이 그대로면 재렌더하지 않는다. 매 폴링마다 큰 순위판을 다시 그리지 않으며,
+        // 마운트된 순위 카드가 없을 때도 발행하지 않는다.
         if (!changed) return;
         try {
-          if (!document.querySelector("[data-rank-worker-state]")) return;
-          window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+          if (!document.querySelector("[data-rank-card], [data-place-rank-card]")) return;
+          window.dispatchEvent(new CustomEvent("mi:rank-health-updated"));
         } catch (error) {
           // 재렌더 실패는 이미 갱신한 신호 값을 되돌리지 않는다.
         }
@@ -25029,6 +25031,12 @@
         var rankAutoSyncToken = 0;
         var rankAutoSyncLastAt = 0;
         var rankRequestGeneration = 0;
+        var rankListLoadInFlight = null;
+        var RANK_LIST_RECOVERY_DELAY_MS = 15000;
+        var rankListRecoveryTimer = null;
+        var rankListRecoveryScopeKey = "";
+        var rankListRecoveryGeneration = -1;
+        var rankListRecoveryAttempted = false;
         var rankActiveScopeKey = null;
         var rankSourceReady = false;
         var rankSourceMode = "";
@@ -25180,7 +25188,7 @@
               }
             }
             setStatus(rankStatus, payload.message || "운영 제어 요청을 처리했습니다.", "is-ok");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
           } catch (error) {
             if (controlStatus) controlStatus.textContent = error.message || "운영 제어 요청을 처리하지 못했습니다.";
             setStatus(rankStatus, error.message || "운영 제어 요청을 처리하지 못했습니다.", "is-warn");
@@ -25202,12 +25210,33 @@
           renderRankWorkerOperations(card, rankWorkerOperations, rankTrackers, rankScopeMode);
         });
 
+        function resetRankListRecoveryBudget(scope, generation) {
+          if (rankListRecoveryTimer !== null) clearTimeout(rankListRecoveryTimer);
+          rankListRecoveryTimer = null;
+          rankListRecoveryScopeKey = scope ? scope.key : "";
+          rankListRecoveryGeneration = Number.isFinite(generation) ? generation : -1;
+          rankListRecoveryAttempted = false;
+        }
+
+        function scheduleRankListRecovery(scope, generation) {
+          if (!scope || !rankRequestIsCurrent(scope, generation)) return false;
+          if (rankListRecoveryScopeKey !== scope.key || rankListRecoveryGeneration !== generation || rankListRecoveryAttempted) return false;
+          rankListRecoveryAttempted = true;
+          rankListRecoveryTimer = setTimeout(function () {
+            rankListRecoveryTimer = null;
+            if (generation !== rankRequestGeneration || !sameRankTrackerScope(scope) || rankActiveScopeKey !== scope.key) return;
+            loadRankTrackers(true, false, true).catch(function () {});
+          }, RANK_LIST_RECOVERY_DELAY_MS);
+          return true;
+        }
+
         function activateRankTrackerScope() {
           var scope = verifiedRankTrackerScope();
           var nextKey = scope ? scope.key : "";
           if (rankActiveScopeKey !== nextKey) {
             rankActiveScopeKey = nextKey;
             rankRequestGeneration += 1;
+            resetRankListRecoveryBudget(scope, rankRequestGeneration);
             rankAutoSyncToken += 1;
             rankAutoSyncingDue = false;
             rankScopeMode = scope && scope.role === "owner" ? "owner" : "";
@@ -25305,50 +25334,82 @@
           }
         }
 
-        async function loadRankTrackers(silent) {
+        async function loadRankTrackers(silent, forceFresh, skipAutoSyncOnce) {
           var scope = activateRankTrackerScope();
-          var generation = ++rankRequestGeneration;
           if (!scope) {
             if (!silent) setStatus(rankStatus, "검증된 광고주 범위를 확인한 뒤 순위 추적을 불러옵니다.", "is-warn");
             return false;
           }
-          try {
-            var payload = await requestRankTrackers("GET", null, scope);
-            applyRankSourceState(payload);
-            if (!rankRequestIsCurrent(scope, generation)) return false;
-            if (!completeRankTrackerPayload(payload, scope)) {
-              if (!rankTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
-                rankTrackers = payload.trackers;
-                renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: "검증된 일부 순위 목록을 우선 표시합니다." });
+          if (rankListLoadInFlight && rankListLoadInFlight.scopeKey === scope.key) {
+            if (forceFresh) {
+              rankListLoadInFlight.skipAutoSync = true;
+              if (!silent) rankListLoadInFlight.refreshAnnounce = true;
+              if (!rankListLoadInFlight.refreshPromise) {
+                var pendingLoad = rankListLoadInFlight;
+                pendingLoad.refreshPromise = pendingLoad.promise.then(function () {
+                  if (rankListLoadInFlight === pendingLoad) rankListLoadInFlight = null;
+                  if (pendingLoad.generation !== rankRequestGeneration || !sameRankTrackerScope(scope) || rankActiveScopeKey !== scope.key) return false;
+                  return loadRankTrackers(!pendingLoad.refreshAnnounce, false, pendingLoad.autoSyncCovered);
+                });
               }
+              return rankListLoadInFlight.refreshPromise;
+            }
+            if (!silent) rankListLoadInFlight.announce = true;
+            return rankListLoadInFlight.promise;
+          }
+          var generation = rankRequestGeneration;
+          var loadState = { scopeKey: scope.key, generation: generation, announce: !silent, skipAutoSync: skipAutoSyncOnce === true, autoSyncCovered: false, promise: null, refreshAnnounce: false, refreshPromise: null };
+          rankListLoadInFlight = loadState;
+          loadState.promise = (async function () {
+            try {
+              var payload = await requestRankTrackers("GET", null, scope);
+              applyRankSourceState(payload);
+              if (!rankRequestIsCurrent(scope, generation)) return false;
+              if (!completeRankTrackerPayload(payload, scope)) {
+                if (!rankTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
+                  rankTrackers = payload.trackers;
+                  renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: "검증된 일부 순위 목록을 우선 표시합니다." });
+                }
+                renderRankHistory(rankHistory, rankTrackers);
+                if (loadState.announce) setStatus(rankStatus, rankTrackers.length && payload && payload.hasMore === true
+                  ? "목록이 많아 검증된 일부 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
+                  : (payload && payload.message) || "전체 순위 목록 검증에 실패해 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
+                return false;
+              }
+              var nextTrackers = payload.trackers;
+              resetRankListRecoveryBudget(scope, generation);
+              rankTrackers = nextTrackers;
+              renderRankWorkerOperations(card, rankWorkerOperations, rankTrackers, rankScopeMode);
+              writeRankTrackerLastGood("product", scope, rankTrackers);
+              renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
               renderRankHistory(rankHistory, rankTrackers);
-              if (!silent) setStatus(rankStatus, rankTrackers.length && payload && payload.hasMore === true
-                ? "목록이 많아 검증된 일부 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
-                : (payload && payload.message) || "전체 순위 목록 검증에 실패해 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
+              if (loadState.announce) {
+                var cooldownMessage = rankWorkerCooldownMessage();
+                if (cooldownMessage) setStatus(rankStatus, cooldownMessage, "is-warn");
+                else if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
+                else setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
+              }
+              if (rankSourceReady !== true) return true;
+              if (!loadState.skipAutoSync) {
+                var autoSyncLastAtBefore = rankAutoSyncLastAt;
+                await syncDueRankTrackersIfNeeded(!loadState.announce, scope, generation);
+                loadState.autoSyncCovered = rankAutoSyncLastAt !== autoSyncLastAtBefore;
+              }
+              return true;
+            } catch (error) {
+              if (rankRequestIsCurrent(scope, generation)) {
+                scheduleRankListRecovery(scope, generation);
+                applyRankSourceState({ rankSourceReady: false });
+                renderRankHistory(rankHistory, rankTrackers);
+                if (loadState.announce) setStatus(rankStatus, "순위 추적 서버 연결 실패(" + rankConnectionFailureReason(error) + ")로 마지막 정상 순위와 이력을 유지합니다. 잠시 후 자동으로 다시 불러옵니다.", "is-warn");
+              }
               return false;
             }
-            var nextTrackers = payload.trackers;
-            rankTrackers = nextTrackers;
-            renderRankWorkerOperations(card, rankWorkerOperations, rankTrackers, rankScopeMode);
-            writeRankTrackerLastGood("product", scope, rankTrackers);
-            renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
-            renderRankHistory(rankHistory, rankTrackers);
-            if (!silent) {
-              var cooldownMessage = rankWorkerCooldownMessage();
-              if (cooldownMessage) setStatus(rankStatus, cooldownMessage, "is-warn");
-              else if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
-              else setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
-            }
-            if (rankSourceReady !== true) return true;
-            await syncDueRankTrackersIfNeeded(silent, scope, generation);
-            return true;
-          } catch (error) {
-            if (rankRequestIsCurrent(scope, generation)) {
-              applyRankSourceState({ rankSourceReady: false });
-              renderRankHistory(rankHistory, rankTrackers);
-              if (!silent) setStatus(rankStatus, "순위 추적 서버 연결 실패(" + rankConnectionFailureReason(error) + ")로 마지막 정상 순위와 이력을 유지합니다. 잠시 후 자동으로 다시 불러옵니다.", "is-warn");
-            }
-            return false;
+          })();
+          try {
+            return await loadState.promise;
+          } finally {
+            if (rankListLoadInFlight === loadState) rankListLoadInFlight = null;
           }
         }
 
@@ -25384,7 +25445,7 @@
                 setStatus(rankStatus, (queuedPayload && queuedPayload.message) || "전체 순위 자동 갱신 등록에 실패했습니다.", "is-warn");
                 return;
               }
-              await loadRankTrackers(true);
+              await loadRankTrackers(true, true);
               var queuedSummary = queuedPayload.summary || {};
               var cooldownMessage = rankWorkerCooldownMessage();
               setStatus(rankStatus, cooldownMessage || (Number(queuedSummary.total || 0) > 0
@@ -25435,7 +25496,7 @@
             }
             await Promise.all(Array.from({ length: workerCount }, function () { return refreshWorker(); }));
             if (completedCount < targets.length) failCount += targets.length - completedCount;
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
             var unresolvedTargets = failedTargets.filter(function (failure) {
               var refreshedTracker = rankTrackers.find(function (tracker) { return tracker.id === failure.tracker.id; });
               var checkedAt = refreshedTracker && refreshedTracker.lastCheckedAt
@@ -25468,7 +25529,7 @@
                   // Keep the item in the truthful retry count after one bounded retry.
                 }
               }
-              await loadRankTrackers(true);
+              await loadRankTrackers(true, true);
             }
             if (sourceUnavailableDuringBatch || rankSourceReady !== true) {
               setStatus(rankStatus, "N 상품 순위 수집원 미연결 · 갱신 " + successCount + "개, 기존값 보존 " + preservedCount + "개, 오류 " + failCount + "개. 마지막 정상 순위와 30일 기록을 표시합니다.", "is-warn");
@@ -25500,6 +25561,9 @@
         });
         window.addEventListener("mi:rank-scope-changed", function () {
           loadRankTrackers(false);
+        });
+        window.addEventListener("mi:rank-health-updated", function () {
+          renderRankHistory(rankHistory, rankTrackers);
         });
 
         if (linkedKeywordInput) {
@@ -25588,7 +25652,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             setStatus(rankStatus, payload.message || "순위 추적 등록 완료", payload.ok ? "is-ok" : "is-warn");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
             setStatus(rankStatus, "순위 추적 서버 연결을 확인해주세요.", "is-warn");
@@ -25646,7 +25710,7 @@
             trackers: currentRankTrackerOrderItems()
           });
           setStatus(rankStatus, payload.message || "순서 저장 완료", payload.ok ? "is-ok" : "is-warn");
-          await loadRankTrackers(true);
+          await loadRankTrackers(true, true);
         }
 
         var pointerDragId = "";
@@ -25699,7 +25763,7 @@
             await saveRankTrackerOrder();
           } catch (error) {
             setStatus(rankStatus, "순서 저장 연결을 확인해주세요.", "is-warn");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
           }
         });
 
@@ -25750,7 +25814,7 @@
             await saveRankTrackerOrder();
           } catch (error) {
             setStatus(rankStatus, "순서 저장 연결을 확인해주세요.", "is-warn");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
           } finally {
             draggingRankId = "";
           }
@@ -25867,7 +25931,7 @@
               if (clearInput) clearInput.value = "";
               setRankBulkGroupDraft(card, "");
               setStatus(rankStatus, cleared + "개 추적 항목을 그룹에서 해제했습니다.", cleared ? "is-ok" : "is-warn");
-              await loadRankTrackers(true);
+              await loadRankTrackers(true, true);
             } catch (error) {
               setStatus(rankStatus, "그룹 해제 연결을 확인해주세요.", "is-warn");
             } finally {
@@ -25912,7 +25976,7 @@
               if (bulkInput) bulkInput.value = "";
               setRankBulkGroupDraft(card, "");
               setStatus(rankStatus, moved + "개 추적 항목을 " + bulkGroup + " 그룹으로 넣고 전체 그룹으로 돌아왔습니다.", moved ? "is-ok" : "is-warn");
-              await loadRankTrackers(true);
+              await loadRankTrackers(true, true);
             } catch (error) {
               setStatus(rankStatus, "일괄 그룹 이동 연결을 확인해주세요.", "is-warn");
             } finally {
@@ -25936,7 +26000,7 @@
               groupName: nextGroup
             });
             setStatus(rankStatus, groupPayload.message || (isRankDefaultGroup(nextGroup) ? "그룹 해제 완료" : "그룹 변경 완료"), groupPayload.ok ? "is-ok" : "is-warn");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
             } catch (error) {
               setStatus(rankStatus, "그룹 변경 연결을 확인해주세요.", "is-warn");
             }
@@ -25965,7 +26029,7 @@
                 trackerId: deleteId
               });
               setStatus(rankStatus, deletePayload.message || "삭제 완료", deletePayload.ok ? "is-ok" : "is-warn");
-              await loadRankTrackers(true);
+              await loadRankTrackers(true, true);
             } catch (error) {
               setStatus(rankStatus, "삭제 연결을 확인해주세요.", "is-warn");
             } finally {
@@ -25986,7 +26050,7 @@
               trackerId: refreshButton.getAttribute("data-rank-refresh")
             });
             setStatus(rankStatus, payload.message || "수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
-            await loadRankTrackers(true);
+            await loadRankTrackers(true, true);
           } catch (error) {
             setStatus(rankStatus, "수동 갱신 연결을 확인해주세요.", "is-warn");
           } finally {
@@ -26647,6 +26711,12 @@
         var placeAutoSyncLastAt = 0;
         var placeProviderConfigured = true;
         var placeRequestGeneration = 0;
+        var placeListLoadInFlight = null;
+        var PLACE_LIST_RECOVERY_DELAY_MS = 15000;
+        var placeListRecoveryTimer = null;
+        var placeListRecoveryScopeKey = "";
+        var placeListRecoveryGeneration = -1;
+        var placeListRecoveryAttempted = false;
         var placeActiveScopeKey = null;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
@@ -26692,12 +26762,33 @@
           return payload;
         }
 
+        function resetPlaceListRecoveryBudget(scope, generation) {
+          if (placeListRecoveryTimer !== null) clearTimeout(placeListRecoveryTimer);
+          placeListRecoveryTimer = null;
+          placeListRecoveryScopeKey = scope ? scope.key : "";
+          placeListRecoveryGeneration = Number.isFinite(generation) ? generation : -1;
+          placeListRecoveryAttempted = false;
+        }
+
+        function schedulePlaceListRecovery(scope, generation) {
+          if (!scope || !placeRequestIsCurrent(scope, generation)) return false;
+          if (placeListRecoveryScopeKey !== scope.key || placeListRecoveryGeneration !== generation || placeListRecoveryAttempted) return false;
+          placeListRecoveryAttempted = true;
+          placeListRecoveryTimer = setTimeout(function () {
+            placeListRecoveryTimer = null;
+            if (generation !== placeRequestGeneration || !sameRankTrackerScope(scope) || placeActiveScopeKey !== scope.key) return;
+            loadPlaceTrackers(true, false, true).catch(function () {});
+          }, PLACE_LIST_RECOVERY_DELAY_MS);
+          return true;
+        }
+
         function activatePlaceTrackerScope() {
           var scope = verifiedRankTrackerScope();
           var nextKey = scope ? scope.key : "";
           if (placeActiveScopeKey !== nextKey) {
             placeActiveScopeKey = nextKey;
             placeRequestGeneration += 1;
+            resetPlaceListRecoveryBudget(scope, placeRequestGeneration);
             placeAutoSyncToken += 1;
             placeAutoSyncingDue = false;
             placeTrackers = applyPlaceGroups(scope ? readRankTrackerLastGood("place", scope) : []);
@@ -26729,7 +26820,7 @@
             }
             if (payload && payload.message) lastMessage = payload.message;
           }
-          await loadPlaceTrackers(true);
+          await loadPlaceTrackers(true, true);
           return { updated: updated, failed: failed, failedIds: failedIds, message: lastMessage };
         }
 
@@ -26939,7 +27030,7 @@
                 failCount += 1;
               }
             }
-            await loadPlaceTrackers(true);
+            await loadPlaceTrackers(true, true);
             setStatus(placeStatus, failCount
               ? "전체 갱신 완료: 성공 " + successCount + "개, 재시도 예정 " + failCount + "개"
               : "전체 플레이스 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");
@@ -27016,45 +27107,77 @@
           }
         }
 
-        async function loadPlaceTrackers(silent) {
+        async function loadPlaceTrackers(silent, forceFresh, skipAutoSyncOnce) {
           var scope = activatePlaceTrackerScope();
-          var generation = ++placeRequestGeneration;
           if (!scope) {
             if (!silent) setStatus(placeStatus, "검증된 광고주 범위를 확인한 뒤 플레이스 순위를 불러옵니다.", "is-warn");
             return false;
           }
-          try {
-            var payload = await requestPlaceTrackers("GET", null, scope);
-            if (!placeRequestIsCurrent(scope, generation)) return false;
-            if (!completeRankTrackerPayload(payload, scope)) {
-              if (!placeTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
-                placeTrackers = applyPlaceGroups(payload.trackers);
+          if (placeListLoadInFlight && placeListLoadInFlight.scopeKey === scope.key) {
+            if (forceFresh) {
+              placeListLoadInFlight.skipAutoSync = true;
+              if (!silent) placeListLoadInFlight.refreshAnnounce = true;
+              if (!placeListLoadInFlight.refreshPromise) {
+                var pendingLoad = placeListLoadInFlight;
+                pendingLoad.refreshPromise = pendingLoad.promise.then(function () {
+                  if (placeListLoadInFlight === pendingLoad) placeListLoadInFlight = null;
+                  if (pendingLoad.generation !== placeRequestGeneration || !sameRankTrackerScope(scope) || placeActiveScopeKey !== scope.key) return false;
+                  return loadPlaceTrackers(!pendingLoad.refreshAnnounce, false, pendingLoad.autoSyncCovered);
+                });
               }
+              return placeListLoadInFlight.refreshPromise;
+            }
+            if (!silent) placeListLoadInFlight.announce = true;
+            return placeListLoadInFlight.promise;
+          }
+          var generation = placeRequestGeneration;
+          var loadState = { scopeKey: scope.key, generation: generation, announce: !silent, skipAutoSync: skipAutoSyncOnce === true, autoSyncCovered: false, promise: null, refreshAnnounce: false, refreshPromise: null };
+          placeListLoadInFlight = loadState;
+          loadState.promise = (async function () {
+            try {
+              var payload = await requestPlaceTrackers("GET", null, scope);
+              if (!placeRequestIsCurrent(scope, generation)) return false;
+              if (!completeRankTrackerPayload(payload, scope)) {
+                if (!placeTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
+                  placeTrackers = applyPlaceGroups(payload.trackers);
+                }
+                renderPlaceHistory(placeHistory, placeTrackers);
+                if (loadState.announce) setStatus(placeStatus, placeTrackers.length && payload && payload.hasMore === true
+                  ? "목록이 많아 검증된 일부 플레이스 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
+                  : (payload && payload.message) || "전체 플레이스 목록 검증에 실패해 마지막 정상 이력을 유지합니다.", "is-warn");
+                return false;
+              }
+              placeProviderConfigured = payload.configured !== false;
+              var nextTrackers = payload.trackers;
+              resetPlaceListRecoveryBudget(scope, generation);
+              placeTrackers = applyPlaceGroups(nextTrackers);
+              writeRankTrackerLastGood("place", scope, placeTrackers);
               renderPlaceHistory(placeHistory, placeTrackers);
-              if (!silent) setStatus(placeStatus, placeTrackers.length && payload && payload.hasMore === true
-                ? "목록이 많아 검증된 일부 플레이스 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
-                : (payload && payload.message) || "전체 플레이스 목록 검증에 실패해 마지막 정상 이력을 유지합니다.", "is-warn");
+              if (loadState.announce) {
+                var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
+                if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
+                if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
+                setStatus(placeStatus, message, payload.configured === false ? "is-warn" : "is-ok");
+              }
+              if (!loadState.skipAutoSync) {
+                var autoSyncLastAtBefore = placeAutoSyncLastAt;
+                await syncDuePlaceTrackersIfNeeded(!loadState.announce, scope, generation);
+                loadState.autoSyncCovered = placeAutoSyncLastAt !== autoSyncLastAtBefore;
+              }
+              return true;
+            } catch (error) {
+              if (placeRequestIsCurrent(scope, generation)) {
+                schedulePlaceListRecovery(scope, generation);
+                renderPlaceHistory(placeHistory, placeTrackers);
+                if (loadState.announce) setStatus(placeStatus, "플레이스 순위 서버 연결 실패로 마지막 정상 이력을 유지합니다.", "is-warn");
+              }
               return false;
             }
-            placeProviderConfigured = payload.configured !== false;
-            var nextTrackers = payload.trackers;
-            placeTrackers = applyPlaceGroups(nextTrackers);
-            writeRankTrackerLastGood("place", scope, placeTrackers);
-            renderPlaceHistory(placeHistory, placeTrackers);
-            if (!silent) {
-              var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
-              if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
-              if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
-              setStatus(placeStatus, message, payload.configured === false ? "is-warn" : "is-ok");
-            }
-            await syncDuePlaceTrackersIfNeeded(silent, scope, generation);
-            return true;
-          } catch (error) {
-            if (placeRequestIsCurrent(scope, generation)) {
-              renderPlaceHistory(placeHistory, placeTrackers);
-              if (!silent) setStatus(placeStatus, "플레이스 순위 서버 연결 실패로 마지막 정상 이력을 유지합니다.", "is-warn");
-            }
-            return false;
+          })();
+          try {
+            return await loadState.promise;
+          } finally {
+            if (placeListLoadInFlight === loadState) placeListLoadInFlight = null;
           }
         }
 
@@ -27082,6 +27205,9 @@
           loadPlaceTrackers(false).catch(function () {
             setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           });
+        });
+        window.addEventListener("mi:rank-health-updated", function () {
+          renderPlaceHistory(placeHistory, placeTrackers);
         });
 
         if (linkedKeywordInput) {
@@ -27147,7 +27273,7 @@
             }
             renderPlaceHistory(placeHistory, placeTrackers);
             setStatus(placeStatus, payload.message || "플레이스 30일 순위 등록 완료", payload.ok ? "is-ok" : "is-warn");
-            await loadPlaceTrackers(true);
+            await loadPlaceTrackers(true, true);
           } catch (error) {
             setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           } finally {
@@ -27333,7 +27459,7 @@
               }
               renderPlaceHistory(placeHistory, placeTrackers);
               setStatus(placeStatus, payload.message || "플레이스 순위 수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
-              await loadPlaceTrackers(true);
+              await loadPlaceTrackers(true, true);
             } catch (error) {
               setStatus(placeStatus, "플레이스 순위 수동 갱신 연결을 확인해주세요.", "is-warn");
             } finally {
@@ -27364,7 +27490,7 @@
             setRankSelectedSet(card, selected);
             renderPlaceHistory(placeHistory, placeTrackers);
             setStatus(placeStatus, payload.message || "플레이스 추적 삭제 완료", "is-ok");
-            await loadPlaceTrackers(true);
+            await loadPlaceTrackers(true, true);
           } catch (error) {
             setStatus(placeStatus, "플레이스 추적 삭제 연결을 확인해주세요.", "is-warn");
           } finally {

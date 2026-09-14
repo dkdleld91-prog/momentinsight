@@ -2972,7 +2972,7 @@ const execFileAsync = promisify(execFile);
 async function runWatchdog(home, healthUrl, options = {}) {
   let status = 0;
   try {
-    await execFileAsync("zsh", [WATCHDOG_SCRIPT], {
+    await execFileAsync("zsh", [options.scriptPath || WATCHDOG_SCRIPT], {
       cwd: repositoryRoot,
       env: {
         ...process.env,
@@ -3014,9 +3014,22 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
   let responseBody = "";
   const server = await startHealthServer(() => responseBody);
   const homes = [];
+  const isolatedScriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mi-watchdog-f2-script-"));
+  const isolatedScriptPath = path.join(isolatedScriptRoot, "mi-rank-watchdog.sh");
+  const collectionProbeStart = "collection_in_progress() {";
+  const collectionProbeEnd = "\n}\n\n# ── Chrome 재기동";
+  const collectionProbeStartIndex = watchdogSource.indexOf(collectionProbeStart);
+  const collectionProbeEndIndex = watchdogSource.indexOf(collectionProbeEnd, collectionProbeStartIndex);
+  assert.ok(collectionProbeStartIndex >= 0 && collectionProbeEndIndex > collectionProbeStartIndex);
+  assert.equal(watchdogSource.indexOf(collectionProbeStart, collectionProbeStartIndex + 1), -1);
+  const isolatedScript = watchdogSource.slice(0, collectionProbeStartIndex)
+    + "collection_in_progress() {\n  return 1\n}"
+    + watchdogSource.slice(collectionProbeEndIndex + "\n}".length);
+  fs.writeFileSync(isolatedScriptPath, isolatedScript, { mode: 0o700 });
   t.after(() => {
     server.close();
     for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(isolatedScriptRoot, { recursive: true, force: true });
   });
   const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -3086,7 +3099,7 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
     const home = createWatchdogHome(scenario.state);
     homes.push(home);
     // eslint-disable-next-line no-await-in-loop
-    const { status, events } = await runWatchdog(home, healthUrl);
+    const { status, events } = await runWatchdog(home, healthUrl, { scriptPath: isolatedScriptPath });
     assert.equal(status, 0, `${scenario.label} 은 exit 0 이어야 한다`);
     assert.ok(events.length > 0, `${scenario.label} 은 반드시 한 줄을 남긴다`);
     assert.ok(
@@ -3119,6 +3132,28 @@ test("F12: 수집 중이면 정체 재기동을 이번 틱만 미룬다(워커 �
   }));
   const homes = [];
   const nowSeconds = Math.floor(Date.now() / 1000);
+  const isolatedScriptRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mi-watchdog-f12-script-"));
+  homes.push(isolatedScriptRoot);
+  const isolatedScriptPath = path.join(isolatedScriptRoot, "mi-rank-watchdog.sh");
+  let isolatedScript = watchdogSource;
+  const externalProbeReplacements = [
+    [
+      "  if /usr/bin/pgrep -f 'naver-shopping-native-host\\.mjs' >/dev/null 2>&1; then\n    return 0\n  fi",
+      "  : # test isolation: only the supplied TMPDIR lock is authoritative",
+    ],
+    [
+      '  DARWIN_TEMP_DIRECTORY="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" || DARWIN_TEMP_DIRECTORY=""',
+      '  DARWIN_TEMP_DIRECTORY=""',
+    ],
+    ['  LOCK_ROOTS+=("/tmp")', '  : # test isolation: do not inspect the machine-wide /tmp lock'],
+  ];
+  for (const [from, to] of externalProbeReplacements) {
+    const fromIndex = isolatedScript.indexOf(from);
+    assert.ok(fromIndex >= 0, `F12 격리 대상을 찾지 못했습니다: ${from}`);
+    assert.equal(isolatedScript.indexOf(from, fromIndex + from.length), -1, `F12 격리 대상이 중복됩니다: ${from}`);
+    isolatedScript = isolatedScript.slice(0, fromIndex) + to + isolatedScript.slice(fromIndex + from.length);
+  }
+  fs.writeFileSync(isolatedScriptPath, isolatedScript, { mode: 0o700 });
   t.after(() => {
     server.close();
     for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
@@ -3135,7 +3170,7 @@ test("F12: 수집 중이면 정체 재기동을 이번 틱만 미룬다(워커 �
     path.join(lockRoot, "moment-insight-n-shopping-worker.lock/owner.json"),
     JSON.stringify({ pid: process.pid }),
   );
-  const deferred = await runWatchdog(lockedHome, healthUrl, { tmpdir: lockRoot });
+  const deferred = await runWatchdog(lockedHome, healthUrl, { tmpdir: lockRoot, scriptPath: isolatedScriptPath });
   assert.equal(deferred.status, 0);
   assert.ok(
     deferred.events[0].startsWith("restart_deferred_collection_active"),
@@ -3153,7 +3188,7 @@ test("F12: 수집 중이면 정체 재기동을 이번 틱만 미룬다(워커 �
     path.join(staleRoot, "moment-insight-n-shopping-worker.lock/owner.json"),
     JSON.stringify({ pid: 99999999 }),
   );
-  const proceeded = await runWatchdog(staleHome, healthUrl, { tmpdir: staleRoot });
+  const proceeded = await runWatchdog(staleHome, healthUrl, { tmpdir: staleRoot, scriptPath: isolatedScriptPath });
   assert.equal(proceeded.status, 0);
   assert.ok(
     proceeded.events[0].startsWith("dry_run restart_would_run"),

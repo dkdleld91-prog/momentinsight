@@ -1218,14 +1218,20 @@ test("정상 상품·원부 URL 은 URL 형태 게이트를 통과해 등록 경
     "https://shopping.naver.com/window-products/style/12345678",
   ];
   for (const productUrl of allowed) {
-    await assert.rejects(
-      () => withShoppingHybrid(() => handleRankTrackersRequest(
+    const previousConsoleError = console.error;
+    console.error = () => {};
+    try {
+      const response = await withShoppingHybrid(() => handleRankTrackersRequest(
         productTeamAccountRequest("POST", { action: "create", keyword: "온열찜질기", productUrl }),
         guardedContext,
-      )),
-      /reached-registration/,
-      `${productUrl} 는 막히면 안 된다`,
-    );
+      ));
+      const body = await response.json();
+      assert.equal(response.status, 500, `${productUrl} 는 DB 등록 경로까지 도달해야 한다`);
+      assert.equal(body.code, "NAVER_RANK_TRACKERS_FAILED");
+      assert.equal(JSON.stringify(body).includes("reached-registration"), false);
+    } finally {
+      console.error = previousConsoleError;
+    }
   }
 });
 
@@ -1568,7 +1574,7 @@ test("manual hybrid refresh wakes once without changing order, processing, or qu
             gte() { return query; },
             lte() { return query; },
             order() { return query; },
-            range() { return query; },
+            limit() { return query; },
             then(resolve, reject) {
               return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
             },
@@ -1750,7 +1756,7 @@ test("hybrid create registers an unleased new-first row and wakes the scheduler 
           gte() { return query; },
           lte() { return query; },
           order() { return query; },
-          range() { return query; },
+          limit() { return query; },
           then(resolve, reject) {
             return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
           },
@@ -1935,7 +1941,7 @@ test("hybrid create atomically reactivates the same normalized paused target wit
           gte() { return query; },
           lte() { return query; },
           order() { return query; },
-          range() { return query; },
+          limit() { return query; },
           then(resolve, reject) {
             return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
           },
@@ -2066,7 +2072,7 @@ function trackerRow(values = {}) {
 }
 
 function pagedProductSnapshotContext(rows, options = {}) {
-  const state = { ranges: [] };
+  const state = { queries: [] };
   return {
     state,
     ctx: {
@@ -2078,9 +2084,10 @@ function pagedProductSnapshotContext(rows, options = {}) {
             checkedAfter: "",
             checkedBefore: "",
             orders: [],
-            rangeStart: 0,
-            rangeEnd: 999,
-            select() { return query; },
+            limitValue: 1000,
+            cursor: null,
+            columns: "",
+            select(columns) { query.columns = columns; return query; },
             in(column, values) {
               assert.equal(column, "tracker_id");
               query.trackerIds = values;
@@ -2100,10 +2107,16 @@ function pagedProductSnapshotContext(rows, options = {}) {
               query.orders.push({ column, ascending: orderOptions.ascending !== false });
               return query;
             },
-            range(from, to) {
-              query.rangeStart = from;
-              query.rangeEnd = to;
-              state.ranges.push({ from, to });
+            limit(value) {
+              query.limitValue = value;
+              return query;
+            },
+            or(expression) {
+              const match = String(expression).match(
+                /^checked_at\.lt\.([^,]+),and\(checked_at\.eq\.([^,]+),id\.lt\.([A-Za-z0-9_-]+)\)$/u,
+              );
+              if (!match || match[1] !== match[2]) throw new Error(`unsupported snapshot cursor: ${expression}`);
+              query.cursor = { checkedAt: match[1], id: match[3] };
               return query;
             },
             then(resolve, reject) {
@@ -2117,13 +2130,32 @@ function pagedProductSnapshotContext(rows, options = {}) {
                   return ascending ? result : -result;
                 });
               }
-              const count = selected.length;
-              const start = options.stall ? 0 : query.rangeStart;
-              const requestedEnd = options.stall ? query.rangeEnd - query.rangeStart : query.rangeEnd;
-              const end = Number.isFinite(options.serverCap)
-                ? Math.min(requestedEnd, start + options.serverCap - 1)
-                : requestedEnd;
-              return Promise.resolve({ data: selected.slice(start, end + 1), error: null, count }).then(resolve, reject);
+              if (query.cursor) {
+                if (options.stall) {
+                  selected = selected.filter((row) => (
+                    row.checked_at === query.cursor.checkedAt && row.id === query.cursor.id
+                  ));
+                } else {
+                  selected = selected.filter((row) => (
+                    row.checked_at < query.cursor.checkedAt ||
+                    (row.checked_at === query.cursor.checkedAt && row.id < query.cursor.id)
+                  ));
+                }
+              }
+              const pageSize = Number.isFinite(options.serverCap)
+                ? Math.min(query.limitValue, options.serverCap)
+                : query.limitValue;
+              const pageRows = selected.slice(0, pageSize);
+              state.queries.push({
+                columns: query.columns,
+                cursor: query.cursor ? { ...query.cursor } : null,
+                limit: query.limitValue,
+                trackerIds: [...query.trackerIds],
+              });
+              if (options.liveInsertAfterFirst && state.queries.length === 1) {
+                rows.push({ ...options.liveInsertAfterFirst });
+              }
+              return Promise.resolve({ data: pageRows, error: null }).then(resolve, reject);
             },
           };
           return query;
@@ -2180,9 +2212,19 @@ class MockQuery {
 
   or(expression) {
     const prefix = "processing_until.is.null,processing_until.lt.";
-    if (!String(expression).startsWith(prefix)) throw new Error(`unsupported test OR filter: ${expression}`);
-    const threshold = String(expression).slice(prefix.length);
-    this.filters.push((row) => row.processing_until == null || row.processing_until < threshold);
+    if (String(expression).startsWith(prefix)) {
+      const threshold = String(expression).slice(prefix.length);
+      this.filters.push((row) => row.processing_until == null || row.processing_until < threshold);
+      return this;
+    }
+    const cursorMatch = String(expression).match(
+      /^checked_at\.lt\.([^,]+),and\(checked_at\.eq\.([^,]+),id\.lt\.([A-Za-z0-9_-]+)\)$/u,
+    );
+    if (!cursorMatch || cursorMatch[1] !== cursorMatch[2]) {
+      throw new Error(`unsupported test OR filter: ${expression}`);
+    }
+    const [, checkedAt, , id] = cursorMatch;
+    this.filters.push((row) => row.checked_at < checkedAt || (row.checked_at === checkedAt && row.id < id));
     return this;
   }
 
@@ -3496,8 +3538,64 @@ test("product snapshot loading paginates beyond 5000 rows without truncating tra
   assert.equal(grouped.get("tracker-0").length, 120);
   trackerIds.slice(1).forEach((trackerId) => assert.equal(grouped.get(trackerId).length, 100));
   assert.equal(Array.from(grouped.values()).reduce((sum, snapshots) => sum + snapshots.length, 0), 6020);
-  assert.ok(state.ranges.length > 20);
+  assert.ok(state.queries.length > 20);
+  assert.equal(state.queries.every(({ columns }) => !columns.includes("top_items")), true);
   assert.equal(Array.from(grouped.values()).flat().some((snapshot) => snapshot.id.endsWith("-old")), false);
+});
+
+test("product snapshot keyset preserves same-time ties and sub-millisecond order below a provider cap", async () => {
+  const second = new Date(Date.now() - 60_000).toISOString().replace(/\.\d{3}Z$/u, "");
+  const dominantRows = Array.from({ length: 1002 }, (_, index) => ({
+    id: `tie-${String(index).padStart(4, "0")}`,
+    tracker_id: "tracker-dominant",
+    checked_at: `${second}.${String(999999 - Math.floor(index / 2)).padStart(6, "0")}Z`,
+  }));
+  const laterRow = {
+    id: "later-row",
+    tracker_id: "tracker-later",
+    checked_at: new Date(Date.now() - 62_000).toISOString(),
+  };
+  const { ctx, state } = pagedProductSnapshotContext([...dominantRows, laterRow], { serverCap: 251 });
+
+  const grouped = await loadProductSnapshots(ctx, ["tracker-dominant", "tracker-later"]);
+  assert.equal(grouped.get("tracker-dominant").length, 120);
+  assert.deepEqual(grouped.get("tracker-later").map(({ id }) => id), ["later-row"]);
+  assert.equal(new Set(Array.from(grouped.values()).flat().map(({ id }) => id)).size, 121);
+  assert.ok(state.queries.length <= 3);
+  assert.equal(state.queries.slice(1).every(({ trackerIds }) => (
+    trackerIds.length === 1 && trackerIds[0] === "tracker-later"
+  )), true);
+});
+
+test("product snapshot keyset ignores a live head insert without shifting or losing older rows", async () => {
+  const now = Date.now();
+  const existingRows = [
+    ...Array.from({ length: 300 }, (_, index) => ({
+      id: `existing-${String(index).padStart(4, "0")}`,
+      tracker_id: "tracker-dominant",
+      checked_at: new Date(now - 10_000 - index * 1000).toISOString(),
+    })),
+    {
+      id: "older-sparse-row",
+      tracker_id: "tracker-sparse",
+      checked_at: new Date(now - 400_000).toISOString(),
+    },
+  ];
+  const liveInsert = {
+    id: "live-head-insert",
+    tracker_id: "tracker-dominant",
+    checked_at: new Date(now - 1000).toISOString(),
+  };
+  const { ctx, state } = pagedProductSnapshotContext(existingRows, {
+    serverCap: 100,
+    liveInsertAfterFirst: liveInsert,
+  });
+
+  const grouped = await loadProductSnapshots(ctx, ["tracker-dominant", "tracker-sparse"]);
+  assert.equal(grouped.get("tracker-dominant").length, 120);
+  assert.deepEqual(grouped.get("tracker-sparse").map(({ id }) => id), ["older-sparse-row"]);
+  assert.equal(Array.from(grouped.values()).flat().some(({ id }) => id === liveInsert.id), false);
+  assert.ok(state.queries.slice(1).every(({ cursor }) => cursor));
 });
 
 test("product snapshot pagination fails instead of returning a silently incomplete page", async () => {
@@ -3514,12 +3612,99 @@ test("product snapshot pagination fails instead of returning a silently incomple
       checked_at: new Date(now - 2000 * 1000).toISOString(),
     },
   ];
-  const { ctx } = pagedProductSnapshotContext(rows, { stall: true });
+  const { ctx } = pagedProductSnapshotContext(rows, { stall: true, serverCap: 100 });
 
   await assert.rejects(
     loadProductSnapshots(ctx, ["tracker-dominant", "tracker-later"]),
     /rank_snapshot_pagination_stalled/,
   );
+});
+
+test("product snapshot pagination has a finite page ceiling", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      id: `bounded-${String(index).padStart(3, "0")}`,
+      tracker_id: "tracker-dominant",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "bounded-sparse",
+      tracker_id: "tracker-sparse",
+      checked_at: new Date(now - 100_000).toISOString(),
+    },
+  ];
+  const { ctx } = pagedProductSnapshotContext(rows, { serverCap: 1 });
+
+  await assert.rejects(
+    loadProductSnapshots(ctx, ["tracker-dominant", "tracker-sparse"]),
+    /rank_snapshot_pagination_limit_exceeded/,
+  );
+});
+
+test("product snapshot pagination drops saturated trackers before the page ceiling", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 65 }, (_, index) => ({
+      id: `saturated-${String(index).padStart(3, "0")}`,
+      tracker_id: "tracker-saturated",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "saturated-test-sparse",
+      tracker_id: "tracker-sparse",
+      checked_at: new Date(now - 100_000).toISOString(),
+    },
+  ];
+  const { ctx, state } = pagedProductSnapshotContext(rows, { serverCap: 1 });
+
+  const grouped = await loadProductSnapshots(ctx, ["tracker-saturated", "tracker-sparse"], 1);
+  assert.deepEqual(grouped.get("tracker-saturated").map(({ id }) => id), ["saturated-000"]);
+  assert.deepEqual(grouped.get("tracker-sparse").map(({ id }) => id), ["saturated-test-sparse"]);
+  assert.equal(state.queries.length, 2);
+  assert.deepEqual(state.queries[1].trackerIds, ["tracker-sparse"]);
+});
+
+test("product GET awaits rejected reads and returns a bounded handler error", async () => {
+  await withOwnerRankEnv(async () => {
+    const secret = "db-secret-that-must-not-leak";
+    const dbError = Object.assign(new Error(secret), { code: "XX001" });
+    let query;
+    query = new Proxy({}, {
+      get(_target, key) {
+        if (key === "then") {
+          return (resolve, reject) => Promise.reject(dbError).then(resolve, reject);
+        }
+        return () => query;
+      },
+    });
+    const ctx = { supabaseAdmin: { from: () => query } };
+    const request = new Request("https://example.com/api/naver-rank-trackers", {
+      headers: {
+        "x-demo-admin-code": "owner-test-code",
+        "x-mi-agency-code": "mml93-a01",
+        "x-request-id": "request-product-123",
+      },
+    });
+    const logged = [];
+    const previousConsoleError = console.error;
+    console.error = (value) => logged.push(String(value));
+    try {
+      const response = await handleRankTrackersRequest(request, ctx);
+      const body = await response.json();
+      assert.equal(response.status, 500);
+      assert.equal(body.code, "NAVER_RANK_TRACKERS_FAILED");
+      assert.equal(JSON.stringify(body).includes(secret), false);
+      assert.equal(logged.length, 1);
+      const log = JSON.parse(logged[0]);
+      assert.equal(log.event, "naver_rank_trackers_failed");
+      assert.equal(log.stage, "trackers");
+      assert.equal(log.requestId, "request-product-123");
+      assert.equal(logged[0].includes(secret), false);
+    } finally {
+      console.error = previousConsoleError;
+    }
+  });
 });
 
 test("a prior catalog id alone cannot reconstruct a current parent relationship", async () => {
@@ -4471,7 +4656,7 @@ function quotaTrackerContext(options = {}) {
           gte() { return query; },
           lte() { return query; },
           order() { return query; },
-          range() { return query; },
+          limit() { return query; },
           then(resolve, reject) {
             return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
           },

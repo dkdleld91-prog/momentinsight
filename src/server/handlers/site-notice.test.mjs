@@ -36,7 +36,7 @@ function request(method, options = {}) {
   });
 }
 
-function ctxWith(row, { selectError = null, upsertError = null } = {}) {
+function ctxWith(row, { selectError = null, upsertError = null, updateError = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -51,6 +51,20 @@ function ctxWith(row, { selectError = null, upsertError = null } = {}) {
                 eq(column, value) {
                   calls.push(["eq", column, value]);
                   return { async maybeSingle() { return selectError ? { data: null, error: selectError } : { data: row, error: null }; } };
+                },
+              };
+            },
+            update(value) {
+              calls.push(["update", value]);
+              return {
+                eq(column, id) {
+                  calls.push(["eq", column, id]);
+                  return {
+                    select(columns) {
+                      calls.push(["select", columns]);
+                      return { async maybeSingle() { return updateError ? { data: null, error: updateError } : { data: row ? { ...row, ...value } : null, error: null }; } };
+                    },
+                  };
                 },
               };
             },
@@ -182,4 +196,29 @@ test("site notice migration creates a locked-down single-row table seeded with t
   assert.match(sql, /9월 20일 완료 예정입니다\./u);
   assert.match(sql, /on conflict \(id\) do nothing;/u);
   assert.doesNotMatch(sql, /naver_rank|naver_shopping|naver_place/u);
+});
+
+test("the owner takes the popup down at once without losing its content (2026-09-19)", async () => {
+  const json = (body) => ({ headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  for (const role of ["team", "client"]) {
+    const denied = ctxWith(ROW);
+    assert.equal((await handleSiteNoticeRequest(request("POST", { role, ...json({ action: "clear" }) }), denied.ctx, { nowMs: NOW })).status, 403, role);
+    assert.equal(denied.calls.some((call) => call[0] === "update"), false, role);
+  }
+  const harness = ctxWith(ROW);
+  const response = await handleSiteNoticeRequest(request("POST", { role: "owner", ownerCode: "mml93-a01", ...json({ action: "clear" }) }), harness.ctx, { nowMs: NOW });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.deepEqual(harness.calls.find((call) => call[0] === "update")[1], { enabled: false, updated_at: new Date(NOW).toISOString(), updated_by: "owner" });
+  assert.deepEqual(harness.calls.filter((call) => call[0] === "eq"), [["eq", "id", 1]]);
+  assert.equal(body.ok, true);
+  assert.equal(body.active, false);
+  assert.equal(body.notice, null);
+  assert.equal(body.editable.enabled, false);
+  assert.equal(body.editable.title, ROW.title, "내용은 남아 다시 켤 수 있다");
+  const empty = await (await handleSiteNoticeRequest(request("POST", { role: "owner", ownerCode: "mml93-a01", ...json({ action: "clear" }) }), ctxWith(null).ctx, { nowMs: NOW })).json();
+  assert.deepEqual(empty, { ok: true, editable: null, active: false, notice: null });
+  const failing = await handleSiteNoticeRequest(request("POST", { role: "owner", ownerCode: "mml93-a01", ...json({ action: "clear" }) }), ctxWith(ROW, { updateError: new Error("permission denied") }).ctx, { nowMs: NOW });
+  assert.equal(failing.status, 500);
+  assert.deepEqual(await failing.json(), { ok: false, message: "공지를 내리지 못했습니다." });
 });

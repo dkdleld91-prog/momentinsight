@@ -11396,6 +11396,8 @@
     #mi-admin .mi-plan-msg.is-warn { color: var(--mi-orange); }
 
     /* 운영 공지 팝업(대표 결정 2026-09-18): 총관리자가 관리자 화면에서 저장한 공지를 로그인 뒤 한 번 띄운다. */
+    /* 2026-09-19 디자인 개편(대표 지적 "디자인이 너무 별로"): 표식이 카드 폭으로 늘어나 닫기와 겹치던 구성을
+       머리(표식·닫기) / 본문(제목·내용·기간) / 바닥(오늘 하루 보지 않기·확인) 세 구역으로 나눴다. */
     #mi-admin .mi-site-notice-modal {
       position: fixed;
       inset: 0;
@@ -11404,36 +11406,52 @@
       align-items: center;
       justify-content: center;
       padding: 20px;
-      background: rgba(6, 26, 58, 0.45);
+      background: rgba(6, 26, 58, 0.52);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
     }
     #mi-admin .mi-site-notice-modal.is-open { display: flex; }
     #mi-admin .mi-site-notice-card {
-      display: grid;
-      gap: 14px;
       position: relative;
-      width: min(560px, 100%);
+      width: min(440px, 100%);
       margin: 0;
-      padding: 24px 26px 26px;
-      border: 1px solid var(--mi-line);
-      border-radius: 16px;
-      background: linear-gradient(180deg, #ffffff 0%, var(--mi-gold-soft) 100%);
-      box-shadow: var(--mi-shadow);
+      overflow: hidden;
+      border-top: 4px solid var(--mi-navy);
+      border-radius: 18px;
+      background: #ffffff;
+      box-shadow: 0 28px 70px rgba(6, 26, 58, 0.28);
+      animation: mi-site-notice-in 0.18s ease-out;
     }
-    #mi-admin .mi-site-notice-card .mi-kicker { margin: 0; }
-    #mi-admin .mi-site-notice-card h3 { margin: 0; font-size: 20px; line-height: 1.3; padding-right: 36px; color: var(--mi-navy); }
-    #mi-admin .mi-site-notice-card .mi-site-notice-body { margin: 0; white-space: pre-line; font-size: 14px; line-height: 1.6; color: var(--mi-ink); }
-    #mi-admin .mi-site-notice-card .mi-site-notice-period { margin: 0; font-size: 12px; color: var(--mi-muted); }
-    #mi-admin .mi-site-notice-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
-    #mi-admin .mi-site-notice-actions .mi-button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: 44px; padding: 0 18px; line-height: 1; }
+    @keyframes mi-site-notice-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.985); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #mi-admin .mi-site-notice-card { animation: none; }
+    }
+    #mi-admin .mi-site-notice-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 20px 0 24px; }
+    #mi-admin .mi-site-notice-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 26px;
+      padding: 0 11px;
+      border-radius: 999px;
+      background: var(--mi-orange-bg);
+      color: var(--mi-orange);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    #mi-admin .mi-site-notice-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     #mi-admin .mi-site-notice-close {
-      position: absolute;
-      top: 22px;
-      right: 20px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 30px;
-      height: 30px;
+      flex: 0 0 auto;
+      width: 32px;
+      height: 32px;
       border: 0;
       border-radius: 999px;
       background: transparent;
@@ -11443,6 +11461,27 @@
       cursor: pointer;
     }
     #mi-admin .mi-site-notice-close:hover { background: var(--mi-gold-soft); color: var(--mi-navy); }
+    #mi-admin .mi-site-notice-main { padding: 14px 24px 22px; }
+    #mi-admin .mi-site-notice-main h3 { margin: 0; color: var(--mi-navy); font-size: 20px; font-weight: 900; line-height: 1.35; letter-spacing: -0.01em; word-break: keep-all; }
+    #mi-admin .mi-site-notice-body { margin: 10px 0 0; color: var(--mi-ink); font-size: 14.5px; line-height: 1.7; white-space: pre-line; word-break: keep-all; }
+    #mi-admin .mi-site-notice-period {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 10px;
+      margin: 18px 0 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: var(--mi-gold-soft);
+      color: var(--mi-muted);
+      font-size: 12.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    #mi-admin .mi-site-notice-period strong { color: var(--mi-navy); font-weight: 800; }
+    #mi-admin .mi-site-notice-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px 12px 24px; border-top: 1px solid var(--mi-line); background: var(--mi-bg); }
+    #mi-admin .mi-site-notice-hide { padding: 8px 0; border: 0; background: transparent; color: var(--mi-muted); font-size: 13px; font-weight: 700; cursor: pointer; }
+    #mi-admin .mi-site-notice-hide:hover { color: var(--mi-navy); text-decoration: underline; }
+    #mi-admin .mi-site-notice-foot .mi-site-notice-confirm { min-width: 96px; min-height: 40px; padding: 0 20px; }
     #mi-admin .mi-site-notice-field { display: grid; gap: 6px; }
     #mi-admin .mi-site-notice-field > span { font-size: 12px; font-weight: 700; color: var(--mi-muted); }
     #mi-admin .mi-site-notice-field .mi-textarea { min-height: 140px; }
@@ -11452,6 +11491,33 @@
     #mi-admin .mi-site-notice-status.is-ok { color: var(--mi-navy); }
     #mi-admin .mi-site-notice-status.is-error { color: var(--mi-orange); }
     #mi-admin .mi-site-notice-editor .mi-tool { display: grid; gap: 14px; }
+    #mi-admin .mi-site-notice-editor-actions .mi-site-notice-clear { color: var(--mi-orange); border-color: var(--mi-orange-bg); }
+    #mi-admin .mi-site-notice-editor-actions .mi-site-notice-clear:hover { background: var(--mi-orange-bg); }
+    #mi-admin .mi-site-notice-guide { margin-top: 16px; }
+    #mi-admin .mi-site-notice-templates { display: flex; flex-wrap: wrap; gap: 10px; }
+    #mi-admin .mi-site-notice-template {
+      display: grid;
+      gap: 4px;
+      flex: 1 1 220px;
+      padding: 14px 16px;
+      border: 1px solid var(--mi-line);
+      border-radius: 12px;
+      background: #ffffff;
+      text-align: left;
+      cursor: pointer;
+      transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+    }
+    #mi-admin .mi-site-notice-template:hover { border-color: var(--mi-navy); box-shadow: 0 10px 24px rgba(6, 26, 58, 0.08); transform: translateY(-1px); }
+    #mi-admin .mi-site-notice-template strong { color: var(--mi-navy); font-size: 14px; font-weight: 900; }
+    #mi-admin .mi-site-notice-template span { color: var(--mi-muted); font-size: 12.5px; line-height: 1.5; }
+    #mi-admin .mi-site-notice-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: mi-notice-step; }
+    #mi-admin .mi-site-notice-steps li { display: grid; grid-template-columns: 28px 84px 1fr; align-items: baseline; gap: 10px; counter-increment: mi-notice-step; font-size: 14px; line-height: 1.6; color: var(--mi-ink); }
+    #mi-admin .mi-site-notice-steps li::before { content: counter(mi-notice-step); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--mi-gold-soft); color: var(--mi-navy); font-size: 12px; font-weight: 900; }
+    #mi-admin .mi-site-notice-steps strong { color: var(--mi-navy); font-weight: 900; }
+    @media (max-width: 640px) {
+      #mi-admin .mi-site-notice-steps li { grid-template-columns: 28px 1fr; }
+      #mi-admin .mi-site-notice-steps li span { grid-column: 2; }
+    }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -13411,9 +13477,38 @@
               <div class="mi-site-notice-editor-actions">
                 <button class="mi-button" type="button" data-site-notice-save>저장</button>
                 <button class="mi-button is-ghost" type="button" data-site-notice-preview>미리보기</button>
+                <button class="mi-button is-ghost mi-site-notice-clear" type="button" data-site-notice-clear>팝업 내리기</button>
                 <span class="mi-site-notice-status" data-site-notice-status aria-live="polite">저장된 공지를 확인하는 중입니다.</span>
               </div>
             </div>
+          </article>
+
+          <article class="mi-card mi-card-pad mi-site-notice-guide">
+            <div class="mi-card-head">
+              <div>
+                <h2>문구 템플릿</h2>
+                <p>누르면 위 입력란에 제목·내용·기간이 채워집니다. 확인하고 고친 뒤 저장을 눌러야 반영됩니다.</p>
+              </div>
+              <span class="mi-badge">원클릭</span>
+            </div>
+            <div class="mi-site-notice-templates" data-site-notice-templates></div>
+          </article>
+
+          <article class="mi-card mi-card-pad mi-site-notice-guide">
+            <div class="mi-card-head">
+              <div>
+                <h2>사용 방법</h2>
+                <p>공지는 한 번에 하나만 뜹니다. 로그인한 광고주·운영팀·총관리자 모두에게 보입니다.</p>
+              </div>
+              <span class="mi-badge">안내</span>
+            </div>
+            <ol class="mi-site-notice-steps">
+              <li><strong>올리기</strong><span>템플릿을 누르거나 직접 작성 → 시작일·종료일 선택 → "팝업 표시" 체크 → 저장. 저장 즉시 뜹니다.</span></li>
+              <li><strong>확인하기</strong><span>"미리보기"로 실제 모양을 먼저 봅니다. 미리보기는 저장되지 않습니다.</span></li>
+              <li><strong>고치기</strong><span>내용을 고쳐 저장하면 "오늘 하루 보지 않기"를 누른 사람에게도 다시 뜹니다.</span></li>
+              <li><strong>내리기</strong><span>"팝업 내리기"를 누르면 즉시 사라집니다. 내용은 남아 있어 "팝업 표시"를 체크해 저장하면 다시 뜹니다.</span></li>
+              <li><strong>자동 종료</strong><span>종료일 23:59가 지나면 따로 내리지 않아도 자동으로 사라집니다.</span></li>
+            </ol>
           </article>
         </section>
       </div>
@@ -20181,9 +20276,21 @@
         var card = document.createElement("div");
         card.className = "mi-site-notice-card";
         card.setAttribute("data-site-notice", String(notice.id));
-        var kicker = document.createElement("span");
-        kicker.className = "mi-kicker";
-        kicker.textContent = "운영 공지";
+        var head = document.createElement("div");
+        head.className = "mi-site-notice-head";
+        var tag = document.createElement("span");
+        tag.className = "mi-site-notice-tag";
+        tag.textContent = "운영 공지";
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "mi-site-notice-close";
+        close.setAttribute("data-site-notice-close", "");
+        close.setAttribute("aria-label", "닫기");
+        close.textContent = "×";
+        head.appendChild(tag);
+        head.appendChild(close);
+        var main = document.createElement("div");
+        main.className = "mi-site-notice-main";
         var title = document.createElement("h3");
         title.textContent = notice.title;
         var body = document.createElement("p");
@@ -20191,12 +20298,20 @@
         body.textContent = notice.body;
         var period = document.createElement("p");
         period.className = "mi-site-notice-period";
-        period.textContent = "안내 기간 " + siteNoticeKstDate(Date.parse(notice.startsAt)) + " ~ " + siteNoticeKstDate(Date.parse(notice.endsAt));
-        var actions = document.createElement("div");
-        actions.className = "mi-site-notice-actions";
+        var periodLabel = document.createElement("strong");
+        periodLabel.textContent = "안내 기간";
+        var periodValue = document.createElement("span");
+        periodValue.textContent = siteNoticeKstDate(Date.parse(notice.startsAt)).replace(/-/g, ".") + " ~ " + siteNoticeKstDate(Date.parse(notice.endsAt)).replace(/-/g, ".");
+        period.appendChild(periodLabel);
+        period.appendChild(periodValue);
+        main.appendChild(title);
+        main.appendChild(body);
+        main.appendChild(period);
+        var foot = document.createElement("div");
+        foot.className = "mi-site-notice-foot";
         var hide = document.createElement("button");
         hide.type = "button";
-        hide.className = "mi-button is-ghost";
+        hide.className = "mi-site-notice-hide";
         hide.setAttribute("data-site-notice-hide", "");
         hide.textContent = "오늘 하루 보지 않기";
         hide.addEventListener("click", function () {
@@ -20205,23 +20320,14 @@
         });
         var confirm = document.createElement("button");
         confirm.type = "button";
-        confirm.className = "mi-button";
+        confirm.className = "mi-button mi-site-notice-confirm";
         confirm.setAttribute("data-site-notice-close", "");
         confirm.textContent = "확인";
-        var close = document.createElement("button");
-        close.type = "button";
-        close.className = "mi-site-notice-close";
-        close.setAttribute("data-site-notice-close", "");
-        close.setAttribute("aria-label", "닫기");
-        close.textContent = "×";
-        actions.appendChild(hide);
-        actions.appendChild(confirm);
-        card.appendChild(kicker);
-        card.appendChild(title);
-        card.appendChild(body);
-        card.appendChild(period);
-        card.appendChild(actions);
-        card.appendChild(close);
+        foot.appendChild(hide);
+        foot.appendChild(confirm);
+        card.appendChild(head);
+        card.appendChild(main);
+        card.appendChild(foot);
         modal.appendChild(card);
         modal.classList.add("is-open");
       }
@@ -20291,6 +20397,13 @@
             setSiteNoticeStatus(error && error.message ? error.message : "공지를 저장하지 못했습니다.", "error");
           });
         });
+        editor.querySelector("[data-site-notice-clear]").addEventListener("click", function () {
+          if (!window.confirm("지금 떠 있는 공지 팝업을 내립니다.\n내용은 남아 있어 \"팝업 표시\"를 체크해 저장하면 다시 뜹니다.")) return;
+          clearSiteNotice().catch(function (error) {
+            setSiteNoticeStatus(error && error.message ? error.message : "공지를 내리지 못했습니다.", "error");
+          });
+        });
+        renderSiteNoticeTemplates();
         editor.querySelector("[data-site-notice-preview]").addEventListener("click", function () {
           var form = readSiteNoticeForm();
           renderSiteNotice({
@@ -20302,6 +20415,67 @@
             updatedAt: ""
           });
         });
+      }
+      // 문구 템플릿(대표 지시 2026-09-19 "복붙할 수 있게"): 누르면 입력란을 채운다. 저장은 따로 눌러야 한다.
+      var SITE_NOTICE_TEMPLATES = [
+        { key: "maintenance", label: "점검 안내", hint: "점검 시작을 알립니다 · 오늘부터 3일", days: 2, title: "N 30일 추적 서버 점검 안내", body: "프로그램 개발로 인한 N 30일 추적 서버 점검이 진행 중입니다.\n점검 기간 동안 순위 수집이 지연되거나 결과 반영이 늦어질 수 있습니다.\n{종료일} 완료 예정입니다." },
+        { key: "maintenance-done", label: "점검 완료", hint: "점검이 끝났음을 알립니다 · 오늘부터 2일", days: 1, title: "서버 점검 완료 안내", body: "N 30일 추적 서버 점검이 완료되었습니다.\n점검 중 지연된 순위는 순차적으로 반영됩니다.\n이용에 불편을 드려 죄송합니다." },
+        { key: "update", label: "업데이트 안내", hint: "새 기능·변경 사항을 알립니다 · 오늘부터 4일", days: 3, title: "기능 업데이트 안내", body: "모먼트 인사이트가 업데이트되었습니다.\n· (변경 내용을 적어주세요)\n문의는 카카오 채널로 부탁드립니다." },
+        { key: "incident", label: "장애 안내", hint: "지연·오류 상황을 알립니다 · 오늘부터 2일", days: 1, title: "일시적인 서비스 지연 안내", body: "현재 일부 기능에서 지연이 발생하고 있어 복구 작업을 진행 중입니다.\n기존 순위 기록은 안전하게 보관되어 있습니다.\n복구되는 대로 다시 안내드리겠습니다." }
+      ];
+      function siteNoticeKoreanDate(dateText) {
+        var parts = String(dateText || "").split("-");
+        return parts.length === 3 ? Number(parts[1]) + "월 " + Number(parts[2]) + "일" : "";
+      }
+      function applySiteNoticeTemplate(template) {
+        var editor = siteNoticeEditor();
+        if (!editor || !template) return;
+        var today = Date.now();
+        var startDate = siteNoticeKstDate(today);
+        var endDate = siteNoticeKstDate(today + Number(template.days || 0) * 24 * 60 * 60 * 1000);
+        editor.querySelector("[data-site-notice-title]").value = template.title;
+        editor.querySelector("[data-site-notice-body]").value = template.body.replace("{종료일}", siteNoticeKoreanDate(endDate));
+        editor.querySelector("[data-site-notice-start]").value = startDate;
+        editor.querySelector("[data-site-notice-end]").value = endDate;
+        editor.querySelector("[data-site-notice-enabled]").checked = true;
+        setSiteNoticeStatus("\"" + template.label + "\" 템플릿을 채웠습니다. 내용을 확인하고 저장을 눌러야 반영됩니다.", "");
+        editor.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+      function renderSiteNoticeTemplates() {
+        var host = root.querySelector("[data-site-notice-templates]");
+        if (!host || host.getAttribute("data-site-notice-bound") === "true") return;
+        host.setAttribute("data-site-notice-bound", "true");
+        SITE_NOTICE_TEMPLATES.forEach(function (template) {
+          var button = document.createElement("button");
+          button.type = "button";
+          button.className = "mi-site-notice-template";
+          button.setAttribute("data-site-notice-template", template.key);
+          var label = document.createElement("strong");
+          label.textContent = template.label;
+          var hint = document.createElement("span");
+          hint.textContent = template.hint;
+          button.appendChild(label);
+          button.appendChild(hint);
+          button.addEventListener("click", function () { applySiteNoticeTemplate(template); });
+          host.appendChild(button);
+        });
+      }
+      async function clearSiteNotice() {
+        if (secureSession.role !== "owner") throw new Error("총관리자 전용 기능입니다.");
+        var generation = ++siteNoticeEditorGeneration;
+        setSiteNoticeStatus("팝업을 내리는 중입니다.", "");
+        var response = await miFetch(getSiteNoticeApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "clear" })
+        });
+        var payload = await readApiPayload(response, "공지를 내리지 못했습니다.");
+        if (generation !== siteNoticeEditorGeneration) return;
+        if (!payload.ok) throw new Error(payload.message || "공지를 내리지 못했습니다.");
+        fillSiteNoticeEditor(payload.editable || null, false);
+        closeSiteNotice();
+        setSiteNoticeStatus("팝업을 내렸습니다. 지금부터 어느 화면에도 뜨지 않습니다.", "ok");
       }
       async function loadSiteNoticeEditor() {
         var editor = siteNoticeEditor();

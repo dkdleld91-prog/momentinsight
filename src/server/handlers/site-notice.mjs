@@ -146,6 +146,17 @@ export async function handleSiteNoticeRequest(request, ctx, options = {}) {
     return response(request, { ok: false, message: "JSON 요청만 허용됩니다." }, 415);
   }
   const body = await request.json().catch(() => null);
+  // 팝업 내리기(대표 지시 2026-09-19): 내용은 남기고 표시만 즉시 끈다. 다시 켜려면 "팝업 표시"를 체크해 저장한다.
+  if (body?.action === "clear") {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("site_notices")
+      .update({ enabled: false, updated_at: new Date(nowMs).toISOString(), updated_by: "owner" })
+      .eq("id", 1)
+      .select(NOTICE_COLUMNS)
+      .maybeSingle();
+    if (error) return response(request, { ok: false, message: "공지를 내리지 못했습니다." }, 500);
+    return response(request, { ok: true, editable: data ? editableNotice(data) : null, active: false, notice: null });
+  }
   if (!body || body.action !== "save") return response(request, { ok: false, message: "요청 내용을 확인해주세요." }, 400);
   const validated = validateSiteNoticeInput(body);
   if (!validated.ok) return response(request, { ok: false, message: validated.message }, 400);

@@ -36,6 +36,10 @@ test("both pages fetch the notice once after the session is applied and honour h
     assert.match(render, /오늘 하루 보지 않기/u, relative);
     assert.match(render, /textContent = notice\.body/u, relative);
     assert.doesNotMatch(render, /innerHTML/u, relative);
+    // 2026-09-19 디자인 개편: 표식이 카드 폭으로 늘어나 닫기와 겹치던 구성을 머리·본문·바닥 세 구역으로 나눴다.
+    for (const zone of ["mi-site-notice-head", "mi-site-notice-main", "mi-site-notice-foot", "mi-site-notice-tag"]) assert.ok(render.includes(zone), `${relative} ${zone}`);
+    assert.doesNotMatch(render, /mi-kicker|is-ghost/u, relative);
+    assert.match(source, /\.mi-site-notice-head \{ display: flex; align-items: center; justify-content: space-between;/u, relative);
     assert.match(source, /\.mi-site-notice-modal\.is-open \{ display: flex; \}/u, relative);
     assert.match(source, /root\.classList\.add\("is-authed"\);[\s\S]{0,200}maybeShowSiteNotice\(\);/u, relative);
   }
@@ -58,4 +62,24 @@ test("the client page has no editor and the admin page keeps the editor owner-on
   assert.match(save, /method: "POST"/u);
   assert.match(save, /"content-type": "application\/json"/u);
   assert.match(namedFunctionSource(adminSource, "readSiteNoticeForm"), /action: "save"/u);
+});
+
+// 대표 지시 2026-09-19: 저장만 있고 내리기·사용법·복붙 문구가 없었다. 운영자 화면은 되돌리기·사용 방법·템플릿을 함께 갖는다.
+test("the owner editor can take the popup down, explains how to publish, and offers one-click templates", () => {
+  assert.match(adminSource, /<button class="mi-button is-ghost mi-site-notice-clear" type="button" data-site-notice-clear>팝업 내리기<\/button>/u);
+  const clear = namedFunctionSource(adminSource, "clearSiteNotice");
+  assert.match(clear, /secureSession\.role !== "owner"\) throw/u);
+  assert.match(clear, /JSON\.stringify\(\{ action: "clear" \}\)/u);
+  assert.match(clear, /closeSiteNotice\(\);/u);
+  assert.match(adminSource, /window\.confirm\("지금 떠 있는 공지 팝업을 내립니다\./u);
+  for (const step of ["올리기", "확인하기", "고치기", "내리기", "자동 종료"]) assert.ok(adminSource.includes(`<li><strong>${step}</strong>`), step);
+  assert.ok(adminSource.includes("<h2>사용 방법</h2>"));
+  assert.ok(adminSource.includes("data-site-notice-templates"));
+  for (const label of ["점검 안내", "점검 완료", "업데이트 안내", "장애 안내"]) assert.ok(adminSource.includes(`label: "${label}"`), label);
+  const apply = namedFunctionSource(adminSource, "applySiteNoticeTemplate");
+  assert.match(apply, /replace\("\{종료일\}", siteNoticeKoreanDate\(endDate\)\)/u);
+  assert.match(apply, /저장을 눌러야 반영됩니다/u);
+  assert.doesNotMatch(apply, /miFetch/u, "템플릿은 입력란만 채우고 저장하지 않는다");
+  assert.equal(clientSource.includes("data-site-notice-clear"), false);
+  assert.equal(clientSource.includes("SITE_NOTICE_TEMPLATES"), false);
 });

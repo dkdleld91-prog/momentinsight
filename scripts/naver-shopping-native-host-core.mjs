@@ -29,6 +29,10 @@ const ROWS_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
 const STABLE_FINITE_PAGE_NAVIGATION_BUDGET = 24;
+// 1.1.31: the stable full-window proof gets the same bounded third capture the
+// finite and rendered-order proofs already have (2026-09-15 ~ 09-17 KST, six
+// `provider_stable_window_unproven:digest_mismatch` on 러그·칼슘쌀·콘트로이친·키크는).
+const STABLE_FULL_WINDOW_PAGE_NAVIGATION_BUDGET = 24;
 const RENDERED_ORDER_PAGE_NAVIGATION_BUDGET = 24;
 // A zero raw-rank gap on a page seam means Naver reused the previous page's
 // last organic number for the next page's first organic row. Coverage, raw-rank
@@ -282,6 +286,18 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   if (renderedOrderCandidate && !marketTotalVerified) {
     throw new ProviderError("provider_stable_rendered_order_unproven", "market_total");
   }
+  if (finiteCandidate
+    && sourceExhausted === true
+    && marketTotalVerified === true
+    && marketTotal !== state.items.length
+    && marketTotalsWithinTolerance(marketTotal, state.items.length)) {
+    // 1.1.31 (2026-09-15 04:13 KST 탄소매트 `partial_window:220_300`): the live
+    // counter jitters by a unit or two between pages (223/222/223 over one
+    // capture that rendered 222 rows to exhaustion). Two independent captures
+    // still have to reproduce every rendered slot; the rendered count is the
+    // market size that rank semantics depend on, so it is the reported total.
+    marketTotal = state.items.length;
+  }
   if (finiteCandidate && (
     sourceExhausted !== true
     || marketTotalVerified !== true
@@ -381,8 +397,17 @@ export function buildNativeWindowFromRows(rawRequest, rawRows, options = {}) {
   }, request);
 }
 
-export const COLLECTION_EVIDENCE_VERSION = "collection-evidence-v1";
-const COLLECTION_EVIDENCE_MAX_CHARS = 12000;
+export const COLLECTION_EVIDENCE_VERSION = "collection-evidence-v2";
+// 1.1.31: the bound follows the worker/server bound (24000; the table keeps 32 KB). The first eleven
+// production rows (2026-09-14 ~ 09-18) showed that the 1.1.30 14-row trim kept
+// the paid rows at the top of every page and dropped the organic rows where the
+// two captures actually differed; the trim now drops paid/helper rows first and
+// keeps organic slots, and every failure also carries the branch trace and the
+// slot-level diff of the last digest comparison.
+const COLLECTION_EVIDENCE_MAX_CHARS = 24000;
+const COLLECTION_TRACE_MAX = 24;
+const COLLECTION_TRACE_ENTRY_MAX = 80;
+const COLLECTION_DIFF_MAX_ENTRIES = 12;
 
 function evidenceIdentity(item) {
   const mallProductId = String(item?.mallProductId ?? "").trim();
@@ -394,7 +419,8 @@ function evidenceIdentity(item) {
   return `n:${productId}`;
 }
 
-export function summarizeCollectionPages(pages, rowLimit = Infinity) {
+export function summarizeCollectionPages(pages, rowLimit = Infinity, options = {}) {
+  const organicOnly = options.organicOnly === true;
   return (Array.isArray(pages) ? pages : []).map((page) => {
     let data = null;
     try { data = JSON.parse(String(page?.nextDataText ?? "")); } catch { data = null; }
@@ -404,37 +430,93 @@ export function summarizeCollectionPages(pages, rowLimit = Infinity) {
     for (const entry of Array.isArray(list) ? list : []) {
       if (rows.length >= rowLimit) break;
       const item = entry?.item;
-      if (entry?.type !== "product") { rows.push(["h"]); continue; }
+      if (entry?.type !== "product") { if (!organicOnly) rows.push(["h"]); continue; }
       const rank = Number.isSafeInteger(item?.rank) ? item.rank : null;
-      if (item?.adId) rows.push(["a", rank]);
-      else rows.push([rank, evidenceIdentity(item)]);
+      if (item?.adId) { if (!organicOnly) rows.push(["a", rank]); continue; }
+      rows.push([rank, evidenceIdentity(item)]);
     }
     return { p: Number(page?.pageIndex) || null, total: Number.isSafeInteger(total) ? total : null, rows };
   });
 }
 
-export function buildCollectionEvidence(request, passes) {
-  const keyword = String(request?.keyword ?? "").slice(0, 80);
-  const build = (rowLimit, passLimit) => ({
-    version: COLLECTION_EVIDENCE_VERSION,
-    keyword,
-    passes: passes.slice(0, passLimit).map((pages) => summarizeCollectionPages(pages, rowLimit)),
-    truncated: rowLimit !== Infinity || passLimit < passes.length,
-  });
-  for (const [rowLimit, passLimit] of [[Infinity, 3], [14, 3], [14, 2], [8, 1]]) {
-    const evidence = build(rowLimit, passLimit);
-    if (JSON.stringify(evidence).length <= COLLECTION_EVIDENCE_MAX_CHARS) return evidence;
-  }
-  return { version: COLLECTION_EVIDENCE_VERSION, keyword, passes: [], truncated: true };
+function boundedCollectionTrace(trace) {
+  if (!Array.isArray(trace) || !trace.length) return null;
+  return trace.slice(0, COLLECTION_TRACE_MAX).map((entry) => String(entry).slice(0, COLLECTION_TRACE_ENTRY_MAX));
 }
 
-function attachFailureEvidence(error, request, passes) {
+function evidenceCell(value) {
+  if (value == null) return null;
+  if (Number.isSafeInteger(value)) return value;
+  return String(Array.isArray(value) ? value.slice().sort().join("|") : value).slice(0, 90);
+}
+
+// Slot-by-slot comparison of two normalized organic windows: how many slots
+// differ and, for the first few, which field carries the difference. Read
+// beside the page rows to tell a shifted slot from a swapped identity.
+export function slotDiffSummary(firstItems, secondItems) {
+  const fields = ["organicRank", "productId", "sellerProductId", "catalogId", "linkedCatalogId", "productType", "catalogSellerProductIds"];
+  const first = Array.isArray(firstItems) ? firstItems : [];
+  const second = Array.isArray(secondItems) ? secondItems : [];
+  const entries = [];
+  let changed = 0;
+  const length = Math.max(first.length, second.length);
+  for (let index = 0; index < length; index += 1) {
+    const left = first[index] || {};
+    const right = second[index] || {};
+    let differs = false;
+    for (const field of fields) {
+      const leftCell = evidenceCell(left[field]);
+      const rightCell = evidenceCell(right[field]);
+      if (leftCell === rightCell) continue;
+      differs = true;
+      if (entries.length < COLLECTION_DIFF_MAX_ENTRIES) entries.push([index + 1, field, leftCell, rightCell]);
+    }
+    if (differs) changed += 1;
+  }
+  return { a: first.length, b: second.length, changed, first: entries };
+}
+
+export function buildCollectionEvidence(request, passes, extra = {}) {
+  const keyword = String(request?.keyword ?? "").slice(0, 80);
+  const trace = boundedCollectionTrace(extra.trace);
+  const diff = extra.diff && typeof extra.diff === "object" && !Array.isArray(extra.diff) ? extra.diff : null;
+  const build = (rowLimit, passLimit, organicOnly) => ({
+    version: COLLECTION_EVIDENCE_VERSION,
+    keyword,
+    passes: passes.slice(0, passLimit).map((pages) => summarizeCollectionPages(pages, rowLimit, { organicOnly })),
+    truncated: rowLimit !== Infinity || passLimit < passes.length || organicOnly,
+    ...(trace ? { trace } : {}),
+    ...(diff ? { diff } : {}),
+  });
+  for (const [rowLimit, passLimit, organicOnly] of [
+    [Infinity, 3, false], [Infinity, 3, true], [Infinity, 2, false], [Infinity, 2, true], [14, 2, true], [8, 1, true],
+  ]) {
+    const evidence = build(rowLimit, passLimit, organicOnly);
+    if (JSON.stringify(evidence).length <= COLLECTION_EVIDENCE_MAX_CHARS) return evidence;
+  }
+  return { version: COLLECTION_EVIDENCE_VERSION, keyword, passes: [], truncated: true, ...(trace ? { trace } : {}) };
+}
+
+function attachFailureEvidence(error, request, passes, extra = {}) {
   if (!error || typeof error !== "object" || !passes.length) return;
   try {
-    error.evidence = buildCollectionEvidence(request, passes);
+    error.evidence = buildCollectionEvidence(request, passes, extra);
   } catch {
     // evidence is best-effort; the failure itself is what matters
   }
+}
+
+function traceNoter(collectOptions) {
+  const trace = collectOptions?.trace;
+  return (text) => {
+    if (Array.isArray(trace) && trace.length < COLLECTION_TRACE_MAX) trace.push(String(text).slice(0, COLLECTION_TRACE_ENTRY_MAX));
+  };
+}
+
+function isStableWindowDigestMismatch(error) {
+  return error instanceof ProviderError
+    && error.code === "provider_stable_window_unproven"
+    && error.detail === "digest_mismatch";
 }
 
 function overlapBoundary(error) {
@@ -617,7 +699,7 @@ function assertDistinctFiniteCaptureIds(captureIds) {
   }
 }
 
-function findStableFinitePair(candidates, captureIds, keyword) {
+function findStableFinitePair(candidates, captureIds, keyword, onMismatch = null) {
   assertDistinctFiniteCaptureIds(captureIds);
   const pairs = [[0, 1], [0, 2], [1, 2]];
   for (const [firstIndex, secondIndex] of pairs) {
@@ -640,6 +722,7 @@ function findStableFinitePair(candidates, captureIds, keyword) {
         || !["count_mismatch", "digest_mismatch"].includes(error.detail)) {
         throw error;
       }
+      if (typeof onMismatch === "function") onMismatch(firstIndex, secondIndex, error.detail, firstPayload, secondPayload);
     }
   }
   return null;
@@ -662,19 +745,22 @@ export function createChromeNativeProvider(options = {}) {
     // read from data instead of inferred from its code.
     async collect(request, collectOptions = {}) {
       const passes = [];
+      const trace = [];
       const exchange = async (message) => {
         const reply = await options.exchange(message);
         if (reply && reply.type === "collection" && Array.isArray(reply.pages)) passes.push(reply.pages);
         return reply;
       };
       try {
-        return await this.collectPasses(request, collectOptions, exchange);
+        return await this.collectPasses(request, { ...collectOptions, trace }, exchange);
       } catch (error) {
-        attachFailureEvidence(error, request, passes);
+        traceNoter({ trace })(`throw ${error?.code ?? error?.name ?? "error"}:${error?.detail ?? ""}`);
+        attachFailureEvidence(error, request, passes, { trace, diff: error?.proofDiff });
         throw error;
       }
     },
     async collectPasses(request, collectOptions, exchange) {
+      const note = traceNoter(collectOptions);
       let navigatedPages = MAX_PAGES;
       const response = await exchange({
         type: "collect",
@@ -699,6 +785,7 @@ export function createChromeNativeProvider(options = {}) {
         else if (overlapBoundary(error)) recoveryReason = "stable-proof";
         else if (isPartialWindow(error)) recoveryReason = "partial-window";
         else throw error;
+        note(`p1 ${error.code}:${error.detail ?? ""} -> ${recoveryReason}`);
       }
 
       // Discard a partial first pass instead of merging or padding it. A
@@ -739,6 +826,7 @@ export function createChromeNativeProvider(options = {}) {
         });
       } catch (error) {
         secondFailure = error;
+        note(`p2 ${error?.code ?? "error"}:${error?.detail ?? ""}`);
         if (recoveryReason === "rendered-order") {
           // 1.1.30: drift on pass A and a partial window on pass B is a finite
           // market that also drifts — arbitrated as a finite window below.
@@ -768,6 +856,7 @@ export function createChromeNativeProvider(options = {}) {
           renderedOrderCandidateAttempt(request, response, candidateNowMs),
           renderedOrderCandidateAttempt(request, secondResponse, candidateNowMs),
         ];
+        note(`rendered attempts ${attempts.map(({ candidate, partialError }) => (candidate ? "ok" : partialError ? "partial" : "boundary")).join(",")}`);
         const partialAttempt = attempts.find(({ partialError }) => partialError != null);
         if (partialAttempt) {
           if (collectOptions.allowStableFinite !== true) throw partialAttempt.partialError;
@@ -859,6 +948,7 @@ export function createChromeNativeProvider(options = {}) {
 
       const finiteArbitration = collectOptions.allowStableFinite === true
         && (recoveryReason === "partial-window" || isPartialWindow(secondFailure) || finiteFromRenderedOrder);
+      note(`finite allow=${collectOptions.allowStableFinite === true} arbitration=${finiteArbitration}`);
       if (finiteArbitration) {
         const passResponses = [response, secondResponse];
         const candidates = passResponses.map((passResponse) => stableFiniteCandidate(
@@ -866,10 +956,17 @@ export function createChromeNativeProvider(options = {}) {
           passResponse.pages,
           { nowMs: options.nowMs?.() ?? Date.now() },
         ));
+        let finiteDiff = null;
+        const onFiniteMismatch = (firstIndex, secondIndex, detail, firstPayload, secondPayload) => {
+          note(`finite pair ${firstIndex + 1},${secondIndex + 1} ${detail} ${firstPayload.checkedCount}/${secondPayload.checkedCount}`);
+          if (detail === "digest_mismatch") finiteDiff = slotDiffSummary(firstPayload.items, secondPayload.items);
+        };
+        note(`finite candidates ${candidates.map((candidate) => (candidate ? (candidate.renderedOrder ? "ro" : "ok") : "null")).join(",")}`);
         let stablePair = findStableFinitePair(
           candidates,
           passResponses.map(({ captureId }) => captureId),
           request.keyword,
+          onFiniteMismatch,
         );
         if (stablePair) {
           return buildNativeWindowFromPages(request, passResponses[stablePair.payloadIndex].pages, {
@@ -908,13 +1005,17 @@ export function createChromeNativeProvider(options = {}) {
         candidates.push(stableFiniteCandidate(request, thirdResponse.pages, {
           nowMs: options.nowMs?.() ?? Date.now(),
         }));
+        note(`finite candidate 3 ${candidates[2] ? (candidates[2].renderedOrder ? "ro" : "ok") : "null"}`);
         stablePair = findStableFinitePair(
           candidates,
           passResponses.map(({ captureId }) => captureId),
           request.keyword,
+          onFiniteMismatch,
         );
         if (!stablePair) {
-          throw new ProviderError("provider_stable_finite_window_unproven", "three_passes");
+          const unproven = new ProviderError("provider_stable_finite_window_unproven", "three_passes");
+          unproven.proofDiff = finiteDiff;
+          throw unproven;
         }
         return buildNativeWindowFromPages(request, passResponses[stablePair.payloadIndex].pages, {
           nowMs: options.nowMs?.() ?? Date.now(),
@@ -925,29 +1026,101 @@ export function createChromeNativeProvider(options = {}) {
       }
 
       if (recoveryReason === "partial-window" && isPartialWindow(secondFailure)) {
+        note("throw p2 partial without finite arbitration");
         throw secondFailure;
       }
 
-      const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {
+      const stableResponses = [response, secondResponse];
+      const stableCandidates = stableResponses.map((passResponse) => nativeWindowPayloadFromPages(request, passResponse.pages, {
         nowMs: options.nowMs?.() ?? Date.now(),
         crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
-      }).payload;
-      const secondCandidate = nativeWindowPayloadFromPages(request, secondResponse.pages, {
-        nowMs: options.nowMs?.() ?? Date.now(),
-        crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
-      }).payload;
-      const crossPageProof = buildStableFullWindowProof(
-        firstCandidate.items,
-        secondCandidate.items,
+      }).payload);
+      const stablePairProof = (firstIndex, secondIndex) => buildStableFullWindowProof(
+        stableCandidates[firstIndex].items,
+        stableCandidates[secondIndex].items,
         {
           keyword: request.keyword,
-          captureIds: [response.captureId, secondResponse.captureId],
+          captureIds: [stableResponses[firstIndex].captureId, stableResponses[secondIndex].captureId],
         },
       );
-      return buildNativeWindowFromPages(request, secondResponse.pages, {
+      let stableProof = null;
+      try {
+        stableProof = { index: 1, proof: stablePairProof(0, 1) };
+      } catch (error) {
+        if (!isStableWindowDigestMismatch(error)) throw error;
+        error.proofDiff = slotDiffSummary(stableCandidates[0].items, stableCandidates[1].items);
+        note(`stable pair 1,2 digest_mismatch changed=${error.proofDiff.changed}`);
+        // 1.1.31: a live market of two million results moves between two
+        // captures; one bounded independent third capture may match either
+        // earlier one. The proof itself is unchanged (two captures must agree
+        // on every slot and every cross-page collision); this is a fixed
+        // 24-page ceiling like the finite and rendered-order proofs, never a
+        // retry loop, and a third capture that matches neither fails closed.
+        assertCollectionDeadline(request, options.nowMs?.() ?? Date.now());
+        if (navigatedPages + MAX_PAGES > STABLE_FULL_WINDOW_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_window_unproven", "page_budget");
+        }
+        const thirdResponse = await exchange({
+          type: "collect",
+          request,
+          pageStart: 1,
+          pageEnd: MAX_PAGES,
+          stableProofPass: 3,
+        });
+        if (!thirdResponse
+          || thirdResponse.type !== "collection"
+          || Array.isArray(thirdResponse.rows)
+          || !Array.isArray(thirdResponse.pages)) {
+          throw new ProviderError("native_host_collection_invalid");
+        }
+        navigatedPages += thirdResponse.pages.length;
+        if (navigatedPages !== STABLE_FULL_WINDOW_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_window_unproven", "page_budget");
+        }
+        const captureIds = [...stableResponses, thirdResponse].map(({ captureId }) => captureId);
+        if (captureIds.some((captureId) => typeof captureId !== "string" || !captureId)
+          || new Set(captureIds).size !== captureIds.length) {
+          throw new ProviderError("provider_stable_window_unproven", "capture_ids");
+        }
+        // A strict third capture is independently authoritative and needs no
+        // cross-page proof.
+        try {
+          return buildNativeWindowFromPages(request, thirdResponse.pages, {
+            nowMs: options.nowMs?.() ?? Date.now(),
+          });
+        } catch (thirdError) {
+          note(`p3 ${thirdError?.code ?? "error"}:${thirdError?.detail ?? ""}`);
+          if (!overlapBoundary(thirdError)) {
+            const unproven = new ProviderError("provider_stable_window_unproven", "three_passes");
+            unproven.proofDiff = error.proofDiff;
+            throw unproven;
+          }
+        }
+        stableResponses.push(thirdResponse);
+        stableCandidates.push(nativeWindowPayloadFromPages(request, thirdResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+        }).payload);
+        for (const firstIndex of [0, 1]) {
+          try {
+            stableProof = { index: 2, proof: stablePairProof(firstIndex, 2) };
+            note(`stable pair ${firstIndex + 1},3 proven`);
+            break;
+          } catch (pairError) {
+            if (!isStableWindowDigestMismatch(pairError)) throw pairError;
+            note(`stable pair ${firstIndex + 1},3 digest_mismatch`);
+          }
+        }
+        if (!stableProof) {
+          const unproven = new ProviderError("provider_stable_window_unproven", "three_passes");
+          unproven.proofDiff = error.proofDiff;
+          throw unproven;
+        }
+      }
+      return buildNativeWindowFromPages(request, stableResponses[stableProof.index].pages, {
         nowMs: options.nowMs?.() ?? Date.now(),
         crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
-        crossPageProof,
+        crossPageProof: stableProof.proof,
       });
     },
     async close() {},

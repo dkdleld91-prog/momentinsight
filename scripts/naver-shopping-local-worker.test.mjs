@@ -125,7 +125,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "windows-desktop-primary",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.30",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.31",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
     MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-catch-up",
   };
@@ -306,7 +306,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.30");
+  assert.equal(lane.runtimeVersion, "1.1.31");
   assert.equal(lane.runTrigger, "rank-catch-up");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
@@ -427,7 +427,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.30");
+  assert.equal(coordination[0].runtimeVersion, "1.1.31");
   assert.equal(coordination[0].runTrigger, "rank-catch-up");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
@@ -475,7 +475,7 @@ test("submits one stable finite canary without recording an atomic300 success", 
   assert.deepEqual(finiteModes, [true]);
   assert.equal(calls.coordination[0].runTrigger, "rank-catch-up");
   assert.equal(calls.coordination[0].workerId, "windows-desktop-primary");
-  assert.equal(calls.coordination[0].runtimeVersion, "1.1.30");
+  assert.equal(calls.coordination[0].runtimeVersion, "1.1.31");
   assert.equal(calls.coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
   assert.equal(calls.coordination.at(-1).action, "release-lane");
@@ -678,6 +678,25 @@ test("keeps stable finite proof and exact-match failures tracker-isolated and ca
         async close() {},
       },
     }, {
+      name: `${jobName}: three-capture proof rejected`,
+      // 1.1.31: `three_passes` was thrown by the native host since 1.1.30 but
+      // missing from this vocabulary (production 2026-09-14 19:07, 09-16 14:30).
+      expectedCode: "provider_stable_finite_window_unproven:three_passes",
+      responses: [
+        { body: { ok: true, job } },
+        { body: { ok: true, releasedCount: 1 } },
+        { body: { ok: true, job: null } },
+      ],
+      provider: {
+        async collect() {
+          const error = new Error("provider_stable_finite_window_unproven");
+          error.code = "provider_stable_finite_window_unproven";
+          error.detail = "three_passes";
+          throw error;
+        },
+        async close() {},
+      },
+    }, {
       name: `${jobName}: exact finite match rejected`,
       expectedCode: "local_worker_finite_match_invalid",
       responses: [
@@ -729,7 +748,12 @@ test("keeps stable finite proof and exact-match failures tracker-isolated and ca
 test("forwards bounded collection evidence with a tracker failure report and drops oversized evidence (1.1.30)", async () => {
   const evidence = { version: "collection-evidence-v1", keyword: "온열찜질기", passes: [[{ p: 1, total: 215, rows: [["a", 1], [2, "s:13000000001"]] }]], truncated: false };
   const oversized = { ...evidence, passes: [[{ p: 1, total: 215, rows: Array.from({ length: 3000 }, (_, index) => [index, `s:${index}`]) }]] };
-  for (const [label, attached, expectPresent] of [["bounded", evidence, true], ["oversized", oversized, false]]) {
+  // 1.1.31: v2 carries the branch trace and the slot diff; both are bounded here too.
+  const v2 = { ...evidence, version: "collection-evidence-v2", trace: ["p1 provider_partial_window:215/300 -> partial-window", "throw provider_stable_finite_window_unproven:three_passes"], diff: { a: 215, b: 215, changed: 1, first: [[4, "sellerProductId", "1", "2"]] } };
+  const v2Expected = v2;
+  const v2Overlong = { ...v2, trace: Array.from({ length: 40 }, () => "x".repeat(200)) };
+  const v2OverlongExpected = { ...v2, trace: Array.from({ length: 24 }, () => "x".repeat(80)) };
+  for (const [label, attached, expectPresent, expected] of [["bounded", evidence, true, evidence], ["oversized", oversized, false, null], ["v2", v2, true, v2Expected], ["v2 overlong trace", v2Overlong, true, v2OverlongExpected]]) {
     const calls = [];
     const summary = await runLocalShoppingWorker({
       env: workerEnv(),
@@ -759,7 +783,7 @@ test("forwards bounded collection evidence with a tracker failure report and dro
     const failures = calls.coordination.filter((call) => call.action === "record-failure");
     assert.equal(failures.length, 1, label);
     assert.equal(failures[0].errorCode, "provider_stable_finite_window_unproven:count_mismatch", label);
-    if (expectPresent) assert.deepEqual(failures[0].evidence, evidence, label);
+    if (expectPresent) assert.deepEqual(failures[0].evidence, expected, label);
     else assert.equal(Object.hasOwn(failures[0], "evidence"), false, label);
   }
 });

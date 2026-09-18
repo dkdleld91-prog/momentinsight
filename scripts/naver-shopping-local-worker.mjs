@@ -160,7 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.30";
+const EXPECTED_RUNTIME_VERSION = "1.1.31";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -414,15 +414,24 @@ function sanitizedFailureDetail(baseCode, detail) {
 // 1.1.30: the native host summarises every capture of a failed collection onto the
 // error (identities and raw numbers only). It rides along with the failure report so
 // the cause can be read from data; it never changes what is reported as the failure.
-const FAILURE_EVIDENCE_MAX_CHARS = 16000;
+const FAILURE_EVIDENCE_MAX_CHARS = 24000;
+const FAILURE_EVIDENCE_VERSIONS = new Set(["collection-evidence-v1", "collection-evidence-v2"]);
 function boundedFailureEvidence(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (value.version !== "collection-evidence-v1" || !Array.isArray(value.passes)) return null;
+  if (!FAILURE_EVIDENCE_VERSIONS.has(value.version) || !Array.isArray(value.passes)) return null;
+  // 1.1.31: the branch trace and the slot diff of the last digest comparison
+  // ride along with the page rows.
+  const trace = Array.isArray(value.trace)
+    ? value.trace.slice(0, 24).map((entry) => String(entry).slice(0, 80))
+    : null;
+  const diff = value.diff && typeof value.diff === "object" && !Array.isArray(value.diff) ? value.diff : null;
   const evidence = {
     version: value.version,
     keyword: String(value.keyword ?? "").slice(0, 80),
     passes: value.passes.slice(0, 3),
     truncated: value.truncated === true,
+    ...(trace && trace.length ? { trace } : {}),
+    ...(diff ? { diff } : {}),
   };
   return JSON.stringify(evidence).length <= FAILURE_EVIDENCE_MAX_CHARS ? evidence : null;
 }
@@ -446,7 +455,9 @@ function safeFailureCode(error) {
   }
   if (baseCode === "provider_stable_window_unproven") {
     const detail = String(error?.detail || "").trim().toLowerCase();
-    return /^(?:capture_ids|digest_mismatch|page_budget)$/u.test(detail)
+    // 1.1.31: the bounded third capture of the stable full-window proof
+    // reports `three_passes` when no pair of the three captures agrees.
+    return /^(?:capture_ids|digest_mismatch|page_budget|three_passes)$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }
@@ -454,8 +465,11 @@ function safeFailureCode(error) {
     // 1.1.29: the finite-market arbitration reason was invisible in production
     // (2026-09-11 22:45, 09-13 13:24, 일신한일의료기 탄소매트) — pass the fixed
     // vocabulary through so the failure can be read from the event row.
+    // 1.1.31 (production 2026-09-14 19:07 and 09-16 14:30 KST, 탄소매트): the
+    // native host's `three_passes` reason was missing from this vocabulary, so
+    // both failures were recorded without a reason.
     const detail = String(error?.detail || "").trim().toLowerCase();
-    return /^(?:capture_ids|coverage|count_mismatch|digest_mismatch|digest_invalid|page_budget)$/u.test(detail)
+    return /^(?:capture_ids|coverage|count_mismatch|digest_mismatch|digest_invalid|page_budget|three_passes)$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }

@@ -35,15 +35,15 @@ function functionSql(source, name) {
   ))?.[0] || "";
 }
 
-test("1.1.30 is the newest runtime migration and the live fingerprint matches its pin", () => {
+// Archived 2026-09-18 (superseded by runtime 1.1.31).
+test("keeps the archived runtime 1.1.30 migration pinned to its historical fingerprint", () => {
   const runtimeMigrations = fs.readdirSync(migrationDirectory)
     .filter((entry) => /_naver_shopping_runtime_1_1_\d+_/u.test(entry))
     .sort();
-  assert.equal(runtimeMigrations.at(-1), migrationName);
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
+  assert.ok(runtimeMigrations.includes(migrationName));
+  assert.ok(runtimeMigrations.indexOf(migrationName) < runtimeMigrations.length - 1);
+  assert.equal(NEW_RUNTIME.fingerprint, "62e09cb15720dda97fdc652cfa9b3fba40bdbbc4c98372269867c21ee472d10c");
+  assert.equal(typeof calculateN30RuntimeFingerprint, "function");
 });
 
 test("migration moves only the runtime identity pins from 1.1.29 to 1.1.30", () => {
@@ -84,33 +84,15 @@ test("the runtime literal audit still passes with the 1.1.30 progress gate as th
   assert.deepEqual(result.violations, []);
 });
 
-test("live surfaces are 1.1.30 while the archived 1.1.29 evidence keeps its historical identity", () => {
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.30"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-    "src/server/naver-shopping/worker-runtime-expectation.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.30"/u, relativePath);
-    assert.doesNotMatch(read(relativePath), /"1\.1\.29"/u, relativePath);
-  }
-  for (const relativePath of [
-    "scripts/naver-shopping-candidate-performance-audit.mjs",
-    "scripts/naver-shopping-account-rank-health-audit.mjs",
-  ]) {
-    assert.match(read(relativePath), /"1\.1\.30"/u, relativePath);
-    assert.match(read(relativePath), new RegExp(NEW_RUNTIME.fingerprint, "u"), relativePath);
-    assert.doesNotMatch(read(relativePath), new RegExp(OLD_RUNTIME.fingerprint, "u"), relativePath);
-  }
+test("the archived 1.1.29 evidence keeps its historical identity", () => {
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.30/u);
 });
 
 test("1.1.30 finite-drift arbitration and failure evidence are present in the fingerprinted runtime files", () => {
   const nativeHost = read("scripts/naver-shopping-native-host-core.mjs");
-  assert.match(nativeHost, /export const COLLECTION_EVIDENCE_VERSION = "collection-evidence-v1";/u);
-  assert.match(nativeHost, /attachFailureEvidence\(error, request, passes\);/u);
+  assert.match(nativeHost, /export const COLLECTION_EVIDENCE_VERSION = "collection-evidence-v\d";/u);
+  assert.match(nativeHost, /attachFailureEvidence\(error, request, passes/u);
   assert.match(nativeHost, /if \(isPartialWindow\(error\)\) return \{ candidate: null, boundaryError: null, partialError: error \};/u);
   assert.match(nativeHost, /\|\| isPartialWindow\(secondFailure\) \|\| finiteFromRenderedOrder\);/u);
   assert.match(nativeHost, /const emptyTailPage = expectedOrganicCount === 0 && structure\.organicCount === 0;/u);

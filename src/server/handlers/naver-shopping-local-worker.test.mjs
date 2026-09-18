@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.30",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.31",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -700,7 +700,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.30");
+          assert.equal(args.p_runtime_version, "1.1.31");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -722,7 +722,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_lease_token: LANE_TOKEN,
       p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
-      p_runtime_version: "1.1.30",
+      p_runtime_version: "1.1.31",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
     });
   });
@@ -828,7 +828,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.30",
+      runtimeVersion: "1.1.31",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -888,7 +888,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.30",
+      runtimeVersion: "1.1.31",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -911,11 +911,19 @@ test("stores validated collection evidence beside a failure report and never let
     const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
     const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
     const evidence = { version: "collection-evidence-v1", keyword: "온열찜질기", passes: [[{ p: 1, total: 215, rows: [["a", 1], [2, "s:13000000001"], ["h"]] }]], truncated: false };
+    // 1.1.31: v2 adds the bounded branch trace and slot diff.
+    const v2 = { ...evidence, version: "collection-evidence-v2", trace: ["p1 provider_partial_window:215/300 -> partial-window", "throw provider_stable_finite_window_unproven:three_passes"], diff: { a: 215, b: 215, changed: 1, first: [[4, "sellerProductId", "13000000004", "13000000009"]] } };
     const scenarios = [
       { label: "valid", evidence, insertError: null, expectInsert: true },
       { label: "extra key", evidence: { ...evidence, titles: ["x"] }, insertError: null, expectInsert: false },
       { label: "too many passes", evidence: { ...evidence, passes: [[], [], [], []] }, insertError: null, expectInsert: false },
       { label: "insert rejected", evidence, insertError: new Error("relation missing"), expectInsert: true },
+      { label: "v2 with trace and diff", evidence: v2, insertError: null, expectInsert: true },
+      { label: "v2 trace entry too long", evidence: { ...v2, trace: ["x".repeat(81)] }, insertError: null, expectInsert: false },
+      { label: "v2 trace too long", evidence: { ...v2, trace: Array.from({ length: 25 }, () => "x") }, insertError: null, expectInsert: false },
+      { label: "v2 diff with unknown key", evidence: { ...v2, diff: { ...v2.diff, titles: [] } }, insertError: null, expectInsert: false },
+      { label: "v2 diff entry too wide", evidence: { ...v2, diff: { ...v2.diff, first: [[1, "f", "a", "b", "c"]] } }, insertError: null, expectInsert: false },
+      { label: "unknown version", evidence: { ...evidence, version: "collection-evidence-v3" }, insertError: null, expectInsert: false },
     ];
     for (const scenario of scenarios) {
       let inserted = null;
@@ -937,7 +945,7 @@ test("stores validated collection evidence beside a failure report and never let
         workerId: WORKER_ID,
         laneToken: LANE_TOKEN,
         runId: RUN_ID,
-        runtimeVersion: "1.1.30",
+        runtimeVersion: "1.1.31",
         runtimeFingerprint: RUNTIME_FINGERPRINT,
         job: { keyword: "온열찜질기", limit: 300, claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }] },
         errorCode: "provider_stable_finite_window_unproven:count_mismatch",
@@ -950,7 +958,7 @@ test("stores validated collection evidence beside a failure report and never let
         assert.equal(inserted?.tracker_id, TRACKER_ID, scenario.label);
         assert.equal(inserted?.error_code, "provider_stable_finite_window_unproven:count_mismatch", scenario.label);
         assert.equal(inserted?.keyword, "온열찜질기", scenario.label);
-        assert.deepEqual(inserted?.evidence, evidence, scenario.label);
+        assert.deepEqual(inserted?.evidence, scenario.evidence, scenario.label);
       } else {
         assert.equal(inserted, null, scenario.label);
       }
@@ -982,7 +990,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.30",
+      runtimeVersion: "1.1.31",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -1024,7 +1032,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.30",
+      runtimeVersion: "1.1.31",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1113,7 +1121,7 @@ test("claim resets the exact signed idle envelope after touch and before repair 
       p_page: 0,
       p_job_kind: null,
       p_tracker_id: null,
-      p_runtime_version: "1.1.30",
+      p_runtime_version: "1.1.31",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
       p_run_trigger: "rank-catch-up",
     });

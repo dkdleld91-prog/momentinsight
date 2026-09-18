@@ -22,6 +22,7 @@ import {
   createChromeNativeProvider,
   COLLECTION_EVIDENCE_VERSION,
   buildCollectionEvidence,
+  slotDiffSummary,
   summarizeCollectionPages,
   createNativePageStreamCollector,
   resolveNativeExchangeWait,
@@ -370,27 +371,66 @@ test("native provider attaches bounded collection evidence to a failed collectio
   assert.equal(caught?.code, "provider_stable_rendered_order_unproven");
   const evidence = caught.evidence;
   assert.equal(evidence.version, COLLECTION_EVIDENCE_VERSION);
+  assert.equal(evidence.version, "collection-evidence-v2");
   assert.equal(evidence.keyword, KEYWORD);
   assert.equal(evidence.passes.length, 2);
   assert.equal(evidence.passes[0].length, 8);
   const first = evidence.passes[0][0];
   assert.equal(first.p, 1);
   assert.equal(first.total, 204582);
-  assert.ok(first.rows.some((row) => row[0] === "a"), "ad rows are kept as [\"a\", rank]");
+  if (evidence.truncated === false) {
+    assert.ok(first.rows.some((row) => row[0] === "a"), "ad rows are kept as [\"a\", rank] while nothing is trimmed");
+  }
   assert.ok(first.rows.some((row) => Number.isSafeInteger(row[0]) && /^s:\d+$/u.test(row[1])), "organic rows are [rank, identity]");
   assert.ok(first.rows.every((row) => row.length <= 2 && row.every((cell) => cell === null || typeof cell === "number" || typeof cell === "string")));
-  assert.ok(JSON.stringify(evidence).length <= 12000);
+  // 1.1.31: the branch trace rides along and ends with the thrown code.
+  assert.ok(Array.isArray(evidence.trace) && evidence.trace.length >= 2, "trace is attached");
+  assert.ok(evidence.trace.every((entry) => typeof entry === "string" && entry.length <= 80));
+  assert.match(evidence.trace[0], /^p1 naver_next_data_rank_drift/u);
+  assert.match(evidence.trace.at(-1), /^throw provider_stable_rendered_order_unproven/u);
+  assert.ok(JSON.stringify(evidence).length <= 24000);
 });
 
 test("collection evidence stays within its size bound by trimming rows and passes", () => {
   const passes = Array.from({ length: 3 }, () => renderedOrderDriftPages());
   const evidence = buildCollectionEvidence(request(0), passes);
-  assert.ok(JSON.stringify(evidence).length <= 12000);
+  assert.ok(JSON.stringify(evidence).length <= 24000);
   assert.equal(evidence.truncated, true);
   assert.ok(evidence.passes.length >= 1);
   const summary = summarizeCollectionPages(renderedOrderDriftPages().slice(0, 1), 3);
   assert.equal(summary.length, 1);
   assert.equal(summary[0].rows.length, 3);
+});
+// 1.1.31: production rows 2026-09-15 ~ 09-17 (러그·칼슘쌀·콘트로이친·키크는
+// `digest_mismatch`) were trimmed to the first 14 rows of every page — the
+// paid rows at the top — and the organic rows where the captures differed
+// were gone. The trim now drops paid/helper rows before organic slots.
+test("collection evidence drops paid rows before organic slots and keeps the trace and diff (1.1.31)", () => {
+  const organicOnly = summarizeCollectionPages(renderedOrderDriftPages().slice(0, 1), Infinity, { organicOnly: true });
+  assert.ok(organicOnly[0].rows.length > 0);
+  assert.ok(organicOnly[0].rows.every((row) => Number.isSafeInteger(row[0]) && typeof row[1] === "string"), "only [rank, identity] rows remain");
+  const full = summarizeCollectionPages(renderedOrderDriftPages().slice(0, 1));
+  assert.ok(full[0].rows.some((row) => row[0] === "a"), "the untrimmed summary still lists paid rows");
+  assert.equal(full[0].rows.filter((row) => Number.isSafeInteger(row[0])).length, organicOnly[0].rows.length);
+
+  const passes = Array.from({ length: 3 }, () => renderedOrderDriftPages());
+  const trace = Array.from({ length: 30 }, (_, index) => `step ${index} ${"x".repeat(100)}`);
+  const diff = slotDiffSummary(
+    [{ organicRank: 1, sellerProductId: "1" }, { organicRank: 2, sellerProductId: "2" }],
+    [{ organicRank: 1, sellerProductId: "1" }, { organicRank: 2, sellerProductId: "9" }],
+  );
+  assert.deepEqual(diff, { a: 2, b: 2, changed: 1, first: [[2, "sellerProductId", "2", "9"]] });
+  const evidence = buildCollectionEvidence(request(0), passes, { trace, diff });
+  assert.ok(JSON.stringify(evidence).length <= 24000);
+  assert.equal(evidence.passes.length, 3, "three organic-only passes fit the bound");
+  assert.equal(evidence.truncated, true);
+  assert.equal(evidence.trace.length, 24, "trace is bounded to 24 entries");
+  assert.ok(evidence.trace.every((entry) => entry.length <= 80), "trace entries are bounded to 80 chars");
+  assert.deepEqual(evidence.diff, diff);
+  const organicPerPass = summarizeCollectionPages(renderedOrderDriftPages()).flatMap((page) => page.rows).filter((row) => Number.isSafeInteger(row[0])).length;
+  const organicRows = evidence.passes.flat().flatMap((page) => page.rows).filter((row) => Number.isSafeInteger(row[0]));
+  assert.equal(organicRows.length, evidence.passes.length * organicPerPass, "every organic slot of every kept pass survives the trim");
+  assert.ok(evidence.passes.flat().every((page) => page.rows.every((row) => row[0] !== "a" && row[0] !== "h")), "paid and helper rows are the ones trimmed");
 });
 
 // 2026-09-11 production shape: ranked paid slots consume the first raw
@@ -2239,12 +2279,131 @@ test("native provider rejects a one-slot drift between stable proof passes", asy
     },
   });
 
+  // 1.1.31: the third independent capture reproduces the first one, so the
+  // proof is A,C; the one-slot drift on B is no longer the final answer.
+  const result = await provider.collect(request(nowMs));
+  assert.equal(exchanges, 3);
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.crossPageProof?.version, "stable-full-window-v1");
+  assert.deepEqual(result.crossPageProof?.captureIds, ["capture-pass-1", "capture-pass-3"]);
+});
+test("native provider fails closed when none of three stable proof captures agree and never starts a fourth (1.1.31)", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 3, "stable full-window arbitration must never start a fourth capture");
+      const pages = overlapPages({ originPage: 6, collisionPage: 7 });
+      const changed = JSON.parse(pages[1].nextDataText);
+      changed.props.pageProps.compositeList.list[10].item.mallProductId = `1999999999${messages.length}`;
+      changed.props.pageProps.compositeList.list[10].item.mallPcUrl = `https://smartstore.naver.com/example/products/1999999999${messages.length}`;
+      pages[1].nextDataText = JSON.stringify(changed);
+      return { type: "collection", captureId: `capture-pass-${messages.length}`, pages };
+    },
+  });
+  let caught = null;
+  try { await provider.collect(request(nowMs)); } catch (error) { caught = error; }
+  assert.equal(caught?.code, "provider_stable_window_unproven");
+  assert.equal(caught?.detail, "three_passes");
+  assert.equal(messages.length, 3);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd, stableProofPass }) => [pageStart, pageEnd, stableProofPass]), [
+    [undefined, undefined, undefined],
+    [1, 8, 2],
+    [1, 8, 3],
+  ]);
+  assert.equal(caught.evidence?.version, "collection-evidence-v2");
+  assert.ok(caught.evidence?.passes?.length >= 2);
+  assert.equal(caught.evidence?.diff?.changed, 1, "the slot diff of the first digest comparison is attached");
+  assert.equal(caught.evidence?.diff?.first?.[0]?.[1], "sellerProductId");
+  assert.ok(caught.evidence?.trace?.some((entry) => /^stable pair 1,2 digest_mismatch/u.test(entry)));
+  assert.ok(caught.evidence?.trace?.some((entry) => /^stable pair 2,3 digest_mismatch/u.test(entry)));
+});
+test("native provider does not spend a third stable proof capture on a replayed pair", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      const pages = overlapPages({ originPage: 6, collisionPage: 7 });
+      if (exchanges === 2) {
+        const changed = JSON.parse(pages[1].nextDataText);
+        changed.props.pageProps.compositeList.list[10].item.mallProductId = "19999999999";
+        changed.props.pageProps.compositeList.list[10].item.mallPcUrl = "https://smartstore.naver.com/example/products/19999999999";
+        pages[1].nextDataText = JSON.stringify(changed);
+      }
+      return { type: "collection", captureId: exchanges === 3 ? "capture-pass-1" : `capture-pass-${exchanges}`, pages };
+    },
+  });
   await assert.rejects(
     () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_stable_window_unproven"
-      && error?.detail === "digest_mismatch",
+    (error) => error?.code === "provider_stable_window_unproven" && error?.detail === "capture_ids",
   );
-  assert.equal(exchanges, 2);
+  assert.equal(exchanges, 3);
+});
+test("native provider proves a finite market whose live counter jitters by a unit between pages (1.1.31, 탄소매트 `partial_window:220_300`)", async () => {
+  const nowMs = Date.parse("2026-09-14T19:13:00.000Z");
+  const totals = [223, 223, 223, 222, 223, 222, 222, 223];
+  const jitter = (pages) => pages.map((page, index) => {
+    const data = JSON.parse(page.nextDataText);
+    data.props.pageProps.compositeList.total = totals[index];
+    return { ...page, nextDataText: JSON.stringify(data) };
+  });
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return { type: "collection", captureId: `finite-jitter-${messages.length}`, pages: jitter(renderedOrderFiniteDriftPages(222)) };
+    },
+  });
+  const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 222);
+  assert.equal(result.marketTotal, 222, "the rendered count is the reported market size");
+  assert.equal(result.marketTotalStatus, "verified");
+  assert.equal(result.sourceExhausted, true);
+  assert.equal(result.finiteWindowProof?.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+  assert.equal(result.finiteWindowProof?.marketTotal, 222);
+  // Beyond the shared tolerance the window stays unproven.
+  const far = (pages) => pages.map((page) => {
+    const data = JSON.parse(page.nextDataText);
+    data.props.pageProps.compositeList.total = 240;
+    return { ...page, nextDataText: JSON.stringify(data) };
+  });
+  const strict = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() { return { type: "collection", captureId: `finite-far-${Math.random()}`, pages: far(renderedOrderFiniteDriftPages(222)) }; },
+  });
+  await assert.rejects(
+    () => strict.collect(request(nowMs), { allowStableFinite: true }),
+    (error) => typeof error?.code === "string" && error.code.startsWith("provider_") && error.finiteWindowProof === undefined,
+  );
+});
+test("native finite three-capture rejection carries the slot diff and branch trace (1.1.31)", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return { type: "collection", captureId: `finite-variant-${messages.length}`, pages: finiteMarketStrongIdentityVariant(93, messages.length) };
+    },
+  });
+  let caught = null;
+  try { await provider.collect(request(nowMs), { allowStableFinite: true }); } catch (error) { caught = error; }
+  assert.equal(caught?.code, "provider_stable_finite_window_unproven");
+  assert.equal(caught?.detail, "three_passes");
+  assert.equal(messages.length, 3);
+  assert.equal(caught.evidence?.passes?.length, 3);
+  assert.equal(caught.evidence?.diff?.changed, 1);
+  assert.equal(caught.evidence?.diff?.a, 93);
+  assert.ok(caught.evidence?.diff?.first?.some((entry) => entry[1] === "sellerProductId"));
+  assert.ok(caught.evidence?.trace?.some((entry) => /^finite candidates ok,ok/u.test(entry)));
+  assert.ok(caught.evidence?.trace?.some((entry) => /^finite pair 2,3 digest_mismatch 93\/93/u.test(entry)));
+  assert.match(caught.evidence?.trace?.at(-1), /^throw provider_stable_finite_window_unproven:three_passes/u);
 });
 
 test("native provider rejects replayed capture identity and never starts a third pass", async () => {
@@ -2419,7 +2578,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.30");
+  assert.equal(manifest.version, "1.1.31");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3727,7 +3886,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.30");
+  assert.equal(manifest.version, "1.1.31");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3902,7 +4061,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.30",
+    runtimeVersion: "1.1.31",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

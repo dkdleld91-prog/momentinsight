@@ -33,7 +33,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.30";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.31";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -351,13 +351,39 @@ async function recordWorkerSuccess(ctx, body) {
 // 1.1.30: bounded collection evidence (identities and raw numbers of every capture)
 // rides along with a failure report and is kept 30 days for diagnosis. It is best
 // effort: a rejected or failed insert never changes the failure outcome.
-const FAILURE_EVIDENCE_MAX_CHARS = 16000;
-const FAILURE_EVIDENCE_VERSION = "collection-evidence-v1";
+const FAILURE_EVIDENCE_MAX_CHARS = 24000;
+// 1.1.31: v2 adds the collector's branch trace and the slot diff of the last
+// digest comparison; v1 rows from 1.1.30 workers stay accepted.
+const FAILURE_EVIDENCE_VERSIONS = new Set(["collection-evidence-v1", "collection-evidence-v2"]);
+const FAILURE_EVIDENCE_TRACE_MAX = 24;
+const FAILURE_EVIDENCE_TRACE_ENTRY_MAX = 80;
+const FAILURE_EVIDENCE_DIFF_MAX_ENTRIES = 12;
+function evidenceCellValid(cell) {
+  return cell === null || Number.isSafeInteger(cell) || (typeof cell === "string" && cell.length <= 90);
+}
+function validatedEvidenceTrace(value) {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length > FAILURE_EVIDENCE_TRACE_MAX) return false;
+  if (value.some((entry) => typeof entry !== "string" || entry.length > FAILURE_EVIDENCE_TRACE_ENTRY_MAX)) return false;
+  return value;
+}
+function validatedEvidenceDiff(value) {
+  if (value === undefined) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (Object.keys(value).some((key) => !["a", "b", "changed", "first"].includes(key))) return false;
+  if (![value.a, value.b, value.changed].every((count) => Number.isSafeInteger(count) && count >= 0)) return false;
+  if (!Array.isArray(value.first) || value.first.length > FAILURE_EVIDENCE_DIFF_MAX_ENTRIES) return false;
+  if (value.first.some((entry) => !Array.isArray(entry) || entry.length > 4 || !entry.every(evidenceCellValid))) return false;
+  return value;
+}
 function validatedFailureEvidence(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  if (value.version !== FAILURE_EVIDENCE_VERSION || !Array.isArray(value.passes) || value.passes.length > 3) return null;
-  const allowed = new Set(["version", "keyword", "passes", "truncated"]);
+  if (!FAILURE_EVIDENCE_VERSIONS.has(value.version) || !Array.isArray(value.passes) || value.passes.length > 3) return null;
+  const allowed = new Set(["version", "keyword", "passes", "truncated", "trace", "diff"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  const trace = validatedEvidenceTrace(value.trace);
+  const diff = validatedEvidenceDiff(value.diff);
+  if (trace === false || diff === false) return null;
   for (const pass of value.passes) {
     if (!Array.isArray(pass) || pass.length > 8) return null;
     for (const page of pass) {
@@ -365,15 +391,17 @@ function validatedFailureEvidence(value) {
       if (Object.keys(page).some((key) => !["p", "total", "rows"].includes(key))) return null;
       for (const row of page.rows) {
         if (!Array.isArray(row) || row.length > 2) return null;
-        if (row.some((cell) => !(cell === null || Number.isSafeInteger(cell) || (typeof cell === "string" && cell.length <= 90)))) return null;
+        if (!row.every(evidenceCellValid)) return null;
       }
     }
   }
   const evidence = {
-    version: FAILURE_EVIDENCE_VERSION,
+    version: value.version,
     keyword: String(value.keyword ?? "").slice(0, 80),
     passes: value.passes,
     truncated: value.truncated === true,
+    ...(trace && trace.length ? { trace } : {}),
+    ...(diff ? { diff } : {}),
   };
   return JSON.stringify(evidence).length <= FAILURE_EVIDENCE_MAX_CHARS ? evidence : null;
 }

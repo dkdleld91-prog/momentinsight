@@ -38,6 +38,7 @@ import {
   productExposureItemsFromOrganic,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 import { selectRepresentativeTrackingRank } from "../src/server/handlers/naver-rank-trackers.mjs";
+import { validateStrictLocalWorkerWindow } from "../src/server/naver-shopping/local-worker-contract.mjs";
 
 function assertZshSyntax(scriptPath, source) {
   const lint = spawnSync("/bin/zsh", ["-n", scriptPath], { encoding: "utf8" });
@@ -2182,6 +2183,82 @@ function duplicateRowPages(pageIndex = 7) {
   return pages;
 }
 
+// 1.1.32 (production 2026-09-14 → 09-19, 일신한일의료기 탄소매트 `partial_window:288_300`, evidence v2 trace
+// `p1 …page_overlap:3 -> stable-proof` / `finite allow=true arbitration=false`): 289 organic rows with
+// continuous raw ranks, and the last product of one page listed again one row into the next page. A finite
+// market with a cross-page repeat is neither a broken 300-window nor a plain finite market.
+function finiteMarketCrossPageRepeatPages(total, { originPage = 3, collisionPage = 4, variant = 0 } = {}) {
+  const pages = finiteMarketPages(total);
+  const collision = JSON.parse(pages[collisionPage - 1].nextDataText);
+  const organic = collision.props.pageProps.compositeList.list.filter((entry) => !entry.item.adId);
+  const target = organic[1];
+  const rank = target.item.rank;
+  target.item = { ...productItem(originPage * 40), rank };
+  if (variant) {
+    const other = organic[5];
+    const sellerProductId = String(24000000000 + variant);
+    other.item.id = String(84000000000 + variant);
+    other.item.mallProductId = sellerProductId;
+    other.item.mallPcUrl = `https://smartstore.naver.com/example/products/${sellerProductId}`;
+  }
+  pages[collisionPage - 1].nextDataText = JSON.stringify(collision);
+  return pages;
+}
+
+test("native provider proves a finite market that repeats a product across pages (1.1.32, 탄소매트 `partial_window:288_300`)", async () => {
+  const nowMs = Date.parse("2026-09-19T00:30:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return { type: "collection", captureId: `finite-repeat-${messages.length}`, pages: finiteMarketCrossPageRepeatPages(250) };
+    },
+  });
+  const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+  assert.equal(messages.length, 2, "two identical captures are enough");
+  assert.equal(result.checkedCount, 250);
+  assert.equal(result.marketTotal, 250);
+  assert.equal(result.sourceExhausted, true);
+  assert.equal(result.finiteWindowProof?.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+  assert.equal(result.crossPageProof, undefined, "the finite digest is the only proof");
+  assert.equal(result.items[119].sellerProductId, result.items[121].sellerProductId, "both rank slots of the repeat are kept");
+  assert.deepEqual(result.items.map((item) => item.organicRank), Array.from({ length: 250 }, (_, index) => index + 1));
+  // the server-side strict window accepts it only because it carries the finite proof
+  const trusted = validateStrictLocalWorkerWindow(result, { keyword: KEYWORD, nowMs, allowStableFinite: true });
+  assert.equal(trusted.checkedCount, 250);
+  const { finiteWindowProof: _dropped, ...withoutProof } = result;
+  assert.throws(() => validateStrictLocalWorkerWindow(withoutProof, { keyword: KEYWORD, nowMs, allowStableFinite: true }));
+});
+
+test("a finite market with cross-page repeats stays fail-closed without permission or when three captures disagree (1.1.32)", async () => {
+  const nowMs = Date.parse("2026-09-19T00:30:00.000Z");
+  const denied = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() { return { type: "collection", captureId: `finite-denied-${Math.random()}`, pages: finiteMarketCrossPageRepeatPages(250) }; },
+  });
+  await assert.rejects(
+    () => denied.collect(request(nowMs)),
+    (error) => error?.code === "provider_partial_window" && error?.detail === "250/300",
+  );
+  const messages = [];
+  const drifting = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 3, "finite arbitration must never start a fourth capture");
+      return { type: "collection", captureId: `finite-drift-${messages.length}`, pages: finiteMarketCrossPageRepeatPages(250, { variant: messages.length }) };
+    },
+  });
+  let caught = null;
+  try { await drifting.collect(request(nowMs), { allowStableFinite: true }); } catch (error) { caught = error; }
+  assert.equal(caught?.code, "provider_stable_finite_window_unproven");
+  assert.equal(caught?.detail, "three_passes");
+  assert.equal(messages.length, 3);
+  assert.ok(caught.evidence?.trace?.some((entry) => /^stable candidates provider_partial_window:250\/300 -> finite/u.test(entry)));
+  assert.equal(caught.evidence?.diff?.changed, 1);
+});
+
 test("native provider repairs an early transient overlap within the 16-page budget", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const messages = [];
@@ -2578,7 +2655,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.31");
+  assert.equal(manifest.version, "1.1.32");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3886,7 +3963,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.31");
+  assert.equal(manifest.version, "1.1.32");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -4061,7 +4138,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.31",
+    runtimeVersion: "1.1.32",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

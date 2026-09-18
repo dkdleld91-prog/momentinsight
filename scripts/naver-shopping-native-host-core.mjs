@@ -680,8 +680,21 @@ function stableFiniteCandidate(request, pages, options = {}) {
         return null;
       }
     }
-    if (overlapBoundary(error)
-      || isPartialWindow(error)
+    if (overlapBoundary(error)) {
+      // 1.1.32: a finite market also lists one product on two pages. Keep every such
+      // slot (the stable cross-page parse) and let the two-capture finite digest prove it.
+      try {
+        const payload = nativeWindowPayloadFromPages(request, pages, {
+          nowMs: options.nowMs,
+          allowStableFiniteCandidate: true,
+          crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+        }).payload;
+        return payload.checkedCount < REQUIRED_LIMIT ? { payload, renderedOrder: false, crossPage: true } : null;
+      } catch {
+        return null;
+      }
+    }
+    if (isPartialWindow(error)
       || (error instanceof ProviderError
         && error.code === "provider_stable_finite_window_unproven")) {
       return null;
@@ -949,7 +962,7 @@ export function createChromeNativeProvider(options = {}) {
       const finiteArbitration = collectOptions.allowStableFinite === true
         && (recoveryReason === "partial-window" || isPartialWindow(secondFailure) || finiteFromRenderedOrder);
       note(`finite allow=${collectOptions.allowStableFinite === true} arbitration=${finiteArbitration}`);
-      if (finiteArbitration) {
+      const arbitrateFinite = async () => {
         const passResponses = [response, secondResponse];
         const candidates = passResponses.map((passResponse) => stableFiniteCandidate(
           request,
@@ -973,6 +986,9 @@ export function createChromeNativeProvider(options = {}) {
             nowMs: options.nowMs?.() ?? Date.now(),
             allowStableFiniteCandidate: true,
             renderedOrderCandidate: candidates[stablePair.payloadIndex]?.renderedOrder === true,
+            ...(candidates[stablePair.payloadIndex]?.crossPage === true
+              ? { crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION }
+              : {}),
             finiteWindowProof: stablePair.proof,
           });
         }
@@ -1021,9 +1037,13 @@ export function createChromeNativeProvider(options = {}) {
           nowMs: options.nowMs?.() ?? Date.now(),
           allowStableFiniteCandidate: true,
           renderedOrderCandidate: candidates[stablePair.payloadIndex]?.renderedOrder === true,
+          ...(candidates[stablePair.payloadIndex]?.crossPage === true
+            ? { crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION }
+            : {}),
           finiteWindowProof: stablePair.proof,
         });
-      }
+      };
+      if (finiteArbitration) return arbitrateFinite();
 
       if (recoveryReason === "partial-window" && isPartialWindow(secondFailure)) {
         note("throw p2 partial without finite arbitration");
@@ -1031,10 +1051,21 @@ export function createChromeNativeProvider(options = {}) {
       }
 
       const stableResponses = [response, secondResponse];
-      const stableCandidates = stableResponses.map((passResponse) => nativeWindowPayloadFromPages(request, passResponse.pages, {
-        nowMs: options.nowMs?.() ?? Date.now(),
-        crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
-      }).payload);
+      let stableCandidates;
+      try {
+        stableCandidates = stableResponses.map((passResponse) => nativeWindowPayloadFromPages(request, passResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+        }).payload);
+      } catch (error) {
+        // 1.1.32 (탄소매트 `partial_window:288_300`, trace `p1 …page_overlap:3 -> stable-proof`
+        // / `finite allow=true arbitration=false`): both passes overlap across pages AND the
+        // market ends before 300. That is a finite market with cross-page repeats, not a
+        // broken 300-window — arbitrate it as a finite window.
+        if (!isPartialWindow(error) || collectOptions.allowStableFinite !== true) throw error;
+        note(`stable candidates ${error.code}:${error.detail ?? ""} -> finite`);
+        return arbitrateFinite();
+      }
       const stablePairProof = (firstIndex, secondIndex) => buildStableFullWindowProof(
         stableCandidates[firstIndex].items,
         stableCandidates[secondIndex].items,

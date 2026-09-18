@@ -645,7 +645,18 @@ export function validateProviderWindow(value, request) {
     }
   }
   let crossPageProof;
-  if (crossPageDuplicate) {
+  // 1.1.32 (production 2026-09-14 → 09-19, 일신한일의료기 탄소매트: 289 organic rows,
+  // raw ranks 1..289 without a gap, the same seller product listed on pages 3 and 4, 5 and
+  // 6, 6 and 7): a finite market repeats products across pages too. Its two-capture finite
+  // digest carries every slot (rank, identities, type, catalog), so it proves those repeats
+  // exactly as the rendered-order proof does for a full window (1.1.29). Such a window must
+  // not also carry a stable full-window or rendered-order proof.
+  const finiteProofOffered = value.checkedCount < request.limit && value.finiteWindowProof !== undefined;
+  if (crossPageDuplicate && finiteProofOffered) {
+    if (value.crossPageProof !== undefined) {
+      throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
+    }
+  } else if (crossPageDuplicate) {
     if (request.limit !== MAX_RANK_LIMIT || items.length !== MAX_RANK_LIMIT) {
       throw new ContractError("invalid_provider_response", "duplicate_identity");
     }
@@ -664,8 +675,7 @@ export function validateProviderWindow(value, request) {
   if (value.checkedCount < request.limit && value.finiteWindowProof !== undefined) {
     if (value.sourceExhausted !== true
       || marketTotalStatus !== "verified"
-      || marketTotal !== value.checkedCount
-      || crossPageDuplicate) {
+      || marketTotal !== value.checkedCount) {
       throw new ContractError("invalid_provider_response", "finiteWindowProof.coverage");
     }
     finiteWindowProof = validateStableFiniteWindowProof(

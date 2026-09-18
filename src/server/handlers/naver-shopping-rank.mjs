@@ -758,13 +758,10 @@ function trustedCollectorWindow(payload, options = {}) {
     && items?.length === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     ? trustedStableCrossPageProof(payload?.crossPageProof, items, keyword)
     : null;
-  const duplicateEvidenceValid = crossPageDuplicate
-    ? (payload?.renderedOrderProof === undefined
-      ? Boolean(stableCrossPageProof)
-      : payload?.crossPageProof === undefined && Boolean(stableRenderedOrderProof))
-    : payload?.crossPageProof === undefined;
-  const stableFiniteWindowProof = !crossPageDuplicate
-    && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+  // 1.1.32: a finite market repeats products across pages too (탄소매트: 289 rows, the same
+  // seller product on pages 3·4, 5·6, 6·7). The two-capture finite digest carries every slot,
+  // so it proves those repeats; such a window must carry no other proof.
+  const stableFiniteWindowProof = expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     && checkedCount > 0
     && checkedCount < NAVER_SHOPPING_ORGANIC_WINDOW_MAX
     && sourceExhausted
@@ -773,6 +770,15 @@ function trustedCollectorWindow(payload, options = {}) {
     && items?.length === checkedCount
     ? trustedStableFiniteWindowProof(payload?.finiteWindowProof, items, keyword, marketTotal)
     : null;
+  const duplicateEvidenceValid = crossPageDuplicate
+    ? (payload?.finiteWindowProof !== undefined
+      ? payload?.crossPageProof === undefined
+        && payload?.renderedOrderProof === undefined
+        && Boolean(stableFiniteWindowProof)
+      : (payload?.renderedOrderProof === undefined
+        ? Boolean(stableCrossPageProof)
+        : payload?.crossPageProof === undefined && Boolean(stableRenderedOrderProof)))
+    : payload?.crossPageProof === undefined;
   const finiteEvidenceValid = payload?.finiteWindowProof === undefined
     || Boolean(stableFiniteWindowProof);
   const coverageComplete = checkedCount >= expectedLimit || sourceExhausted;

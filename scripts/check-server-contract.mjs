@@ -91,6 +91,7 @@ const files = {
   shoppingRenderedCrossPageRepeatsRuntime1129Migration: "supabase/migrations/20260913050000_naver_shopping_runtime_1_1_29_rendered_cross_page_repeats.sql",
   shoppingFiniteDriftEvidenceRuntime1130Migration: "supabase/migrations/20260913150000_naver_shopping_runtime_1_1_30_finite_drift_evidence.sql",
   shoppingEvidenceV2ThirdPassRuntime1131Migration: "supabase/migrations/20260918030000_naver_shopping_runtime_1_1_31_evidence_v2_third_pass.sql",
+  shoppingFiniteCrossPageRuntime1132Migration: "supabase/migrations/20260919020000_naver_shopping_runtime_1_1_32_finite_cross_page_repeats.sql",
   shoppingNextDataSchemaDriftRecoveryMigration: "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
   shoppingSupersavingCompositeRecoveryMigration: "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
   shoppingCandidatePerformanceAudit: "scripts/naver-shopping-candidate-performance-audit.mjs",
@@ -215,6 +216,7 @@ const shoppingSamePageTwinsUnboundedRuntime1128Migration = fs.readFileSync(files
 const shoppingRenderedCrossPageRepeatsRuntime1129Migration = fs.readFileSync(files.shoppingRenderedCrossPageRepeatsRuntime1129Migration, "utf8");
 const shoppingFiniteDriftEvidenceRuntime1130Migration = fs.readFileSync(files.shoppingFiniteDriftEvidenceRuntime1130Migration, "utf8");
 const shoppingEvidenceV2ThirdPassRuntime1131Migration = fs.readFileSync(files.shoppingEvidenceV2ThirdPassRuntime1131Migration, "utf8");
+const shoppingFiniteCrossPageRuntime1132Migration = fs.readFileSync(files.shoppingFiniteCrossPageRuntime1132Migration, "utf8");
 const shoppingNextDataSchemaDriftRecoveryMigration = fs.readFileSync(files.shoppingNextDataSchemaDriftRecoveryMigration, "utf8");
 const shoppingSupersavingCompositeRecoveryMigration = fs.readFileSync(files.shoppingSupersavingCompositeRecoveryMigration, "utf8");
 const shoppingCandidatePerformanceAudit = fs.readFileSync(files.shoppingCandidatePerformanceAudit, "utf8");
@@ -282,9 +284,11 @@ const shoppingWorkerRuntime1129Fingerprint =
   "3e7a09a0045518c507c3104b5f056a44c722114c85d134039c7bae8c9b9a0b77";
 const shoppingWorkerRuntime1130Fingerprint =
   "62e09cb15720dda97fdc652cfa9b3fba40bdbbc4c98372269867c21ee472d10c";
-const shoppingWorkerRuntime1131Fingerprint = calculateN30RuntimeFingerprint({
+const shoppingWorkerRuntime1131Fingerprint =
+  "099bf53085a118ee3917c5f5596e72a08efe91faa3247b9091ddb27241149116";
+const shoppingWorkerRuntime1132Fingerprint = calculateN30RuntimeFingerprint({
   repositoryRoot: process.cwd(),
-  version: "1.1.31",
+  version: "1.1.32",
 }).fingerprint;
 const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
 const adminPage = fs.readFileSync(files.adminPage, "utf8");
@@ -1357,10 +1361,15 @@ check(
     && shoppingEvidenceV2ThirdPassRuntime1131Migration.includes("set runtime_version = '1.1.31'")
     && shoppingEvidenceV2ThirdPassRuntime1131Migration.includes("expected_runtime_version constant text := '1.1.31'")
     && !/create or replace function public\.mi_commit_naver_shopping_(?:finite_)?worker_result\(/.test(shoppingEvidenceV2ThirdPassRuntime1131Migration)
+    && shoppingFiniteCrossPageRuntime1132Migration.includes(shoppingWorkerRuntime1131Fingerprint)
+    && shoppingFiniteCrossPageRuntime1132Migration.includes(shoppingWorkerRuntime1132Fingerprint)
+    && shoppingFiniteCrossPageRuntime1132Migration.includes("set runtime_version = '1.1.32'")
+    && shoppingFiniteCrossPageRuntime1132Migration.includes("expected_runtime_version constant text := '1.1.32'")
+    && !/create or replace function public\.mi_commit_naver_shopping_(?:finite_)?worker_result\(/.test(shoppingFiniteCrossPageRuntime1132Migration)
     && shoppingCandidatePerformanceAudit.includes(
-      `export const N30_TARGET_RUNTIME_VERSION = "1.1.31";`,
+      `export const N30_TARGET_RUNTIME_VERSION = "1.1.32";`,
     )
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1131Fingerprint)
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1132Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
@@ -1777,7 +1786,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.31"
+  shoppingChromeManifest.version === "1.1.32"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1790,9 +1799,9 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
-    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.31";/.test(shoppingLocalWorker)
-    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.31";/.test(shoppingLocalWorkerHandler)
-    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.31";/.test(productTrackers)
+    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.32";/.test(shoppingLocalWorker)
+    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.32";/.test(shoppingLocalWorkerHandler)
+    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.32";/.test(productTrackers)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)

@@ -343,7 +343,8 @@ test("admin exposes 내 캘린더 as the 14th screen, right after 업무 운영"
   // (내 캘린더·업무 운영 두 링크가 서로 자리를 바꾸므로 규칙도 링크 전체로 넓혔다.)
   assert.ok(adminSource.includes("#mi-admin .mi-nav a[hidden]"));
   const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
-  assert.equal(screens.length, 14);
+  // 15번째 화면은 총관리자 전용 "운영 공지"(공지 팝업 편집, 대표 결정 2026-09-18)다.
+  assert.equal(screens.length, 15);
   assert.ok(screens.includes("my-calendar"));
 });
 
@@ -1666,7 +1667,8 @@ test("the 업무 운영 menu is hidden for team sessions and its hash routes to 
   // 마크업은 그대로 둔다 — check-release-baseline 이 소스의 링크 문자열을 센다.
   assert.ok(adminSource.includes('<a href="#mi-admin-work" data-mi-admin-screen="work">업무 운영</a>'));
   const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
-  assert.equal(screens.length, 14, "메뉴 taxonomy 는 그대로여야 합니다.");
+  // 2026-09-18: 총관리자 전용 "운영 공지" 화면이 더해져 15개다.
+  assert.equal(screens.length, 15, "메뉴 taxonomy 는 그대로여야 합니다.");
   assert.ok(screens.includes("work"));
 
   // 감추는 일만 JS 가 한다. 판정은 역할 하나뿐이다.

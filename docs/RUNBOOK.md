@@ -186,3 +186,9 @@
   `naver_rank_trackers_list_slow` 한 줄(accessMs·trackersMs·detailsMs·totalMs)로 남는다(`MI_RANK_LIST_SLOW_LOG_MS`).
 - 브라우저: 목록 GET 제한 30초, 실패 시 1.5초 뒤 1회 재시도, 배너에 사유(시간 초과/네트워크) 표기.
 - 다음 재현 시: 배너 사유와 시각을 받아 Vercel 로그의 `naver_rank_trackers_list_slow`/`naver_rank_trackers_failed` 와 대조한다.
+
+## 운영 공지 팝업 (2026-09-18)
+
+- 총관리자 화면 `운영 공지`(#mi-admin-site-notice)에서 제목·내용·시작일·종료일·표시 여부를 저장한다. 저장 즉시 반영되고 종료일 23:59(KST)가 지나면 자동으로 내려간다.
+- 로그인한 모든 화면(광고주·운영팀·총관리자·체험·만료)이 `/api/site-notice` GET 으로 읽어 세션당 한 번 팝업으로 본다. "오늘 하루 보지 않기"는 기기별(localStorage)이며 공지를 다시 저장하면 다시 뜬다.
+- 저장은 총관리자 세션(POST)만 가능하다. 테이블 `site_notices`(단일 행 id=1, 마이그레이션 `20260918050000_site_notices.sql`, 첫 공지 9/18~9/20 점검 안내가 함께 들어간다).

@@ -106,6 +106,8 @@ test("an unlinked team can use isolated rank trackers without crossing advertise
   assert.equal(sessionScopeAllowsPath(claims, "/api/report-center"), false);
   // 2026-09-07: 광고주 미연결 운영팀도 뉴스(홈 피드)·키워드 조사·조사 노트는 연다. 보고서·공개 상태는 여전히 닫힌다.
   assert.equal(sessionScopeAllowsPath(claims, "/api/client/home-feed"), true);
+  // 2026-09-18: 운영 공지 팝업은 플랫폼 공통이라 광고주 미연결 운영팀도 읽는다.
+  assert.equal(sessionScopeAllowsPath(claims, "/api/site-notice"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/client/keyword-research"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/client/keyword-notes"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/client/public-state"), false);
@@ -333,7 +335,7 @@ test("trial sessions carry the trial marker and only open the keyword tool paths
   assert.equal(claims.gsub, "102938475647382910111");
   assert.equal(isTrialClaims(claims), true);
   assert.equal(isTrialClaims(createSessionClaims({ role: "client", clientId: "client-1", agencyCode: "mml93-a02" })), false);
-  ["/api/naver-keyword", "/api/client/keyword-research", "/api/client/keyword-notes", "/api/client/public-state", "/api/client/home-feed"]
+  ["/api/naver-keyword", "/api/client/keyword-research", "/api/client/keyword-notes", "/api/client/public-state", "/api/client/home-feed", "/api/site-notice"]
     .forEach((path) => assert.equal(trialAllowsPath(path), true, path));
   ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers", "/api/naver-shopping-rank", "/api/report-center", "/api/work-items", "/api/my/google-login", "/api/client/work-items"]
     .forEach((path) => assert.equal(trialAllowsPath(path), false, path));

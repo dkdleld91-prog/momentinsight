@@ -66,7 +66,10 @@ const ACCOUNT_ONLY_PERSONAL_PATHS = new Set([
 // 광고주 미연결 운영팀 세션에서도 열려야 하는 광고주 화면 공용 경로(2026-09-07 대표 보고: 운영팀
 // 콘솔 뉴스가 "불러오지 못했습니다"). 홈 피드의 뉴스는 플랫폼 공통이고 내 키워드 지표는 핸들러가
 // no_target_account 로 비운다. 키워드 조사·조사 노트는 키워드 조회 도구의 일부라 팀 코드 범위로 저장된다.
+// 운영 공지 팝업(대표 결정 2026-09-18)은 플랫폼 공통 공지라 광고주 미연결 운영팀·체험·만료 세션도 읽는다.
+const SITE_NOTICE_PATH = "/api/site-notice";
 const ACCOUNT_ONLY_CLIENT_TOOL_PATHS = new Set([
+  SITE_NOTICE_PATH,
   "/api/client/home-feed",
   "/api/client/keyword-research",
   "/api/client/keyword-notes",
@@ -75,6 +78,7 @@ const ACCOUNT_ONLY_CLIENT_TOOL_PATHS = new Set([
 // 일정 등 광고주 데이터 경로는 403 TRIAL_LOCKED 로 막고, 화면은 도입 문의 카드를 보여 준다.
 const TRIAL_ALLOWED_PATHS = new Set([
   "/api/session",
+  SITE_NOTICE_PATH,
   "/api/naver-keyword",
   "/api/client/keyword-research",
   "/api/client/keyword-notes",
@@ -93,6 +97,7 @@ const TRIAL_SAMPLE_TRACKER_PATHS = new Set([
 // 키워드 조회·뉴스·공개 상태는 열고, 순위 목록은 GET(기록 보기)만, 그 외·쓰기는 403 PLAN_EXPIRED.
 const PLAN_EXPIRED_GET_PATHS = new Set([
   "/api/session",
+  SITE_NOTICE_PATH,
   "/api/naver-keyword",
   "/api/client/keyword-research",
   "/api/client/keyword-notes",

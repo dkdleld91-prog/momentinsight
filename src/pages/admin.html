@@ -11395,6 +11395,63 @@
     #mi-admin .mi-plan-msg.is-ok { color: var(--mi-green); }
     #mi-admin .mi-plan-msg.is-warn { color: var(--mi-orange); }
 
+    /* 운영 공지 팝업(대표 결정 2026-09-18): 총관리자가 관리자 화면에서 저장한 공지를 로그인 뒤 한 번 띄운다. */
+    #mi-admin .mi-site-notice-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 95;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(6, 26, 58, 0.45);
+    }
+    #mi-admin .mi-site-notice-modal.is-open { display: flex; }
+    #mi-admin .mi-site-notice-card {
+      display: grid;
+      gap: 14px;
+      position: relative;
+      width: min(560px, 100%);
+      margin: 0;
+      padding: 24px 26px 26px;
+      border: 1px solid var(--mi-line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-gold-soft) 100%);
+      box-shadow: var(--mi-shadow);
+    }
+    #mi-admin .mi-site-notice-card .mi-kicker { margin: 0; }
+    #mi-admin .mi-site-notice-card h3 { margin: 0; font-size: 20px; line-height: 1.3; padding-right: 36px; color: var(--mi-navy); }
+    #mi-admin .mi-site-notice-card .mi-site-notice-body { margin: 0; white-space: pre-line; font-size: 14px; line-height: 1.6; color: var(--mi-ink); }
+    #mi-admin .mi-site-notice-card .mi-site-notice-period { margin: 0; font-size: 12px; color: var(--mi-muted); }
+    #mi-admin .mi-site-notice-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+    #mi-admin .mi-site-notice-actions .mi-button { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: 44px; padding: 0 18px; line-height: 1; }
+    #mi-admin .mi-site-notice-close {
+      position: absolute;
+      top: 22px;
+      right: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--mi-muted);
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    #mi-admin .mi-site-notice-close:hover { background: var(--mi-gold-soft); color: var(--mi-navy); }
+    #mi-admin .mi-site-notice-field { display: grid; gap: 6px; }
+    #mi-admin .mi-site-notice-field > span { font-size: 12px; font-weight: 700; color: var(--mi-muted); }
+    #mi-admin .mi-site-notice-field .mi-textarea { min-height: 140px; }
+    #mi-admin .mi-site-notice-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; color: var(--mi-navy); }
+    #mi-admin .mi-site-notice-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+    #mi-admin .mi-site-notice-status { font-size: 13px; color: var(--mi-muted); }
+    #mi-admin .mi-site-notice-status.is-ok { color: var(--mi-navy); }
+    #mi-admin .mi-site-notice-status.is-error { color: var(--mi-orange); }
+    #mi-admin .mi-site-notice-editor .mi-tool { display: grid; gap: 14px; }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -11451,6 +11508,7 @@
           <a class="mi-nav-personal" hidden href="#mi-admin-my-calendar" data-mi-admin-screen="my-calendar">내 캘린더</a>
           <a href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">광고주 미리보기</a>
           <a href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">대행사 연결</a>
+          <a href="#mi-admin-site-notice" data-mi-admin-screen="site-notice" data-owner-only>운영 공지</a>
         </div>
 
         <div class="mi-nav-group">
@@ -13323,6 +13381,40 @@
               <div class="mi-code-status" style="margin-top:10px;" data-admin-public-status aria-live="polite">저장 전입니다.</div>
             </aside>
           </div>
+        </section>
+        <section class="mi-view" data-mi-admin-view="site-notice" id="mi-admin-site-notice">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">운영 공지</span>
+              <h1>로그인 뒤에 뜨는 공지 팝업을 관리합니다.</h1>
+              <p>저장 즉시 광고주·운영팀·총관리자 화면에 반영되고, 표시 기간이 지나면 자동으로 내려갑니다.</p>
+            </div>
+            <span class="mi-badge">총관리자 전용</span>
+          </header>
+
+          <article class="mi-card mi-card-pad mi-site-notice-editor" data-site-notice-editor>
+            <div class="mi-card-head">
+              <div>
+                <h2>공지 팝업</h2>
+                <p>제목·내용·표시 기간·표시 여부를 저장합니다. 내용을 바꿔 저장하면 "오늘 하루 보지 않기"를 누른 사람에게도 다시 뜹니다.</p>
+              </div>
+              <span class="mi-badge" data-site-notice-state>확인 중</span>
+            </div>
+            <div class="mi-tool">
+              <label class="mi-site-notice-field"><span>제목 · 80자</span><input class="mi-input" data-site-notice-title maxlength="80" placeholder="예: N 30일 추적 서버 점검 안내" /></label>
+              <label class="mi-site-notice-field"><span>내용 · 600자</span><textarea class="mi-textarea" data-site-notice-body maxlength="600" placeholder="점검 사유와 완료 예정일을 적습니다. 줄바꿈이 그대로 보입니다."></textarea></label>
+              <div class="mi-form-row">
+                <label class="mi-site-notice-field"><span>시작일</span><input class="mi-input" type="date" data-site-notice-start /></label>
+                <label class="mi-site-notice-field"><span>종료일 · 이 날 23:59까지</span><input class="mi-input" type="date" data-site-notice-end /></label>
+              </div>
+              <label class="mi-site-notice-toggle"><input type="checkbox" data-site-notice-enabled /> 팝업 표시</label>
+              <div class="mi-site-notice-editor-actions">
+                <button class="mi-button" type="button" data-site-notice-save>저장</button>
+                <button class="mi-button is-ghost" type="button" data-site-notice-preview>미리보기</button>
+                <span class="mi-site-notice-status" data-site-notice-status aria-live="polite">저장된 공지를 확인하는 중입니다.</span>
+              </div>
+            </div>
+          </article>
         </section>
       </div>
     </main>
@@ -19843,6 +19935,7 @@
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         if (loginInput) loginInput.value = "";
+        maybeShowSiteNotice();
         updateAdminAuthPanel(session.role === "owner" ? "총관리자" : "운영팀");
         syncOwnerAccessFields();
         applyState(readState());
@@ -20043,6 +20136,210 @@
       // 무거운 코드는 전부 public/mi-personal-calendar.js 에 있다. 여기 남는 것은
       // "언제 붙이고 떼는가" 와 "누구에게 보이는가" 뿐이다(설계 §6.1 · §6.2).
       // P6 전까지 대표님은 대표실을 그대로 쓰므로 이 화면은 운영팀 세션 전용이다.
+      // 운영 공지 팝업(대표 결정 2026-09-18): 총관리자가 관리자 화면에서 저장한 공지를 로그인 뒤 한 번 띄운다.
+      // "오늘 하루 보지 않기"는 공지 갱신 시각 기준으로 이 기기(localStorage)에만 남는다.
+      var siteNoticeShownKey = "";
+      var siteNoticeModal = null;
+      function getSiteNoticeApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/site-notice";
+        return "http://127.0.0.1:8790/api/site-notice";
+      }
+      function siteNoticeKstDate(ms) {
+        var kst = new Date(Number(ms) + 9 * 60 * 60 * 1000);
+        if (!Number.isFinite(kst.getTime())) return "";
+        return kst.getUTCFullYear() + "-" + String(kst.getUTCMonth() + 1).padStart(2, "0") + "-" + String(kst.getUTCDate()).padStart(2, "0");
+      }
+      function siteNoticeHideKey(notice) {
+        return "miSiteNoticeHide:" + String(notice.id) + ":" + String(notice.updatedAt || "");
+      }
+      function siteNoticeHiddenToday(notice) {
+        try { return window.localStorage.getItem(siteNoticeHideKey(notice)) === siteNoticeKstDate(Date.now()); } catch (error) { return false; }
+      }
+      function hideSiteNoticeToday(notice) {
+        try { window.localStorage.setItem(siteNoticeHideKey(notice), siteNoticeKstDate(Date.now())); } catch (error) { /* 저장 불가 기기에서는 매번 뜬다 */ }
+      }
+      function closeSiteNotice() {
+        if (siteNoticeModal) siteNoticeModal.classList.remove("is-open");
+      }
+      function ensureSiteNoticeModal() {
+        if (siteNoticeModal) return siteNoticeModal;
+        siteNoticeModal = document.createElement("div");
+        siteNoticeModal.className = "mi-site-notice-modal";
+        siteNoticeModal.setAttribute("role", "dialog");
+        siteNoticeModal.setAttribute("aria-modal", "true");
+        siteNoticeModal.setAttribute("aria-label", "운영 공지");
+        siteNoticeModal.addEventListener("click", function (event) {
+          if (event.target === siteNoticeModal || event.target.closest("[data-site-notice-close]")) closeSiteNotice();
+        });
+        root.appendChild(siteNoticeModal);
+        return siteNoticeModal;
+      }
+      function renderSiteNotice(notice) {
+        var modal = ensureSiteNoticeModal();
+        modal.textContent = "";
+        var card = document.createElement("div");
+        card.className = "mi-site-notice-card";
+        card.setAttribute("data-site-notice", String(notice.id));
+        var kicker = document.createElement("span");
+        kicker.className = "mi-kicker";
+        kicker.textContent = "운영 공지";
+        var title = document.createElement("h3");
+        title.textContent = notice.title;
+        var body = document.createElement("p");
+        body.className = "mi-site-notice-body";
+        body.textContent = notice.body;
+        var period = document.createElement("p");
+        period.className = "mi-site-notice-period";
+        period.textContent = "안내 기간 " + siteNoticeKstDate(Date.parse(notice.startsAt)) + " ~ " + siteNoticeKstDate(Date.parse(notice.endsAt));
+        var actions = document.createElement("div");
+        actions.className = "mi-site-notice-actions";
+        var hide = document.createElement("button");
+        hide.type = "button";
+        hide.className = "mi-button is-ghost";
+        hide.setAttribute("data-site-notice-hide", "");
+        hide.textContent = "오늘 하루 보지 않기";
+        hide.addEventListener("click", function () {
+          hideSiteNoticeToday(notice);
+          closeSiteNotice();
+        });
+        var confirm = document.createElement("button");
+        confirm.type = "button";
+        confirm.className = "mi-button";
+        confirm.setAttribute("data-site-notice-close", "");
+        confirm.textContent = "확인";
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "mi-site-notice-close";
+        close.setAttribute("data-site-notice-close", "");
+        close.setAttribute("aria-label", "닫기");
+        close.textContent = "×";
+        actions.appendChild(hide);
+        actions.appendChild(confirm);
+        card.appendChild(kicker);
+        card.appendChild(title);
+        card.appendChild(body);
+        card.appendChild(period);
+        card.appendChild(actions);
+        card.appendChild(close);
+        modal.appendChild(card);
+        modal.classList.add("is-open");
+      }
+      function maybeShowSiteNotice() {
+        if (!root.classList.contains("is-authed")) return;
+
+        miFetch(getSiteNoticeApiUrl(), { cache: "no-store" }).then(function (response) {
+          return response.json().catch(function () { return null; });
+        }).then(function (payload) {
+
+          if (!root.classList.contains("is-authed")) return;
+          if (!payload || !payload.ok || !payload.notice) return;
+          var notice = payload.notice;
+          var key = String(notice.id) + ":" + String(notice.updatedAt || "") + ":" + String(secureSession.scopeKey || "");
+          if (siteNoticeShownKey === key || siteNoticeHiddenToday(notice)) return;
+          siteNoticeShownKey = key;
+          renderSiteNotice(notice);
+        }).catch(function () { /* 공지는 부가 정보라 실패해도 화면을 막지 않는다 */ });
+      }
+
+      // 운영 공지 편집(총관리자 전용 화면 #mi-admin-site-notice)
+      var siteNoticeEditorGeneration = 0;
+      function siteNoticeEditor() {
+        return root.querySelector("[data-site-notice-editor]");
+      }
+      function setSiteNoticeStatus(text, tone) {
+        var status = root.querySelector("[data-site-notice-status]");
+        if (!status) return;
+        status.textContent = text || "";
+        status.className = "mi-site-notice-status" + (tone === "ok" ? " is-ok" : tone === "error" ? " is-error" : "");
+      }
+      function setSiteNoticeState(editable, active) {
+        var badge = root.querySelector("[data-site-notice-state]");
+        if (!badge) return;
+        if (!editable) badge.textContent = "저장된 공지 없음";
+        else if (active) badge.textContent = "지금 표시 중";
+        else if (!editable.enabled) badge.textContent = "표시 꺼짐";
+        else badge.textContent = "표시 기간 아님";
+      }
+      function fillSiteNoticeEditor(editable, active) {
+        var editor = siteNoticeEditor();
+        if (!editor) return;
+        editor.querySelector("[data-site-notice-title]").value = editable ? editable.title : "";
+        editor.querySelector("[data-site-notice-body]").value = editable ? editable.body : "";
+        editor.querySelector("[data-site-notice-start]").value = editable ? editable.startDate : "";
+        editor.querySelector("[data-site-notice-end]").value = editable ? editable.endDate : "";
+        editor.querySelector("[data-site-notice-enabled]").checked = Boolean(editable && editable.enabled);
+        setSiteNoticeState(editable, active);
+      }
+      function readSiteNoticeForm() {
+        var editor = siteNoticeEditor();
+        return {
+          action: "save",
+          title: String(editor.querySelector("[data-site-notice-title]").value || "").trim(),
+          body: String(editor.querySelector("[data-site-notice-body]").value || "").trim(),
+          startDate: String(editor.querySelector("[data-site-notice-start]").value || "").trim(),
+          endDate: String(editor.querySelector("[data-site-notice-end]").value || "").trim(),
+          enabled: Boolean(editor.querySelector("[data-site-notice-enabled]").checked)
+        };
+      }
+      function bindSiteNoticeEditor() {
+        var editor = siteNoticeEditor();
+        if (!editor || editor.getAttribute("data-site-notice-bound") === "true") return;
+        editor.setAttribute("data-site-notice-bound", "true");
+        editor.querySelector("[data-site-notice-save]").addEventListener("click", function () {
+          saveSiteNotice().catch(function (error) {
+            setSiteNoticeStatus(error && error.message ? error.message : "공지를 저장하지 못했습니다.", "error");
+          });
+        });
+        editor.querySelector("[data-site-notice-preview]").addEventListener("click", function () {
+          var form = readSiteNoticeForm();
+          renderSiteNotice({
+            id: "preview",
+            title: form.title || "(제목을 입력하세요)",
+            body: form.body || "(내용을 입력하세요)",
+            startsAt: form.startDate ? form.startDate + "T00:00:00+09:00" : "",
+            endsAt: form.endDate ? form.endDate + "T23:59:59+09:00" : "",
+            updatedAt: ""
+          });
+        });
+      }
+      async function loadSiteNoticeEditor() {
+        var editor = siteNoticeEditor();
+        if (!editor || secureSession.role !== "owner") return;
+        bindSiteNoticeEditor();
+        var generation = ++siteNoticeEditorGeneration;
+        setSiteNoticeStatus("저장된 공지를 확인하는 중입니다.", "");
+        try {
+          var response = await miFetch(getSiteNoticeApiUrl(), { cache: "no-store" });
+          var payload = await readApiPayload(response, "공지를 불러오지 못했습니다.");
+          if (generation !== siteNoticeEditorGeneration || secureSession.role !== "owner") return;
+          if (!payload.ok) throw new Error(payload.message || "공지를 불러오지 못했습니다.");
+          fillSiteNoticeEditor(payload.editable || null, payload.active === true);
+          setSiteNoticeStatus(payload.editable ? "저장된 공지를 불러왔습니다." : "저장된 공지가 없습니다. 새로 작성해 저장하세요.", "ok");
+        } catch (error) {
+          if (generation !== siteNoticeEditorGeneration) return;
+          setSiteNoticeStatus(error && error.message ? error.message : "공지를 불러오지 못했습니다.", "error");
+        }
+      }
+      async function saveSiteNotice() {
+        if (secureSession.role !== "owner") throw new Error("총관리자 전용 기능입니다.");
+        var form = readSiteNoticeForm();
+        var generation = ++siteNoticeEditorGeneration;
+        setSiteNoticeStatus("저장하는 중입니다.", "");
+        var response = await miFetch(getSiteNoticeApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(form)
+        });
+        var payload = await readApiPayload(response, "공지를 저장하지 못했습니다.");
+        if (generation !== siteNoticeEditorGeneration) return;
+        if (!payload.ok) throw new Error(payload.message || "공지를 저장하지 못했습니다.");
+        fillSiteNoticeEditor(payload.editable || null, payload.active === true);
+        siteNoticeShownKey = "";
+        setSiteNoticeStatus(payload.active ? "저장했습니다. 지금부터 로그인하는 모든 화면에 뜹니다." : (payload.editable && !payload.editable.enabled ? "저장했습니다. 표시가 꺼져 있어 팝업은 뜨지 않습니다." : "저장했습니다. 표시 기간이 되면 자동으로 뜹니다."), "ok");
+      }
+
       var personalCalendarController = null;
 
       function personalCalendarEnabled() {
@@ -20094,6 +20391,7 @@
         }
       }
 
+
       function setScreen(name, shouldPushHash) {
         var target = name || "home";
         var rejectedProductRankTarget = target === "naver-rank";
@@ -20102,6 +20400,8 @@
         // #mi-admin-work 로 직접 들어와도 운영팀 세션은 내 캘린더로 보낸다
         // (광고주 화면의 은퇴한 공개 일정 화면과 같은 방식이다).
         var rejectedWorkTarget = target === "work" && Boolean(secureSession.role) && !workScreenEnabled();
+        // 운영 공지 편집은 총관리자 전용 화면이다(해시로 직접 들어와도 홈으로 보낸다).
+        var rejectedNoticeTarget = target === "site-notice" && secureSession.role !== "owner";
         if (rejectedProductRankTarget) target = "home";
         // 4단계 §1: 활성 계정은 대행사 연결 화면의 한 구역이 되었다.
         // 예전 해시(#mi-admin-active-accounts)로 들어와도 같은 화면으로 보낸다.
@@ -20110,6 +20410,7 @@
         if (rejectedOwnerTarget) target = secureSession.role === "team" ? "agency-code" : "home";
         if (rejectedPersonalTarget) target = "home";
         if (rejectedWorkTarget) target = "my-calendar";
+        if (rejectedNoticeTarget) target = "home";
         var views = root.querySelectorAll("[data-mi-admin-view]");
         var links = root.querySelectorAll("[data-mi-admin-screen]");
         var found = false;
@@ -20148,6 +20449,7 @@
         // 5단계: 운영 이력과 KPI 목표는 화면을 열었을 때만 늦게 부른다(상시 조회 아님).
         if (target === "agency-code" && secureSession.role === "owner") maybeLoadOperationHistory();
         if (target === "publish" && secureSession.role) maybeLoadAdminKpiTarget();
+        if (target === "site-notice" && secureSession.role === "owner") loadSiteNoticeEditor();
         if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");

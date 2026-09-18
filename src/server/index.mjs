@@ -17,6 +17,7 @@ const handlerLoaders = {
   integrationStatus: () => import("./handlers/integration-status.mjs"),
   codeSessionApi: () => import("./handlers/code-session-api.mjs"),
   ownerToolApi: () => import("./handlers/owner-tool-api.mjs"),
+  siteNotice: () => import("./handlers/site-notice.mjs"),
   googleCalendarApi: () => import("./handlers/google-calendar-api.mjs"),
   agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
   metaAds: () => import("./handlers/meta-ads.mjs"),
@@ -77,6 +78,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/owner/tool") {
       return dispatch("ownerToolApi", request);
+    }
+    // 운영 공지 팝업(대표 결정 2026-09-18): 모든 세션이 읽고 총관리자만 저장한다(핸들러가 역할을 검사).
+    if (url.pathname === "/api/site-notice") {
+      return dispatch("siteNotice", request);
     }
 
     if (

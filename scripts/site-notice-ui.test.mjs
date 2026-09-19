@@ -74,6 +74,9 @@ test("the owner editor can take the popup down, explains how to publish, and off
   assert.match(adminSource, /window\.confirm\("지금 떠 있는 공지 팝업을 내립니다\./u);
   for (const step of ["올리기", "확인하기", "고치기", "내리기", "자동 종료"]) assert.ok(adminSource.includes(`<li><strong>${step}</strong>`), step);
   assert.ok(adminSource.includes("<h2>사용 방법</h2>"));
+  // 대표 질문(2026-09-19): "공지할 때마다 Supabase 배포가 필요한가" → 화면이 먼저 답한다.
+  assert.ok(adminSource.includes("<strong>저장이 곧 배포입니다.</strong>"));
+  assert.ok(adminSource.includes("SQL 실행이나 배포 작업은 필요 없습니다."));
   assert.ok(adminSource.includes("data-site-notice-templates"));
   for (const label of ["점검 안내", "점검 완료", "업데이트 안내", "장애 안내"]) assert.ok(adminSource.includes(`label: "${label}"`), label);
   const apply = namedFunctionSource(adminSource, "applySiteNoticeTemplate");

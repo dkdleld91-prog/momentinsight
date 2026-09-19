@@ -198,3 +198,9 @@
 - 사고: 09-18 13:34 주작업기 정지 → 14:28 맥 인계 → 절전 해제 직후 `naver_page_navigation_failed` 2연속으로 회로 open → 자동 복구가 주작업기 전용이라 대기기가 11시간 `circuit_open` 거절(09-19 00:27 조건부 SQL로 복구).
 - 수정: `20260919010000_naver_shopping_standby_navigation_recovery.sql` — 주작업기가 180초 이상 무신호일 때에 한해 대기기도 10분 정적 뒤 navigation 검증(`auto_navigation_probe`)을 열고 수행한다. 일시 오류 검증(30분·2회)은 주작업기 전용 그대로.
 - 수동 복구 절차와 판정표: `docs/skills/mi-collection-incident/SKILL.md`.
+
+## 대기기 런타임 정체 등록 (2026-09-19)
+
+- 사고: 주작업기가 꺼진 채 런타임 1.1.32 를 올리자 대기기가 70분간 `runtime_identity_invalid` 로 거절(런타임 마이그레이션이 코디네이션 정체를 NULL 로 비우고 주작업기 첫 런으로만 채워졌다). 임시 복구는 대표가 코디네이션에 기대 정체를 채우는 조건부 SQL.
+- 수정: `20260919030000_naver_shopping_standby_runtime_identity_registration.sql` — 정체가 통째로 비어 있고 주작업기가 180초 이상 무신호일 때에 한해 대기기를 허용. 정체 고정은 진행 관문이 그대로 수행.
+- 이 수정이 DB 에 적용되기 전에는 주작업기가 꺼진 상태에서 런타임 인상을 배포하지 않는다. 맥 Chrome 이 재시작되지 않으면(`chrome_quit_incomplete`) 확장이 옛 버전으로 남으므로 대표에게 ⌘Q 후 재실행을 요청한다.

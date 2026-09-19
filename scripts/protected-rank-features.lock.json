@@ -924,6 +924,12 @@
       "file": "supabase/migrations/20260919020000_naver_shopping_runtime_1_1_32_finite_cross_page_repeats.sql",
       "sha256": "e7518bfee372d32a3ae4655a27be7dc50184774ebc587d2f665b4f921f33a275",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-standby-runtime-identity-registration",
+      "file": "supabase/migrations/20260919030000_naver_shopping_standby_runtime_identity_registration.sql",
+      "sha256": "9b6b171077e6742ccafd9736575c85622ba597d2aed1e7e4e699bb63bb8e9f4f",
+      "rankMigration": true
     }
   ]
 }

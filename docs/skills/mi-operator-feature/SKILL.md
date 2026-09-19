@@ -3,6 +3,15 @@ name: mi-operator-feature
 description: 모먼트 인사이트에 대표·운영팀이 직접 쓰는 관리자 기능(공지, 설정, 편집 화면 등)을 만들 때의 완결성 기준과 저장소 함정 체크리스트. 관리자 화면·광고주 화면에 새 UI나 API 경로를 추가할 때 사용한다.
 ---
 
+## 실행 도구 (먼저 이것부터 쓴다)
+| 할 일 | 명령 |
+|---|---|
+| 페이지 인라인 스크립트가 바뀐 뒤 CSP 해시 교체(HEAD 대비 자동 대응) | `node ~/.claude/skills/mi-operator-feature/scripts/csp-hash-swap.mjs <워크트리>` |
+| 잠금 갱신 | `python3 ~/.claude/skills/mi-operator-feature/scripts/lock-regen.py <워크트리>` |
+| 전체 검사 | `bash ~/.claude/skills/mi-operator-feature/scripts/pipeline.sh <워크트리>` (백그라운드) |
+| 라이브 대기 → 실제 화면 소스 확인 | `bash ~/.claude/skills/mi-operator-feature/scripts/wait-live.sh <sha7>` → `bash ~/.claude/skills/mi-operator-feature/scripts/verify-live.sh <표식...>` |
+| 대표용 SQL 준비 | `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh <sql> <이름.txt>` |
+
 # 운영자 기능 출시 체크리스트
 
 ## 1. 기능 완결성 (대표 지시 2026-09-19)

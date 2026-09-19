@@ -3,6 +3,15 @@ name: mi-collection-incident
 description: 모먼트 인사이트 N30 순위 수집 정지·인계 실패·UptimeRobot 경보를 진단하고 복구하는 절차. "수집이 멈췄어요", "인계가 안 됩니다", "서버 다운 알림", "순위 갱신 안 됨" 같은 요청에 사용한다.
 ---
 
+## 실행 도구 (먼저 이것부터 쓴다)
+| 할 일 | 명령 |
+|---|---|
+| 3분 진단 한 번에(코디네이션·런·실패·증거 trace·공개 상태·맥 로그·뚜껑·전원·판정 힌트) | `node ~/.claude/skills/mi-collection-incident/scripts/diagnose.mjs [시간=6]` |
+| 조건부 회로 정리 SQL 생성(대표 실행용, 바탕화면+TextEdit) | `bash ~/.claude/skills/mi-collection-incident/scripts/recovery-sql.sh "<circuit_reason>"` |
+| 기간 집계 | `LIST=1 node ~/.claude/skills/mi-collection-incident/scripts/tally.mjs <sinceISO>` |
+
+2026-09-19 실측: 진단 도구가 "맥 뚜껑 닫힘+배터리 → 15분마다 40초만 깨어나 provider_deadline_exceeded" 정지를 잡아냄. 뚜껑 닫힘 절전은 caffeinate 로 못 막는다(대표가 뚜껑 열고 전원 연결).
+
 # N30 수집 장애 진단·복구
 
 ## 0. 원칙

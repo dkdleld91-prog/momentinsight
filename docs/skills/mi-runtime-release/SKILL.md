@@ -3,6 +3,19 @@ name: mi-runtime-release
 description: 모먼트 인사이트 N30 순위 수집 런타임(1.1.x) 버전 인상·배포 절차. 수집기·네이티브 호스트·워커·계약 파일을 고치거나 "런타임 올려", "1.1.xx 배포", "윈도우 업데이트 한 줄" 같은 요청에 사용한다.
 ---
 
+## 실행 도구 (먼저 이것부터 쓴다 — 손으로 다시 짜지 않는다)
+| 할 일 | 명령 |
+|---|---|
+| 버전 인상 전체(리터럴·지문·감사·마이그레이션·테스트 생성/보관·baseline·contract·RUNBOOK) | `python3 ~/.claude/skills/mi-runtime-release/scripts/bump.py <워크트리> <새버전> <slug> --summary "한 줄" [--header-file f] [--behaviour-file f]` |
+| 잠금 갱신(+새 순위 마이그레이션 등록) | `python3 ~/.claude/skills/mi-runtime-release/scripts/lock-regen.py <워크트리> [id=supabase/migrations/파일.sql]` |
+| 전체 검사(요약만 출력) | `bash ~/.claude/skills/mi-runtime-release/scripts/pipeline.sh <워크트리>` (백그라운드 실행) |
+| 라이브 대기 | `bash ~/.claude/skills/mi-runtime-release/scripts/wait-live.sh <sha7>` (백그라운드) |
+| 대표용 SQL 준비(바탕화면+TextEdit) | `bash ~/.claude/skills/mi-runtime-release/scripts/stage-sql.sh <sql> <이름.txt>` |
+| 윈도우 PowerShell 한 줄 생성 | `bash ~/.claude/skills/mi-runtime-release/scripts/windows-oneliner.sh <sha40> <버전>` |
+| 배포 후 집계 | `LIST=1 node ~/.claude/skills/mi-runtime-release/scripts/tally.mjs <sinceISO>` |
+
+bump.py 는 2026-09-19 가상 인상(1.1.32→1.1.33)으로 검증됨: 잠금·baseline·contract 73/73·테스트 55건 통과. 동작 테스트 블록은 `--behaviour-file` 로 넣는다(없으면 최소 테스트).
+
 # N30 런타임 인상·배포
 
 저장소 `~/Desktop/개발/모먼트 인사이트 개발` (main 체크아웃은 워치독 동기화 원본이자 맥 Chrome 확장 로드 경로 → 직접 수정 금지, 항상 워크트리에서 작업). 순위추적은 동결 영역이라 **대표의 명시적 요청이 있을 때만** 고치고 잠금 해시를 갱신한다.

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const DEFAULT_MAX_RANK = 300;
 const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000);
 const DEFAULT_MAX_SCROLLS = Math.max(1, Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90));
@@ -61,6 +63,14 @@ const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:[a-z][a-z0-9_-]*\/)?lis
 const MAX_LIST_PAGES = 8;
 // 2026-09-25 운영 실측: Render 에서 음식점 목록 2쪽 전환이 8초 안에 확인되지 않아 1쪽 70곳에서 멈췄다.
 const NEXT_PAGE_WAIT_MS = 20000;
+// 2026-09-25 운영 결함: v22 로 여러 쪽을 넘기자 Render 무료(512MB)에서 수집기 응답이 이유 코드 없이 끊겼다
+// (프로세스 종료로 추정). 이 맥 실측 280곳 스캔 최고 약 1,400MB. 순위는 목록 글자·링크로만 판단하므로
+// 사진·영상·글꼴은 받지 않는다. 문서·스크립트·XHR 은 그대로 받는다.
+const BLOCKED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
+// 컨테이너(cgroup) 메모리가 한도의 이 비율을 넘으면 다음 쪽으로 넘기지 않고 부분 결과로 끝낸다.
+// 프로세스가 메모리 초과로 죽으면 서버는 이유 없는 실패만 받고 같은 키워드 추적기가 줄줄이 실패한다.
+const MEMORY_GUARD_RATIO = 0.8;
+const LOW_MEMORY_BROWSER_ARGS = ["--disable-dev-shm-usage", "--disable-gpu", "--disable-features=site-per-process,IsolateOrigins", "--renderer-process-limit=1", "--disable-extensions", "--disable-background-networking"];
 const DETAIL_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i;
 const AD_HINT_PATTERN = /광고|스폰서|파워링크/i;
 const CHIP_WORDS = [
@@ -888,7 +898,7 @@ function rememberCandidates(keyword, maxRank, collection) {
   const stableExhaustion = collection?.stopReason === "naver_result_list_exhausted"
     && Array.isArray(collection?.candidates)
     && collection.candidates.length > 0;
-  const exactMatchReusable = ["collection_deadline_reached", "max_scrolls_reached", "max_pages_reached", "next_page_unconfirmed"].includes(collection?.stopReason)
+  const exactMatchReusable = ["collection_deadline_reached", "max_scrolls_reached", "max_pages_reached", "next_page_unconfirmed", "memory_guard"].includes(collection?.stopReason)
     && Array.isArray(collection?.candidates)
     && collection.candidates.length > 0;
   if (collection?.complete !== true && !stableExhaustion && !exactMatchReusable) return;
@@ -987,6 +997,36 @@ async function resolvePlaceIdentityWithBrowser(context, value, deadlineAt) {
   } finally {
     await page.close().catch(() => {});
   }
+}
+
+function readCgroupNumber(paths) {
+  for (const path of paths) {
+    try {
+      const raw = String(readFileSync(path, "utf8")).trim();
+      if (raw === "max") return Infinity;
+      const value = Number(raw);
+      if (Number.isFinite(value) && value >= 0) return value;
+    } catch {
+      // 파일이 없으면(맥·다른 cgroup 버전) 다음 경로를 본다.
+    }
+  }
+  return null;
+}
+
+// 리눅스 컨테이너 전체(Chromium 포함) 메모리. cgroup 파일이 없는 환경에서는 null.
+export function containerMemory() {
+  const current = readCgroupNumber(["/sys/fs/cgroup/memory.current", "/sys/fs/cgroup/memory/memory.usage_in_bytes"]);
+  if (current === null) return null;
+  const peak = readCgroupNumber(["/sys/fs/cgroup/memory.peak", "/sys/fs/cgroup/memory/memory.max_usage_in_bytes"]);
+  const limit = readCgroupNumber(["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]);
+  const mb = (value) => (value === null ? null : (Number.isFinite(value) ? Math.round(value / 1048576) : "max"));
+  return { currentMb: mb(current), peakMb: mb(peak), limitMb: mb(limit) };
+}
+
+function containerMemoryPressure() {
+  const memory = containerMemory();
+  if (!memory || typeof memory.limitMb !== "number" || memory.limitMb <= 0 || memory.limitMb > 1024 * 1024) return false;
+  return memory.currentMb / memory.limitMb >= MEMORY_GUARD_RATIO;
 }
 
 // Clicks Naver's enabled 다음 page link and waits until the first list row changes.
@@ -1317,6 +1357,7 @@ async function collectRowsProgressively({
   exhaustedStableRounds = EXHAUSTED_STABLE_ROUNDS,
   nextPage = null,
   maxPages = MAX_LIST_PAGES,
+  memoryPressure = null,
 }) {
   const candidates = [];
   let previousScrollState = null;
@@ -1375,6 +1416,11 @@ async function collectRowsProgressively({
     if (stableRounds >= exhaustedStableRounds) {
       // The current page is fully read. Move to Naver's next list page when one exists;
       // the next page's rows continue the same organic order, so ranks stay positional.
+      if (typeof nextPage === "function" && pageCount < maxPages && now() < deadlineAt
+        && typeof memoryPressure === "function" && memoryPressure() === true) {
+        pagerOutcome = "memory_guard";
+        return finish("memory_guard");
+      }
       if (typeof nextPage === "function" && pageCount < maxPages && now() < deadlineAt) {
         let outcome = "unconfirmed";
         try {
@@ -1592,6 +1638,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         advance: () => scrollListFrame(page),
         wait: (milliseconds) => page.waitForTimeout(milliseconds),
         nextPage: () => goToNextListPage(page, deadlineAt),
+        memoryPressure: containerMemoryPressure,
         selectorError,
       });
       rememberCandidates(keyword, maxRank, collection);
@@ -1634,6 +1681,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       advance: () => scrollListFrame(page),
       wait: (milliseconds) => page.waitForTimeout(milliseconds),
       nextPage: () => goToNextListPage(page, deadlineAt),
+      memoryPressure: containerMemoryPressure,
       selectorError,
     });
     rememberCandidates(keyword, maxRank, collection);
@@ -1773,7 +1821,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
   }
 
   const { chromium } = await loadPlaywright();
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const browser = await chromium.launch({ headless: HEADLESS, args: LOW_MEMORY_BROWSER_ARGS });
   let overallTimeout;
   try {
     const collectionDeadlineAt = providerDeadlineAt - COLLECTION_DEADLINE_GUARD_MS;
@@ -1784,6 +1832,9 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         viewport: { width: 1440, height: 1600 },
         userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
       });
+      await context.route("**/*", (route) => (
+        BLOCKED_RESOURCE_TYPES.has(route.request().resourceType()) ? route.abort() : route.continue()
+      ));
 
       // Trackers persist the canonical place ID after the first resolution.
       // Resolving the same short URL on every refresh adds a second browser
@@ -1861,6 +1912,12 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         topPlaces: candidates.slice(0, 20),
         source: "naver_map_pc_list_collector",
         rankEvidence: "naver_pc_organic_list",
+        collectionDiagnostics: {
+          stopReason: collection.stopReason || "",
+          pages: Number(collection.pageCount || 1),
+          pager: collection.pagerOutcome || "",
+          scrolls: Number(collection.scrollCount || 0),
+        },
         message: matched
           ? "네이버 지도 오가닉 " + matched.rank + "위로 확인되었습니다."
           : verifiedStatus.partial

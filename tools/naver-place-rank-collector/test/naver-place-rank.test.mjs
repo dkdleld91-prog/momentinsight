@@ -1468,3 +1468,23 @@ test("native list URLs of any category are recognised and keep Naver's own displ
   const hospital = buildPlaceListUrl("인천치과", 300, "", "https://pcmap.place.naver.com/hospital/list?query=x&display=70");
   assert.equal(new URL(hospital).searchParams.get("display"), "70");
 });
+
+test("2026-09-25 운영 결함: 메모리가 한도에 가까우면 다음 쪽으로 넘기지 않고 부분 결과로 끝내며 키워드 공용 캐시에 올리지 않는다", async () => {
+  resetCandidateCache();
+  let pageCalls = 0;
+  const collection = await collectRowsProgressively({
+    resultLimit: 300, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
+    readRows: async () => Array.from({ length: 70 }, (_, i) => placeRow(i)),
+    advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+    wait: async () => {},
+    nextPage: async () => { pageCalls += 1; return "moved"; },
+    memoryPressure: () => true,
+  });
+  assert.equal(pageCalls, 0, "메모리 압박이면 다음 쪽 버튼을 누르지 않는다");
+  assert.equal(collection.stopReason, "memory_guard");
+  assert.equal(collection.pagerOutcome, "memory_guard");
+  assert.equal(collection.candidates.length, 70);
+  rememberCandidates("구월동 맛집", 300, collection);
+  assert.equal(cachedCandidates("구월동 맛집", 300, { placeId: "99999999", placeIds: ["99999999"] }), null);
+  resetCandidateCache();
+});

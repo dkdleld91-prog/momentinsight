@@ -1,11 +1,15 @@
 import http from "node:http";
-import { lookupNaverPlaceRank } from "./naver-place-rank.mjs";
+import { containerMemory, lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
-const RELEASE = "2026-09-25-paging-unconfirmed-not-cached-v22";
+const RELEASE = "2026-09-25-memory-guard-diagnostics-v23";
+const STARTED_AT = new Date().toISOString();
 let activeLookup = false;
+// 2026-09-25: 운영에서 조회가 이유 없이 끊겨(프로세스 종료 추정) 원인을 볼 수 없었다. 기술 정보만 남긴다
+// (키워드·장소 이름은 /health 가 공개 주소라 싣지 않는다). 재시작하면 startedAt 이 바뀐다.
+let lastLookup = null;
 
 function sendJson(response, body, status = 200, headers = {}) {
   response.writeHead(status, {
@@ -66,6 +70,10 @@ async function handleRequest(request, response) {
         process.env.APIFY_NAVER_MAPS_TOKEN || process.env.APIFY_TOKEN
       ),
       busy: activeLookup,
+      startedAt: STARTED_AT,
+      uptimeSec: Math.round(process.uptime()),
+      memory: containerMemory(),
+      lastLookup,
       checkedAt: new Date().toISOString(),
     });
   }
@@ -84,11 +92,31 @@ async function handleRequest(request, response) {
   }
 
   activeLookup = true;
+  const lookupStartedAt = Date.now();
+  lastLookup = { startedAt: new Date(lookupStartedAt).toISOString(), finished: false };
   try {
     const payload = await readJson(request);
     const result = await lookupNaverPlaceRank(payload);
+    lastLookup = {
+      startedAt: lastLookup.startedAt,
+      finished: true,
+      ms: Date.now() - lookupStartedAt,
+      ok: result.ok === true,
+      matched: result.matched === true,
+      checkedCount: Number(result.checkedCount || 0),
+      diagnostics: result.collectionDiagnostics || null,
+      memory: containerMemory(),
+    };
     return sendJson(response, result, result.ok ? 200 : 422);
   } catch (error) {
+    lastLookup = {
+      startedAt: lastLookup.startedAt,
+      finished: true,
+      ms: Date.now() - lookupStartedAt,
+      ok: false,
+      error: String(error?.message || "place_rank_lookup_failed").slice(0, 80),
+      memory: containerMemory(),
+    };
     return sendJson(response, {
       ok: false,
       matched: false,

@@ -197,12 +197,12 @@
     {
       "id": "place-collector",
       "file": "tools/naver-place-rank-collector/src/naver-place-rank.mjs",
-      "sha256": "bc9d2c42c42db8ba98262c69f6aee14768bed539cde940852165ba84c2c69197"
+      "sha256": "83a4a0350f8252e94ebe9d4b34a3348b3f43c39422fdb76d892d84c37216bd62"
     },
     {
       "id": "place-collector-server",
       "file": "tools/naver-place-rank-collector/src/server.mjs",
-      "sha256": "3d27be1d9ce1e950841271e30bf70d4908e3221abe513100e530d411b67d0c2b"
+      "sha256": "1e012c75a12cbe9f2be8d2225d40ce6a73e0f8c60e6bb7fa1941af1b635da99b"
     },
     {
       "id": "shopping-collector-contract",

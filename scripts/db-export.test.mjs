@@ -7,8 +7,10 @@ import test from "node:test";
 import zlib from "node:zlib";
 import {
   AUDIT_LOG_DAYS,
+  FULL_REFRESH_DAYS,
   INCREMENTAL_OVERLAP_MS,
   backupFolderName,
+  daysSinceFullDownload,
   exportTable,
   findIncrementalBase,
   parseArgs,
@@ -561,5 +563,62 @@ test("--full 이면 기준이 있어도 스냅숏을 통째로 받는다", async
   assert.equal(manifest.tables[SNAP].method, "full");
   assert.equal(parseArgs(["--out", "/tmp/b", "--full"]).full, true);
   assert.equal(parseArgs(["--out", "/tmp/b"]).full, false);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+// ─── 검토 지적 반영(2026-09-25): 주 1회 통째 수신 · 증분 도중 실패의 방식 기록 ─────────────────────
+
+test("주 1회 통째 수신: 마지막 통째 수신이 7일 지났으면 그날은 스냅숏도 통째로 받고, 다음 날부터 다시 증분", async () => {
+  const outDir = tmpDir();
+  const db = fakeDb({ [SNAP]: byId(snapshotHistory(900)) });
+  const first = await backup(db, outDir, DAY1, { tables: [SNAP] });
+  assert.equal(first.manifest.tables[SNAP].method, "full");
+  for (let day = 1; day < FULL_REFRESH_DAYS; day += 1) {
+    const { manifest } = await backup(db, outDir, DAY1 + day * DAY_MS, { tables: [SNAP] });
+    assert.equal(manifest.tables[SNAP].method, "incremental", `day ${day}`);
+  }
+  // 7일째: 마지막 통째 수신(DAY1)에서 정확히 7일 → 통째로
+  const week = await backup(db, outDir, DAY1 + FULL_REFRESH_DAYS * DAY_MS, { tables: [SNAP] });
+  assert.equal(week.manifest.tables[SNAP].method, "full");
+  assert.match(week.manifest.tables[SNAP].fullRefresh, /^last_full_7\.0d$/);
+  assert.equal(week.manifest.tables[SNAP].base, undefined, "통째로 받는 날은 기준 폴더를 쓰지 않는다");
+  await assertSameAsFull(db, week.folder, SNAP);
+  // 다음 날은 방금 통째로 받은 폴더 기준으로 다시 증분
+  const next = await backup(db, outDir, DAY1 + (FULL_REFRESH_DAYS + 1) * DAY_MS, { tables: [SNAP] });
+  assert.equal(next.manifest.tables[SNAP].method, "incremental");
+  assert.equal(next.manifest.tables[SNAP].base, path.basename(week.folder));
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test("주 1회 통째 수신: 예전 코드의 폴더(method 칸 없음)는 통째로 받은 날로 센다 · 그 표가 오류였던 폴더는 세지 않는다", () => {
+  const outDir = tmpDir();
+  const write = (name, tables) => {
+    fs.mkdirSync(path.join(outDir, name), { recursive: true });
+    fs.writeFileSync(path.join(outDir, name, "manifest.json"), JSON.stringify({ baseUrl: "example", tables }));
+  };
+  write("2026-09-20_0300", { [SNAP]: { rows: 10 } }); // 예전 코드 — 통째
+  write("2026-09-23_0300", { [SNAP]: { rows: 12, method: "incremental" } });
+  write("2026-09-24_0300", { [SNAP]: { rows: null, error: "fetch failed", method: "full" } }); // 실패 — 세지 않음
+  const now = new Date(2026, 8, 25, 3, 0).getTime();
+  assert.equal(daysSinceFullDownload(outDir, SNAP, { projectRef: "example", nowMs: now }), 5);
+  assert.equal(daysSinceFullDownload(outDir, "naver_place_rank_snapshots", { projectRef: "example", nowMs: now }), Infinity);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test("증분 도중 연결이 끊기면 manifest 방식은 incremental 로 남고(통째 실패로 잘못 적지 않음) 오류가 적힌다 — 다음 날 기준에서 빠진다", async () => {
+  const outDir = tmpDir();
+  const db = fakeDb({ [SNAP]: byId(snapshotHistory(300)) });
+  const day1 = await backup(db, outDir, DAY1, { tables: [SNAP] });
+  // 이튿날: 새 줄 조회(select=*·created_at 필터)에서 연결이 끊긴다(status 없음, 재시도도 모두 실패)
+  const broken = fakeDb(db.state, { intercept: (call) => (call.select === "*" && call.filters.length ? Promise.reject(new TypeError("fetch failed")) : null) });
+  const day2 = await runExport({ baseUrl: BASE, key: KEY, outDir, fetchImpl: broken.impl, nowMs: DAY1 + DAY_MS, keep: 14, tables: [SNAP], ...quiet });
+  const entry = day2.manifest.tables[SNAP];
+  assert.equal(entry.method, "incremental");
+  assert.match(entry.error, /fetch failed/);
+  assert.equal(entry.base, path.basename(day1.folder));
+  // 셋째 날은 실패한 둘째 날 폴더를 건너뛰고 첫날 폴더를 기준으로 증분
+  const day3 = await backup(db, outDir, DAY1 + 2 * DAY_MS, { tables: [SNAP] });
+  assert.equal(day3.manifest.tables[SNAP].method, "incremental");
+  assert.equal(day3.manifest.tables[SNAP].base, path.basename(day1.folder));
   fs.rmSync(outDir, { recursive: true, force: true });
 });

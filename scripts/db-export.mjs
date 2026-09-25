@@ -60,6 +60,9 @@ export const BACKUP_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{4}$/;
 export const INCREMENTAL_TABLES = ["naver_rank_snapshots", "naver_place_rank_snapshots"];
 // 기준 파일의 created_at 최댓값보다 이만큼 앞부터 다시 받는다(늦게 커밋된 트랜잭션·시계 차이 여유).
 export const INCREMENTAL_OVERLAP_MS = 2 * 60 * 60 * 1000;
+// 증분은 전날 파일 위에 이어 쌓는다. 옛 줄의 내용이 바뀌는 길(비밀키 전용 관리자 API PATCH — 부르는 화면은 없음)이 하나 있어,
+// 그런 변경이 끝없이 남지 않게 표마다 마지막 통째 수신이 이만큼 지났으면 그날은 통째로 받는다(주 1회, 하루 평균 약 +10MB 추정).
+export const FULL_REFRESH_DAYS = 7;
 // 요청 하나의 제한시간과 재시도 간격. 맥이 잠들었다 깨면 요청 하나를 51분~2.6시간 붙잡고 있다가 'fetch failed'로
 // 끝났다(09-18·09-19·09-23 실행, manifest 의 ms). 제한시간은 깨어 있는 시간 기준이라 잠든 동안에는 흐르지 않는다(추정).
 export const REQUEST_TIMEOUT_MS = 120_000;
@@ -224,6 +227,40 @@ export function findIncrementalBase(outDir, table, { excludeFolder = "", project
   return null;
 }
 
+// 폴더 이름(맥 현지 시각 YYYY-MM-DD_HHMM) → 그 시각(ms)
+function folderTimeMs(name) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})$/.exec(name);
+  if (!match) return NaN;
+  const [, y, mo, d, h, mi] = match.map(Number);
+  return new Date(y, mo - 1, d, h, mi).getTime();
+}
+
+// 그 표를 마지막으로 '통째로' 받은 성공 폴더가 며칠 전인가. 예전 코드의 폴더(method 칸 없음)는 늘 통째로 받았다.
+// 찾지 못하면 Infinity(= 통째로 받을 때).
+export function daysSinceFullDownload(outDir, table, { excludeFolder = "", projectRef = "", nowMs = Date.now() } = {}) {
+  if (!fs.existsSync(outDir)) return Infinity;
+  const folders = fs.readdirSync(outDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && BACKUP_DIR_PATTERN.test(entry.name) && entry.name !== excludeFolder)
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+  for (const name of folders) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(outDir, name, "manifest.json"), "utf8"));
+      if (projectRef && manifest.baseUrl && manifest.baseUrl !== projectRef) continue;
+      const entry = manifest.tables && manifest.tables[table];
+      if (!entry || entry.error || !Number.isInteger(entry.rows)) continue;
+      if (entry.method && entry.method !== "full" && entry.method !== "fallback") continue;
+      const at = folderTimeMs(name);
+      if (!Number.isFinite(at)) continue;
+      return (nowMs - at) / (24 * 60 * 60 * 1000);
+    } catch {
+      continue;
+    }
+  }
+  return Infinity;
+}
+
 // PostgREST 의 order=id.asc 와 같은 순서. uuid 는 바이트 순으로 비교되고, 소문자 16진 문자열 비교와 같다.
 function compareId(a, b) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
@@ -341,10 +378,19 @@ export async function runExport({
     const detail = {};
     try {
       let result = null;
-      if (!full && incrementalTables.includes(table)) {
+      const sinceFull = !full && incrementalTables.includes(table)
+        ? daysSinceFullDownload(outDir, table, { excludeFolder: folderName, projectRef, nowMs })
+        : 0;
+      if (!full && incrementalTables.includes(table) && sinceFull >= FULL_REFRESH_DAYS) {
+        detail.fullRefresh = Number.isFinite(sinceFull) ? `last_full_${sinceFull.toFixed(1)}d` : "no_full_found";
+        log(`${table}: 마지막 통째 수신 뒤 ${FULL_REFRESH_DAYS}일 이상 → 오늘은 통째로 받음`);
+      } else if (!full && incrementalTables.includes(table)) {
         const base = findIncrementalBase(outDir, table, { excludeFolder: folderName, projectRef });
         if (base) {
           detail.base = base.folder;
+          // 증분을 시도하는 순간부터 방식은 incremental 이다 — 도중에 끊겨(잠자기 뒤 fetch failed 등) 실패로 남아도
+          // manifest 가 '통째로 받다 실패'로 잘못 적지 않게(실패 다음 날 진단용).
+          method = "incremental";
           let incremental;
           try {
             incremental = await exportTableIncremental({ client, table, base, pageSize });

@@ -38,6 +38,8 @@ cd ~/Desktop/개발/모먼트\ 인사이트\ 개발 && sed "s#__REPO__#$(pwd)#g;
 - **결과 파일 형식·폴더 구조는 그대로**다. 증분으로 만든 파일도 통째로 받은 파일과 내용·순서가 같다(실제 백업 사본으로 확인: 09-24→09-25, 그리고 09-23 실패를 건너뛴 09-22→09-24 모두 24개 표 바이트 일치). 그래서 되돌리는 방법은 바뀌지 않는다.
 - `manifest.json` 표마다 `method`(full·incremental·fallback)·`bytes`(받은 응답 본문, 압축 풀린 기준)·`requests`, 증분이면 `base`(기준 폴더)·`since`·`added`·`deleted`, 다시 받았으면 `fallbackReason`. 맨 아래 `totalBytes`·`totalRequests`.
 - 요청마다 제한시간 120초(맥이 잠든 동안은 흐르지 않는 것으로 봄), 끊기면 5초·30초 뒤 두 번 더 시도한다(맥 잠자기 대비). 그래도 실패한 표는 다음 날 그 전 성공 폴더를 기준으로 이어 간다.
+- **주 1회 통째로**: 표마다 마지막으로 통째로 받은 성공 폴더가 7일 지났으면 그날은 통째로 받는다(manifest `fullRefresh`). 증분은 새 줄·지워진 줄은 잡지만 **옛 줄의 내용 변경은 알아채지 못한다** — 스냅숏 줄을 고치는 길이 한 곳 있다(비밀키 전용 관리자 API `PATCH /api/admin/naver-rank-snapshots/:id`, `src/server/handlers/admin-api.mjs` — 부르는 화면은 없음). 그런 변경이 끝없이 남지 않게 한 장치이고, 하루 평균 약 +10MB(추정)를 더 쓴다.
+- 증분을 시도하다 끊기면(잠자기 뒤 `fetch failed` 등) 그 표의 `method` 는 `incremental`, `error` 에 까닭이 남고, 다음 날은 그 폴더를 건너뛰고 앞선 성공 폴더를 기준으로 삼는다.
 - 통째로 한 번 받고 싶으면(예: 스냅숏 줄을 고치는 마이그레이션 뒤): `node scripts/db-export.mjs --out ~/MomentInsightBackups --full`
 
 ### 되돌릴 때(수동)

@@ -4,7 +4,7 @@ import { containerMemory, lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
-const RELEASE = "2026-09-25-per-page-scroll-limit-v24";
+const RELEASE = "2026-09-25-free-tier-low-memory-v25";
 const STARTED_AT = new Date().toISOString();
 let activeLookup = false;
 // 2026-09-25: 운영에서 조회가 이유 없이 끊겨(프로세스 종료 추정) 원인을 볼 수 없었다. 기술 정보만 남긴다

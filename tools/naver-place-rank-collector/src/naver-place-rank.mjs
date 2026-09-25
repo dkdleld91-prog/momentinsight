@@ -70,7 +70,9 @@ const BLOCKED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
 // 컨테이너(cgroup) 메모리가 한도의 이 비율을 넘으면 다음 쪽으로 넘기지 않고 부분 결과로 끝낸다.
 // 프로세스가 메모리 초과로 죽으면 서버는 이유 없는 실패만 받고 같은 키워드 추적기가 줄줄이 실패한다.
 const MEMORY_GUARD_RATIO = 0.8;
-const LOW_MEMORY_BROWSER_ARGS = ["--disable-dev-shm-usage", "--disable-gpu", "--disable-features=site-per-process,IsolateOrigins", "--renderer-process-limit=1", "--disable-extensions", "--disable-background-networking"];
+// 2026-09-25 v25(무료 서버 유지 원칙): 순위는 목록 글자·링크만 쓰므로 지도 그래픽(WebGL·3D)을 끄고
+// 페이지 스크립트 힙을 256MB 로 묶는다. 이 맥에서 호르몬치치 120위·300곳 확인으로 결과 동일 확인.
+const LOW_MEMORY_BROWSER_ARGS = ["--disable-dev-shm-usage", "--disable-gpu", "--disable-features=site-per-process,IsolateOrigins", "--renderer-process-limit=1", "--disable-extensions", "--disable-background-networking", "--disable-3d-apis", "--disable-webgl", "--disable-software-rasterizer", "--js-flags=--max-old-space-size=256"];
 const DETAIL_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i;
 const AD_HINT_PATTERN = /광고|스폰서|파워링크/i;
 const CHIP_WORDS = [

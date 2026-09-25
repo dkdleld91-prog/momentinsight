@@ -2977,7 +2977,9 @@ const checks = {
   placeNativeExhaustionCacheIsFailClosed: placeRankCollector.includes('collection?.stopReason === "naver_result_list_exhausted"')
     && placeRankCollector.includes('const targetIds = collectTargetIds(target)')
     && placeRankCollector.includes('if (!targetIds.length || !findMatch(entry.collection.candidates, target)) return null')
-    && placeRankCollector.includes('["collection_deadline_reached", "max_scrolls_reached"]')
+    && placeRankCollector.includes('["collection_deadline_reached", "max_scrolls_reached", "max_pages_reached", "next_page_unconfirmed"]')
+    && placeRankCollector.includes('return finish("next_page_unconfirmed")')
+    && placeRankCollectorTests.includes("다음 쪽 이동 실패 결과(70곳)는 같은 키워드의 확정 목록으로 캐시되지 않는다")
     && placeRankCollectorTests.includes("reuses a transient native-list collection only for an exact cached place ID")
     && placeRankCollectorTests.includes("collection_deadline_reached")
     && placeRankCollectorTests.includes("list_selector_unavailable_fallback"),

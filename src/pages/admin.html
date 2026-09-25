@@ -25545,21 +25545,26 @@
 
         // 2026-09-25: 목록은 검색량을 짧게만 기다려 남은 키워드를 "조회 중"으로 보낸다. 목록을 그린 뒤
         // 검색량만 따로 받아(추적 id·키워드만 읽는 가벼운 조회) 그 자리의 표시를 바꾼다. 세 번 받아도
-        // 남은 키워드는 "미확인"으로 멈춰 계속 도는 것처럼 보이지 않게 한다.
+        // 남은 키워드는 "미확인"으로 멈춰 계속 도는 것처럼 보이지 않게 한다. 검색량 조회 실패(error)는 대개 잠깐의
+        // 요청 제한이라(2026-09-25 실측: 실패 3건이 5초 뒤 모두 성공) 같은 방식으로 다시 받는다.
         var rankListLastLoaded = null;
         var rankVolumeRefreshTimer = null;
         var rankVolumeRefreshToken = 0;
 
+        function rankKeywordVolumeRetryable(tracker) {
+          return Boolean(tracker) && (tracker.keywordVolumeStatus === "pending" || tracker.keywordVolumeStatus === "error");
+        }
+
         function rankTrackersWithPendingVolume() {
-          return rankTrackers.filter(function (tracker) { return tracker && tracker.keywordVolumeStatus === "pending"; });
+          return rankTrackers.filter(rankKeywordVolumeRetryable);
         }
 
         function applyRankKeywordVolumes(volumes, settle) {
           var changed = {};
           rankTrackers.forEach(function (tracker) {
-            if (!tracker || tracker.keywordVolumeStatus !== "pending") return;
+            if (!rankKeywordVolumeRetryable(tracker)) return;
             var next = volumes && volumes[tracker.id];
-            if (next && next.keywordVolumeStatus && next.keywordVolumeStatus !== "pending") {
+            if (next && next.keywordVolumeStatus && !rankKeywordVolumeRetryable(next)) {
               tracker.keywordVolume = next.keywordVolume;
               tracker.keywordVolumeLabel = next.keywordVolumeLabel;
               tracker.keywordVolumeStatus = next.keywordVolumeStatus;

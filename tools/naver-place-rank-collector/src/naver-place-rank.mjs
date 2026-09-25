@@ -59,6 +59,8 @@ const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:[a-z][a-z0-9_-]*\/)?lis
 // were never read (782 checks over 30 days topped out at 100 places while ranks up to 300
 // were promised). Bounded page advance: at most this many pages per lookup.
 const MAX_LIST_PAGES = 8;
+// 2026-09-25 운영 실측: Render 에서 음식점 목록 2쪽 전환이 8초 안에 확인되지 않아 1쪽 70곳에서 멈췄다.
+const NEXT_PAGE_WAIT_MS = 20000;
 const DETAIL_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i;
 const AD_HINT_PATTERN = /광고|스폰서|파워링크/i;
 const CHIP_WORDS = [
@@ -886,7 +888,7 @@ function rememberCandidates(keyword, maxRank, collection) {
   const stableExhaustion = collection?.stopReason === "naver_result_list_exhausted"
     && Array.isArray(collection?.candidates)
     && collection.candidates.length > 0;
-  const exactMatchReusable = ["collection_deadline_reached", "max_scrolls_reached"].includes(collection?.stopReason)
+  const exactMatchReusable = ["collection_deadline_reached", "max_scrolls_reached", "max_pages_reached", "next_page_unconfirmed"].includes(collection?.stopReason)
     && Array.isArray(collection?.candidates)
     && collection.candidates.length > 0;
   if (collection?.complete !== true && !stableExhaustion && !exactMatchReusable) return;
@@ -987,28 +989,38 @@ async function resolvePlaceIdentityWithBrowser(context, value, deadlineAt) {
   }
 }
 
-// Clicks Naver's enabled 다음 page link and waits until the first list row changes. Returns
-// false when there is no next page or the list did not change in time (never guesses).
+// Clicks Naver's enabled 다음 page link and waits until the first list row changes.
+// Returns "moved", "last" (다음페이지 disabled), "missing" (no pager: a single-page list) or
+// "unconfirmed" (clicked but the list did not change in time). Only "last"/"missing" mean the
+// list really ended; "unconfirmed" must never be reported or cached as list exhaustion.
 async function goToNextListPage(page, deadlineAt) {
   const firstRowText = () => page.evaluate(() => {
     const row = document.querySelector("#_pcmap_list_scroll_container > ul > li");
     return row ? String(row.innerText || "").slice(0, 120) : "";
   });
   const before = await firstRowText();
-  const clicked = await page.evaluate(() => {
+  const state = await page.evaluate(() => {
     // The page pager sits outside the result rows ("이전페이지 1 2 … 다음페이지"). Rows carry
     // their own photo-slider 이전/다음 arrows, which must never be mistaken for paging.
-    const links = [...document.querySelectorAll("a, button")].filter((link) => (
+    const isNextPageControl = (link) => (
       String(link.textContent || "").replace(/\s+/g, "") === "다음페이지"
-      && link.getAttribute("aria-disabled") === "false"
-      && !link.closest("#_pcmap_list_scroll_container > ul > li")
+      || String(link.getAttribute("aria-label") || "").replace(/\s+/g, "") === "다음페이지"
+    );
+    const links = [...document.querySelectorAll("a, button")].filter((link) => (
+      isNextPageControl(link) && !link.closest("#_pcmap_list_scroll_container > ul > li")
     ));
-    if (!links.length) return false;
-    links[0].click();
-    return true;
+    if (!links.length) return "missing";
+    const enabled = links.find((link) => (
+      link.getAttribute("aria-disabled") !== "true"
+      && !link.disabled
+      && !/(^|\s)disabled(\s|$)/i.test(String(link.getAttribute("class") || ""))
+    ));
+    if (!enabled) return "last";
+    enabled.click();
+    return "clicked";
   });
-  if (!clicked) return false;
-  const waitUntil = Math.min(Date.now() + 8000, deadlineAt - COLLECTION_DEADLINE_GUARD_MS);
+  if (state !== "clicked") return state;
+  const waitUntil = Math.min(Date.now() + NEXT_PAGE_WAIT_MS, deadlineAt - COLLECTION_DEADLINE_GUARD_MS);
   while (Date.now() < waitUntil) {
     await page.waitForTimeout(250);
     const after = await firstRowText();
@@ -1018,10 +1030,10 @@ async function goToNextListPage(page, deadlineAt) {
         if (root) root.scrollTop = 0;
         window.scrollTo(0, 0);
       });
-      return true;
+      return "moved";
     }
   }
-  return false;
+  return "unconfirmed";
 }
 
 async function waitForListFrame(page) {
@@ -1311,6 +1323,12 @@ async function collectRowsProgressively({
   let stableRounds = 0;
   let scrollCount = 0;
   let pageCount = 1;
+  let pagerOutcome = "";
+  const finish = (stopReason) => ({
+    ...collectionResult(candidates, resultLimit, stopReason, scrollCount),
+    pageCount,
+    pagerOutcome,
+  });
 
   const ingestRows = async () => {
     const rows = await readRows();
@@ -1320,13 +1338,13 @@ async function collectRowsProgressively({
   while (true) {
     await ingestRows();
     if (candidates.length >= resultLimit) {
-      return collectionResult(candidates, resultLimit, "requested_range_checked", scrollCount);
+      return finish("requested_range_checked");
     }
     if (now() >= deadlineAt) {
-      return collectionResult(candidates, resultLimit, "collection_deadline_reached", scrollCount);
+      return finish("collection_deadline_reached");
     }
     if (scrollCount >= maxScrolls) {
-      return collectionResult(candidates, resultLimit, "max_scrolls_reached", scrollCount);
+      return finish("max_scrolls_reached");
     }
 
     const countBeforeScroll = candidates.length;
@@ -1341,12 +1359,12 @@ async function collectRowsProgressively({
       : Math.min(2, growthPollAttempts);
     for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
       if (now() >= deadlineAt) {
-        return collectionResult(candidates, resultLimit, "collection_deadline_reached", scrollCount);
+        return finish("collection_deadline_reached");
       }
       await wait(growthPollIntervalMs);
       await ingestRows();
       if (candidates.length >= resultLimit) {
-        return collectionResult(candidates, resultLimit, "requested_range_checked", scrollCount);
+        return finish("requested_range_checked");
       }
       if (candidates.length > countBeforeScroll) break;
     }
@@ -1358,20 +1376,28 @@ async function collectRowsProgressively({
       // The current page is fully read. Move to Naver's next list page when one exists;
       // the next page's rows continue the same organic order, so ranks stay positional.
       if (typeof nextPage === "function" && pageCount < maxPages && now() < deadlineAt) {
-        let moved = false;
+        let outcome = "unconfirmed";
         try {
-          moved = (await nextPage()) === true;
+          const value = await nextPage();
+          // true/false keep the older boolean contract (moved / list ended).
+          outcome = value === true ? "moved" : (value === false ? "last" : String(value || "unconfirmed"));
         } catch {
-          moved = false;
+          outcome = "unconfirmed";
         }
-        if (moved) {
+        pagerOutcome = outcome;
+        if (outcome === "moved") {
           pageCount += 1;
           stableRounds = 0;
           previousScrollState = null;
           continue;
         }
+        if (outcome !== "last" && outcome !== "missing") return finish("next_page_unconfirmed");
+      } else if (typeof nextPage === "function" && pageCount >= maxPages) {
+        return finish("max_pages_reached");
+      } else if (typeof nextPage === "function") {
+        return finish("collection_deadline_reached");
       }
-      return collectionResult(candidates, resultLimit, "naver_result_list_exhausted", scrollCount);
+      return finish("naver_result_list_exhausted");
     }
     previousScrollState = scrollState;
   }
@@ -1812,10 +1838,17 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
           }
         : collectionStatus;
 
+      // 못 찾은 결과에는 몇 쪽까지 봤고 왜 멈췄는지를 남긴다(스냅샷 place 로 저장되어 운영에서 원인을 읽는다).
       const place = matched || {
         id: placeId,
         name: placeName,
         url: resolved.url || placeUrl,
+        collectionDiagnostics: {
+          stopReason: collection.stopReason || "",
+          pages: Number(collection.pageCount || 1),
+          pager: collection.pagerOutcome || "",
+          scrolls: Number(collection.scrollCount || 0),
+        },
       };
 
       return {

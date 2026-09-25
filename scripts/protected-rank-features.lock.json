@@ -85,13 +85,13 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "a92ea6bf7d4310229e56f1c3fd3bf084c8a8eaf255b69222fb3c2d0f937281eb"
+      "sha256": "9a4d7ede928f249f1bd3bc7e5d8510c87174978d77c2aa94373b4c16b0cab61c"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "031505fd23328ee72c41b4f3c4e5d8ad7275313e5dca75b418dfb134dcd65a0c"
+      "sha256": "649d8b0d471e049bef9c0b1a0af847de2ed0a649832f175c5bd4eac395f1c882"
     },
     {
       "id": "operation-place-30-day",
@@ -197,12 +197,12 @@
     {
       "id": "place-collector",
       "file": "tools/naver-place-rank-collector/src/naver-place-rank.mjs",
-      "sha256": "a2a7de2e911428a1819eff6c116e8d6a5d127e226fef0b2226c1cf12c1147980"
+      "sha256": "bc9d2c42c42db8ba98262c69f6aee14768bed539cde940852165ba84c2c69197"
     },
     {
       "id": "place-collector-server",
       "file": "tools/naver-place-rank-collector/src/server.mjs",
-      "sha256": "871db0ebb9654c16d6a0b308b58bb02f0256935e4d9c614ae2cf509200f54baf"
+      "sha256": "3d27be1d9ce1e950841271e30bf70d4908e3221abe513100e530d411b67d0c2b"
     },
     {
       "id": "shopping-collector-contract",

@@ -1409,19 +1409,54 @@ test("stops paging once the requested range is filled and never exceeds the page
   });
   assert.equal(calls, 2, "page 1 plus at most two advances");
   assert.equal(bounded.candidates.length, 30);
-  assert.equal(bounded.stopReason, "naver_result_list_exhausted");
+  assert.equal(bounded.stopReason, "max_pages_reached", "the page bound is not Naver's list end");
+  assert.equal(bounded.pageCount, 3);
 });
 
-test("a failing next-page step ends the scan as exhausted instead of throwing", async () => {
+test("a failing or unconfirmed next-page step ends the scan as unconfirmed, never as list exhaustion", async () => {
+  for (const nextPage of [async () => { throw new Error("click failed"); }, async () => "unconfirmed"]) {
+    const collection = await collectRowsProgressively({
+      resultLimit: 300, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
+      readRows: async () => Array.from({ length: 70 }, (_, i) => placeRow(i)),
+      advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+      wait: async () => {},
+      nextPage,
+    });
+    assert.equal(collection.candidates.length, 70);
+    assert.equal(collection.stopReason, "next_page_unconfirmed");
+    assert.equal(collection.pagerOutcome, "unconfirmed");
+  }
+});
+
+test("only a disabled or absent pager means the list ended", async () => {
+  for (const outcome of ["last", "missing", false]) {
+    const collection = await collectRowsProgressively({
+      resultLimit: 300, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
+      readRows: async () => Array.from({ length: 20 }, (_, i) => placeRow(i)),
+      advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+      wait: async () => {},
+      nextPage: async () => outcome,
+    });
+    assert.equal(collection.stopReason, "naver_result_list_exhausted", String(outcome));
+  }
+});
+
+test("2026-09-25 운영 결함: 다음 쪽 이동 실패 결과(70곳)는 같은 키워드의 확정 목록으로 캐시되지 않는다", async () => {
+  resetCandidateCache();
   const collection = await collectRowsProgressively({
     resultLimit: 300, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
-    readRows: async () => Array.from({ length: 20 }, (_, i) => placeRow(i)),
+    readRows: async () => Array.from({ length: 70 }, (_, i) => placeRow(i)),
     advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
     wait: async () => {},
-    nextPage: async () => { throw new Error("click failed"); },
+    nextPage: async () => "unconfirmed",
   });
-  assert.equal(collection.candidates.length, 20);
-  assert.equal(collection.stopReason, "naver_result_list_exhausted");
+  rememberCandidates("구월동 맛집", 300, collection);
+  assert.equal(cachedCandidates("구월동 맛집", 300, { placeId: "99999999", placeIds: ["99999999"] }), null,
+    "a tracker missing from the first 70 must start its own full scan");
+  const inList = collection.candidates[5];
+  const reused = cachedCandidates("구월동 맛집", 300, { placeId: inList.placeId, placeIds: inList.placeIds || [inList.placeId] });
+  assert.ok(reused, "a tracker already inside the scanned rows may reuse them");
+  resetCandidateCache();
 });
 
 test("native list URLs of any category are recognised and keep Naver's own display", () => {

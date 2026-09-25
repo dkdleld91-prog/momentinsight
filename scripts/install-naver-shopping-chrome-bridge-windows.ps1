@@ -193,7 +193,17 @@ Set-Item -Path $registryPath -Value $nativeManifestPath
 
 $schedulerPath = Join-Path $runtimePath "scripts\windows\run-naver-shopping-chrome-scheduler.ps1"
 $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$taskAction = New-ScheduledTaskAction -Execute $windowsPowerShell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$schedulerPath`""
+$schedulerArguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$schedulerPath`""
+# 2026-09-25: 10분마다 PowerShell 콘솔 창이 떴다. 이 작업은 Chrome 이 켜져 있는지만 보고 끝나므로
+# 창이 필요 없다. Windows 10 2004(빌드 19041)+ 는 conhost --headless 로 창 없이 실행하고,
+# 그보다 오래된 Windows 는 -WindowStyle Hidden 으로 창을 바로 숨긴다(잠깐 깜빡일 수 있다).
+$headlessConsole = Join-Path $env:SystemRoot "System32\conhost.exe"
+if ([Environment]::OSVersion.Version.Build -ge 19041 -and (Test-Path -LiteralPath $headlessConsole -PathType Leaf)) {
+    $taskAction = New-ScheduledTaskAction -Execute $headlessConsole -Argument "--headless `"$windowsPowerShell`" $schedulerArguments"
+}
+else {
+    $taskAction = New-ScheduledTaskAction -Execute $windowsPowerShell -Argument "-WindowStyle Hidden $schedulerArguments"
+}
 $repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
     -RepetitionInterval (New-TimeSpan -Minutes 10) `
     -RepetitionDuration (New-TimeSpan -Days 3650)

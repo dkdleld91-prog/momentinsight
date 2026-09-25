@@ -77,6 +77,11 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(installer, /CreateFolder\("MomentInsight"\)/u);
   assert.match(installer, /-LogonType Interactive -RunLevel Limited/u);
   assert.match(installer, /-MultipleInstances IgnoreNew/u);
+  // 2026-09-25: 10분마다 뜨던 PowerShell 창을 없앤다. 창 있는 powershell.exe 를 그대로 실행하는 작업은 금지.
+  assert.match(installer, /-Execute \$headlessConsole -Argument "--headless `"\$windowsPowerShell`" \$schedulerArguments"/u);
+  assert.match(installer, /-Execute \$windowsPowerShell -Argument "-WindowStyle Hidden \$schedulerArguments"/u);
+  assert.match(installer, /OSVersion\.Version\.Build -ge 19041/u);
+  assert.doesNotMatch(installer, /-Execute \$windowsPowerShell -Argument "-NoProfile/u);
   assert.match(scheduler, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
   assert.match(scheduler, /Get-CimInstance Win32_Process -Filter "Name = 'chrome\.exe'"/u);
   assert.match(scheduler, /chrome_process_check_failed/u);

@@ -1489,6 +1489,34 @@
       margin-bottom: 16px;
     }
 
+    /* 광고주 미리보기의 빈 값은 광고주 화면(client.html #mi-clean)과 같은 모양으로 보인다. */
+    #mi-admin .mi-client-view .mi-row strong.is-empty,
+    #mi-admin .mi-client-view .mi-report-item .is-empty {
+      min-width: 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+      white-space: normal;
+      word-break: keep-all;
+    }
+
+    #mi-admin .mi-client-view .mi-summary-box strong.is-empty,
+    #mi-admin .mi-client-view .mi-summary p.is-empty,
+    #mi-admin .mi-client-view .mi-summary span.is-empty,
+    #mi-admin .mi-client-view .mi-action-chip strong.is-empty,
+    #mi-admin .mi-client-view .mi-judgement-item span.is-empty {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-client-sync-note.is-warn {
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
     #mi-admin .mi-hero {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
@@ -12182,55 +12210,61 @@
             <span class="mi-badge">동일 검수</span>
           </header>
 
-          <div class="mi-client-sync-note">
-            <strong>검수 기준</strong>
-            아래 화면은 광고주형 대시보드와 같은 공개값·같은 흐름으로 구성했습니다. 여기서 어색하면 광고주 화면도 어색하다고 보고 수정합니다.
+          <div class="mi-client-sync-note" aria-live="polite">
+            <strong>검수 기준 · 서버 공개값</strong>
+            <span data-admin-preview-status>화면을 열면 광고주 화면과 같은 서버 공개값을 불러옵니다.</span>
           </div>
+          <p class="mi-note">운영 입력 칸에 적어 둔 값은 '공개 데이터 저장'으로 서버에 올린 뒤에만 여기와 광고주 화면에 나타납니다. 이 브라우저에만 남은 임시값은 보여주지 않으며 지우지도 않습니다.</p>
 
-          <div class="mi-client-view" aria-label="광고주 실제 공개 화면 미리보기">
+          <div class="mi-client-view" aria-label="광고주 실제 공개 화면 미리보기" data-admin-preview-root>
             <header class="mi-screen-head">
               <div>
-                <span class="mi-kicker">광고주 홈</span>
-                <h1><span data-admin-public="client">입력 전</span> 대시보드</h1>
-                <p>성과, 일정, 다음 액션만 간결하게 봅니다.</p>
+                <span class="mi-kicker">광고주 화면 · 대시보드</span>
+                <h1><span data-admin-preview-client>광고주 선택 전</span> 대시보드</h1>
+                <p>광고주가 보는 값과 같은 서버 공개값만 표시합니다.</p>
               </div>
-              <span class="mi-period">공개 데이터</span>
+              <span class="mi-period" data-admin-preview-update-state>불러오기 전</span>
             </header>
 
             <div class="mi-hero">
               <article class="mi-summary">
                 <span class="mi-kicker">현재 요약</span>
-                <h2>현재 매출은 <span data-admin-public="sales">입력 전</span>입니다.</h2>
-                <p data-admin-public="comment">입력 전</p>
+                <h2 data-admin-preview-summary-ready hidden>현재 매출은 <span data-admin-preview="sales"></span>입니다.</h2>
+                <h2 data-admin-preview-summary-empty>성과 데이터 공개를 준비하고 있습니다.</h2>
+                <p data-admin-preview="comment"></p>
                 <div class="mi-summary-row" aria-label="핵심 대시보드">
-                  <div class="mi-summary-box"><span>현재 매출</span><strong data-admin-public="sales">입력 전</strong></div>
-                  <div class="mi-summary-box"><span>광고 효율</span><strong data-admin-public="roas">입력 전</strong></div>
-                  <div class="mi-summary-box"><span>목표 달성률</span><strong data-admin-public="achievement">입력 전</strong></div>
+                  <div class="mi-summary-box"><span>현재 매출</span><strong data-admin-preview="sales"></strong></div>
+                  <div class="mi-summary-box"><span>광고 효율</span><strong data-admin-preview="roas"></strong></div>
+                  <div class="mi-summary-box"><span>목표 달성률</span><strong data-admin-preview="achievement"></strong><small data-admin-preview-kpi hidden></small></div>
                 </div>
                 <div class="mi-action-strip" aria-label="광고주 핵심 결론">
-                  <div class="mi-action-chip"><span>오늘 결론</span><strong>매출 흐름은 유지, 쿠팡 키워드만 보강</strong></div>
-                  <div class="mi-action-chip"><span>다음 행동</span><strong>메타 소재 방향 확인 후 교체 진행</strong></div>
-                  <div class="mi-action-chip"><span>공개 기준</span><strong>공개 반영한 데이터가 즉시 표시</strong></div>
+                  <div class="mi-action-chip"><span>오늘 결론</span><strong data-admin-preview="primaryAction"></strong></div>
+                  <div class="mi-action-chip"><span>다음 행동</span><strong data-admin-preview="nextAction"></strong></div>
+                  <div class="mi-action-chip"><span>업데이트 기준</span><strong>확인 완료 데이터만 표시</strong></div>
                 </div>
+                <div class="mi-code-status is-warn" data-admin-preview-reliability><span data-admin-preview-reliability-label>데이터 상태: 공개 데이터 연결 대기</span>&nbsp;· 마지막 업데이트&nbsp;<span data-admin-preview="updatedAt"></span>&nbsp;· 공개 승인된 값만 표시</div>
                 <div class="mi-judgement" aria-label="현재 성과 판단">
-                  <div class="mi-judgement-item"><strong>현재 판단: 목표보다 빠르게 성장 중</strong><span>ROAS와 매출은 양호하고, 다음 병목은 쿠팡 키워드 확장입니다.</span></div>
-                  <div class="mi-judgement-item"><strong>광고주 확인 필요: 신규 소재 방향</strong><span>메타 소재 교체 전 문구와 이미지 방향만 확인하면 됩니다.</span></div>
+                  <div class="mi-judgement-item"><strong>현재 판단</strong><span data-admin-preview="actionImpact"></span></div>
+                  <div class="mi-judgement-item"><strong>광고주 확인 필요</strong><span data-admin-preview="clientRequest"></span></div>
                 </div>
               </article>
 
               <aside class="mi-card mi-card-pad">
                 <div class="mi-card-head">
                   <div>
-                    <h3>합산 공개 데이터 현황</h3>
+                    <h3>합산 성과 현황</h3>
                     <p>공개 채널 성과 합산입니다.</p>
                   </div>
-                  <span class="mi-badge">공개용</span>
+                  <span class="mi-badge warn" data-admin-preview-performance-state>데이터 대기</span>
                 </div>
                 <div class="mi-table">
-                  <div class="mi-row"><span>광고비</span><strong data-admin-public="adSpend">입력 전</strong></div>
-                  <div class="mi-row"><span>구매수</span><strong data-admin-public="orders">입력 전</strong></div>
-                  <div class="mi-row"><span>다음 일정</span><strong data-admin-public="nextSchedule">입력 전</strong></div>
-                  <div class="mi-row"><span>업데이트</span><strong data-admin-public="updatedAt">입력 전</strong></div>
+                  <div class="mi-row"><span>광고비</span><strong data-admin-preview="adSpend"></strong></div>
+                  <div class="mi-row"><span>구매수</span><strong data-admin-preview="orders"></strong></div>
+                  <div class="mi-row"><span>다음 일정</span><strong data-admin-preview="nextSchedule"></strong></div>
+                  <div class="mi-row"><span>업데이트</span><strong data-admin-preview="updatedAt"></strong></div>
+                  <div class="mi-row"><span>데이터 출처</span><strong data-admin-preview-performance-source>운영팀 공개 입력 전</strong></div>
+                  <div class="mi-row"><span>공개 범위</span><strong>광고주 승인 데이터만 노출</strong></div>
+                  <div class="mi-row"><span>확인 기준</span><strong>공개 승인된 성과만 합산</strong></div>
                 </div>
               </aside>
             </div>
@@ -12245,27 +12279,22 @@
                   <span class="mi-badge">Insight</span>
                 </div>
                 <div class="mi-table">
-                  <div class="mi-row"><span>좋은 점</span><strong>네이버 검색광고 CTR 상승</strong></div>
-                  <div class="mi-row"><span>주의할 점</span><strong>쿠팡 키워드 확장 필요</strong></div>
-                  <div class="mi-row"><span>다음 액션</span><strong>소재 교체 + 리뷰 확보</strong></div>
-                  <div class="mi-row"><span>확인 요청</span><strong>신규 소재 방향 확인</strong></div>
+                  <div class="mi-row"><span>좋은 점</span><strong data-admin-preview="goodPoint"></strong></div>
+                  <div class="mi-row"><span>주의할 점</span><strong data-admin-preview="watchPoint"></strong></div>
+                  <div class="mi-row"><span>다음 액션</span><strong data-admin-preview="primaryAction"></strong></div>
+                  <div class="mi-row"><span>확인 요청</span><strong data-admin-preview="clientRequest"></strong></div>
                 </div>
               </article>
 
               <aside class="mi-card mi-card-pad">
                 <div class="mi-card-head">
                   <div>
-                    <h2>보고서·자료 현황</h2>
-                    <p>운영팀이 공개한 자료만 표시됩니다.</p>
+                    <h2>보고서함</h2>
+                    <p>공개 보고서만 표시합니다.</p>
                   </div>
                   <span class="mi-badge">공유</span>
                 </div>
-                <div class="mi-report-list">
-                  <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
-                  <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><b class="mi-report-state">공개 가능</b></div>
-                  <div class="mi-report-item"><div><strong>매출 보고서</strong><span>일별 입력값 기반 월간 자동 합산</span></div><b class="mi-report-state">자동 계산</b></div>
-                  <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-admin-public="updatedAt">입력 전</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
-                </div>
+                <div class="mi-report-list" data-admin-preview-reports></div>
               </aside>
             </div>
 
@@ -12273,16 +12302,16 @@
               <article class="mi-card mi-card-pad">
                 <div class="mi-card-head">
                   <div>
-                    <h2>합산 공개 데이터 현황</h2>
-                    <p>채널별 공개 성과를 합산한 결과입니다.</p>
+                    <h2>합산 성과 현황</h2>
+                    <p>채널별 공개 성과입니다.</p>
                   </div>
                   <span class="mi-badge">합산</span>
                 </div>
                 <div class="mi-table">
-                  <div class="mi-row"><span>합산 매출</span><strong data-admin-public="sales">입력 전</strong></div>
-                  <div class="mi-row"><span>합산 광고비</span><strong data-admin-public="adSpend">입력 전</strong></div>
-                  <div class="mi-row"><span>합산 ROAS</span><strong data-admin-public="roas">입력 전</strong></div>
-                  <div class="mi-row"><span>합산 구매수</span><strong data-admin-public="orders">입력 전</strong></div>
+                  <div class="mi-row"><span>합산 매출</span><strong data-admin-preview="sales"></strong></div>
+                  <div class="mi-row"><span>합산 광고비</span><strong data-admin-preview="adSpend"></strong></div>
+                  <div class="mi-row"><span>합산 ROAS</span><strong data-admin-preview="roas"></strong></div>
+                  <div class="mi-row"><span>합산 구매수</span><strong data-admin-preview="orders"></strong></div>
                 </div>
               </article>
 
@@ -12295,16 +12324,23 @@
 
             <div class="mi-split">
               <article class="mi-card mi-card-pad">
-                <h2>공유 일정</h2>
+                <div class="mi-card-head">
+                  <div>
+                    <h2>공유 일정</h2>
+                    <p>내부 업무는 제외하고 공개 승인된 일정만 표시합니다.</p>
+                  </div>
+                  <span class="mi-badge" data-admin-preview-schedule-count>0개</span>
+                </div>
                 <div class="mi-schedule" data-admin-preview-schedules></div>
               </article>
 
               <aside class="mi-card mi-card-pad">
-                <h3>다음 일정</h3>
+                <h3>가장 가까운 일정</h3>
                 <div class="mi-table">
-                  <div class="mi-row"><span>가장 가까운 일정</span><strong data-admin-public="nextSchedule">입력 전</strong></div>
-                  <div class="mi-row"><span>광고주 확인</span><strong>신규 소재 방향 확인</strong></div>
-                  <div class="mi-row"><span>보고서 공개</span><strong>보고서함 다운로드 방식</strong></div>
+                  <div class="mi-row"><span>다음 업무</span><strong data-admin-preview-schedule-next>공개 예정 없음</strong></div>
+                  <div class="mi-row"><span>일시</span><strong data-admin-preview-schedule-next-time>-</strong></div>
+                  <div class="mi-row"><span>진행 중</span><strong data-admin-preview-schedule-progress>0개</strong></div>
+                  <div class="mi-row"><span>확인 필요</span><strong data-admin-preview-schedule-check>0개</strong></div>
                 </div>
               </aside>
             </div>
@@ -18592,6 +18628,7 @@
             throw new Error((payload && payload.message) || "공개 데이터 저장 응답이 올바르지 않습니다.");
           }
           setStatus(statusNode, okMessage || "온라인 저장 완료: 광고주 화면을 새로 열면 같은 값이 보입니다.", "is-ok");
+          if (adminPreviewScreenActive()) refreshAdminClientPreview().catch(function () {});
           return true;
         } catch (error) {
           setStatus(statusNode, "저장 완료: 온라인 반영 확인 필요 - " + error.message, "is-warn");
@@ -18699,27 +18736,297 @@
         }).join("");
       }
 
-      function renderClientPreview(state) {
-        renderChannelDetails(
-          root.querySelector("[data-admin-preview-channel-details]"),
-          state.channelDetails || buildChannelDetails(state.channels || defaultState.channels)
-        );
+      // 2026-09-25 대표 결정(#11): '광고주 미리보기'는 이 브라우저의 운영 입력 임시값이 아니라 광고주 화면과
+      // 같은 서버 공개값(/api/client/public-state + 공개 승인된 공유 일정)을 그린다. 임시값은 지우지 않는다.
+      // 칸 구성과 값 규칙은 client.html 의 stateFromServerPayload·enrichState·applyState·renderSchedules 와 같다.
+      var ADMIN_PREVIEW_EMPTY_TEXT = "아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다";
+      var ADMIN_PREVIEW_TEXT_KEYS = ["sales", "roas", "adSpend", "orders", "achievement", "status", "nextSchedule", "updatedAt", "comment", "primaryAction", "nextAction", "actionImpact", "clientRequest", "goodPoint", "watchPoint"];
+      var adminPreviewRequest = 0;
 
-        var scheduleList = root.querySelector("[data-admin-preview-schedules]");
-        if (scheduleList) {
-          var scheduleRows = state.schedules || defaultState.schedules;
-          if (!scheduleRows.length) {
-            scheduleList.innerHTML = '<div class="mi-note">아직 등록된 공개 일정이 없습니다 — 일정을 공개하면 표시됩니다.</div>';
-            return;
-          }
-          scheduleList.innerHTML = scheduleRows.map(function (item) {
-            var badgeClass = item.status === "진행 중" || item.status === "확인 필요" ? " warn" : "";
-            return '<div class="mi-schedule-item"><div class="mi-date">' + escapeHtml(item.date) + '</div><div><strong>' +
-              escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.detail) + '</span></div><span class="mi-badge' +
-              badgeClass + '">' + escapeHtml(item.status) + '</span></div>';
-          }).join("");
-        }
+      function adminPreviewIsEmpty(value) {
+        var text = value === null || value === undefined ? "" : String(value).trim();
+        return !text || text === "입력 전" || text === "입력 대기" || text === "-";
       }
+
+      function adminPreviewScalar(value) {
+        if (value === null || value === undefined || typeof value === "object") return "";
+        return String(value).trim();
+      }
+
+      function adminPreviewList(value) {
+        return Array.isArray(value) ? value : [];
+      }
+
+      function adminPreviewStateFromServer(payload) {
+        var publicState = (payload && payload.publicState) || {};
+        var access = (payload && payload.access) || {};
+        var state = { client: adminPreviewScalar(publicState.client) || adminPreviewScalar(access.clientName) || "연결 광고주" };
+        ["sales", "roas", "adSpend", "orders", "achievement", "status", "nextSchedule", "updatedAt", "comment"].forEach(function (key) {
+          state[key] = adminPreviewScalar(publicState[key]);
+        });
+        state.reports = adminPreviewList(publicState.reports);
+        state.channels = adminPreviewList(publicState.channels);
+        state.channelDetails = adminPreviewList(publicState.channelDetails);
+        state.kpi = publicState.kpi && typeof publicState.kpi === "object" ? publicState.kpi : null;
+        var action = adminPreviewList(publicState.actions)[0] || {};
+        var naver = state.channelDetails.find(function (item) { return item && item.name === "네이버"; }) || {};
+        var coupang = state.channelDetails.find(function (item) { return item && item.name === "쿠팡"; }) || {};
+        state.primaryAction = adminPreviewScalar(action.title);
+        state.nextAction = adminPreviewScalar(action.description);
+        state.actionImpact = adminPreviewScalar(action.expectedImpact);
+        state.clientRequest = adminPreviewScalar(action.clientRequest);
+        state.goodPoint = adminPreviewScalar(naver.summary);
+        state.watchPoint = adminPreviewScalar(coupang.summary);
+        return state;
+      }
+
+      function adminPreviewChannelDetails(state) {
+        if (state.channelDetails.length) return state.channelDetails;
+        return state.channels.filter(function (item) {
+          return item && (item.name === "네이버" || item.name === "쿠팡");
+        }).map(function (item) {
+          return {
+            name: item.name,
+            type: item.name === "네이버" ? "검색광고" : "상품광고",
+            sales: item.sales || "-",
+            adSpend: "-",
+            roas: item.roas || "-",
+            orders: "-",
+            ctr: item.summary || "-",
+            cvr: "-",
+            summary: item.summary || "관리자 공개 요약 필요"
+          };
+        });
+      }
+
+      function adminPreviewReportTypeLabel(type) {
+        var labels = { monthly: "월간 보고서", kpi: "KPI 보고서", sales: "매출 보고서", keyword: "키워드 보고서" };
+        return labels[type] || "공개 보고서";
+      }
+
+      function adminPreviewKpiNumber(value) {
+        if (value === null || value === undefined || value === "") return null;
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      function renderAdminPreviewSchedules(items, errorText) {
+        var list = root.querySelector("[data-admin-preview-schedules]");
+        if (!list) return;
+        var statusLabels = { planned: "예정", in_progress: "진행 중", done: "완료", paused: "보류", needs_check: "확인 필요" };
+        var normalized = (items || []).map(function (item) {
+          var date = item.startsAt ? new Date(item.startsAt) : null;
+          var validDate = date && !Number.isNaN(date.getTime());
+          return {
+            title: item.title || "공유 일정",
+            detail: item.publicComment || item.detail || "운영팀 공개 일정",
+            status: statusLabels[item.status] || item.status || "예정",
+            rawStatus: item.status || "",
+            startsAt: validDate ? date : null,
+            date: validDate ? (date.getMonth() + 1) + "/" + date.getDate() : (item.date || "-")
+          };
+        }).sort(function (a, b) {
+          if (!a.startsAt) return 1;
+          if (!b.startsAt) return -1;
+          return a.startsAt - b.startsAt;
+        });
+        var now = new Date();
+        var nextItem = normalized.find(function (item) {
+          return item.startsAt && item.startsAt >= now && item.rawStatus !== "done";
+        }) || normalized.find(function (item) {
+          return item.rawStatus !== "done";
+        }) || normalized[0] || null;
+        var count = root.querySelector("[data-admin-preview-schedule-count]");
+        var nextTitle = root.querySelector("[data-admin-preview-schedule-next]");
+        var nextTime = root.querySelector("[data-admin-preview-schedule-next-time]");
+        var progress = root.querySelector("[data-admin-preview-schedule-progress]");
+        var needsCheck = root.querySelector("[data-admin-preview-schedule-check]");
+        if (count) count.textContent = normalized.length + "개";
+        if (nextTitle) nextTitle.textContent = nextItem ? nextItem.title : "공개 예정 없음";
+        if (nextTime) nextTime.textContent = nextItem && nextItem.startsAt
+          ? new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" }).format(nextItem.startsAt)
+          : "-";
+        if (progress) progress.textContent = normalized.filter(function (item) { return item.rawStatus === "in_progress"; }).length + "개";
+        if (needsCheck) needsCheck.textContent = normalized.filter(function (item) { return item.rawStatus === "needs_check"; }).length + "개";
+        if (!normalized.length) {
+          list.innerHTML = '<div class="mi-note">' + escapeHtml(errorText || "현재 공개된 일정이 없습니다.") + '</div>';
+          return;
+        }
+        list.innerHTML = normalized.map(function (item) {
+          var warn = item.status === "진행 중" || item.status === "확인 필요" ? " warn" : "";
+          return '<div class="mi-schedule-item"><div class="mi-date">' + escapeHtml(item.date) + '</div><div><strong>' +
+            escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.detail) + '</span></div><span class="mi-badge' +
+            warn + '">' + escapeHtml(item.status) + '</span></div>';
+        }).join("");
+      }
+
+      function renderAdminPreview(state, schedules, scheduleError) {
+        var previewRoot = root.querySelector("[data-admin-preview-root]");
+        if (!previewRoot) return;
+        state = state || adminPreviewStateFromServer(null);
+        var emptyState = ["sales", "roas", "adSpend", "orders", "achievement"].every(function (key) {
+          return adminPreviewIsEmpty(state[key]);
+        });
+        var clientNode = previewRoot.querySelector("[data-admin-preview-client]");
+        if (clientNode) clientNode.textContent = state.client || "광고주 선택 전";
+        var updateState = previewRoot.querySelector("[data-admin-preview-update-state]");
+        if (updateState) {
+          updateState.textContent = emptyState ? "공개 준비 중" : "업데이트 완료";
+          updateState.classList.toggle("is-warn", emptyState);
+        }
+        var summaryReady = previewRoot.querySelector("[data-admin-preview-summary-ready]");
+        var summaryEmpty = previewRoot.querySelector("[data-admin-preview-summary-empty]");
+        if (summaryReady) summaryReady.hidden = emptyState;
+        if (summaryEmpty) summaryEmpty.hidden = !emptyState;
+        var reliability = previewRoot.querySelector("[data-admin-preview-reliability]");
+        if (reliability) {
+          reliability.classList.toggle("is-ok", !emptyState);
+          reliability.classList.toggle("is-warn", emptyState);
+        }
+        var reliabilityLabel = previewRoot.querySelector("[data-admin-preview-reliability-label]");
+        if (reliabilityLabel) reliabilityLabel.textContent = emptyState ? "데이터 상태: 공개 데이터 연결 대기" : "데이터 신뢰도: 운영팀 검수 완료";
+        var performanceState = previewRoot.querySelector("[data-admin-preview-performance-state]");
+        if (performanceState) {
+          performanceState.textContent = emptyState ? "데이터 대기" : "공개용";
+          performanceState.classList.toggle("warn", emptyState);
+        }
+        var performanceSource = previewRoot.querySelector("[data-admin-preview-performance-source]");
+        if (performanceSource) performanceSource.textContent = emptyState ? "운영팀 공개 입력 전" : "운영팀 입력 · 검수 완료";
+        ADMIN_PREVIEW_TEXT_KEYS.forEach(function (key) {
+          var empty = adminPreviewIsEmpty(state[key]);
+          previewRoot.querySelectorAll('[data-admin-preview="' + key + '"]').forEach(function (node) {
+            node.textContent = empty ? ADMIN_PREVIEW_EMPTY_TEXT : String(state[key]);
+            node.classList.toggle("is-empty", empty);
+          });
+        });
+        var kpiNode = previewRoot.querySelector("[data-admin-preview-kpi]");
+        if (kpiNode) {
+          var kpi = state.kpi;
+          var target = kpi ? adminPreviewKpiNumber(kpi.targetValue) : null;
+          if (!kpi || target === null) {
+            kpiNode.textContent = "";
+            kpiNode.hidden = true;
+          } else {
+            var actual = adminPreviewKpiNumber(kpi.actualValue);
+            var progressRate = adminPreviewKpiNumber(kpi.progressRate);
+            var head = [adminPreviewScalar(kpi.periodMonth), adminPreviewScalar(kpi.metricLabel)].filter(Boolean).join(" ");
+            kpiNode.textContent = (head ? head + " " : "") + "목표 " + formatNumber(target) + " · 실적 " + (actual === null || progressRate === null ? "집계 전" : formatNumber(actual));
+            kpiNode.hidden = false;
+          }
+        }
+        var channelList = previewRoot.querySelector("[data-admin-preview-channel-details]");
+        if (channelList) {
+          var details = adminPreviewChannelDetails(state);
+          channelList.innerHTML = details.length ? details.map(function (item) {
+            return '<article class="mi-channel-detail"><div class="mi-channel-detail-head"><div><strong>' +
+              escapeHtml(item.name || "채널") + '</strong><span>' + escapeHtml(item.type || "채널") + '</span></div><span class="mi-badge">' +
+              escapeHtml(item.roas || "-") + '</span></div><div class="mi-channel-stats">' +
+              '<div class="mi-channel-stat"><span>매출</span><b>' + escapeHtml(item.sales || "-") + '</b></div>' +
+              '<div class="mi-channel-stat"><span>광고비</span><b>' + escapeHtml(item.adSpend || "-") + '</b></div>' +
+              '<div class="mi-channel-stat"><span>구매수</span><b>' + escapeHtml(item.orders || "-") + '</b></div>' +
+              '<div class="mi-channel-stat"><span>CTR / CVR</span><b>' + escapeHtml(item.ctr || "-") + ' · ' + escapeHtml(item.cvr || "-") + '</b></div>' +
+              '</div><p>' + escapeHtml(item.summary || "공개 요약 필요") + '</p></article>';
+          }).join("") : '<div class="mi-note">' + escapeHtml(ADMIN_PREVIEW_EMPTY_TEXT) + '</div>';
+        }
+        var reportList = previewRoot.querySelector("[data-admin-preview-reports]");
+        if (reportList) {
+          var updatedEmpty = adminPreviewIsEmpty(state.updatedAt);
+          var updatedMarkup = '<span class="' + (updatedEmpty ? "is-empty" : "") + '">' + escapeHtml(updatedEmpty ? ADMIN_PREVIEW_EMPTY_TEXT : state.updatedAt) + '</span>';
+          reportList.innerHTML = state.reports.length
+            ? state.reports.map(function (item) {
+              var hasFile = Boolean(item.fileUrl || item.fileId);
+              return '<div class="mi-report-item"><div><strong>' + escapeHtml(item.title || adminPreviewReportTypeLabel(item.type)) +
+                '</strong><span>' + escapeHtml(adminPreviewReportTypeLabel(item.type)) + ' · ' + escapeHtml(item.date || "날짜 확인 중") +
+                ' · ' + escapeHtml(hasFile ? "등록 파일 열기" : "운영팀 공개 파일 대기") + '</span></div><b class="mi-report-state' +
+                (hasFile ? "" : " warn") + '">' + (hasFile ? "파일 열기" : "공개 대기") + '</b></div>';
+            }).join("") + '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span>' + updatedMarkup +
+              ' · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>'
+            : '<div class="mi-report-item"><div><strong>공개 보고서 없음</strong><span>운영팀이 검수 후 공개한 보고서가 아직 없습니다.</span></div><b class="mi-report-state warn">대기</b></div>' +
+              '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span>' + updatedMarkup + ' · 공개 파일 대기</span></div><b class="mi-report-state warn">확인 필요</b></div>';
+        }
+        renderAdminPreviewSchedules(schedules, scheduleError);
+      }
+
+      function setAdminPreviewStatus(message, type) {
+        var node = root.querySelector("[data-admin-preview-status]");
+        if (node) node.textContent = message;
+        var note = node ? node.closest(".mi-client-sync-note") : null;
+        if (note) note.classList.toggle("is-warn", type === "is-warn");
+      }
+
+      function adminPreviewScreenActive() {
+        var view = root.querySelector('[data-mi-admin-view="client-preview"]');
+        return Boolean(view && view.classList.contains("is-active"));
+      }
+
+      async function refreshAdminClientPreview() {
+        if (!root.querySelector("[data-admin-preview-root]")) return false;
+        var requestId = ++adminPreviewRequest;
+        var session = captureAdminSession();
+        if (!session.role) {
+          renderAdminPreview(null, [], "로그인 후 공개 일정을 불러옵니다.");
+          setAdminPreviewStatus("로그인하면 광고주 화면과 같은 서버 공개값을 불러옵니다.", "is-warn");
+          return false;
+        }
+        var headers = {};
+        var targetCode = "";
+        if (canManageOwnerCodes()) {
+          targetCode = ownerTargetAgencyCode();
+          if (!targetCode) {
+            renderAdminPreview({ client: "광고주 선택 전", reports: [], channels: [], channelDetails: [], kpi: null }, [], "광고주를 고르면 공개 일정을 불러옵니다.");
+            setAdminPreviewStatus("상단에서 대상 광고주를 고르면 그 광고주 화면의 서버 공개값을 보여줍니다.", "is-warn");
+            return false;
+          }
+          headers["x-mi-agency-code"] = targetCode;
+        }
+        setAdminPreviewStatus((targetCode ? targetCode + " " : "") + "광고주 화면의 서버 공개값을 불러오는 중입니다.", "");
+        var results = await Promise.all([
+          miFetch(getClientPublicStateApiUrl(), { method: "GET", cache: "no-store", headers: headers, timeoutMs: 20000 })
+            .then(function (response) {
+              return response.json().catch(function () { return null; }).then(function (payload) {
+                return response.ok && payload && payload.ok === true ? payload : { ok: false, message: (payload && payload.message) || "공개 데이터를 불러오지 못했습니다." };
+              });
+            })
+            .catch(function (error) { return { ok: false, message: error && error.message ? error.message : "공개 데이터를 불러오지 못했습니다." }; }),
+          miFetch(getWorkItemsApiUrl(), { method: "GET", cache: "no-store", headers: headers, timeoutMs: 20000 })
+            .then(function (response) {
+              return response.json().catch(function () { return null; }).then(function (payload) {
+                return response.ok && payload && payload.ok === true && Array.isArray(payload.items) ? payload : { ok: false, message: (payload && payload.message) || "공유 일정을 불러오지 못했습니다." };
+              });
+            })
+            .catch(function (error) { return { ok: false, message: error && error.message ? error.message : "공유 일정을 불러오지 못했습니다." }; })
+        ]);
+        if (requestId !== adminPreviewRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return false;
+        var statePayload = results[0];
+        var workPayload = results[1];
+        // 광고주는 공개 승인(client_visible)된 일정만, 공개 제목·공개 코멘트로 본다(work-items.mjs clientWorkItemPayload).
+        // 운영 세션 응답에는 내부 일정·내부 제목까지 있으므로 여기서 같은 기준으로 거르고 공개 칸만 옮긴다.
+        var sharedItems = workPayload.ok ? workPayload.items.filter(function (item) {
+          return item && item.visibility === "client_visible";
+        }).map(function (item) {
+          return {
+            title: String(item.publicTitle || "").trim().slice(0, 120),
+            status: item.status,
+            startsAt: item.startsAt,
+            publicComment: String(item.publicComment || "").trim()
+          };
+        }) : [];
+        if (!statePayload.ok) {
+          renderAdminPreview({ client: targetCode || "연결 광고주", reports: [], channels: [], channelDetails: [], kpi: null }, sharedItems, workPayload.ok ? "" : workPayload.message);
+          setAdminPreviewStatus("서버 공개값을 불러오지 못했습니다: " + statePayload.message + " 잠시 뒤 이 화면을 다시 열어주세요.", "is-warn");
+          return false;
+        }
+        var state = adminPreviewStateFromServer(statePayload);
+        renderAdminPreview(state, sharedItems, workPayload.ok ? "" : workPayload.message);
+        var loadedAt = new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+        setAdminPreviewStatus(state.client + " 광고주 화면과 같은 서버 공개값입니다 · " + loadedAt + " 불러옴" + (workPayload.ok ? "" : " · 공유 일정은 불러오지 못했습니다"), workPayload.ok ? "" : "is-warn");
+        return true;
+      }
+
+      // 상단에서 대상 광고주를 바꾸면(mi:rank-scope-changed) 열려 있는 미리보기도 그 광고주 값으로 다시 읽는다.
+      window.addEventListener("mi:rank-scope-changed", function () {
+        if (adminPreviewScreenActive()) refreshAdminClientPreview().catch(function () {});
+      });
 
       function setStatus(node, message, type) {
         if (!node) return;
@@ -19848,11 +20155,6 @@
       }
 
       function applyState(state) {
-        root.querySelectorAll("[data-admin-public]").forEach(function (node) {
-          var key = node.getAttribute("data-admin-public");
-          node.textContent = state && Object.prototype.hasOwnProperty.call(state, key) ? state[key] : "입력 전";
-        });
-
         var codeInput = root.querySelector("[data-admin-code]");
         var clientInput = root.querySelector("[data-admin-client]");
         var salesInput = root.querySelector("[data-admin-sales]");
@@ -19889,7 +20191,7 @@
         if (channelsInput) channelsInput.value = channelsToText(state.channels || []);
         if (schedulesInput) schedulesInput.value = schedulesToText(state.schedules || []);
         if (publicCommentInput) publicCommentInput.value = state.comment;
-        renderClientPreview(state);
+        // 광고주 미리보기는 서버 공개값만 그린다(refreshAdminClientPreview). 여기 임시값은 입력 칸에만 채운다.
         renderOperationHomeSalesStatus(state);
         renderOperationHomeClientStatus();
       }
@@ -20657,6 +20959,7 @@
         if (target === "agency-code" && secureSession.role === "owner") maybeLoadOperationHistory();
         if (target === "publish" && secureSession.role) maybeLoadAdminKpiTarget();
         if (target === "site-notice" && secureSession.role === "owner") loadSiteNoticeEditor();
+        if (target === "client-preview") refreshAdminClientPreview().catch(function () {});
         if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");

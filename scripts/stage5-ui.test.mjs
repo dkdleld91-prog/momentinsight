@@ -336,3 +336,71 @@ test("키워드 한도 조작은 광고주 화면으로 새어 나가지 않는�
   assert.ok(!clientSource.includes("data-owner-quota-input"));
   assert.ok(!clientSource.includes("set-rank-keyword-limit"));
 });
+
+// 2026-09-25 대표 결정(#11): 관리자 '광고주 미리보기'는 브라우저 임시값·고정 예시 문구가 아니라
+// 광고주 화면과 같은 서버 공개값만 그린다. 운영 입력 칸의 임시값은 지우지 않는다.
+const adminPreviewSource = fs.readFileSync(new URL("../src/pages/admin.html", import.meta.url), "utf8");
+
+function adminPreviewBlock(start, end) {
+  const from = adminPreviewSource.indexOf(start);
+  const to = adminPreviewSource.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `admin.html block not found: ${start}`);
+  return adminPreviewSource.slice(from, to);
+}
+
+test("광고주 미리보기 화면에는 임시값 칸과 고정 예시 문구가 없다", () => {
+  const view = adminPreviewBlock('<section class="mi-view" data-mi-admin-view="client-preview"', '<section class="mi-view" data-mi-admin-view="agency-code"');
+  assert.equal(view.includes("data-admin-public="), false, "로컬 임시값(applyState)이 채우던 칸이 남아 있으면 안 된다");
+  for (const sample of ["매출 흐름은 유지", "메타 소재 방향 확인 후 교체 진행", "네이버 검색광고 CTR 상승", "2026년 6월 · 수치 확인 중", "신규 소재 방향 확인"]) {
+    assert.equal(view.includes(sample), false, `고정 예시 문구가 남아 있다: ${sample}`);
+  }
+  for (const key of ["sales", "roas", "achievement", "primaryAction", "nextAction", "actionImpact", "clientRequest", "goodPoint", "watchPoint", "updatedAt"]) {
+    assert.ok(view.includes(`data-admin-preview="${key}"`), `서버값 칸이 없다: ${key}`);
+  }
+  assert.ok(view.includes("data-admin-preview-status"), "무엇을 보여주는지 화면 안 안내가 있어야 한다");
+});
+
+test("미리보기는 서버 공개값만 읽고, 운영 입력 임시값(applyState)은 미리보기를 칠하지 않는다", () => {
+  const applyState = adminPreviewBlock("      function applyState(state) {", "      var currentState = readState();");
+  assert.equal(applyState.includes("renderClientPreview"), false);
+  assert.equal(applyState.includes("[data-admin-public]"), false);
+  assert.equal(adminPreviewSource.includes("function renderClientPreview("), false);
+  const refresh = adminPreviewBlock("      async function refreshAdminClientPreview() {", "      // 상단에서 대상 광고주를 바꾸면");
+  assert.ok(refresh.includes("getClientPublicStateApiUrl()"));
+  assert.ok(refresh.includes('item.visibility === "client_visible"'), "광고주는 공개 승인된 일정만 본다");
+  assert.ok(refresh.includes("item.publicTitle"), "광고주에게 보이는 일정 제목은 공개 제목이다");
+  assert.equal(/title:\s*item\.title/.test(refresh), false, "내부 제목을 미리보기에 옮기면 안 된다");
+  assert.ok(adminPreviewSource.includes('if (target === "client-preview") refreshAdminClientPreview()'), "화면을 열면 서버값을 다시 읽는다");
+});
+
+test("서버 공개값 → 미리보기 상태 변환은 광고주 화면(enrichState)과 같은 규칙이다", () => {
+  const helpers = adminPreviewBlock("      var ADMIN_PREVIEW_EMPTY_TEXT", "      function adminPreviewChannelDetails(state) {");
+  const build = new Function(`${helpers}\nreturn { adminPreviewStateFromServer, adminPreviewIsEmpty };`);
+  const { adminPreviewStateFromServer, adminPreviewIsEmpty } = build();
+  const empty = adminPreviewStateFromServer({ ok: true, access: { clientName: "junkeol229" }, publicState: { sales: null, roas: null, actions: [], channelDetails: [] } });
+  assert.equal(empty.client, "junkeol229");
+  for (const key of ["sales", "roas", "adSpend", "orders", "achievement", "updatedAt", "primaryAction", "goodPoint"]) {
+    assert.equal(adminPreviewIsEmpty(empty[key]), true, key);
+  }
+  const filled = adminPreviewStateFromServer({
+    ok: true,
+    access: { clientName: "광고주" },
+    publicState: {
+      client: "모먼트 상점",
+      sales: "1,200만원",
+      updatedAt: "2026.09.25",
+      actions: [{ title: "쿠팡 키워드 보강", description: "상품명 정리", expectedImpact: "ROAS 유지", clientRequest: "소재 확인" }],
+      channelDetails: [{ name: "네이버", summary: "CTR 상승" }, { name: "쿠팡", summary: "키워드 확장 필요" }],
+      kpi: { targetValue: 100 },
+    },
+  });
+  assert.equal(filled.client, "모먼트 상점");
+  assert.equal(filled.sales, "1,200만원");
+  assert.equal(filled.primaryAction, "쿠팡 키워드 보강");
+  assert.equal(filled.nextAction, "상품명 정리");
+  assert.equal(filled.actionImpact, "ROAS 유지");
+  assert.equal(filled.clientRequest, "소재 확인");
+  assert.equal(filled.goodPoint, "CTR 상승");
+  assert.equal(filled.watchPoint, "키워드 확장 필요");
+  assert.equal(filled.kpi.targetValue, 100);
+});

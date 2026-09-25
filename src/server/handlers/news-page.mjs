@@ -26,6 +26,9 @@ function dateLabel(iso) {
 }
 
 // 2026-09-07 대표 결정: 로그인 없이 보이는 /news 는 플랫폼별 최신 3건(리드+2)만. 7일치 전체는 로그인 후 뉴스 화면에서.
+// 2026-09-25: 홈 피드가 리드 뒤 3건을 주면서 /news 에 4건씩 보였다. 리드 뒤는 2건만 싣는다.
+const PUBLIC_EXTRA_ITEMS = 2;
+
 export function collectArticles(news, { full = false } = {}) {
   const out = [];
   for (const key of ["naver", "coupang", "elevenst", "gmarket"]) {
@@ -33,7 +36,7 @@ export function collectArticles(news, { full = false } = {}) {
     if (!section || section.ok === false) continue;
     const items = full && Array.isArray(section.all) && section.all.length
       ? section.all
-      : [section.lead, ...(section.items || [])].filter(Boolean);
+      : [section.lead, ...(section.items || []).slice(0, PUBLIC_EXTRA_ITEMS)].filter(Boolean);
     for (const item of items) {
       out.push({
         platform: key,
@@ -122,7 +125,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   for (const key of ["naver", "coupang", "elevenst", "gmarket", "openmarket"]) {
     const section = news?.[key];
     if (!section) continue;
-    teaser[key] = section.ok === false ? section : { ok: true, count7d: section.count7d, lead: section.lead, items: section.items };
+    teaser[key] = section.ok === false ? section : { ok: true, count7d: section.count7d, lead: section.lead, items: (section.items || []).slice(0, PUBLIC_EXTRA_ITEMS) };
   }
   const total = naver + coupang + elevenst + gmarket;
   const payload = { ok: true, news: news && news.ok !== false ? { ...teaser, updatedAt: news.updatedAt } : { ok: false, reason: "news_unavailable" } };

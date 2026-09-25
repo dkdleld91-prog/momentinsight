@@ -7060,7 +7060,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버쇼핑 대표 오가닉 순위를 30일 기록합니다.</h1>
-              <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 매일 오전 9시와 오후 3시에 기록합니다. 광고 제외 40개 보기 기준의 페이지와 페이지 내 순위도 함께 표시합니다.</p>
+              <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 하루 2~3회 차례로 기록합니다. 광고 제외 40개 보기 기준의 페이지와 페이지 내 순위도 함께 표시합니다.</p>
             </div>
             <span class="mi-badge">30일 추적</span>
           </header>
@@ -9142,7 +9142,7 @@
           if (summaryCard) {
             summaryCard.hidden = false;
             setKeywordText('[data-keyword-summary="when"]', monthNote && !monthNote.hidden ? monthNote.textContent : "월별 검색 비율은 연결 후 표시됩니다");
-            setKeywordText('[data-keyword-summary="who"]', ageNote && !ageNote.hidden ? ageNote.textContent : "연령 데이터는 연결 후 표시됩니다");
+            setKeywordText('[data-keyword-summary="who"]', ageNote && !ageNote.hidden ? ageNote.textContent : (data.profileStatus && data.profileStatus.age === "category_required" ? "쇼핑 카테고리가 하나로 정해지지 않는 키워드라 연령 데이터가 없습니다" : "연령 데이터는 연결 후 표시됩니다"));
             setKeywordText('[data-keyword-summary="cost"]', "입찰가 불러오는 중");
             setKeywordText('[data-keyword-summary="alt"]', "후보 비교 불러오는 중");
           }
@@ -10393,7 +10393,7 @@
             : (workerCoolingDown
               ? "네이버 요청 일시정지 · 기존 정상 순위와 30일 기록 보존"
               : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인"));
-        var nextNote = workerStopped ? "총관리자 검증 후 재개" : (workerVerifying ? "오가닉 300개 검증 중" : (workerCoolingDown ? "이후 대기 1건 자동 재시도" : "매일 09:00 · 15:00"));
+        var nextNote = workerStopped ? "총관리자 검증 후 재개" : (workerVerifying ? "오가닉 300개 검증 중" : (workerCoolingDown ? "이후 대기 1건 자동 재시도" : "하루 2~3회 자동 갱신"));
         return '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
           '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
@@ -14168,6 +14168,11 @@
           clearClientAuth();
           loginButton.disabled = false;
           setStatus(loginStatus, "담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.", "");
+          return false;
+        }
+        if (payload.ok && payload.session && (payload.session.role === "owner" || payload.session.role === "team")) {
+          loginButton.disabled = false;
+          setStatus(loginStatus, (payload.session.role === "owner" ? "총관리자" : "운영팀") + " 계정으로 로그인되어 있습니다. 운영 화면은 /admin 에서 열립니다.", "");
           return false;
         }
         if (!payload.ok || !payload.session || payload.session.role !== "client" || !payload.client) {

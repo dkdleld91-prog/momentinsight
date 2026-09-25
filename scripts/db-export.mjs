@@ -345,7 +345,15 @@ export async function runExport({
         const base = findIncrementalBase(outDir, table, { excludeFolder: folderName, projectRef });
         if (base) {
           detail.base = base.folder;
-          const incremental = await exportTableIncremental({ client, table, base, pageSize });
+          let incremental;
+          try {
+            incremental = await exportTableIncremental({ client, table, base, pageSize });
+          } catch (error) {
+            // 서버가 증분 요청(HEAD·필터·정렬)을 거절하면 매일 같은 실패가 반복되지 않게 그 표만 통째로 받는다.
+            // 연결 끊김 같은 네트워크 오류(status 없음)는 통째로 받아도 실패하므로 그대로 실패로 남긴다.
+            if (!(error && Number.isInteger(error.status))) throw error;
+            incremental = { fallbackReason: `incremental_http_${error.status}` };
+          }
           Object.assign(detail, incremental.stats);
           if (incremental.rows) {
             result = incremental;

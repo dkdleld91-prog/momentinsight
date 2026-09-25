@@ -411,6 +411,22 @@ test("⑤-3 표에 열이 더해지면(마이그레이션) 옛 줄 모양이 달
   fs.rmSync(outDir, { recursive: true, force: true });
 });
 
+test("⑤-4 서버가 증분 요청을 거절하면(예: HEAD 405) 매일 실패하지 않게 그 표만 통째로 받는다", async () => {
+  const outDir = tmpDir();
+  const db = fakeDb({ [SNAP]: byId(snapshotHistory(120)) });
+  await backup(db, outDir, DAY1, { tables: [SNAP] });
+  const refusing = fakeDb(db.state, {
+    intercept: (call) => (call.method === "HEAD" ? new Response("method not allowed", { status: 405 }) : null),
+  });
+  const { folder, manifest } = await backup(refusing, outDir, DAY1 + DAY_MS, { tables: [SNAP] });
+  assert.deepEqual(manifest.errors, []);
+  assert.equal(manifest.tables[SNAP].method, "fallback");
+  assert.equal(manifest.tables[SNAP].fallbackReason, "incremental_http_405");
+  assert.equal(refusing.calls.filter((call) => call.method === "HEAD").length, 1, "405 는 다시 시도하지 않는다");
+  await assertSameAsFull(db, folder, SNAP);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
 test("⑥ 증분을 여러 날 이어도 결과는 매일 전체 수신과 바이트 단위로 같다(추가·삭제·경계 같은 시각 포함)", async () => {
   const outDir = tmpDir();
   const db = fakeDb({ [SNAP]: byId(snapshotHistory(900)) });

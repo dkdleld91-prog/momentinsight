@@ -47,7 +47,18 @@ const MATCH_ONLY_RESULT_CACHE_TTL_MS = Math.max(
 );
 const RESULT_CACHE_MAX = Math.max(5, Math.min(100, Number(process.env.NAVER_PLACE_RESULT_CACHE_MAX || 40)));
 const resultCache = new Map();
-const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping|list)/i;
+// 2026-09-25: Naver serves category lists under /<category>/list (restaurant, hospital, and
+// also e.g. /rest/list for a gym search). The old allowlist missed `rest`, so every
+// "평택헬스장" lookup since 2026-08-27 failed with naver_map_native_list_frame_not_found.
+// Any single-segment category list (or the bare /list) is Naver's own native list.
+const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:[a-z][a-z0-9_-]*\/)?list(?:[/?#]|$)/i;
+// Naver's own list route keeps its native display. Forcing a wider display dropped the pager
+// (restaurant lists then stopped at 100 rows) and redirected hospital lists to an empty
+// generic list; ranks past the first page are read by paging instead.
+// Naver's PC list shows one page at a time with 이전/다음 links. Rows past the first page
+// were never read (782 checks over 30 days topped out at 100 places while ranks up to 300
+// were promised). Bounded page advance: at most this many pages per lookup.
+const MAX_LIST_PAGES = 8;
 const DETAIL_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i;
 const AD_HINT_PATTERN = /광고|스폰서|파워링크/i;
 const CHIP_WORDS = [
@@ -976,6 +987,43 @@ async function resolvePlaceIdentityWithBrowser(context, value, deadlineAt) {
   }
 }
 
+// Clicks Naver's enabled 다음 page link and waits until the first list row changes. Returns
+// false when there is no next page or the list did not change in time (never guesses).
+async function goToNextListPage(page, deadlineAt) {
+  const firstRowText = () => page.evaluate(() => {
+    const row = document.querySelector("#_pcmap_list_scroll_container > ul > li");
+    return row ? String(row.innerText || "").slice(0, 120) : "";
+  });
+  const before = await firstRowText();
+  const clicked = await page.evaluate(() => {
+    // The page pager sits outside the result rows ("이전페이지 1 2 … 다음페이지"). Rows carry
+    // their own photo-slider 이전/다음 arrows, which must never be mistaken for paging.
+    const links = [...document.querySelectorAll("a, button")].filter((link) => (
+      String(link.textContent || "").replace(/\s+/g, "") === "다음페이지"
+      && link.getAttribute("aria-disabled") === "false"
+      && !link.closest("#_pcmap_list_scroll_container > ul > li")
+    ));
+    if (!links.length) return false;
+    links[0].click();
+    return true;
+  });
+  if (!clicked) return false;
+  const waitUntil = Math.min(Date.now() + 8000, deadlineAt - COLLECTION_DEADLINE_GUARD_MS);
+  while (Date.now() < waitUntil) {
+    await page.waitForTimeout(250);
+    const after = await firstRowText();
+    if (after && after !== before) {
+      await page.evaluate(() => {
+        const root = document.querySelector("#_pcmap_list_scroll_container");
+        if (root) root.scrollTop = 0;
+        window.scrollTo(0, 0);
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
 async function waitForListFrame(page) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < DEFAULT_TIMEOUT_MS) {
@@ -1255,11 +1303,14 @@ async function collectRowsProgressively({
   growthPollAttempts = GROWTH_POLL_ATTEMPTS,
   growthPollIntervalMs = GROWTH_POLL_INTERVAL_MS,
   exhaustedStableRounds = EXHAUSTED_STABLE_ROUNDS,
+  nextPage = null,
+  maxPages = MAX_LIST_PAGES,
 }) {
   const candidates = [];
   let previousScrollState = null;
   let stableRounds = 0;
   let scrollCount = 0;
+  let pageCount = 1;
 
   const ingestRows = async () => {
     const rows = await readRows();
@@ -1304,6 +1355,22 @@ async function collectRowsProgressively({
     const settledAtEnd = atScrollEnd(scrollState) || sameScrollState(scrollState, previousScrollState);
     stableRounds = noGrowth && settledAtEnd ? stableRounds + 1 : 0;
     if (stableRounds >= exhaustedStableRounds) {
+      // The current page is fully read. Move to Naver's next list page when one exists;
+      // the next page's rows continue the same organic order, so ranks stay positional.
+      if (typeof nextPage === "function" && pageCount < maxPages && now() < deadlineAt) {
+        let moved = false;
+        try {
+          moved = (await nextPage()) === true;
+        } catch {
+          moved = false;
+        }
+        if (moved) {
+          pageCount += 1;
+          stableRounds = 0;
+          previousScrollState = null;
+          continue;
+        }
+      }
       return collectionResult(candidates, resultLimit, "naver_result_list_exhausted", scrollCount);
     }
     previousScrollState = scrollState;
@@ -1375,9 +1442,6 @@ function buildPlaceListUrl(keyword, maxRank, searchCoord = "", nativeListUrl = "
     // Forcing display=300 redirects that route to an empty generic place/list.
     // Preserve Naver's full query context for that route. Restaurant lists
     // accept the wider display value and keep the existing scan coverage.
-    if (!/\/hospital\/list$/i.test(url.pathname)) {
-      url.searchParams.set("display", String(Math.min(maxRank, NAVER_PLACE_MAX_RESULTS)));
-    }
     return url.toString();
   }
 
@@ -1501,6 +1565,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         readRows: () => extractVisibleRows(page),
         advance: () => scrollListFrame(page),
         wait: (milliseconds) => page.waitForTimeout(milliseconds),
+        nextPage: () => goToNextListPage(page, deadlineAt),
         selectorError,
       });
       rememberCandidates(keyword, maxRank, collection);
@@ -1542,6 +1607,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       readRows: () => extractVisibleRows(page),
       advance: () => scrollListFrame(page),
       wait: (milliseconds) => page.waitForTimeout(milliseconds),
+      nextPage: () => goToNextListPage(page, deadlineAt),
       selectorError,
     });
     rememberCandidates(keyword, maxRank, collection);

@@ -84,12 +84,15 @@ test("preserves Naver's hospital list route and native display contract", () => 
   assert.equal(result.searchParams.get("searchText"), "종로3가한의원");
 });
 
-test("keeps the existing 300-result expansion for native restaurant lists", () => {
+// 2026-09-25: the forced display=300 made Naver drop the 이전/다음 pager, so restaurant lists
+// stopped at 100 rows (782 production checks, max 100). The native display is kept and the
+// collector pages through instead.
+test("keeps Naver's native display for restaurant lists so the pager stays available", () => {
   const nativeUrl = "https://pcmap.place.naver.com/restaurant/list?query=%ED%99%8D%EB%8C%80+%EB%A7%9B%EC%A7%91&x=126.676525&y=37.463776&display=70";
   const result = new URL(buildPlaceListUrl("홍대 맛집", 300, "126.676525;37.463776", nativeUrl));
 
   assert.equal(result.pathname, "/restaurant/list");
-  assert.equal(result.searchParams.get("display"), "300");
+  assert.equal(result.searchParams.get("display"), "70");
 });
 
 test("rejects a non-Naver URL that only contains a native-list string", () => {
@@ -1359,4 +1362,74 @@ test("preserves explicit zero review counts as canonical zero", () => {
       visitReviewCount: { knownCount: 1, totalCount: 1 },
     },
   });
+});
+
+// 2026-09-25: 782 production checks never read past 100 places (ranks up to 300 promised)
+// because Naver's list pages with 이전/다음 links and only the first page was scrolled.
+test("continues onto Naver's next list page and keeps positional ranks across pages", async () => {
+  const pages = [Array.from({ length: 50 }, (_, i) => placeRow(i)), Array.from({ length: 50 }, (_, i) => placeRow(50 + i)), Array.from({ length: 30 }, (_, i) => placeRow(100 + i))];
+  let current = 0;
+  let pageCalls = 0;
+  const collection = await collectRowsProgressively({
+    resultLimit: 300,
+    maxScrolls: 60,
+    deadlineAt: 60_000,
+    now: () => 0,
+    readRows: async () => pages[current],
+    advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+    wait: async () => {},
+    nextPage: async () => { pageCalls += 1; if (current + 1 >= pages.length) return false; current += 1; return true; },
+  });
+  assert.equal(collection.candidates.length, 130);
+  assert.equal(collection.stopReason, "naver_result_list_exhausted", "exhausted only after the last page has no 다음");
+  assert.equal(pageCalls, 3);
+  assert.deepEqual(collection.candidates.map((c) => c.id), pages.flat().map((row) => row.id), "page 2 rows follow page 1 rows in order");
+});
+
+test("stops paging once the requested range is filled and never exceeds the page bound", async () => {
+  let current = 0;
+  const pageRows = (p) => Array.from({ length: 50 }, (_, i) => placeRow(p * 50 + i));
+  const filled = await collectRowsProgressively({
+    resultLimit: 120, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
+    readRows: async () => pageRows(current),
+    advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+    wait: async () => {},
+    nextPage: async () => { current += 1; return true; },
+  });
+  assert.equal(filled.candidates.length, 120);
+  assert.equal(filled.stopReason, "requested_range_checked");
+  current = 0;
+  let calls = 0;
+  const bounded = await collectRowsProgressively({
+    resultLimit: 300, maxScrolls: 200, deadlineAt: 60_000, now: () => 0, maxPages: 3,
+    readRows: async () => pageRows(current).slice(0, 10),
+    advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+    wait: async () => {},
+    nextPage: async () => { calls += 1; current += 1; return true; },
+  });
+  assert.equal(calls, 2, "page 1 plus at most two advances");
+  assert.equal(bounded.candidates.length, 30);
+  assert.equal(bounded.stopReason, "naver_result_list_exhausted");
+});
+
+test("a failing next-page step ends the scan as exhausted instead of throwing", async () => {
+  const collection = await collectRowsProgressively({
+    resultLimit: 300, maxScrolls: 60, deadlineAt: 60_000, now: () => 0,
+    readRows: async () => Array.from({ length: 20 }, (_, i) => placeRow(i)),
+    advance: async () => ({ scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }),
+    wait: async () => {},
+    nextPage: async () => { throw new Error("click failed"); },
+  });
+  assert.equal(collection.candidates.length, 20);
+  assert.equal(collection.stopReason, "naver_result_list_exhausted");
+});
+
+test("native list URLs of any category are recognised and keep Naver's own display", () => {
+  const rest = buildPlaceListUrl("평택헬스장", 300, "", "https://pcmap.place.naver.com/rest/list?query=%ED%8F%89%ED%83%9D&display=70&x=1&y=2");
+  assert.equal(new URL(rest).pathname, "/rest/list", "a gym search keeps Naver's own /rest/list route");
+  assert.equal(new URL(rest).searchParams.get("display"), "70", "unknown routes keep the native display and rely on paging");
+  const restaurant = buildPlaceListUrl("부평 맛집", 300, "", "https://pcmap.place.naver.com/restaurant/list?query=x&display=70");
+  assert.equal(new URL(restaurant).searchParams.get("display"), "70", "a forced wide display drops Naver's pager (restaurant stopped at 100)");
+  const hospital = buildPlaceListUrl("인천치과", 300, "", "https://pcmap.place.naver.com/hospital/list?query=x&display=70");
+  assert.equal(new URL(hospital).searchParams.get("display"), "70");
 });

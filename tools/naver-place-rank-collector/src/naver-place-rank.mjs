@@ -1363,6 +1363,9 @@ async function collectRowsProgressively({
   let previousScrollState = null;
   let stableRounds = 0;
   let scrollCount = 0;
+  // 스크롤 한도는 쪽마다 따로 센다. 2026-09-25 실측: 한 쪽(약 70곳)에 스크롤 약 22번이 들어서, 전체 합산 90번이면
+  // 4쪽 280곳에서 멈추고 300위(5쪽)까지 가지 못했다.
+  let pageScrollCount = 0;
   let pageCount = 1;
   let pagerOutcome = "";
   const finish = (stopReason) => ({
@@ -1384,13 +1387,14 @@ async function collectRowsProgressively({
     if (now() >= deadlineAt) {
       return finish("collection_deadline_reached");
     }
-    if (scrollCount >= maxScrolls) {
+    if (pageScrollCount >= maxScrolls) {
       return finish("max_scrolls_reached");
     }
 
     const countBeforeScroll = candidates.length;
     const scrollState = await advance();
     scrollCount += 1;
+    pageScrollCount += 1;
 
     // Mid-list virtual scrolling does not need six idle polls before the next
     // overlapping step. Keep the longer wait only at the current list end,
@@ -1433,6 +1437,7 @@ async function collectRowsProgressively({
         pagerOutcome = outcome;
         if (outcome === "moved") {
           pageCount += 1;
+          pageScrollCount = 0;
           stableRounds = 0;
           previousScrollState = null;
           continue;

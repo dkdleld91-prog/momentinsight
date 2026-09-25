@@ -1488,3 +1488,21 @@ test("2026-09-25 운영 결함: 메모리가 한도에 가까우면 다음 쪽�
   assert.equal(cachedCandidates("구월동 맛집", 300, { placeId: "99999999", placeIds: ["99999999"] }), null);
   resetCandidateCache();
 });
+
+test("2026-09-25: 스크롤 한도는 쪽마다 따로 세서 여러 쪽을 넘겨 300위까지 간다", async () => {
+  let current = 0;
+  let scrollsOnPage = 0;
+  const pageRows = (p) => Array.from({ length: 70 }, (_, i) => placeRow(p * 70 + i));
+  const collection = await collectRowsProgressively({
+    resultLimit: 300, maxScrolls: 8, deadlineAt: 60_000, now: () => 0,
+    // 한 쪽을 다 읽으려면 스크롤 몇 번이 필요하다(한 번에 20곳씩 보인다).
+    readRows: async () => pageRows(current).slice(0, Math.min(70, 20 + scrollsOnPage * 20)),
+    advance: async () => { scrollsOnPage += 1; return { scrollTop: 1000, scrollHeight: 1500, clientHeight: 500 }; },
+    wait: async () => {},
+    nextPage: async () => { current += 1; scrollsOnPage = 0; return "moved"; },
+  });
+  assert.equal(collection.stopReason, "requested_range_checked", "합산 한도(8번)였다면 1~2쪽에서 멈췄다");
+  assert.equal(collection.candidates.length, 300);
+  assert.equal(collection.pageCount, 5);
+  assert.ok(collection.scrollCount > 8, "전체 스크롤 수는 쪽 한도보다 많다");
+});

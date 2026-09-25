@@ -4,7 +4,7 @@ import { containerMemory, lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
-const RELEASE = "2026-09-25-memory-guard-diagnostics-v23";
+const RELEASE = "2026-09-25-per-page-scroll-limit-v24";
 const STARTED_AT = new Date().toISOString();
 let activeLookup = false;
 // 2026-09-25: 운영에서 조회가 이유 없이 끊겨(프로세스 종료 추정) 원인을 볼 수 없었다. 기술 정보만 남긴다
@@ -73,6 +73,12 @@ async function handleRequest(request, response) {
       startedAt: STARTED_AT,
       uptimeSec: Math.round(process.uptime()),
       memory: containerMemory(),
+      // 실제로 적용된 한도(환경 변수로 덮였는지 확인용).
+      limits: {
+        maxScrollsPerPage: Math.max(1, Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90)),
+        pageTimeoutMs: Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000),
+        overallTimeoutMs: Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 210000),
+      },
       lastLookup,
       checkedAt: new Date().toISOString(),
     });

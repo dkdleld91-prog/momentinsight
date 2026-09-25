@@ -5223,3 +5223,90 @@ test("tracker payload keeps its existing fields in order and appends the not-fou
   assert.deepEqual(keys.slice(0, before.length), before);
   assert.deepEqual(keys.slice(before.length), ["neverFound", "foundRate", "lastFoundAt"]);
 });
+
+test("목록 응답은 가장 최신 기록만 전체 상품 정보를 싣고 옛 기록은 화면이 쓰는 여섯 칸만 싣는다", () => {
+  const now = Date.now();
+  const item = {
+    title: "상품",
+    productId: "123",
+    mallName: "몰",
+    link: "https://smartstore.naver.com/a/products/123",
+    image: "https://shopping-phinf.pstatic.net/a.jpg",
+    lprice: 19800,
+    reviewCount: 42,
+  };
+  const snapshots = [0, 1, 2].map((index) => ({
+    id: `snap-${index}`,
+    tracker_id: "tracker-1",
+    checked_at: new Date(now - index * 60 * 60 * 1000).toISOString(),
+    rank: 10 + index,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: { ...item },
+    message: "ok",
+    source: "test",
+    created_at: new Date(now).toISOString(),
+  }));
+  const payload = trackerPayload(trackerRow(), snapshots);
+  assert.equal(payload.snapshots.length, 3);
+  assert.equal(payload.snapshots[0].item.image, item.image);
+  assert.equal(payload.snapshots[0].item.lprice, 19800);
+  for (const older of payload.snapshots.slice(1)) {
+    assert.deepEqual(older.item, {
+      title: "상품",
+      productId: "123",
+      mallName: "몰",
+      link: "https://smartstore.naver.com/a/products/123",
+    });
+    assert.equal(older.rank > 0, true);
+  }
+});
+
+test("검색량 전용 조회는 추적 id·키워드만 읽고 추적별 검색량만 돌려준다", async () => {
+  const teamCode = "mml93-t01";
+  const request = new Request("https://example.com/api/naver-rank-trackers?view=keyword-volumes", {
+    headers: {
+      "x-mi-session-role": "team",
+      "x-mi-session-scope": "account-only",
+      "x-mi-team-code": teamCode,
+      "x-mi-agency-code": teamCode,
+      "x-mi-rank-access-code": teamCode,
+    },
+  });
+  const selected = [];
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const query = {
+          select(columns) { selected.push(columns); return query; },
+          in(column, values) {
+            assert.equal(column, "agency_code");
+            assert.deepEqual(values, [teamCode]);
+            return query;
+          },
+          order() { return query; },
+          limit() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({
+              data: [{ id: "t-1", keyword: "탄소매트" }, { id: "t-2", keyword: "모자" }],
+              error: null,
+            }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+  const response = await withoutShoppingCollector(() => handleRankTrackersRequest(request, ctx));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(selected, ["id, keyword"]);
+  assert.equal("trackers" in body, false);
+  assert.deepEqual(Object.keys(body.volumes).sort(), ["t-1", "t-2"]);
+  for (const volume of Object.values(body.volumes)) {
+    assert.deepEqual(Object.keys(volume).sort(), ["keywordVolume", "keywordVolumeLabel", "keywordVolumeStatus"]);
+  }
+});

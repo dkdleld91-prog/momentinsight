@@ -10472,6 +10472,7 @@
 
       function rankKeywordVolumeText(tracker) {
         var raw = tracker.keywordVolumeLabel || (tracker.keywordVolume ? formatNumber(tracker.keywordVolume) : "");
+        if (tracker.keywordVolumeStatus === "error" || tracker.keywordVolumeStatus === "unconfirmed") return "미확인";
         var label = String(raw || "조회 필요").trim();
         if (!label || label === "0") return "조회 필요";
         if (label === "조회 필요") return label;
@@ -10483,7 +10484,7 @@
       function renderRankKeywordVolume(tracker) {
         var text = rankKeywordVolumeText(tracker);
         var ready = tracker.keywordVolumeStatus === "ok" || tracker.keywordVolumeStatus === "range";
-        return '<span class="mi-rank-keyword-volume' + (ready ? "" : " is-muted") + '" title="키워드검색량 ' + escapeHtml(text) + '">키워드검색량 ' + escapeHtml(text) + '</span>';
+        return '<span class="mi-rank-keyword-volume' + (ready ? "" : " is-muted") + '" data-rank-volume-id="' + escapeHtml(tracker.id) + '" title="키워드검색량 ' + escapeHtml(text) + '">키워드검색량 ' + escapeHtml(text) + '</span>';
       }
 
       function rankTrackerProductUrl(tracker) {
@@ -11854,6 +11855,71 @@
         var rankAutoSyncLastAt = 0;
         var rankRequestGeneration = 0;
         var rankListLoadInFlight = null;
+
+        // 2026-09-25: 목록은 검색량을 짧게만 기다려 남은 키워드를 "조회 중"으로 보낸다. 목록을 그린 뒤
+        // 검색량만 따로 받아(추적 id·키워드만 읽는 가벼운 조회) 그 자리의 표시를 바꾼다. 세 번 받아도
+        // 남은 키워드는 "미확인"으로 멈춰 계속 도는 것처럼 보이지 않게 한다.
+        var rankListLastLoaded = null;
+        var rankVolumeRefreshTimer = null;
+        var rankVolumeRefreshToken = 0;
+
+        function rankTrackersWithPendingVolume() {
+          return rankTrackers.filter(function (tracker) { return tracker && tracker.keywordVolumeStatus === "pending"; });
+        }
+
+        function applyRankKeywordVolumes(volumes, settle) {
+          var changed = {};
+          rankTrackers.forEach(function (tracker) {
+            if (!tracker || tracker.keywordVolumeStatus !== "pending") return;
+            var next = volumes && volumes[tracker.id];
+            if (next && next.keywordVolumeStatus && next.keywordVolumeStatus !== "pending") {
+              tracker.keywordVolume = next.keywordVolume;
+              tracker.keywordVolumeLabel = next.keywordVolumeLabel;
+              tracker.keywordVolumeStatus = next.keywordVolumeStatus;
+            } else if (settle) {
+              tracker.keywordVolume = null;
+              tracker.keywordVolumeLabel = "미확인";
+              tracker.keywordVolumeStatus = "unconfirmed";
+            } else {
+              return;
+            }
+            changed[String(tracker.id)] = tracker;
+          });
+          Array.prototype.forEach.call(document.querySelectorAll("[data-rank-volume-id]"), function (badge) {
+            var tracker = changed[badge.getAttribute("data-rank-volume-id")];
+            if (tracker) badge.outerHTML = renderRankKeywordVolume(tracker);
+          });
+        }
+
+        function scheduleRankKeywordVolumeRefresh(scope, generation) {
+          if (rankVolumeRefreshTimer !== null) clearTimeout(rankVolumeRefreshTimer);
+          rankVolumeRefreshTimer = null;
+          var token = ++rankVolumeRefreshToken;
+          var attempts = 0;
+          function current() {
+            return token === rankVolumeRefreshToken && rankRequestIsCurrent(scope, generation);
+          }
+          function next(delayMs) {
+            if (!current() || !rankTrackersWithPendingVolume().length) return;
+            if (attempts >= 3) {
+              applyRankKeywordVolumes(null, true);
+              return;
+            }
+            rankVolumeRefreshTimer = setTimeout(function () {
+              rankVolumeRefreshTimer = null;
+              if (!current()) return;
+              attempts += 1;
+              requestRankKeywordVolumes(scope).then(function (payload) {
+                if (current() && payload) applyRankKeywordVolumes(payload.volumes, false);
+              }).catch(function () {
+                return null;
+              }).then(function () {
+                next(4000);
+              });
+            }, delayMs);
+          }
+          next(1500);
+        }
         var RANK_LIST_RECOVERY_DELAY_MS = 15000;
         var rankListRecoveryTimer = null;
         var rankListRecoveryScopeKey = "";
@@ -11948,6 +12014,18 @@
           if (!payload) payload = { ok: false, message: "순위 추적 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
           return payload;
+        }
+
+        async function requestRankKeywordVolumes(requestScope) {
+          if (!requestScope) return null;
+          var response = await miFetch(getRankTrackerApiUrl() + "?" + new URLSearchParams({ view: "keyword-volumes" }).toString(), {
+            method: "GET",
+            cache: "no-store",
+            headers: {},
+            timeoutMs: 20000
+          });
+          var payload = await response.json().catch(function () { return null; });
+          return response.ok && payload && payload.ok === true && payload.volumes ? payload : null;
         }
 
         function resetRankListRecoveryBudget(scope, generation) {
@@ -12119,6 +12197,8 @@
               writeRankTrackerLastGood("product", scope, rankTrackers);
               renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
               renderRankHistory(rankHistory, rankTrackers);
+              rankListLastLoaded = { key: scope.key, at: Date.now() };
+              scheduleRankKeywordVolumeRefresh(scope, generation);
               if (loadState.announce) {
                 var cooldownMessage = rankWorkerCooldownMessage();
                 if (cooldownMessage) setStatus(rankStatus, cooldownMessage, "is-warn");
@@ -12293,6 +12373,9 @@
         syncKeywordFromMain();
         loadRankTrackers(false);
         window.addEventListener("mi:rank-auth-ready", function () {
+          // 2026-09-25: 로그인 확인 신호가 목록을 막 받은 직후 다시 와도 같은 범위면 목록을 또 받지 않는다.
+          var readyScope = verifiedRankTrackerScope();
+          if (readyScope && rankListLastLoaded && rankListLastLoaded.key === readyScope.key && Date.now() - rankListLastLoaded.at < 15000) return;
           loadRankTrackers(false);
         });
         window.addEventListener("mi:rank-scope-changed", function () {

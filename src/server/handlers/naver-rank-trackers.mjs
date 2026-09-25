@@ -635,7 +635,7 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    snapshots: recentSnapshots.map((snapshot) => snapshotPayload(snapshot, row.product_id)),
+    snapshots: recentSnapshots.map((snapshot, index) => snapshotPayload(snapshot, row.product_id, { compactItem: index > 0 })),
     neverFound: checkCount >= 3 && foundCount === 0,
     foundRate: checkCount > 0 ? Math.round((foundCount / checkCount) * 100) / 100 : null,
     lastFoundAt: lastFoundAtFromSnapshots(snapshots),
@@ -662,7 +662,21 @@ function lastFoundAtFromSnapshots(snapshots = []) {
   return latest;
 }
 
-function snapshotPayload(row, trackerProductId = "") {
+// 2026-09-25: 목록 응답이 3.1 MB 까지 커졌다. 화면이 옛 기록에서 읽는 상품 정보는 원부/상품 기준 표시와
+// 제목·몰·링크뿐이라, 가장 최신 기록만 전체 상품 정보를 싣고 나머지는 이 여섯 칸만 싣는다.
+const SNAPSHOT_COMPACT_ITEM_KEYS = ["trackingRankSource", "trackingRankSourceLabel", "title", "productId", "mallName", "link"];
+
+function compactSnapshotItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return item || null;
+  const compact = {};
+  for (const key of SNAPSHOT_COMPACT_ITEM_KEYS) {
+    if (item[key] !== undefined) compact[key] = item[key];
+  }
+  return compact;
+}
+
+function snapshotPayload(row, trackerProductId = "", options = {}) {
+  const item = displayProductRankItem(row.item, trackerProductId);
   return {
     id: row.id,
     trackerId: row.tracker_id,
@@ -673,7 +687,7 @@ function snapshotPayload(row, trackerProductId = "") {
     matched: row.matched,
     checkedCount: row.checked_count,
     total: row.total,
-    item: displayProductRankItem(row.item, trackerProductId),
+    item: options.compactItem === true ? compactSnapshotItem(item) : item,
     message: row.message,
     source: row.source,
     createdAt: row.created_at,
@@ -1234,11 +1248,52 @@ async function rankTrackerListRead(stage, operation) {
   }
 }
 
+// 2026-09-25: 목록은 검색량을 짧게만 기다려 남은 키워드가 "조회 중"으로 남았다. 화면은 목록을 그린 뒤
+// 이 가벼운 조회(추적 id·키워드만 읽음)로 검색량만 다시 받아 그 자리의 표시를 바꾼다.
+export function keywordVolumeViewPayload(rows, keywordVolumes) {
+  const volumes = {};
+  for (const row of rows || []) {
+    if (!row?.id) continue;
+    const volume = keywordVolumes.get(normalizeKeywordCompare(row.keyword));
+    volumes[row.id] = {
+      keywordVolume: volume?.value ?? null,
+      keywordVolumeLabel: volume?.label || KEYWORD_VOLUME_PENDING.label,
+      keywordVolumeStatus: volume?.status || KEYWORD_VOLUME_PENDING.status,
+    };
+  }
+  return volumes;
+}
+
+async function listKeywordVolumes(request, ctx, access) {
+  const agencyCode = access.agencyCode;
+  const { data, error } = await rankTrackerListRead("trackers", () => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id, keyword")
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(TRACKER_LIST_MAX));
+  if (error) throw rankTrackerReadError(error, "trackers");
+  const rows = data || [];
+  const keywordVolumes = await rankTrackerListRead("keyword-volumes", () => loadKeywordVolumes(
+    rows.map((row) => row.keyword),
+    { budgetMs: KEYWORD_VOLUME_TIME_BUDGET_MS },
+  ));
+  return json(request, {
+    ok: true,
+    scopeKey: normalizeAgencyCode(agencyCode),
+    volumes: keywordVolumeViewPayload(rows, keywordVolumes),
+  });
+}
+
 async function listTrackers(request, ctx) {
   const listStartedAt = Date.now();
   const access = await rankTrackerListRead("access", () => requireRankAccess(request, ctx, {}, { read: true }));
   const accessMs = Date.now() - listStartedAt;
   if (!access.ok) return access.response;
+  if (new URL(request.url).searchParams.get("view") === "keyword-volumes") {
+    return listKeywordVolumes(request, ctx, access);
+  }
   const agencyCode = access.agencyCode;
 
   const trackersQueryStartedAt = Date.now();

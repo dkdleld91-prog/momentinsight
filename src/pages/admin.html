@@ -1512,6 +1512,21 @@
       line-height: 1.45;
     }
 
+    /* 긴 빈 값 문구가 항목 이름(광고비·구매수 등)을 한두 글자씩 밀어내지 않게 이름은 한 줄로 둔다. */
+    #mi-admin .mi-client-view .mi-row > span:first-child {
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-client-view .mi-row strong.is-empty {
+      text-align: right;
+    }
+
+    /* 요약 카드 안 '데이터 상태' 줄은 한 문장으로 흐르게 한다(flex 조각으로 쪼개지지 않게). */
+    #mi-admin .mi-client-view .mi-summary .mi-code-status {
+      display: block;
+    }
+
     #mi-admin .mi-client-sync-note.is-warn {
       color: var(--mi-orange);
       background: var(--mi-orange-bg);

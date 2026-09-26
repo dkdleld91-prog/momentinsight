@@ -1494,111 +1494,116 @@ async function lookupExternalPlaceProvider(config, tracker) {
       throw new Error(payload?.message || payload?.error || "place_rank_provider_failed");
     }
 
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      throw new Error("place_rank_provider_invalid_response");
-    }
-
-    const hasMatchedField = Object.prototype.hasOwnProperty.call(payload, "matched");
-    if (hasMatchedField && typeof payload.matched !== "boolean") {
-      throw new Error("place_rank_provider_invalid_response");
-    }
-    const rawRankValue = payload.rank ?? payload.position ?? 0;
-    const rankProvided = rawRankValue !== null && rawRankValue !== undefined && String(rawRankValue).trim() !== "";
-    const rawRank = Number(rawRankValue);
-    const rank = Number.isInteger(rawRank) && rawRank >= 1 && rawRank <= PLACE_RANK_TRACKER_MAX_RANK
-      ? rawRank
-      : 0;
-    const invalidProvidedRank = rankProvided && rawRank !== 0 && !rank;
-    const contradictoryMatch = (payload.matched === true && !rank) || (payload.matched === false && Boolean(rank));
-    if (invalidProvidedRank || contradictoryMatch) {
-      throw new Error("place_rank_provider_invalid_response");
-    }
-    const matched = hasMatchedField ? payload.matched : rank > 0;
-    const topPlaces = Array.isArray(payload.topPlaces)
-      ? payload.topPlaces
-      : (Array.isArray(payload.items) ? payload.items : []);
-    const rawCheckedCount = payload.checkedCount ?? payload.checked_count ?? topPlaces.length;
-    const parsedCheckedCount = Number(rawCheckedCount);
-    const checkedCount = Math.min(
-      PLACE_RANK_TRACKER_MAX_RANK,
-      Math.max(matched ? rank : 0, Number.isFinite(parsedCheckedCount) ? Math.floor(parsedCheckedCount) : 0)
-    );
-    if (!matched && checkedCount <= 0) {
-      throw new Error("place_rank_provider_invalid_response");
-    }
-    const providerSource = normalizeText(payload.source);
-    const rankEvidence = normalizeText(payload.rankEvidence || payload.rank_evidence);
-    if (
-      providerSource !== "naver_map_pc_list_collector" ||
-      rankEvidence !== "naver_pc_organic_list"
-    ) {
-      throw new Error("place_rank_provider_untrusted_evidence");
-    }
-    const complete = !matched && checkedCount >= PLACE_RANK_TRACKER_MAX_RANK;
-    const partial = !matched && !complete;
-    const place = payload.place || payload.item || {};
-    const topPlaceAggregate = aggregateCompleteTopPlaceMetrics(topPlaces, checkedCount);
-    const placeAggregate = validatedAggregateMetricBundle(place, checkedCount);
-    const payloadAggregate = validatedAggregateMetricBundle(payload, checkedCount);
-    const metrics = mergeDefinedPlaceMetrics(
-      placeAggregate.metrics,
-      topPlaceAggregate.metrics,
-      payloadAggregate.metrics,
-    );
-    if (metrics.monthlySearchCount === undefined) {
-      const monthlySearchCount = await monthlySearchCountPromise;
-      if (monthlySearchCount !== null && monthlySearchCount !== undefined) {
-        metrics.monthlySearchCount = monthlySearchCount;
-      }
-    }
-    const targetPlaceId = normalizeText(tracker.place_id);
-    const providerPlaceId = normalizeText(
-      place.id ||
-      place.placeId ||
-      place.place_id ||
-      place.businessId ||
-      place.business_id ||
-      extractPlaceId(place.url || place.link)
-    );
-    const providerIdConflicts = Boolean(providerPlaceId && providerPlaceId !== targetPlaceId);
-    const matchedWithoutExactId = matched && providerPlaceId !== targetPlaceId;
-    if (
-      targetPlaceId &&
-      (providerIdConflicts || matchedWithoutExactId)
-    ) {
-      throw new Error("place_rank_provider_invalid_response");
-    }
-    const metricMetadata = mergePlaceMetricMetadata(
-      placeAggregate.metadata,
-      topPlaceAggregate.metadata,
-      payloadAggregate.metadata,
-    );
-    const placeWithMetrics = hasPlaceMetrics(metrics) || Object.keys(metricMetadata).length
-      ? { ...place, metrics: { ...metrics, ...metricMetadata } }
-      : place;
-    const parsedTotal = Number(payload.total ?? checkedCount);
-    return {
-      ok: true,
-      matched,
-      rank: matched ? rank : null,
-      checkedCount,
-      total: Number.isFinite(parsedTotal) ? Math.max(0, parsedTotal) : checkedCount,
-      requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
-      complete,
-      partial,
-      partialReason: partial
-        ? payload.partialReason || payload.partial_reason || payload.stopReason || payload.stop_reason || "collection_incomplete"
-        : null,
-      stopReason: payload.stopReason || payload.stop_reason || null,
-      place: placeWithMetrics,
-      topPlaces,
-      source: providerSource,
-      rankEvidence,
-      message: normalizeText(payload.message),
-    };
+    return await normalizePlaceProviderPayload(payload, tracker, monthlySearchCountPromise);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// 수집기(Render 또는 GitHub Actions 러너)가 돌려준 결과를 검증·정규화한다. 두 경로가 같은 규칙을 쓴다.
+export async function normalizePlaceProviderPayload(payload, tracker, monthlySearchCountPromise = Promise.resolve(null)) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("place_rank_provider_invalid_response");
+  }
+
+  const hasMatchedField = Object.prototype.hasOwnProperty.call(payload, "matched");
+  if (hasMatchedField && typeof payload.matched !== "boolean") {
+    throw new Error("place_rank_provider_invalid_response");
+  }
+  const rawRankValue = payload.rank ?? payload.position ?? 0;
+  const rankProvided = rawRankValue !== null && rawRankValue !== undefined && String(rawRankValue).trim() !== "";
+  const rawRank = Number(rawRankValue);
+  const rank = Number.isInteger(rawRank) && rawRank >= 1 && rawRank <= PLACE_RANK_TRACKER_MAX_RANK
+    ? rawRank
+    : 0;
+  const invalidProvidedRank = rankProvided && rawRank !== 0 && !rank;
+  const contradictoryMatch = (payload.matched === true && !rank) || (payload.matched === false && Boolean(rank));
+  if (invalidProvidedRank || contradictoryMatch) {
+    throw new Error("place_rank_provider_invalid_response");
+  }
+  const matched = hasMatchedField ? payload.matched : rank > 0;
+  const topPlaces = Array.isArray(payload.topPlaces)
+    ? payload.topPlaces
+    : (Array.isArray(payload.items) ? payload.items : []);
+  const rawCheckedCount = payload.checkedCount ?? payload.checked_count ?? topPlaces.length;
+  const parsedCheckedCount = Number(rawCheckedCount);
+  const checkedCount = Math.min(
+    PLACE_RANK_TRACKER_MAX_RANK,
+    Math.max(matched ? rank : 0, Number.isFinite(parsedCheckedCount) ? Math.floor(parsedCheckedCount) : 0)
+  );
+  if (!matched && checkedCount <= 0) {
+    throw new Error("place_rank_provider_invalid_response");
+  }
+  const providerSource = normalizeText(payload.source);
+  const rankEvidence = normalizeText(payload.rankEvidence || payload.rank_evidence);
+  if (
+    providerSource !== "naver_map_pc_list_collector" ||
+    rankEvidence !== "naver_pc_organic_list"
+  ) {
+    throw new Error("place_rank_provider_untrusted_evidence");
+  }
+  const complete = !matched && checkedCount >= PLACE_RANK_TRACKER_MAX_RANK;
+  const partial = !matched && !complete;
+  const place = payload.place || payload.item || {};
+  const topPlaceAggregate = aggregateCompleteTopPlaceMetrics(topPlaces, checkedCount);
+  const placeAggregate = validatedAggregateMetricBundle(place, checkedCount);
+  const payloadAggregate = validatedAggregateMetricBundle(payload, checkedCount);
+  const metrics = mergeDefinedPlaceMetrics(
+    placeAggregate.metrics,
+    topPlaceAggregate.metrics,
+    payloadAggregate.metrics,
+  );
+  if (metrics.monthlySearchCount === undefined) {
+    const monthlySearchCount = await monthlySearchCountPromise;
+    if (monthlySearchCount !== null && monthlySearchCount !== undefined) {
+      metrics.monthlySearchCount = monthlySearchCount;
+    }
+  }
+  const targetPlaceId = normalizeText(tracker.place_id);
+  const providerPlaceId = normalizeText(
+    place.id ||
+    place.placeId ||
+    place.place_id ||
+    place.businessId ||
+    place.business_id ||
+    extractPlaceId(place.url || place.link)
+  );
+  const providerIdConflicts = Boolean(providerPlaceId && providerPlaceId !== targetPlaceId);
+  const matchedWithoutExactId = matched && providerPlaceId !== targetPlaceId;
+  if (
+    targetPlaceId &&
+    (providerIdConflicts || matchedWithoutExactId)
+  ) {
+    throw new Error("place_rank_provider_invalid_response");
+  }
+  const metricMetadata = mergePlaceMetricMetadata(
+    placeAggregate.metadata,
+    topPlaceAggregate.metadata,
+    payloadAggregate.metadata,
+  );
+  const placeWithMetrics = hasPlaceMetrics(metrics) || Object.keys(metricMetadata).length
+    ? { ...place, metrics: { ...metrics, ...metricMetadata } }
+    : place;
+  const parsedTotal = Number(payload.total ?? checkedCount);
+  return {
+    ok: true,
+    matched,
+    rank: matched ? rank : null,
+    checkedCount,
+    total: Number.isFinite(parsedTotal) ? Math.max(0, parsedTotal) : checkedCount,
+    requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
+    complete,
+    partial,
+    partialReason: partial
+      ? payload.partialReason || payload.partial_reason || payload.stopReason || payload.stop_reason || "collection_incomplete"
+      : null,
+    stopReason: payload.stopReason || payload.stop_reason || null,
+    place: placeWithMetrics,
+    topPlaces,
+    source: providerSource,
+    rankEvidence,
+    message: normalizeText(payload.message),
+  };
 }
 
 async function enrichTrackerPlaceIdentity(ctx, tracker) {
@@ -1647,14 +1652,14 @@ async function lookupPlaceRank(tracker) {
   return lookupNaverLocalSearchRank(config, tracker);
 }
 
-export async function runPlaceTrackerCheck(ctx, tracker) {
+export async function runPlaceTrackerCheck(ctx, tracker, options = {}) {
   const checkedAt = new Date().toISOString();
   let activeTracker = tracker;
 
   try {
-    const enrichedTracker = await enrichTrackerPlaceIdentity(ctx, tracker);
+    const enrichedTracker = options.skipEnrichment === true ? tracker : await enrichTrackerPlaceIdentity(ctx, tracker);
     activeTracker = enrichedTracker;
-    const result = await lookupPlaceRank(enrichedTracker);
+    const result = await (typeof options.lookup === "function" ? options.lookup : lookupPlaceRank)(enrichedTracker);
     if (!result.ok) {
       const updated = await updateTrackerAfterFailure(
         ctx,
@@ -2014,6 +2019,67 @@ async function updateTrackerGroup(request, ctx, body) {
     ok: true,
     message: "플레이스 추적 항목 그룹을 변경했습니다.",
     tracker: placeTrackerPayload(tracker),
+  });
+}
+
+// 2026-09-26 대표 결정(무료 기준): 플레이스 순위 수집을 GitHub Actions 러너(공개 저장소 무료, 4코어·16GB)에서 한다.
+// Render 무료(512MB·0.1 CPU)로는 1쪽(약 70곳)을 넘지 못했다. 러너가 할 일을 받아(worker-claim) 자기 브라우저로
+// 순위를 세고 결과를 돌려주면(worker-complete), 서버는 Render 경로와 같은 검증·저장 규칙으로 기록한다.
+const PLACE_WORKER_LOOKUP_BUDGET_MS = Math.min(210000, (PLACE_TRACKER_LEASE_SECONDS - 60) * 1000);
+const PLACE_WORKER_ERROR_PATTERN = /^[a-z0-9_:.-]{1,80}$/;
+
+export async function claimPlaceTrackerForWorker(ctx, options = {}) {
+  const tracker = await claimDuePlaceTracker(ctx, options.agencyCode || "");
+  if (!tracker) return null;
+  let enriched = tracker;
+  try {
+    enriched = { ...await enrichTrackerPlaceIdentity(ctx, tracker), processing_token: tracker.processing_token };
+  } catch {
+    enriched = tracker;
+  }
+  return {
+    trackerId: enriched.id,
+    processingToken: enriched.processing_token || "",
+    keyword: enriched.keyword,
+    placeId: enriched.place_id || "",
+    placeUrl: enriched.place_url || "",
+    placeName: enriched.place_name || "",
+    maxRank: PLACE_RANK_TRACKER_MAX_RANK,
+    providerDeadlineAt: Date.now() + PLACE_WORKER_LOOKUP_BUDGET_MS,
+  };
+}
+
+export async function completePlaceTrackerForWorker(ctx, body = {}) {
+  const trackerId = normalizeText(body.trackerId);
+  const processingToken = normalizeText(body.processingToken);
+  if (!trackerId || !processingToken) {
+    return { ok: false, outcome: "invalid_request", message: "trackerId 와 processingToken 이 필요합니다." };
+  }
+  const { data: tracker, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .select(TRACKER_SELECT + ", processing_token")
+    .eq("id", trackerId)
+    .eq("status", "active")
+    .eq("processing_token", processingToken)
+    .maybeSingle();
+  if (error) throw error;
+  if (!tracker) {
+    return { ok: false, outcome: "lease_lost", message: "플레이스 순위 처리 권한이 만료되어 결과를 저장하지 않았습니다." };
+  }
+  const workerError = normalizeText(body.error);
+  return runPlaceTrackerCheck(ctx, tracker, {
+    skipEnrichment: true,
+    lookup: async (activeTracker) => {
+      if (workerError) {
+        throw new Error(PLACE_WORKER_ERROR_PATTERN.test(workerError) ? workerError : "place_rank_worker_failed");
+      }
+      const payload = body.result;
+      if (payload?.ok === false) {
+        const code = normalizeText(payload.message || payload.error);
+        throw new Error(PLACE_WORKER_ERROR_PATTERN.test(code) ? code : "place_rank_provider_failed");
+      }
+      return normalizePlaceProviderPayload(payload, activeTracker, lookupMonthlySearchCount(placeProviderConfig(), activeTracker.keyword));
+    },
   });
 }
 

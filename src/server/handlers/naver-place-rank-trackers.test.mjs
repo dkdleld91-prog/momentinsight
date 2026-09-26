@@ -14,6 +14,10 @@ import {
   runDuePlaceTrackers,
   runPlaceTrackerCheck,
 } from "./naver-place-rank-trackers.mjs";
+import {
+  claimPlaceTrackerForWorker,
+  completePlaceTrackerForWorker,
+} from "./naver-place-rank-trackers.mjs";
 import { placeRankCronResult } from "./naver-place-rank-cron.mjs";
 
 const AGENCY_CODE = "mml93-a01";
@@ -2453,4 +2457,88 @@ test("한도를 내려 잡은 같은 계정에서 새 플레이스 키워드 등
   assert.equal(body.code, "PLACE_RANK_KEYWORD_LIMIT_REACHED");
   assert.equal(body.limit, 10);
   assert.equal(body.count, 12);
+});
+
+
+// 2026-09-26: GitHub Actions 러너 수집(worker-claim / worker-complete)
+async function withoutNetwork(callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response("", { status: 404 });
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function runnerPayload(overrides = {}) {
+  return {
+    ok: true,
+    matched: true,
+    rank: 120,
+    checkedCount: 300,
+    total: 300,
+    place: { id: "1234567890", name: "테스트 플레이스" },
+    topPlaces: [],
+    source: "naver_map_pc_list_collector",
+    rankEvidence: "naver_pc_organic_list",
+    ...overrides,
+  };
+}
+
+test("러너 할 일 받기는 추적기를 선점하고 순위 조회에 필요한 값과 선점 토큰만 준다", async () => {
+  const { ctx, state } = testContext([{ id: "worker-claim", next_check_at: "2026-01-01T00:00:00.000Z" }]);
+  const job = await withoutNetwork(() => claimPlaceTrackerForWorker(ctx));
+  assert.equal(job.trackerId, "worker-claim");
+  assert.equal(job.processingToken, state.tables[TRACKERS][0].processing_token);
+  assert.ok(job.processingToken);
+  assert.equal(job.placeId, "1234567890");
+  assert.equal(job.maxRank, 300);
+  assert.ok(job.providerDeadlineAt > Date.now());
+  assert.equal(await withoutNetwork(() => claimPlaceTrackerForWorker(ctx)), null, "선점된 추적기는 다시 나가지 않는다");
+});
+
+test("러너 결과는 선점 토큰이 맞을 때만 Render 경로와 같은 규칙으로 저장된다", async () => {
+  const { ctx, state } = testContext([{ id: "worker-save", next_check_at: "2026-01-01T00:00:00.000Z", current_rank: null }]);
+  const job = await withoutNetwork(() => claimPlaceTrackerForWorker(ctx));
+
+  const stale = await withoutNetwork(() => completePlaceTrackerForWorker(ctx, { trackerId: job.trackerId, processingToken: "stale-token", result: runnerPayload() }));
+  assert.equal(stale.outcome, "lease_lost");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+
+  const saved = await withoutNetwork(() => completePlaceTrackerForWorker(ctx, { trackerId: job.trackerId, processingToken: job.processingToken, result: runnerPayload() }));
+  assert.equal(saved.ok, true);
+  assert.equal(saved.outcome, "found");
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 120);
+});
+
+test("러너 결과도 네이버 PC 오가닉 목록 증거가 없으면 저장하지 않는다", async () => {
+  const { ctx, state } = testContext([{ id: "worker-untrusted", next_check_at: "2026-01-01T00:00:00.000Z", current_rank: 12, check_count: 9 }]);
+  const job = await withoutNetwork(() => claimPlaceTrackerForWorker(ctx));
+  const result = await withoutNetwork(() => completePlaceTrackerForWorker(ctx, {
+    trackerId: job.trackerId,
+    processingToken: job.processingToken,
+    result: runnerPayload({ source: "apify_untrusted_order" }),
+  }));
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, "failed");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+});
+
+test("러너 조회 오류는 오류 코드로 실패 처리되어 자동 재시도가 예약된다", async () => {
+  const { ctx, state } = testContext([{ id: "worker-error", next_check_at: "2026-01-01T00:00:00.000Z", current_rank: 12 }]);
+  const job = await withoutNetwork(() => claimPlaceTrackerForWorker(ctx));
+  const result = await withoutNetwork(() => completePlaceTrackerForWorker(ctx, {
+    trackerId: job.trackerId,
+    processingToken: job.processingToken,
+    error: "naver_place_access_limited",
+  }));
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "naver_place_access_limited");
+  assert.equal(state.tables[TRACKERS][0].last_error, "naver_place_access_limited");
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
 });

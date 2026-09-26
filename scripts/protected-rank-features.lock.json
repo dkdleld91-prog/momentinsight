@@ -187,12 +187,12 @@
     {
       "id": "place-tracker-server",
       "file": "src/server/handlers/naver-place-rank-trackers.mjs",
-      "sha256": "86479d4d2cc62d5c41a26596a44a60686880bdeafe52f2beb19870df7486a031"
+      "sha256": "2bc8f7b6b887c096bbb6e43f088675a860e7aeaa4849cf5ca85bc939936a418c"
     },
     {
       "id": "place-rank-cron-server",
       "file": "src/server/handlers/naver-place-rank-cron.mjs",
-      "sha256": "5b1c71befdc306e2937fc08553537c801d1526f6dfa9ae1c2cec09b51e74c21c"
+      "sha256": "37e5d16680710ef30cf1af50627f5325e38e12a2954f85edcd8f17b3f8e26088"
     },
     {
       "id": "place-collector",
@@ -232,7 +232,7 @@
     {
       "id": "place-cron-workflow",
       "file": ".github/workflows/naver-place-rank-cron.yml",
-      "sha256": "c37cc0268f967f9e2a035953cb1e83110aec545484bd433b588dde2d2774d98c"
+      "sha256": "9326f0253c251f46f583e115a1965d62920928fb3e8f507fa2c43783aec05d13"
     },
     {
       "id": "product-rank-schema",

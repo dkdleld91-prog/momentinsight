@@ -6,6 +6,8 @@ import { runChronicIsolationPass, runPlaceRequeuePass } from "../naver-rank-requ
 // 별도 import 줄인 이유: 위 줄은 scripts/rank-collection-stability.test.mjs F3 가 문자열
 // 그대로 대조하는 계약이라 손대지 않는다(같은 모듈을 두 번 import 하는 것은 ESM 에서 적법하다).
 import { runProductAutoRepairPass } from "../naver-rank-requeue.mjs";
+// 2026-09-26: GitHub Actions 러너 수집(worker-claim / worker-complete). 위 import 줄들은 계약 문자열이라 따로 둔다.
+import { claimPlaceTrackerForWorker, completePlaceTrackerForWorker } from "./naver-place-rank-trackers.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 
@@ -99,6 +101,21 @@ export default {
 
     try {
       const url = new URL(request.url);
+      const mode = url.searchParams.get("mode") || "";
+      // 러너가 결과를 돌려줄 때는 유지보수 패스를 다시 돌리지 않는다(할 일 받기 때 이미 돌았다).
+      if (mode === "worker-complete") {
+        if (request.method !== "POST") return json(request, { ok: false, message: "Method not allowed" }, 405);
+        const body = await request.json().catch(() => ({}));
+        const outcome = await completePlaceTrackerForWorker(ctx, body);
+        return json(request, {
+          ok: true,
+          worker: true,
+          outcome: outcome.outcome,
+          saved: outcome.ok === true,
+          rank: outcome.tracker?.current_rank ?? null,
+          message: outcome.message || "",
+        });
+      }
       const drainMode = url.searchParams.get("mode") === "drain";
       // 만성 실패 격리는 플레이스·상품 두 레인 모두 여기서 돌린다.
       // 왜 상품 레인까지 플레이스 크론이 맡는가: 현재 하이브리드 운영 모드에서
@@ -124,6 +141,10 @@ export default {
         runProductAutoRepairPass(ctx),
       ]);
       await runPlaceRequeuePass(ctx);
+      if (mode === "worker-claim") {
+        const job = await claimPlaceTrackerForWorker(ctx, { agencyCode: url.searchParams.get("agencyCode") || "" });
+        return json(request, { ok: true, worker: true, job });
+      }
       const summary = await runDuePlaceTrackers(ctx, {
         agencyCode: url.searchParams.get("agencyCode") || "",
         limit: DEFAULT_CRON_BATCH,

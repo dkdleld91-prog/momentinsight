@@ -35,13 +35,63 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Validate cron secret
+        id: validate
         run: |
           if [ -z "${MI_RANK_CRON_SECRET:-}" ]; then
             echo "::error::GitHub Actions secret MI_RANK_CRON_SECRET is missing. Add the same value used in Vercel Production."
             exit 1
           fi
 
+      # 2026-09-26 대표 결정(무료 기준): 플레이스 순위는 이 러너(공개 저장소 무료, 4코어·16GB)에서 직접 센다.
+      # Render 무료(512MB·0.1 CPU)로는 1쪽(약 70곳)을 넘지 못했다. 러너 준비가 실패하거나 러너 조회가
+      # 막히면(fallback=true) 아래 예전 단계(서버 → Render 수집기)가 이어받는다.
+      # 공개 저장소라 실행 기록이 공개된다: 러너 스크립트는 키워드·상호·순위를 기록하지 않는다.
+      - name: Check out collector source
+        id: checkout
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node for the collector
+        id: node
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Restore Playwright browser cache
+        if: steps.node.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('tools/naver-place-rank-collector/package-lock.json') }}
+
+      - name: Install the place collector
+        id: install
+        if: steps.node.outcome == 'success'
+        continue-on-error: true
+        working-directory: tools/naver-place-rank-collector
+        run: |
+          set -euo pipefail
+          npm ci --omit=dev --ignore-scripts
+          npx playwright install --with-deps chromium
+
+      - name: Collect place ranks on this runner
+        id: place_worker
+        if: steps.install.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            echo "Push-triggered run: waiting briefly for production deployment."
+            sleep 90
+          fi
+          node scripts/place-rank-actions-worker.mjs
+
       - name: Refresh due Naver place rank trackers
+        if: ${{ !cancelled() && steps.validate.outcome == 'success' && (steps.install.outcome != 'success' || steps.place_worker.outputs.fallback == 'true') }}
         run: |
           set -euo pipefail
           if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then

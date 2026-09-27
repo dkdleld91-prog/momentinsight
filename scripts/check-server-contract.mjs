@@ -827,6 +827,12 @@ check(
       /request\.rankPolicy !== "organic_only"/,
       /chrome\.tabs\.remove\(tabId\)/,
       /naver_network_restricted/,
+      /chrome\.windows\.create\(\{ url, focused: false, state: "minimized" \}\)/,
+      /async function releaseCollectionTab\(tabId\)/,
+      /chrome\.tabs\.update\(tabId, \{ url: "about:blank" \}\)/,
+      /windows\.filter\(\(window\) => window\?\.incognito !== true\)/,
+      /if \(onlyWindow\?\.state !== "minimized"\) return null;/,
+      /const COLLECTION_ERROR_DETAIL_MAX_CHARS = 120;/,
     ])
     && !/www\.naver\.com|search\.naver\.com|네이버 가격비교 더보기|SEARCH_DWELL|readPriceCompareEntry|readNextPageTarget/u.test(shoppingChromeWorker)
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
@@ -1852,6 +1858,13 @@ check(
     && /registerProgressSink\(sink\)/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
     && /action\(\{ action: "claim-wake", \.\.\.lanePayload \}\)/.test(shoppingLocalWorker)
+    && /return workerRole === "primary"\s*&& lane\?\.granted === true\s*&& lane\.autoRecovery === true\s*&& String\(lane\.circuitState \|\| ""\)\.toLowerCase\(\) === "half_open"/.test(shoppingLocalWorker)
+    && /if \(wake\.wake !== true && !halfOpenProbe\) \{/.test(shoppingLocalWorker)
+    && /if \(probeTrackerId \|\| autoRecovery\) effectiveMaxJobs = 1;/.test(shoppingLocalWorker)
+    && /export function sanitizeCollectionErrorDetail\(value, options = \{\}\)/.test(shoppingLocalWorkerContract)
+    && /sanitizeCollectionErrorDetail\(response\?\.errorDetail, \{/.test(shoppingNativeHost)
+    && /\.\.\.errorDetailPayload,/.test(shoppingLocalWorker)
+    && /const FAILURE_ERROR_DETAIL_EVIDENCE_VERSION = "collection-error-v1";/.test(shoppingLocalWorkerHandler)
     && /action: "claim-lane"/.test(shoppingLocalWorker)
     && /action: "release-lane"/.test(shoppingLocalWorker)
     && /action: "block-lane"/.test(shoppingLocalWorker)

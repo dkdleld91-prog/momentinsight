@@ -10,6 +10,7 @@ import {
   resolveNativeExchangeWait,
   validateCollectionProtocolAck,
 } from "./naver-shopping-native-host-core.mjs";
+import { sanitizeCollectionErrorDetail } from "../src/server/naver-shopping/local-worker-contract.mjs";
 
 const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 // One exact 300-rank collection can spend up to 45 seconds before page 1,
@@ -244,8 +245,15 @@ async function main() {
         const response = await nextMessage(wait.timeoutMs, wait.timeoutCode);
         assertNativeExchangeRequestId(response, requestId);
         if (response?.type === "collection_error") {
-          const error = new Error(safeCode(response?.code || "native_host_collection_failed"));
-          error.code = safeCode(response?.code || "native_host_collection_failed");
+          const code = safeCode(response?.code || "native_host_collection_failed");
+          const error = new Error(code);
+          error.code = code;
+          // 1.1.33: the extension's sanitized Chrome text rides beside the code
+          // (never inside it), sanitized again here with this request's keyword.
+          const errorDetail = sanitizeCollectionErrorDetail(response?.errorDetail, {
+            keyword: message.request?.keyword,
+          });
+          if (errorDetail) error.errorDetail = errorDetail;
           throw error;
         }
         if (response?.type === "collection_page") {

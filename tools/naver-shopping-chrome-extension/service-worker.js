@@ -40,6 +40,11 @@ const RUN_TRIGGER_PRIORITY = Object.freeze({
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
+// Session-scoped because Chrome window and tab ids die with the browser session.
+const COLLECTION_WINDOW_ANCHOR_KEY = "momentInsightRankCollectionWindow";
+const COLLECTION_WINDOW_MINIMIZE_ATTEMPTS = 4;
+const COLLECTION_WINDOW_MINIMIZE_SETTLE_MS = 150;
+const COLLECTION_TAB_PARK_COMMIT_CHECKS = 5;
 const LEGACY_CONTROLLER_PAGE_URL = new URL(chrome.runtime.getURL("popup.html"));
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
@@ -103,15 +108,55 @@ async function extensionRuntimeIdentity() {
   return runtimeIdentityPromise;
 }
 
+// 1.1.33 (2026-09-27 standby incident): Chrome rejected chrome.tabs.create with
+// "No current window" and only the stage code reached the server. A short copy
+// of the original Chrome text now rides beside the typed code: printable ASCII
+// only, cut at the first URL or query marker so no keyword or address rides
+// along, at most 120 characters. The same rule is the shared worker contract's
+// sanitizeCollectionErrorDetail (without its keyword step, which needs the job).
+// It never changes the typed code, the circuit signature or any cooldown.
+const COLLECTION_ERROR_DETAIL_MAX_CHARS = 120;
+const COLLECTION_ERROR_DETAIL_CUT_MARKERS = ["http", "://", " url", "?"];
+
+function collectionErrorDetail(value) {
+  if (typeof value !== "string" || !value) return "";
+  const printable = value.slice(0, 1_000).replace(/[^\x20-\x7E]+/gu, " ");
+  const cutAt = Math.min(
+    printable.length,
+    ...COLLECTION_ERROR_DETAIL_CUT_MARKERS
+      .map((marker) => printable.indexOf(marker))
+      .filter((index) => index >= 0),
+  );
+  return printable.slice(0, cutAt)
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, COLLECTION_ERROR_DETAIL_MAX_CHARS)
+    .trim();
+}
+
 function typedCollectionError(error, fallbackCode) {
+  let code = "";
   for (const value of [error?.code, error?.message]) {
-    const code = String(value || "").trim().toLowerCase();
-    if (TYPED_COLLECTION_ERROR_PATTERN.test(code)) return new Error(code);
+    const candidate = String(value || "").trim().toLowerCase();
+    if (TYPED_COLLECTION_ERROR_PATTERN.test(candidate)) {
+      code = candidate;
+      break;
+    }
   }
-  const fallback = String(fallbackCode || "").trim().toLowerCase();
-  return new Error(TYPED_COLLECTION_ERROR_PATTERN.test(fallback)
-    ? fallback
-    : "provider_browser_collection_failed");
+  if (!code) {
+    const fallback = String(fallbackCode || "").trim().toLowerCase();
+    code = TYPED_COLLECTION_ERROR_PATTERN.test(fallback)
+      ? fallback
+      : "provider_browser_collection_failed";
+  }
+  const typedError = new Error(code);
+  // The code is decided exactly as before; the original text only rides beside
+  // it, and a self-typed failure (its message is the code) carries none.
+  const message = String(error?.message ?? "");
+  const errorDetail = collectionErrorDetail(error?.errorDetail)
+    || (message.trim().toLowerCase() === code ? "" : collectionErrorDetail(message));
+  if (errorDetail) typedError.errorDetail = errorDetail;
+  return typedError;
 }
 
 function wait(milliseconds) {
@@ -143,7 +188,7 @@ async function verificationState() {
 async function surfaceVerificationTab(tabId) {
   const current = await verificationState();
   if (current.tabId && current.tabId !== tabId) {
-    await chrome.tabs.remove(current.tabId).catch(() => {});
+    await releaseCollectionTab(current.tabId);
   }
   const tab = await chrome.tabs.get(tabId).catch(() => null);
   if (Number.isInteger(tab?.windowId)) {
@@ -163,7 +208,7 @@ async function clearVerificationState() {
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
   ]);
-  if (current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
+  if (current.tabId) await releaseCollectionTab(current.tabId);
 }
 
 function nextKstHour(hour) {
@@ -645,6 +690,157 @@ async function clearCompletedCollectionVerificationState() {
   }
 }
 
+// 1.1.33 (2026-09-27 incident). The scheduler forwards the collection profile
+// with --no-startup-window when Chrome is already running, so the profile can
+// have no normal window at all; chrome.tabs.create() then rejects "No current
+// window" (the Mac standby failed four times in a row and opened the global
+// circuit). Closing a profile's last window also unloads that profile together
+// with this service worker (Chrome 149 and the owner's branded Chrome,
+// measured). So the collector opens its own minimized window only when the
+// profile has no normal window, reuses that window's single parked tab while it
+// is still the profile's only, minimized surface (adopting such a surface on
+// about:blank when a restart lost the record), and parks the last tab of the
+// last window on about:blank instead of closing it.
+async function normalCollectionWindows() {
+  try {
+    const windows = await chrome.windows.getAll({ windowTypes: ["normal"], populate: true });
+    // An incognito window (when the extension is allowed there) is never this
+    // profile's collection surface.
+    return Array.isArray(windows) ? windows.filter((window) => window?.incognito !== true) : null;
+  } catch {
+    return null;
+  }
+}
+
+// undefined: the session store was read and holds no record (Chrome restart or
+// extension reload). null: the store is unreadable or the record is malformed.
+async function loadCollectionWindowAnchor() {
+  try {
+    const stored = await chrome.storage.session.get(COLLECTION_WINDOW_ANCHOR_KEY);
+    const anchor = stored?.[COLLECTION_WINDOW_ANCHOR_KEY];
+    if (anchor === undefined) return undefined;
+    return Number.isInteger(anchor?.windowId) && Number.isInteger(anchor?.tabId) ? anchor : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCollectionWindowAnchor(windowId, tabId) {
+  try {
+    await chrome.storage.session.set({ [COLLECTION_WINDOW_ANCHOR_KEY]: { windowId, tabId } });
+  } catch {
+    // Without the session marker the next run takes the unchanged tab path.
+  }
+}
+
+// An unfocused window is shown asynchronously after windows.create resolves
+// and that show undoes an immediate minimize (macOS, Chrome 149, measured).
+async function minimizeCollectionWindow(windowId) {
+  for (let attempt = 0; attempt < COLLECTION_WINDOW_MINIMIZE_ATTEMPTS; attempt += 1) {
+    await wait(COLLECTION_WINDOW_MINIMIZE_SETTLE_MS);
+    try {
+      await chrome.windows.update(windowId, { state: "minimized" });
+      await wait(COLLECTION_WINDOW_MINIMIZE_SETTLE_MS);
+      const window = await chrome.windows.get(windowId);
+      if (window?.state === "minimized") return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+// tabs.update resolves before about:blank commits, and the native host asks
+// for the next pass right after collection_complete. A parked tab still on its
+// search page with pendingUrl "about:blank" is refused for reuse, and
+// tabs.create into the minimized window would restore it on macOS (measured).
+async function waitForParkedTabCommit(tabId) {
+  try {
+    for (let check = 0; check < COLLECTION_TAB_PARK_COMMIT_CHECKS; check += 1) {
+      if (check > 0) await wait(COLLECTION_WINDOW_MINIMIZE_SETTLE_MS);
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!tab || (tab.url === "about:blank" && tab.pendingUrl == null)) return;
+    }
+  } catch {
+    // The park goes on without the wait; the next run then opens a tab instead.
+  }
+}
+
+async function reusableCollectionAnchorTab(windows) {
+  if (!Array.isArray(windows) || windows.length !== 1) return null;
+  const [onlyWindow] = windows;
+  // A restored window (verification surfaced it, or a person opened it) is not
+  // taken over: collecting there would show pages in front of the person.
+  if (onlyWindow?.state !== "minimized") return null;
+  const tabs = Array.isArray(onlyWindow.tabs) ? onlyWindow.tabs : [];
+  if (tabs.length !== 1) return null;
+  // Never take over a tab that someone navigated, or is navigating, elsewhere.
+  const tabUrl = String(tabs[0]?.url || "");
+  if (tabUrl !== "about:blank" && !tabUrl.startsWith("https://search.shopping.naver.com/")) return null;
+  if (tabs[0].pendingUrl != null && String(tabs[0].pendingUrl) !== tabUrl) return null;
+  const anchor = await loadCollectionWindowAnchor();
+  if (anchor === undefined) return adoptParkedCollectionTab(onlyWindow, tabs[0]);
+  return anchor?.windowId === onlyWindow.id && anchor.tabId === tabs[0].id ? anchor.tabId : null;
+}
+
+// Chrome restart or an extension reload empties chrome.storage.session while
+// the parked window stays (or is restored): the profile's only window,
+// minimized, holding one tab on about:blank. tabs.create into it would restore
+// it on macOS (measured), so that exact surface is adopted and recorded. A tab
+// on any other address, a search page included, is never adopted without the
+// record, and neither is a visible window (the checks above).
+async function adoptParkedCollectionTab(onlyWindow, onlyTab) {
+  if (onlyTab?.url !== "about:blank") return null;
+  if (!Number.isInteger(onlyWindow?.id) || !Number.isInteger(onlyTab.id)) return null;
+  await saveCollectionWindowAnchor(onlyWindow.id, onlyTab.id);
+  return onlyTab.id;
+}
+
+async function openCollectionTab(url) {
+  const windows = await normalCollectionWindows();
+  if (windows === null || windows.length > 0) {
+    const anchorTabId = await reusableCollectionAnchorTab(windows);
+    if (anchorTabId != null) {
+      // tabs.update keeps a minimized window minimized; tabs.create into it
+      // restores it on macOS (measured), so the parked anchor tab is reused.
+      await chrome.tabs.update(anchorTabId, { url, active: false });
+      return anchorTabId;
+    }
+    const tab = await chrome.tabs.create({ url, active: false });
+    return tab.id;
+  }
+  const window = await chrome.windows.create({ url, focused: false, state: "minimized" });
+  const tabId = window?.tabs?.[0]?.id;
+  if (!Number.isInteger(window?.id) || !Number.isInteger(tabId)) {
+    throw new Error("collection window opened without a tab");
+  }
+  await saveCollectionWindowAnchor(window.id, tabId);
+  await minimizeCollectionWindow(window.id);
+  return tabId;
+}
+
+// Never throws: it runs in collectPages' finally and in the verification
+// cleanup, where an exception would replace the typed code or turn a complete
+// collection into an error.
+async function releaseCollectionTab(tabId) {
+  try {
+    const windows = await normalCollectionWindows();
+    const onlyWindow = windows?.length === 1 ? windows[0] : null;
+    const onlyTabs = Array.isArray(onlyWindow?.tabs) ? onlyWindow.tabs : [];
+    if (onlyWindow && onlyTabs.length === 1 && onlyTabs[0]?.id === tabId) {
+      await chrome.tabs.update(tabId, { url: "about:blank" }).catch(() => {});
+      await waitForParkedTabCommit(tabId);
+      await saveCollectionWindowAnchor(onlyWindow.id, tabId);
+      if (onlyWindow.state !== "minimized") await minimizeCollectionWindow(onlyWindow.id);
+      return;
+    }
+    await chrome.tabs.remove(tabId).catch(() => {});
+  } catch {
+    // Leave the tab where it is: closing it blindly could close the profile's
+    // last window and unload the profile together with this worker.
+  }
+}
+
 async function collectPages(request, onPage = null, options = {}) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
@@ -675,8 +871,7 @@ async function collectPages(request, onPage = null, options = {}) {
       collectionStageCode = "naver_page_navigation_failed";
       const url = searchUrl(request.keyword, pageIndex);
       if (tabId == null) {
-        const tab = await chrome.tabs.create({ url, active: false });
-        tabId = tab.id;
+        tabId = await openCollectionTab(url);
       } else {
         await chrome.tabs.update(tabId, { url, active: false });
       }
@@ -715,7 +910,7 @@ async function collectPages(request, onPage = null, options = {}) {
     }
     throw typedError;
   } finally {
-    if (tabId != null && !keepTabOpen) await chrome.tabs.remove(tabId).catch(() => {});
+    if (tabId != null && !keepTabOpen) await releaseCollectionTab(tabId);
   }
 }
 
@@ -874,6 +1069,10 @@ async function runWorker(trigger = "manual", options = {}) {
                 type: "collection_error",
                 requestId: message.requestId,
                 code: String(error?.message || "collection_failed"),
+                // 1.1.33: the sanitized Chrome text beside the code (optional).
+                ...(typeof error?.errorDetail === "string" && error.errorDetail
+                  ? { errorDetail: error.errorDetail }
+                  : {}),
               });
             }
             return;

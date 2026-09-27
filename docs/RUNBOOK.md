@@ -267,3 +267,25 @@
 - 남은 위험(기존 그대로): 주작업기 자신의 자동 검증이 해제 복구 목록에 없는 추적기 범위 코드(예: `provider_stable_rendered_order_unproven`)로 끝나면 `probe_incomplete` 에서 자동 출구가 없다 → 판정표의 조건부 회로 정리 SQL.
 - canary(`mi_request_naver_shopping_worker_probe`, 사유 `manual_canary`): 요청 함수는 다시 선언하지 않았지만 canary 가 끝나는 곳(실패·미완료 해제·임대 만료)은 이 마이그레이션의 세 함수다. 대기기가 잡은 canary 는 값을 비우고 주작업기가 잡은 canary 는 주작업기로 바꾸므로, 앞 사건의 대기기 값이 남아 있어도 canary 뒤에는 예전 그대로다(실패 → 30분 대기, 미완료·만료 → 자동 출구 없음 → 판정표의 조건부 회로 정리 SQL).
 - 알려진 한계(이 마이그레이션): 원자 커밋·수동 정지·수동 닫기는 다시 선언하지 않아 `circuit_opened_by_worker` 에 예전 값이 남을 수 있다. 수동 정지 사유는 허용 목록에 없어 막히지만, 손 SQL 로 `mi_stop_naver_shopping_worker` 에 현재 `failure_signature` 와 글자까지 같은 사유를 넣으면 남은 대기기 값 때문에 돌아온 주작업기가 즉시 검증 1건을 받는다(앱 버튼은 항상 `manual_stop`, `mi_stop` 은 `failure_signature` 를 지우지 않음). 손 SQL 로만 생기는 경우라 영향은 작다. 다음 변경 때 원자 커밋·정지가 이 열을 비우도록 다시 선언한다.
+
+### S3 1.1.33 수집 창·원문 오류·즉시 탐침
+
+- 사고 고리: 맥 대기기 `Profile 5` 에 일반 창이 0개 → 확장의 `chrome.tabs.create` 가 `No current window` 로 거절 → `naver_page_navigation_failed` 4회 → 전역 회로 open. 서버에는 코드만 남아 원문을 알 수 없었고, 20:21 돌아온 주작업기의 1분 `rank-remote` 는 half_open 부여를 wake 가 없다며 풀어 20:34 `rank-catch-up` 까지 기다렸다.
+- 수집 창(확장 `service-worker.js`):
+  - 프로필에 (시크릿 제외) 일반 창이 0개일 때만 `chrome.windows.create({ url, focused: false, state: "minimized" })` 로 수집 창을 한 번 열고, 150ms 간격 최대 4회 최소화를 확인한다. 창이 있으면 예전 그대로 `chrome.tabs.create({ url, active: false })`.
+  - 그 탭은 다음 수집에 다시 쓴다. 조건: 유일한 비시크릿 창 = 기록된 수집 창, 탭 1개, 창이 최소화 상태, 주소가 `about:blank` 또는 `https://search.shopping.naver.com/…`, 주소창 이동 중(pendingUrl 다름)이 아님.
+  - 기록(`chrome.storage.session`)은 Chrome 재시작·확장 다시 불러오기 때 지워진다. 기록이 아예 없을 때만, 유일한 비시크릿 창이 최소화 상태이고 탭 1개가 정확히 `about:blank`(이동 중 아님)이면 그 창을 수집 창으로 받아 기록하고 `tabs.update` 로 다시 쓴다(맥에서 최소화 창에 `tabs.create` 하면 창이 다시 보인다). 보이는 창, 다른 주소(검색 페이지 포함)의 탭, 탭 2개 이상, 창 2개 이상, 기록을 읽을 수 없거나 모양이 틀린 경우는 받지 않고 예전처럼 새 탭을 연다.
+  - 수집 탭이 마지막 비시크릿 창의 마지막 탭이면 닫지 않고 `about:blank` 로 비우고 최소화한다(마지막 창을 닫으면 Chrome 이 프로필과 확장을 내린다 — 09-27 대표 맥 실기). 비운 뒤 `about:blank` 가 확정될 때까지 150ms 간격으로 최대 5번 확인한다(최대 0.6초). 네이티브 호스트가 곧바로 보내는 다음 패스가 이동 중인 탭을 거절하고 최소화 창에 새 탭을 여는(맥에서 창이 다시 보이는) 틈을 막기 위해서다. 검증 탭 정리도 같은 규칙. 사람의 탭만 남은 창, 다른 비시크릿 창이 있는 경우에는 예전처럼 수집 탭만 닫는다. 정리는 예외를 던지지 않는다.
+  - 대표가 보게 되는 것: Dock·작업표시줄에 최소화된 `개발` 창 1개. 이 창을 닫으면 그 기기 수집은 스케줄러 재전달(10분 이내)까지 쉰다(예전과 같음). 맥은 창을 처음 만들 때 0.2초 남짓 보였다가 최소화된다. 주작업기가 복귀 직후(1~2분) 탐침할 때도 이 창이 생길 수 있다.
+- 원문 오류(`errorDetail`, 확장 → 네이티브 호스트 → 로컬 워커 → 서버):
+  - 정제: 출력 가능한 ASCII 만 → 첫 `http` / `://` / ` url` / `?` 부터 잘라냄 → 공백 정리 → 최대 120자 → 남은 ASCII 키워드(토큰 사이 공백 제외 3자 이상)는 그 부분만 `<kw>`. 확장은 키워드 없이 먼저 120자로 자르므로 사슬 전체 순서는 120자 → 키워드다. 실패 코드·회로 서명·RPC 인자는 그대로다. 이름은 `errorDetail` 만 쓴다(`detail` 은 워커가 일부 실패 코드에 이어 붙인다).
+  - 저장: `naver_shopping_failure_evidence.evidence->>'errorDetail'`. 캡처 증거가 없는 실패는 `{"version":"collection-error-v1","errorDetail":…}` 행(keyword 열은 빈 문자열, run_id·tracker_id 로 job_failed 와 조인). DB 변경 없음. 1.1.32 워커 본문(필드 없음)도 그대로 받는다.
+  - 조회(읽기 전용): `GET /rest/v1/naver_shopping_failure_evidence?select=occurred_at,worker_id,run_id,tracker_id,error_code,evidence->>version,evidence->>errorDetail&order=occurred_at.desc&limit=10`
+  - 원문이 없는 것이 정상인 실패: 스스로 코드를 만든 실패(`naver_page_timeout`, `naver_page_script_timeout`, `provider_deadline_exceeded`, `naver_next_data_missing` 등). 맥 대기기는 네이티브 호스트 로그에도 `local_worker_collection_error_detail:…` 한 줄(안전 코드 형태, 80자)이 남는다. 윈도우는 서버 행이 유일한 기록이다.
+- 즉시 탐침(로컬 워커):
+  - 주작업기(`workerRole` primary)의 1분 `rank-remote` 가 claim-lane 에서 `autoRecovery === true && circuitState === "half_open"` 부여를 받으면 wake 없이 1건만 즉시 검증한다. 대기 중인 wake 는 같은 실행이 소비한다.
+  - 언제 부여하는지(회로당 검증 1회, 정적 대기, cooldown)는 DB 가 정한 그대로다. 1c 는 부여 시각을 바꾸지 않는다. 주작업기가 받은 부여를 버리지 않고 바로 쓸 뿐이다. S2 마이그레이션(`20260927120000`) 적용 뒤에는 대기기에서 시작된 회로(`circuit_opened_by_worker` 가 주작업기가 아님)가 위 S2 절의 조건(주작업기가 그 회로에서 자기 자동 검증을 아직 쓰지 않음, 살아 있는 임대·보안 cooldown 없음, 멈춘 코드가 일시 오류·대기기 기기 코드, 수동 종단·서명 없는 `probe_incomplete` 포함)을 채우면 돌아온 주작업기에 정적 대기 없이 부여된다(사유 `auto_navigation_probe`/`auto_transient_system_probe` 라 `autoRecovery: true`). 주작업기가 연 회로(주작업기 검증이 실패·미완료·만료돼 주작업기로 바뀐 회로 포함)는 예전 정적 대기(10/30분)·수동 종단 그대로다. 1c 는 그 부여가 `granted: true`, `autoRecovery: true`, `circuitState: "half_open"` 세 값을 모두 돌려줄 때만 동작한다(하나라도 빠지면 예전처럼 wake 를 기다린다).
+  - 계정 우선 요청이 활성인 동안에는 서버가 `rank-catch-up` 이 아닌 실행에 `waiting`(`account_priority_active` / `account_rank_catch_up_trigger_required`)을 준다. 그래서 주작업기의 `rank-remote` 탐침은 매분 claim-lane → claim-wake → queue-all → claim → release 로 빈손으로 끝나고(네이버 요청 0, 서버 요청은 1c 전보다 분당 2건 많음), 검증은 다음 `rank-catch-up`(최대 10분)이 한다. 이때는 '1건 즉시 검증'이 일어나지 않는 것이 정상이다.
+  - 대기기는 예전 그대로(wake 가 있을 때만) — 대기기 1회 인계를 더 자주 쓰지 않게 하려는 것이다.
+  - 불변식 "1분 폴링은 신호가 없으면 네이버를 열지 않는다"의 유일한 예외다. 관측 가능한 표지는 DB 뿐이다: 회로 half_open 부여 직후의 `naver_shopping_worker_runs.run_trigger = 'rank-remote'` 런(윈도우 주작업기, 런 행은 작업을 받아 `navigating` 을 보고할 때만 생긴다). 요약 `autoRecoveryProbe: true`·로그 `local_worker_auto_recovery_probe` 는 주작업기에서만 생기는데, 윈도우 주작업기는 stderr 를 남기지 않고(`RedirectStandardError = false`) 맥은 늘 대기기(`MI_NAVER_SHOPPING_WORKER_ROLE=standby`)라 맥 로그에 이 표지가 없는 것이 정상이다.
+- 네이버 요청량: 페이지당 이동 1회 그대로(`about:blank` 비우기는 네트워크 요청 없음). 1분 폴링은 회로 창당 1회 상한 안에서 검증 시점만 앞당긴다(계속 실패하는 주작업기의 검증 간격 평균 약 15분 → 약 11분).

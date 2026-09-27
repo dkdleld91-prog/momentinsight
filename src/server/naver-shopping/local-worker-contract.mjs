@@ -23,6 +23,51 @@ const LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 * 60_000;
 const COLLECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+// 1.1.33 (2026-09-27 standby incident): the single sanitizer for the original
+// browser error text that rides beside a typed failure code (extension ->
+// native host -> local worker -> server failure evidence). Printable ASCII only,
+// cut at the first "http" / "://" / " url" / "?" so no address or query rides
+// along, whitespace collapsed, at most 120 characters, and an ASCII job keyword
+// (3+ characters, not counting spaces) that still appears is replaced by "<kw>"
+// where it appears. Idempotent. Never part of a failure code or circuit
+// signature, never sent to an RPC. The extension keeps the same rule without
+// the keyword step (collectionErrorDetail in service-worker.js, parity-tested).
+export const COLLECTION_ERROR_DETAIL_MAX_CHARS = 120;
+const COLLECTION_ERROR_DETAIL_CUT_MARKERS = Object.freeze(["http", "://", " url", "?"]);
+const COLLECTION_ERROR_DETAIL_KEYWORD_MIN_CHARS = 3;
+
+function collectionErrorDetailKeywordPattern(keyword) {
+  if (typeof keyword !== "string") return null;
+  const tokens = keyword.replace(/[^\x20-\x7E]+/gu, " ").trim().split(/\s+/u).filter(Boolean);
+  // Spaces between tokens do not count: "A B" is two characters and would
+  // otherwise cut "ab" out of Chrome's own words ("No t<kw> with id").
+  if (tokens.join("").length < COLLECTION_ERROR_DETAIL_KEYWORD_MIN_CHARS) return null;
+  const escaped = tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&"));
+  return new RegExp(escaped.join("\\s*"), "giu");
+}
+
+export function sanitizeCollectionErrorDetail(value, options = {}) {
+  if (typeof value !== "string" || !value) return "";
+  const printable = value.slice(0, 1_000).replace(/[^\x20-\x7E]+/gu, " ");
+  const cutAt = Math.min(
+    printable.length,
+    ...COLLECTION_ERROR_DETAIL_CUT_MARKERS
+      .map((marker) => printable.indexOf(marker))
+      .filter((index) => index >= 0),
+  );
+  let text = printable.slice(0, cutAt).replace(/\s+/gu, " ").trim();
+  // Within this function the keyword is replaced before the length cut, so a
+  // keyword straddling the 120th character leaves no fragment here. That is not
+  // a chain guarantee: the extension has already cut its copy at 120 characters
+  // without a keyword step, so end to end the order is 120 -> keyword and an
+  // ASCII keyword cut by the extension at the 120th character can leave a
+  // fragment (URLs are cut first and Korean keywords never survive the ASCII
+  // filter, so this needs a bare ASCII keyword near character 120).
+  const keywordPattern = collectionErrorDetailKeywordPattern(options.keyword);
+  if (keywordPattern) text = text.replace(keywordPattern, "<kw>");
+  return text.slice(0, COLLECTION_ERROR_DETAIL_MAX_CHARS).trim();
+}
+
 function contractError(code) {
   const error = new Error(code);
   error.code = code;

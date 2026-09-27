@@ -5,6 +5,7 @@ import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
   localWorkerCollectionKey,
+  sanitizeCollectionErrorDetail,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "../naver-shopping/local-worker-contract.mjs";
@@ -358,6 +359,10 @@ const FAILURE_EVIDENCE_VERSIONS = new Set(["collection-evidence-v1", "collection
 const FAILURE_EVIDENCE_TRACE_MAX = 24;
 const FAILURE_EVIDENCE_TRACE_ENTRY_MAX = 80;
 const FAILURE_EVIDENCE_DIFF_MAX_ENTRIES = 12;
+// 1.1.33: a failure with no capture evidence (Chrome refused the tab before
+// page 1) still keeps its sanitized browser error text in this minimal shape.
+// Kept apart from FAILURE_EVIDENCE_VERSIONS: the worker never sends it.
+const FAILURE_ERROR_DETAIL_EVIDENCE_VERSION = "collection-error-v1";
 function evidenceCellValid(cell) {
   return cell === null || Number.isSafeInteger(cell) || (typeof cell === "string" && cell.length <= 90);
 }
@@ -406,7 +411,15 @@ function validatedFailureEvidence(value) {
   return JSON.stringify(evidence).length <= FAILURE_EVIDENCE_MAX_CHARS ? evidence : null;
 }
 
-async function storeFailureEvidence(ctx, { control, job, trackerId, errorCode, scope, evidence }) {
+async function storeFailureEvidence(ctx, {
+  control,
+  job,
+  trackerId,
+  errorCode,
+  scope,
+  evidence,
+  keyword = job?.keyword,
+}) {
   try {
     const { error } = await ctx.supabaseAdmin
       .from("naver_shopping_failure_evidence")
@@ -415,7 +428,7 @@ async function storeFailureEvidence(ctx, { control, job, trackerId, errorCode, s
         run_id: control.runId,
         runtime_version: control.runtimeVersion,
         tracker_id: trackerId,
-        keyword: String(job?.keyword ?? "").slice(0, 80),
+        keyword: String(keyword ?? "").slice(0, 80),
         error_code: errorCode,
         scope,
         evidence,
@@ -433,6 +446,11 @@ async function recordWorkerFailure(ctx, body) {
   const errorCode = String(body?.errorCode || "").trim().toLowerCase();
   const scope = String(body?.scope || "").trim().toLowerCase();
   const evidence = body?.evidence === undefined ? null : validatedFailureEvidence(body.evidence);
+  // 1.1.33: optional sanitized browser error text. Absent (a 1.1.32 body, a
+  // lookup or the direct Playwright path), malformed or empty values are
+  // dropped: it never rejects the report, never reaches the RPC and never
+  // changes the failure code.
+  const errorDetail = sanitizeCollectionErrorDetail(body?.errorDetail, { keyword: job.keyword });
   if (!SAFE_FAILURE_PATTERN.test(errorCode)
     || !["system", "tracker", "lookup", "security"].includes(scope)
     || (scope === "tracker" && !trackerId)
@@ -454,7 +472,28 @@ async function recordWorkerFailure(ctx, body) {
   if (!data || typeof data !== "object" || Array.isArray(data) || data.recorded !== true) {
     throw workerError("LOCAL_WORKER_FAILURE_NOT_RECORDED", 409);
   }
-  if (evidence) await storeFailureEvidence(ctx, { control, job, trackerId, errorCode, scope, evidence });
+  if (evidence) {
+    await storeFailureEvidence(ctx, {
+      control,
+      job,
+      trackerId,
+      errorCode,
+      scope,
+      evidence: errorDetail ? { ...evidence, errorDetail } : evidence,
+    });
+  } else if (errorDetail) {
+    // No capture was made, so no keyword copy is stored with this row; run_id
+    // and tracker_id join it to the job_failed ledger rows.
+    await storeFailureEvidence(ctx, {
+      control,
+      job,
+      trackerId,
+      errorCode,
+      scope,
+      evidence: { version: FAILURE_ERROR_DETAIL_EVIDENCE_VERSION, errorDetail },
+      keyword: "",
+    });
+  }
   return data;
 }
 

@@ -966,6 +966,159 @@ test("stores validated collection evidence beside a failure report and never let
   });
 });
 
+// 2026-09-27 standby incident: "No current window" was lost; only the stage
+// code reached the ledger. The sanitized Chrome text is stored in the existing
+// best-effort evidence row and never changes the failure outcome.
+test("stores a sanitized Chrome error detail beside a failure report without changing its outcome", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    const v2 = {
+      version: "collection-evidence-v2",
+      keyword: "온열찜질기",
+      passes: [[{ p: 1, total: 215, rows: [["a", 1], [2, "s:13000000001"]] }]],
+      truncated: false,
+      trace: ["throw provider_stable_finite_window_unproven:three_passes"],
+    };
+    const scenarios = [
+      {
+        label: "detail without capture evidence",
+        body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "No current window" },
+        row: { keyword: "", error_code: "naver_page_navigation_failed", scope: "system", evidence: { version: "collection-error-v1", errorDetail: "No current window" } },
+      },
+      {
+        label: "detail beside capture evidence",
+        body: { errorCode: "provider_stable_finite_window_unproven:three_passes", scope: "tracker", evidence: v2, errorDetail: "Frame with ID 0 is showing error page" },
+        row: { keyword: "온열찜질기", error_code: "provider_stable_finite_window_unproven:three_passes", scope: "tracker", evidence: { ...v2, errorDetail: "Frame with ID 0 is showing error page" } },
+      },
+      {
+        label: "server sanitizes again",
+        body: {
+          errorCode: "naver_page_script_failed",
+          scope: "system",
+          errorDetail: '온열찜질기 Cannot access contents of url "https://search.shopping.naver.com/search/all?query=x"',
+        },
+        row: { keyword: "", error_code: "naver_page_script_failed", scope: "system", evidence: { version: "collection-error-v1", errorDetail: "Cannot access contents of" } },
+      },
+      {
+        label: "ascii keyword replaced",
+        keyword: "nike air",
+        body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "failed for Nike Air" },
+        row: { keyword: "", error_code: "naver_page_navigation_failed", scope: "system", evidence: { version: "collection-error-v1", errorDetail: "failed for <kw>" } },
+      },
+      {
+        label: "overlong detail bounded",
+        body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "x".repeat(5000) },
+        row: { keyword: "", error_code: "naver_page_navigation_failed", scope: "system", evidence: { version: "collection-error-v1", errorDetail: "x".repeat(120) } },
+      },
+      { label: "absent (older worker body)", body: { errorCode: "naver_page_navigation_failed", scope: "system" }, row: null },
+      { label: "numeric detail dropped", body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: 123 }, row: null },
+      { label: "object detail dropped", body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: { message: "No current window" } }, row: null },
+      { label: "array detail dropped", body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: ["No current window"] }, row: null },
+      { label: "empty detail dropped", body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "" }, row: null },
+      { label: "address-only detail dropped", body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "https://nid.naver.com/" }, row: null },
+      {
+        label: "insert rejected",
+        insertError: new Error("relation missing"),
+        body: { errorCode: "naver_page_navigation_failed", scope: "system", errorDetail: "No current window" },
+        row: { keyword: "", error_code: "naver_page_navigation_failed", scope: "system", evidence: { version: "collection-error-v1", errorDetail: "No current window" } },
+      },
+    ];
+    for (const scenario of scenarios) {
+      let inserted = null;
+      let failureArgs = null;
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name, args) {
+            if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+            assert.equal(name, "mi_record_naver_shopping_worker_failure");
+            failureArgs = args;
+            return { data: { recorded: true, circuitState: "open", failureStreak: 1 }, error: null };
+          },
+          from(table) {
+            assert.equal(table, "naver_shopping_failure_evidence");
+            return { async insert(row) { inserted = row; return { error: scenario.insertError || null }; } };
+          },
+        },
+      };
+      const response = await handleLocalWorkerRequest(signedRequest({
+        action: "record-failure",
+        workerId: WORKER_ID,
+        laneToken: LANE_TOKEN,
+        runId: RUN_ID,
+        runtimeFingerprint: RUNTIME_FINGERPRINT,
+        job: {
+          keyword: scenario.keyword || "온열찜질기",
+          limit: 300,
+          claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+        },
+        ...scenario.body,
+      }), ctx);
+      assert.equal(response.status, 200, scenario.label);
+      assert.deepEqual(await response.json(), { ok: true, recorded: true, circuitState: "open", failureStreak: 1 }, scenario.label);
+      // The RPC and its six arguments never see the detail.
+      assert.deepEqual(Object.keys(failureArgs).sort(), [
+        "p_error_code",
+        "p_lane_token",
+        "p_run_id",
+        "p_scope",
+        "p_tracker_id",
+        "p_worker_id",
+      ], scenario.label);
+      assert.equal(failureArgs.p_error_code, scenario.body.errorCode, scenario.label);
+      if (scenario.row) {
+        assert.equal(inserted?.tracker_id, TRACKER_ID, scenario.label);
+        assert.equal(inserted?.run_id, RUN_ID, scenario.label);
+        assert.equal(inserted?.worker_id, WORKER_ID, scenario.label);
+        assert.equal(inserted?.keyword, scenario.row.keyword, scenario.label);
+        assert.equal(inserted?.error_code, scenario.row.error_code, scenario.label);
+        assert.equal(inserted?.scope, scenario.row.scope, scenario.label);
+        assert.deepEqual(inserted?.evidence, scenario.row.evidence, scenario.label);
+      } else {
+        assert.equal(inserted, null, scenario.label);
+      }
+    }
+  });
+});
+
+test("a rejected failure report stores no Chrome error detail", async () => {
+  await withWorkerEnv(async () => {
+    let inserted = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          return { data: { recorded: false, reason: "lease_lost" }, error: null };
+        },
+        from() {
+          return { async insert(row) { inserted = row; return { error: null }; } };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "record-failure",
+      workerId: WORKER_ID,
+      laneToken: LANE_TOKEN,
+      runId: RUN_ID,
+      runtimeFingerprint: RUNTIME_FINGERPRINT,
+      job: {
+        keyword: "온열찜질기",
+        limit: 300,
+        claims: [{
+          trackerId: TRACKER_ID,
+          leaseStartedAt: new Date(Date.now() - 60_000).toISOString(),
+          leaseUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+        }],
+      },
+      errorCode: "naver_page_navigation_failed",
+      scope: "system",
+      errorDetail: "No current window",
+    }), ctx);
+    assert.equal(response.status, 409);
+    assert.equal(inserted, null);
+  });
+});
+
 test("records an isolated lookup failure without assigning it a tracker id", async () => {
   await withWorkerEnv(async () => {
     const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();

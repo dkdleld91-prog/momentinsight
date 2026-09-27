@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "d9b44893f718dae862fb1e946486fe9089dba7900ba0eb1dc75718e3e2a6fbf9"
+      "sha256": "1456bc46493b8231e54168bdc863fcd37304c5e672ee20e71396e5d22551361a"
     },
     {
       "id": "product-organic-rank-server",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "6e171adec5d9ab664a2a472d254f0ab98e31672466842adf3710303fd74dd8e5"
+      "sha256": "0d0dd4dde9cbad438d6d348aabd2cf91b7dd0e9da80761bb6e1de15cd9f0f18c"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "1d429872354d73d8e7d3830710b8895d43cfac7f4d5c4e2b2c5b5b8f8493a0e9"
+      "sha256": "af3ccc4f62239bee5afb5b5f65a960ccb20e49ee967e8010c275717e49221c2e"
     },
     {
       "id": "shopping-cloud-worker",
@@ -625,7 +625,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "86389cde74a44d6c52ceef11d8267570f98dea1c6eb53279ee8d34d00d73c474"
+      "sha256": "7bd667adb48a0e1d42c354f4fd7278eb9d544268b7b29e7aeb1dac0cdab49a06"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -935,6 +935,12 @@
       "id": "shopping-standby-failure-isolation",
       "file": "supabase/migrations/20260927120000_naver_shopping_standby_failure_isolation.sql",
       "sha256": "1185ad7d78aefd330679e4b351cec4d09d4a09c87162a9c1126e7a7d466cd080",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-runtime-1-1-33-collection-window-and-probe",
+      "file": "supabase/migrations/20260928022048_naver_shopping_runtime_1_1_33_collection_window_and_probe.sql",
+      "sha256": "2d0f0d794c2d431c151b38ea5b3884c83e04e3e9a46513c775b4f7d4f402080d",
       "rankMigration": true
     }
   ]

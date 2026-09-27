@@ -43,8 +43,12 @@ const DELIBERATE_CIRCUIT_REASONS = new Set(["manual_stop", "manual_canary"]);
 // Chrome 재기동으로 풀 수 없으므로 queue/worker/commit 복구 신호는 억제한다.
 const MANUAL_RECOVERY_CIRCUIT_REASON = "transient_recovery_manual_required";
 
-// ready.mjs 와 같은 모양의 인프로세스 캐시. 10분 주기 워치독 폴링을 CDN 과 함께 흡수한다.
+// ready.mjs 와 같은 모양의 인프로세스 캐시. 10분 주기 워치독 폴링을 흡수한다(CDN 은 위
+// CACHE_CONTROL 주석대로 no-store 라 캐시하지 않는다 — 2026-09-28 라이브 실측
+// cache-control: no-store, x-vercel-cache: MISS).
 // 엔트리에 status 와 헤더를 함께 담아 캐시 히트 시 원래 응답(200/503)을 그대로 재현한다.
+// 200 엔트리의 만료는 고정 60초가 아니라 rankHealthCacheExpiresAt 이 코디네이션
+// last_success_at 으로 정한다(커밋 정체 경계에서 끊는다).
 let cached = null;
 
 // lanes 의 두 키. 입력 레인이 비어 있어도 공개 표면에는 이 두 키가 항상 실린다.
@@ -306,10 +310,16 @@ export function rankHealthCacheExpiresAt(now, lastSuccessAt) {
 // 조회만 담당하는 얇은 래퍼. 판정은 전부 위 순수 함수가 한다(테스트가 실행 검증한다).
 // 필수 global 행이 없거나 읽기 실패면 공개 값은 안전값으로 두되 reliable=false 로
 // 전달해 제어면 소실을 정상 유휴로 단정하지 않는다.
-// 같은 행에 heartbeatAgeMinutes 의 두 재료(primary_seen_at, last_success_at)가 있으므로
-// 왕복을 늘리지 않고 select 만 넓혀 함께 읽는다. 반환은 불리언이 아니라 객체다.
+// 같은 행에 primary_seen_at 과 last_success_at 이 있으므로 왕복을 늘리지 않고 select 만
+// 넓혀 함께 읽는다. 반환은 불리언이 아니라 객체다. 두 표식의 쓰임:
+//   last_success_at — 커밋 축(lastCommitAgeMinutes·commitStalled, 2026-09-27 부터 하트비트와
+//                     무관하게 ok 를 뒤집는다), heartbeatAgeMinutes 의 재료, 그리고 200 캐시
+//                     만료(rankHealthCacheExpiresAt)까지 셋 모두를 움직인다.
+//   primary_seen_at — heartbeatAgeMinutes 의 재료로만 쓴다(사실값, 워치독 재기동 가드용).
 // 열이 아직 없는 환경으로 내려오면 cooldown_until 만 다시 읽는 축약 경로가 그대로
-// 살아 있고, 그 경로에서는 두 표식이 단순히 비어 있다(= heartbeat 신호 없음 → 0).
+// 살아 있다. 그 경로에서는 두 표식이 비어 있어 heartbeatAgeMinutes 는 0, 커밋 축은 판독
+// 불가(lastCommitAgeMinutes=null·commitStalled=false), 캐시 만료는 기본 60초지만,
+// reliable=false 이므로 최상위 ok 는 false 로 닫힌다.
 async function deliberateWorkerStop(ctx, now) {
   const empty = {
     deliberateStop: false,
@@ -519,7 +529,9 @@ export default {
         controlHealthy: coordination.controlHealthy,
         primarySeenAt: coordination.primarySeenAt,
         // 코디네이션 행의 last_success_at 이다. 위 lanes 에서 나오는 출력 키
-        // lastSuccessAt 과 이름만 같을 뿐 heartbeatAgeMinutes 에만 쓰인다.
+        // lastSuccessAt 과 이름만 같을 뿐 서로 섞이지 않는다. 이 값은 커밋 축
+        // (lanes.product.lastCommitAgeMinutes·commitStalled → 최상위 ok)과
+        // heartbeatAgeMinutes 에 쓰이고, 아래 캐시 만료(rankHealthCacheExpiresAt)도 정한다.
         lastSuccessAt: coordination.lastSuccessAt,
         lastRunRuntimeVersion: lastRunObservation.value,
         lastSignatureAt: lastSignatureObservation.value,

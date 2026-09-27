@@ -5002,6 +5002,45 @@ test("extension keeps a sanitized Chrome error text beside the stage code, never
   }
 });
 
+// 1.1.33 review follow-up: every sample above that holds a "?" also holds "http", "://" or " url"
+// before it, so the extension's own cut at "?" (COLLECTION_ERROR_DETAIL_CUT_MARKERS) was not pinned.
+// A relative address or bare query with no scheme must still be cut at "?", so the query (and the
+// keyword in it) never leaves the extension.
+test("extension error detail sanitizer cuts at a bare '?' with no scheme or ' url' before it", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const helperStart = serviceWorker.indexOf("const TYPED_COLLECTION_ERROR_PATTERN");
+  const helperEnd = serviceWorker.indexOf("function wait(milliseconds)", helperStart);
+  const { typedCollectionError, collectionErrorDetail } = runInNewContext(
+    `${serviceWorker.slice(helperStart, helperEnd)}\n({ typedCollectionError, collectionErrorDetail });`,
+  );
+  for (const [value, expected] of [
+    ["Navigation to /search/all?query=nike&pagingIndex=2 was aborted", "Navigation to /search/all"],
+    ["Frame 0 failed?frame=0&query=nike", "Frame 0 failed"],
+    ["Why did it stop? query nike running shoes", "Why did it stop"],
+    ["?query=nike", ""],
+  ]) {
+    // only "?" can cut these samples
+    for (const marker of ["http", "://", " url"]) assert.equal(value.includes(marker), false, `${value} / ${marker}`);
+    const detail = collectionErrorDetail(value);
+    assert.equal(detail, expected, value);
+    assert.equal(detail.includes("?"), false, value);
+    assert.equal(detail.includes("nike"), false, value);
+    assert.equal(detail, sanitizeCollectionErrorDetail(value), `${value}: same cut as the shared contract`);
+  }
+  const typed = typedCollectionError(
+    new Error("Navigation to /search/all?query=nike was aborted"),
+    "naver_page_navigation_failed",
+  );
+  assert.equal(typed.message, "naver_page_navigation_failed");
+  assert.equal(typed.errorDetail, "Navigation to /search/all");
+  const queryOnly = typedCollectionError(new Error("?query=nike"), "naver_page_navigation_failed");
+  assert.equal(queryOnly.message, "naver_page_navigation_failed");
+  assert.equal(Object.hasOwn(queryOnly, "errorDetail"), false, "a bare query leaves nothing to keep");
+});
+
 test("collection_error carries the sanitized Chrome text beside the unchanged code", async () => {
   const serviceWorker = fs.readFileSync(
     new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),

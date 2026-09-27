@@ -1393,3 +1393,46 @@ test("a circuit opened before this migration (no opener): a failed or incomplete
     assert.equal((await lane(newDb)).circuit_opened_by_worker, null, ending);
   }
 });
+
+// scripts/naver-shopping-local-worker.mjs: a granted probe that reaches the claim step and finds no
+// tracker (stage 'claiming', page 0, no job, no tracker_claimed since probe_started_at) is released
+// with auto_recovery_no_work — the circuit goes back to half_open for the next claim. That release
+// must not touch the episode's opener: turning a standby-originated circuit into the primary's own
+// would drop the returning primary back to the 10/30-minute wait, and clearing a primary-opened one
+// would hand the next primary claim an early probe it has not earned.
+test("a probe released with no work (auto_recovery_no_work) keeps circuit_opened_by_worker unchanged", async (t) => {
+  const cases = [
+    { name: "primary early probe, standby-opened navigation circuit", worker: PRIMARY, role: "primary", token: PT, opener: STANDBY,
+      setup: (db) => seed(db, navigationCircuit(standbyOpener)), reason: "auto_navigation_probe" },
+    { name: "primary early probe, standby-opened transient circuit", worker: PRIMARY, role: "primary", token: PT, opener: STANDBY,
+      setup: (db) => standbyTransientCircuit(db), reason: "auto_transient_system_probe" },
+    { name: "standby probe, primary-opened navigation circuit", worker: STANDBY, role: "standby", token: ST, opener: PRIMARY,
+      setup: (db) => seed(db, navigationCircuit({ circuit_opened_by_worker: `'${PRIMARY}'` })), reason: "auto_navigation_probe" },
+  ];
+  for (const scenario of cases) {
+    const db = await fixture();
+    t.after(() => db.close());
+    await scenario.setup(db);
+    const probe = await claim(db, scenario.worker, scenario.role, scenario.token);
+    assert.deepEqual(brief(probe), [true, "granted", "half_open", true, null], scenario.name);
+    let row = await lane(db);
+    assert.equal(row.circuit_reason, scenario.reason, scenario.name);
+    assert.equal(row.circuit_opened_by_worker, scenario.opener, `${scenario.name}: the claim keeps the opener`);
+    assert.ok(row.probe_started_at, scenario.name);
+    const attemptsBefore = row.transient_system_probe_attempts;
+    const signatureBefore = row.failure_signature;
+    // the worker reached the claim step and there was nothing to collect
+    await db.query(`update public.naver_shopping_worker_coordination
+      set run_id = $1, current_stage = 'claiming', current_page = 0, current_job_kind = null, current_tracker_id = null
+      where lane_key = 'global'`, [RUN]);
+    assert.equal(await release(db, scenario.worker, scenario.token), true, scenario.name);
+    row = await lane(db);
+    assert.equal(row.circuit_state, "half_open", `${scenario.name}: no-work release goes back to half_open`);
+    assert.equal(row.circuit_reason, scenario.reason, scenario.name);
+    assert.equal(row.probe_started_at, null, scenario.name);
+    assert.equal(row.lease_worker_id, null, scenario.name);
+    assert.equal(row.transient_system_probe_attempts, attemptsBefore, scenario.name);
+    assert.equal(row.failure_signature, signatureBefore, scenario.name);
+    assert.equal(row.circuit_opened_by_worker, scenario.opener, `${scenario.name}: the no-work release keeps the opener`);
+  }
+});

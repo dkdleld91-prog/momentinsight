@@ -930,6 +930,12 @@
       "file": "supabase/migrations/20260919030000_naver_shopping_standby_runtime_identity_registration.sql",
       "sha256": "9b6b171077e6742ccafd9736575c85622ba597d2aed1e7e4e699bb63bb8e9f4f",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-standby-failure-isolation",
+      "file": "supabase/migrations/20260927120000_naver_shopping_standby_failure_isolation.sql",
+      "sha256": "338c63d02f89e8bfd76da8c00234c3f5850d583bba46480fe6c9a8208544f8c7",
+      "rankMigration": true
     }
   ]
 }

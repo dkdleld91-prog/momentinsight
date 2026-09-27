@@ -12,6 +12,12 @@ console.log(`# 지금 ${kst(new Date().toISOString())} KST · 최근 ${hours}시
 const c = (await q("naver_shopping_worker_coordination?select=*&lane_key=eq.global"))[0];
 const stale = c.primary_seen_at ? Math.round((Date.now() - Date.parse(c.primary_seen_at)) / 60000) : null;
 console.log(`\n## 코디네이션\n주작업기 ${c.primary_worker_id} 마지막 신호 ${kst(c.primary_seen_at)} (${stale}분 전) · 임대 ${c.lease_worker_id || "-"} ${c.current_stage || ""} p${c.current_page}\n회로 ${c.circuit_state} ${c.circuit_reason || ""} 열림 ${kst(c.circuit_opened_at)} streak ${c.failure_streak} · cooldown ${kst(c.cooldown_until)} block ${c.last_block_code || "-"} · 런타임 ${c.runtime_version}`);
+// 2026-09-27 대기기 실패 격리(20260927120000): 대기기 기기 쪽 실패는 회로를 열지 않고 벤치로 남는다.
+const isolation = "standby_benched_until" in c;
+const benched = isolation && c.standby_benched_until && Date.parse(c.standby_benched_until) > Date.now();
+console.log(isolation
+  ? `회로 연 워커 ${c.circuit_opened_by_worker || "-"} · 대기기 벤치 ${benched ? `중(~${kst(c.standby_benched_until)})` : "없음"} · 대기기 실패 ${c.standby_failure_worker_id || "-"} ${c.standby_failure_streak}회 마지막 ${kst(c.standby_last_failure_at)} ${c.standby_last_failure_code || ""}`
+  : "대기기 실패 격리(20260927120000) 미적용: 벤치·회로 연 워커 열 없음");
 const runs = await q("naver_shopping_worker_runs?select=worker_id,run_trigger,runtime_version,started_at&order=started_at.desc&limit=6");
 console.log("\n## 최근 런"); for (const r of runs) console.log(` ${kst(r.started_at)} ${r.worker_id} ${r.run_trigger} ${r.runtime_version}`);
 const ev = await q(`naver_shopping_scheduler_events?select=occurred_at,event_type,error_code,worker_id,tracker_id,details&occurred_at=gte.${since}&event_type=in.(tracker_committed,finite_window_committed,job_failed)&order=occurred_at.desc&limit=400`);
@@ -34,6 +40,9 @@ console.log("네이티브 호스트(1초 만에 exit 0 반복 = 서버가 일을
 console.log("워치독:\n" + sh(`tail -5 "${L}/mi-rank-watchdog.log" | cut -c1-150`));
 console.log("절전 이력:\n" + sh("pmset -g log | grep -E 'Entering Sleep|Wake from' | tail -4 | cut -c1-100"));
 console.log("\n## 판정 힌트");
+if (benched) console.log(` 대기기 벤치 중(~${kst(c.standby_benched_until)}, ${c.standby_failure_streak}회 ${c.standby_last_failure_code}) → 맥 Chrome 수집 프로필 창·확장·네이티브 호스트 확인, 고쳤으면 SKILL.md 3-1 벤치 해제 SQL`);
+const autoOpened = /:/u.test(c.circuit_reason || "") || ["probe_incomplete", "probe_interrupted", "transient_standby_handoff_ready", "transient_recovery_manual_required"].includes(c.circuit_reason);
+if (c.circuit_state === "open" && isolation && autoOpened && c.circuit_opened_by_worker && c.circuit_opened_by_worker !== c.primary_worker_id) console.log(` 회로를 ${c.circuit_opened_by_worker} 가 열었음 → 주작업기가 돌아오면 첫 claim 에서 바로 검증 1건(추가 조치 불필요)`);
 if (c.circuit_state === "open") console.log(` 회로 open(${c.circuit_reason}) → 주작업기 무신호 ${stale}분. 사유별 조치는 SKILL.md 판정표, 수동 복구는 recovery-sql.sh "${c.circuit_reason}"`);
 else if (stale != null && stale > 3 && !byWorker["macbook-standby"]) console.log(" 주작업기 무신호인데 대기기 커밋 없음 → 맥 전원·뚜껑·Chrome(Profile 5)·네이버 로그인 확인");
 else console.log(" 회로 정상. 실패 목록과 증거 trace 를 본다.");

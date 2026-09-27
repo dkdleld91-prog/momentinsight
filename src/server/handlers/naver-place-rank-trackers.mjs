@@ -631,6 +631,11 @@ export function placeTrackerPayload(row, snapshots = []) {
       return Number.isFinite(checkedAt) && checkedAt >= historyCutoff;
     })
     .slice(0, PLACE_RANK_HISTORY_MAX_SNAPSHOTS);
+  // 2026-09-27 통합 점검: 최고·최저가 추적 시작부터 전체 기간 값(best_rank·worst_rank 열)이라 화면의
+  // 30일 기록과 달랐다(예: '최고 1위'인데 30일 기록 최고 9위). N30 과 같게 30일 기록으로 계산한다.
+  const recentRanks = recentSnapshots
+    .map((snapshot) => Number(snapshot?.rank))
+    .filter((rank) => Number.isInteger(rank) && rank >= 1 && rank <= PLACE_RANK_TRACKER_MAX_RANK);
   return {
     id: row.id,
     keyword: row.keyword,
@@ -644,8 +649,8 @@ export function placeTrackerPayload(row, snapshots = []) {
     lastCheckedAt: row.last_checked_at,
     nextCheckAt: row.next_check_at,
     currentRank: row.current_rank,
-    bestRank: row.best_rank,
-    worstRank: row.worst_rank,
+    bestRank: recentRanks.length ? Math.min(...recentRanks) : null,
+    worstRank: recentRanks.length ? Math.max(...recentRanks) : null,
     checkCount: row.check_count,
     foundCount: row.found_count,
     lastMessage: row.last_message,
@@ -1794,17 +1799,24 @@ async function createTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const keyword = normalizeText(body.keyword);
   const originalPlaceUrl = normalizeText(body.placeUrl || body.place_url || body.targetUrl || body.target_url);
+  if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
+  if (!originalPlaceUrl) {
+    return json(request, { ok: false, message: "네이버 플레이스 URL을 입력해주세요." }, 400);
+  }
+  // 2026-09-27 통합 점검: 주소가 비어 있는지만 봐서 example.com 같은 주소로도 추적기가 만들어졌다
+  // (절대 순위를 찾을 수 없는 빈 추적기). 네이버 플레이스 주소나 숫자 플레이스 ID 만 받는다.
+  if (!isNaverPlaceUrl(originalPlaceUrl) && !/^\d{5,}$/.test(originalPlaceUrl)) {
+    return json(request, {
+      ok: false,
+      message: "네이버 플레이스 주소(map.naver.com · m.place.naver.com · naver.me)나 숫자 플레이스 ID를 입력해주세요.",
+    }, 400);
+  }
   const resolved = await resolveNaverPlaceUrl(originalPlaceUrl);
   const placeUrl = normalizeText(resolved.url) || originalPlaceUrl;
   const placeId = normalizeText(body.placeId || body.place_id) || normalizeText(resolved.placeId) || extractPlaceId(placeUrl) || extractPlaceId(originalPlaceUrl);
   const placeName = normalizeText(body.placeName || body.place_name) || normalizeText(resolved.placeName);
   const groupName = normalizePlaceRankGroupName(body.groupName || body.group_name || body.group);
   const placeUrlCandidates = [...new Set([originalPlaceUrl, placeUrl].filter(Boolean))];
-
-  if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
-  if (!originalPlaceUrl) {
-    return json(request, { ok: false, message: "네이버 플레이스 URL을 입력해주세요." }, 400);
-  }
 
   const existing = await ctx.supabaseAdmin
     .from("naver_place_rank_trackers")

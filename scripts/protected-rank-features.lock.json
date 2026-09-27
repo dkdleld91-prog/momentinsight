@@ -85,25 +85,25 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "9a4d7ede928f249f1bd3bc7e5d8510c87174978d77c2aa94373b4c16b0cab61c"
+      "sha256": "db7504f7491142127d2c49e0b55585632baec7614865048573493a0d1958169a"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "649d8b0d471e049bef9c0b1a0af847de2ed0a649832f175c5bd4eac395f1c882"
+      "sha256": "5931eed05ec2c883e0f257969cbe72f083179e2589338f0f25a7536e702ad570"
     },
     {
       "id": "operation-place-30-day",
       "file": "src/pages/admin.html",
       "name": "initPlaceRankTracking",
-      "sha256": "8e6eb598a6e8835615a56b9356566a7b9c04a34c510259e3a693332b6167dd4b"
+      "sha256": "b38e8eab00d01d9c536574f1ce9f713a6a8bea12608d08f098f546856af2ff54"
     },
     {
       "id": "advertiser-place-30-day",
       "file": "src/pages/client.html",
       "name": "initPlaceRankTracking",
-      "sha256": "e2802ec6c1d547c04122e15aded9048ffdee7af0736282fc727c98e6dd5e3c9c"
+      "sha256": "13ffe3d1ba62f5b1b1d988278e2f328bb8ec4bbc09a8e56c299fd27a03744697"
     },
     {
       "id": "keyword-hub-provider-config",
@@ -187,7 +187,7 @@
     {
       "id": "place-tracker-server",
       "file": "src/server/handlers/naver-place-rank-trackers.mjs",
-      "sha256": "2bc8f7b6b887c096bbb6e43f088675a860e7aeaa4849cf5ca85bc939936a418c"
+      "sha256": "597c9c186efb4c314f34981e3d6b53c2df687032049d1b0e12fc7a85f480daa0"
     },
     {
       "id": "place-rank-cron-server",

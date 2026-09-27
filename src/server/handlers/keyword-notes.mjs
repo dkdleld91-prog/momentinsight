@@ -7,6 +7,9 @@ import { resolveScope } from "./home-feed.mjs";
 
 const TABLE = "keyword_research_notes";
 const MAX_NOTES = 50;
+// 같은 제목·같은 키워드를 이 시간 안에 다시 저장하면 새 줄을 만들지 않고 방금 저장한 노트를 돌려준다
+// (2026-09-27 통합 점검: 저장 요청이 두 번 오면 같은 노트가 2개 생겼다).
+const DUPLICATE_WINDOW_MS = 60 * 1000;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -28,12 +31,18 @@ export function cleanKeywords(list) {
     .slice(0, 5);
 }
 
+function validIsoDate(value) {
+  const text = String(value || "").trim().slice(0, 40);
+  if (!text || Number.isNaN(new Date(text).getTime())) return "";
+  return new Date(text).toISOString();
+}
+
 export function cleanSnapshots(list) {
   return (Array.isArray(list) ? list : []).slice(0, 5).map((item) => ({
     keyword: String(item?.keyword || "").trim().slice(0, 80),
     volume: Number.isFinite(Number(item?.volume)) ? Number(item.volume) : null,
     peakMonth: String(item?.peakMonth || "").slice(0, 12),
-    checkedAt: String(item?.checkedAt || new Date().toISOString()).slice(0, 40),
+    checkedAt: validIsoDate(item?.checkedAt) || new Date().toISOString(),
   }));
 }
 
@@ -63,6 +72,17 @@ export async function handleKeywordNotesRequest(request, ctx) {
         snapshots: cleanSnapshots(body?.snapshots),
         created_by_role: scope.role,
       };
+      const since = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString();
+      const { data: recent, error: recentError } = await db
+        .from(TABLE)
+        .select("id, title, keywords, snapshots, created_at")
+        .eq("agency_code", scope.accountCode)
+        .eq("title", row.title)
+        .gte("created_at", since)
+        .limit(5);
+      if (recentError) throw recentError;
+      const same = (recent || []).find((item) => JSON.stringify(item.keywords || []) === JSON.stringify(keywords));
+      if (same) return json({ ok: true, item: same, duplicate: true });
       const { data, error } = await db.from(TABLE).insert(row).select("id, title, keywords, snapshots, created_at").single();
       if (error) throw error;
       return json({ ok: true, item: data });
@@ -70,8 +90,10 @@ export async function handleKeywordNotesRequest(request, ctx) {
     if (request.method === "DELETE") {
       const id = String(new URL(request.url).searchParams.get("id") || "").trim();
       if (!id) return json({ ok: false, message: "id가 필요합니다." }, 400);
-      const { error } = await db.from(TABLE).delete().eq("agency_code", scope.accountCode).eq("id", id);
+      const { data, error } = await db.from(TABLE).delete().eq("agency_code", scope.accountCode).eq("id", id).select("id");
       if (error) throw error;
+      // 없는 노트를 지워도 '성공'이라고 답하던 것을 바로잡는다.
+      if (!Array.isArray(data) || !data.length) return json({ ok: false, message: "이미 삭제됐거나 없는 조사 노트입니다." }, 404);
       return json({ ok: true });
     }
     return json({ ok: false, message: "Method not allowed" }, 405);

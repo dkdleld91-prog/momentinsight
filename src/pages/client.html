@@ -4123,7 +4123,7 @@
     #mi-clean .mi-kw-notes-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
     #mi-clean .mi-kw-notes { margin-top: 10px; border-top: 1px dashed var(--mi-line); padding-top: 8px; }
     #mi-clean .mi-kw-notes-head { font-size: 12px; color: var(--mi-muted); margin-bottom: 4px; }
-    #mi-clean .mi-kw-notes-list { list-style: none; margin: 0; padding: 0; }
+    #mi-clean .mi-kw-notes-list { list-style: none; margin: 0; padding: 0; max-height: 340px; overflow-y: auto; }
     #mi-clean .mi-kw-notes-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px dashed var(--mi-line); font-size: 13px; flex-wrap: wrap; }
     #mi-clean .mi-kw-notes-list li b { color: var(--mi-navy); }
     #mi-clean .mi-kw-notes-list li .r { margin-left: auto; color: var(--mi-muted); font-size: 12px; }
@@ -9666,7 +9666,8 @@
         if (!box || !list) return;
         var items = keywordNotesState.items || [];
         box.hidden = !items.length;
-        list.innerHTML = items.slice(0, 8).map(function (note) {
+        // 2026-09-27 통합 점검: 8개까지만 그려 9번째부터는 보이지도 지울 수도 없었다. 서버가 주는 전부(최대 50)를 그린다.
+        list.innerHTML = items.map(function (note) {
           var snaps = Array.isArray(note.snapshots) ? note.snapshots : [];
           var first = snaps[0] || {};
           var when = note.created_at ? String(note.created_at).slice(5, 10).replace("-", "/") : "";
@@ -12831,15 +12832,10 @@
           var deleteButton = event.target.closest("[data-rank-delete]");
           if (deleteButton) {
             var deleteId = deleteButton.getAttribute("data-rank-delete");
-            if (pendingDeleteId !== deleteId) {
-              resetDeleteConfirm();
-              pendingDeleteId = deleteId;
-              deleteButton.textContent = "삭제 확인";
-              deleteButton.classList.add("is-confirming");
-              setStatus(rankStatus, "같은 삭제 버튼을 한 번 더 누르면 추적 항목과 기록이 삭제됩니다.", "is-warn");
-              return;
-            }
+            // 2026-09-27 통합 점검: 삭제 확인을 플랫폼 공통 방식(확인 창)으로 맞춘다. 전에는 N30 만 '한 번 더 누르기'였고
+            // 플레이스·업무·원본 파일·조사 노트는 확인 창이었다.
             resetDeleteConfirm();
+            if (!window.confirm("이 순위 추적과 기록을 삭제하시겠습니까?")) return;
             deleteButton.disabled = true;
             deleteButton.textContent = "삭제 중";
             deleteButton.classList.add("is-deleting");
@@ -15022,6 +15018,12 @@
           }
           if (!targetUrl) {
             setStatus(placeStatus, "네이버 플레이스 URL을 입력해주세요.", "is-warn");
+            return;
+          }
+          // 2026-09-27 통합 점검: 네이버 주소가 아니어도 등록돼 순위를 찾을 수 없는 빈 추적기가 생겼다.
+          // 서버와 같은 기준(네이버 플레이스 주소 또는 숫자 플레이스 ID)으로 먼저 막는다.
+          if (!/^\d{5,}$/.test(targetUrl) && !/^(https:\/\/)?([a-z0-9-]+\.)*(naver\.me|map\.naver\.com|place\.naver\.com)([\/?#]|$)/i.test(targetUrl)) {
+            setStatus(placeStatus, "네이버 플레이스 주소(map.naver.com · m.place.naver.com · naver.me)나 숫자 플레이스 ID를 입력해주세요.", "is-warn");
             return;
           }
           placeRun.disabled = true;

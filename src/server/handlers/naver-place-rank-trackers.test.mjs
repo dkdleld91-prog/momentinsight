@@ -2542,3 +2542,29 @@ test("러너 조회 오류는 오류 코드로 실패 처리되어 자동 재시
   assert.equal(state.tables[TRACKERS][0].current_rank, 12);
   assert.equal(state.tables[SNAPSHOTS].length, 0);
 });
+
+// 2026-09-27 통합 점검
+test("플레이스 등록은 네이버 플레이스 주소나 숫자 ID 가 아니면 400 으로 막고 추적기를 만들지 않는다", async () => {
+  for (const placeUrl of ["https://example.com", "https://map.naver.com.evil.com/p/1", "http://map.naver.com/p/entry/place/1234567", "javascript:alert(1)", "not a url"]) {
+    const { ctx, state } = testContext([]);
+    const result = await payload(await handlePlaceRankTrackersRequest(request("POST", { action: "create", keyword: "[점검]", placeUrl }), ctx));
+    assert.equal(result.status, 400, placeUrl);
+    assert.match(result.body.message, /네이버 플레이스 주소/);
+    assert.equal(state.tables[TRACKERS].length, 0, placeUrl);
+  }
+});
+
+test("플레이스 최고·최저 순위는 화면의 30일 기록으로 계산한다(전체 기간 열 값이 아니다)", () => {
+  const now = Date.now();
+  const payloadValue = placeTrackerPayload({ id: "p1", best_rank: 1, worst_rank: 98, current_rank: 12 }, [
+    { id: "s1", checked_at: new Date(now - 3600e3).toISOString(), rank: 12 },
+    { id: "s2", checked_at: new Date(now - 2 * 86400e3).toISOString(), rank: 9 },
+    { id: "s3", checked_at: new Date(now - 3 * 86400e3).toISOString(), rank: null },
+    { id: "old", checked_at: new Date(now - 40 * 86400e3).toISOString(), rank: 1 },
+  ]);
+  assert.equal(payloadValue.bestRank, 9);
+  assert.equal(payloadValue.worstRank, 12);
+  const empty = placeTrackerPayload({ id: "p2", best_rank: 3, worst_rank: 50 }, []);
+  assert.equal(empty.bestRank, null);
+  assert.equal(empty.worstRank, null);
+});

@@ -212,8 +212,8 @@
 - 사고: 09-27 19:33 주작업기 종료 → 맥 대기기 인계. 수집 프로필(Profile 5)에 창이 0개라 `chrome.tabs.create` 가 "No current window" 로 즉시 거절(`naver_page_navigation_failed`) → 대기기 실패 2건(19:42:33·19:52:06)이 전역 회로를 열고, 대기기 검증 실패 2건(20:03:00·20:19:58)이 다시 열어 20:20 에 돌아온 주작업기의 첫 커밋이 20:34:48.
 - 수정: `supabase/migrations/20260927120000_naver_shopping_standby_failure_isolation.sql` (런타임 무관·RPC 서명 불변·새 열 6개, 1.1.32 워커 그대로 호환)
   - 대기기 기기 쪽 실패 11종(브라우저·확장·네이티브 호스트·로컬 기한, 목록과 출처는 마이그레이션 머리말)을 등록된 주작업기가 아닌 워커가 보고하면 전역 실패 서명·회로를 건드리지 않고 임대만 돌려준다. 같은 대기기가 한 사건에서 2회째면 30분, 3회 이상이면 60분 쉰다(벤치, 거절 사유 `standby_benched`). 3시간 넘게 끊기거나 그 사이 원자 커밋이 있으면 다음 실패는 새 사건(1회째). 주작업기 성공은 걸려 있는 벤치를 풀지 않는다(주작업기가 살아 있으면 벤치는 영향이 없다).
-  - 대기기의 반쪽 열림 검증이 실패하면 회로는 지금처럼 다시 열린다(fail-closed). 회로를 마지막으로 연 워커를 `circuit_opened_by_worker` 에 남긴다(실패·미완료 해제·임대 만료 모두, 반쪽 열림으로 넘어갈 때 지움).
-  - 마지막으로 회로를 연 워커가 주작업기가 아니면(수동 종단 `transient_recovery_manual_required`, 서명 없는 `probe_incomplete` 포함) 주작업기는 정적 대기 없이 반쪽 열림 검증 1건을 바로 받는다. 살아 있는 임대·보안 cooldown 이 있으면 기다린다. 그 검증이 실패·미완료·만료되면 주작업기가 연 회로가 되어 예전 규칙(10/30분 대기, 일시 오류 2회 예산, 수동 종단)이 그대로 적용된다 → 회로당 이른 검증 최대 1건, 반복 없음. `manual_stop`(긴급 안전 정지)·`probe_security_block` 은 해당 없음.
+  - 대기기의 반쪽 열림 검증이 실패하면 회로는 지금처럼 다시 열린다(fail-closed). 닫힌 회로를 실패로 연 워커(회로 사건의 시작)를 `circuit_opened_by_worker` 에 남긴다. 반쪽 열림 동안에도 그대로 두고, 주작업기가 잡은 검증이 실패·미완료 해제·임대 만료로 끝나면 주작업기로 바꾼다(대기기 검증이 실패해도 값은 그대로). 해제에서 검증이 회로를 복구하면 지운다.
+  - 대기기에서 시작된 회로이고 주작업기가 그 회로에서 자기 자동 검증을 아직 쓰지 않았으면(`transient_system_probe_attempts` = 0, 자기 검증 실패 없음) 주작업기는 정적 대기 없이 반쪽 열림 검증 1건을 바로 받는다(수동 종단 `transient_recovery_manual_required`, 서명 없는 `probe_incomplete` 포함). 사유가 자동 경로만 쓰는 것일 때만 해당한다: `probe_incomplete`·`probe_interrupted`·`transient_recovery_manual_required`, 또는 실패 함수가 쓴 서명(`circuit_reason = failure_signature`) 중 일시 오류·대기기 기기 코드. 살아 있는 임대·보안 cooldown 이 있으면 예전 응답 그대로다. 그 검증이 실패·미완료·만료되면 주작업기가 연 회로가 되어 예전 규칙(10/30분 대기, 일시 오류 2회 예산, 대기기 인계 1회, 수동 종단)이 그대로 적용된다 → 회로당 이른 검증 최대 1건, 반복 없음. 주작업기가 연 회로, 주작업기가 일시 오류 검증 2회를 다 쓰고 대기기 인계까지 실패한 회로는 예전처럼 수동 종단이 유지된다. `manual_stop` 등 수동 정지(콜론이 든 사유 포함)·`probe_security_block`·자동 출구 없는 네이버 페이지 서명은 해당 없음(원자 커밋·수동 정지·수동 닫기는 이 마이그레이션이 다시 선언하지 않아 열 값을 남기지만, 사유 허용 목록이 막는다).
   - 네이버 차단 계열(scope `security`: 보안 확인·접속 제한·418/429/403·캡차·로그인·접근 차단)은 전역 cooldown 30/60분 그대로.
 - 적용 확인(대표, 읽기 전용): `docs/sql/20260927120000_naver_shopping_standby_failure_isolation.verify-applied.sql` 실행 → 9행 모두 `applied = true`.
 - 되돌리기(필요할 때만): `docs/sql/20260927120000_naver_shopping_standby_failure_isolation.rollback.sql` — 옛 함수 3개를 그대로 복원하고 새 열은 남긴 채 값만 비운다.
@@ -224,5 +224,5 @@
   where lane_key = 'global' and standby_benched_until is not null
   returning standby_failure_worker_id, standby_last_failure_code, standby_last_failure_at;
   ```
-- 진단: 대기기의 기기 쪽 즉시 실패는 이제 회로를 열지 않으므로 `circuit_state` 만으로는 안 보인다 → `standby_benched_until`·`standby_last_failure_code`·`circuit_opened_by_worker` 를 본다(`docs/skills/mi-collection-incident/scripts/diagnose.mjs` 가 출력). 관리자 운영 화면에는 아직 벤치가 나오지 않는다.
+- 진단: 대기기의 기기 쪽 즉시 실패는 이제 회로를 열지 않으므로 `circuit_state` 만으로는 안 보인다 → `standby_benched_until`·`standby_last_failure_code`·`circuit_opened_by_worker` 를 본다(`docs/skills/mi-collection-incident/scripts/diagnose.mjs` 가 출력, 대기기에서 시작돼 주작업기 즉시 검증 대상인지도 판정 힌트에 찍는다. 최근 실패 증거는 5행, `evidence.errorDetail` 이 있으면 함께). 관리자 운영 화면에는 아직 벤치가 나오지 않는다.
 - 남은 위험(기존 그대로): 주작업기 자신의 자동 검증이 해제 복구 목록에 없는 추적기 범위 코드(예: `provider_stable_rendered_order_unproven`)로 끝나면 `probe_incomplete` 에서 자동 출구가 없다 → 판정표의 조건부 회로 정리 SQL.

@@ -6,9 +6,11 @@
 -- opened; its navigation probes failed again at 20:03:00 and 20:19:58 and reopened it). The
 -- returning primary waited for circuit_opened_at + 10 minutes: probe 20:34:03, commit 20:34:48.
 -- Runtime neutral (no runtime literal, unchanged RPC signatures, safe for running workers):
---   * circuit_opened_by_worker records the worker whose failure, failed probe, probe released
---     incomplete or expired probe lease last opened the circuit; every open -> half_open
---     transition clears it;
+--   * circuit_opened_by_worker records the worker whose failure opened the circuit from closed
+--     (the start of a circuit episode). It is kept through open -> half_open and becomes the
+--     registered primary as soon as a half-open probe the primary held fails, is released
+--     incomplete or expires; a standby's failed probe keeps it. A probe that recovers the
+--     circuit in release clears it;
 --   * a standby-device failure (codes below) reported by a worker that is not the registered
 --     primary no longer advances the global failure signature and never opens a closed
 --     circuit; it benches that standby instead (2 in one episode = 30 minutes, 3 or more =
@@ -16,16 +18,22 @@
 --     last failure makes the next failure a new episode; a primary success does not lift an
 --     active bench (the bench has no effect while the primary is alive);
 --   * a half-open probe that fails still reopens the circuit exactly as before (fail-closed);
---   * when the open circuit was last opened by a worker other than the calling primary --
---     including the manual terminal `transient_recovery_manual_required` reached through a
---     standby handoff, and a standby handoff released `probe_incomplete` without a failure
---     signature -- the primary takes one half-open probe at once when no live lease and no
---     security cooldown stands in the way. Its own failed, incomplete or expired probe makes
---     it the opener, so the 09-10 contract (quiet periods, transient two-probe budget, manual
---     terminal) applies from then on. A deliberate stop ('manual_stop') and
---     'probe_security_block' never qualify, whatever the column holds;
+--   * only in a standby-originated episode -- the column names a worker other than the calling
+--     primary and the primary has used none of its own automatic probes in it
+--     (transient_system_probe_attempts = 0, no failed probe of its own) -- the returning
+--     primary takes one half-open probe at once, including over the manual terminal
+--     `transient_recovery_manual_required` reached through a failed standby handoff and a
+--     standby handoff released `probe_incomplete` without a failure signature. It needs no
+--     live lease, no security cooldown and a reason only the automatic paths write
+--     (probe_incomplete, probe_interrupted, transient_recovery_manual_required, or the failure
+--     function's own signature for a transient recovery or standby-device code). Its own
+--     failed, incomplete or expired probe makes it the opener, so the 09-10 contract (quiet
+--     periods, transient two-probe budget, single standby handoff, manual terminal) applies
+--     from then on. A deliberate stop (mi_stop_naver_shopping_worker, any reason),
+--     'probe_security_block' and a live security cooldown never qualify, whatever the column
+--     holds;
 --   * security-scope Naver blocking codes keep the global cooldown path unchanged, and a
---     circuit the primary opened keeps the existing behaviour unchanged.
+--     circuit episode the primary opened or joined keeps the existing behaviour unchanged.
 -- The three re-declared function bodies carry the marker `mi:standby-failure-isolation`
 -- (applied check: docs/sql/20260927120000_naver_shopping_standby_failure_isolation.verify-applied.sql;
 -- rollback: docs/sql/20260927120000_naver_shopping_standby_failure_isolation.rollback.sql).
@@ -481,8 +489,7 @@ begin
 
   -- Closed circuit + standby-device failure: give the lane back (as the lookup path does)
   -- without touching failure_signature / failure_streak / circuit_*. A half-open probe that
-  -- fails still reopens the circuit below exactly as before (fail-closed) and records this
-  -- worker as the opener, so the returning primary is not held behind it (claim).
+  -- fails still reopens the circuit below exactly as before (fail-closed).
   if standby_host_local_failure and current_row.circuit_state = 'closed' then
     update public.naver_shopping_worker_coordination
     set lease_worker_id = null,
@@ -536,7 +543,15 @@ begin
       circuit_state = case when should_open then 'open' else circuit_state end,
       circuit_reason = case when should_open then next_signature else circuit_reason end,
       circuit_opened_at = case when should_open then v_now else circuit_opened_at end,
-      circuit_opened_by_worker = case when should_open then failing_worker_id else circuit_opened_by_worker end,
+      -- 2026-09-27: a closed -> open failure stamps the worker that started this circuit
+      -- episode. A failed half-open probe hands it to the registered primary only when the
+      -- primary held the probe; a standby's failed probe keeps it (claim reads it).
+      circuit_opened_by_worker = case
+        when not should_open then circuit_opened_by_worker
+        when current_row.circuit_state = 'closed' then failing_worker_id
+        when failing_worker_id = current_row.primary_worker_id then failing_worker_id
+        else circuit_opened_by_worker
+      end,
       probe_started_at = case when should_open then null else probe_started_at end,
       lease_worker_id = case when should_open then null else lease_worker_id end,
       lease_token = case when should_open then null else lease_token end,
@@ -676,41 +691,77 @@ begin
     );
   end if;
 
-  -- 2026-09-27 (standby failure isolation): the registered primary is not held behind an
-  -- open circuit that a different worker opened last. circuit_opened_by_worker is stamped
-  -- by every automatic open (a failure that opens or reopens it, a probe released
-  -- incomplete, a probe whose lease expired) and cleared by every open -> half_open
-  -- transition. On 09-27 the standby's own failures and probes kept the circuit open while
-  -- the primary was off; a standby handoff that fails even ends in the manual terminal
-  -- below. In both cases the calling primary takes one half-open probe at once (after the
-  -- security cooldown and live-lease refusals below). When that probe fails, is released
-  -- incomplete or expires, the primary itself becomes the opener and the 09-10 contract
-  -- applies again: quiet periods, the transient two-probe budget and the manual terminal.
-  -- Only reasons written by those stamping paths qualify (a failure signature
-  -- '<stage>:<code>', probe_incomplete, probe_interrupted and the two transient states
-  -- derived from them). A deliberate stop (mi_stop_naver_shopping_worker, 'manual_stop'),
-  -- 'probe_security_block' (mi_block_naver_shopping_worker_lane; the security path is
-  -- unchanged) and any hand-set reason never qualify, even when an opener survives from an
-  -- earlier circuit (a success or a manual close does not clear the column).
+  -- 2026-09-27 (standby failure isolation): the registered primary is not held behind a
+  -- circuit episode that only a different worker's failures produced. circuit_opened_by_worker
+  -- names the worker whose failure opened the circuit from closed; it survives open ->
+  -- half_open, and it becomes the registered primary as soon as a half-open probe the primary
+  -- held fails, is released incomplete or expires (failure, release and the expiry below). On
+  -- 09-27 the standby's own failures and probes kept the circuit open while the primary was
+  -- off; a standby handoff that fails even ends in the manual terminal below. The calling
+  -- primary takes one half-open probe at once only when all of these hold:
+  --   * the episode is standby-originated: the column names a worker other than the caller
+  --     (NULL: the circuit opened before this migration -> no early probe);
+  --   * the primary has used none of its own automatic probes in the episode: no transient
+  --     probe counted (transient_system_probe_attempts = 0; only a success or the owner's
+  --     conditional close resets it) and no failed probe of its own (the column would name it).
+  --     So once the primary has failed its own probes the 09-10 contract applies exactly:
+  --     quiet periods, the two-probe budget, the single standby handoff and the manual terminal;
+  --   * no live lease and no security cooldown (the replies below stay exactly as before);
+  --   * the reason is one that only the automatic paths write: probe_incomplete,
+  --     probe_interrupted, transient_recovery_manual_required, or the failure function's own
+  --     signature (circuit_reason = failure_signature, '<stage>:<code>') for a transient
+  --     recovery code or a standby-device code. A deliberate stop (mi_stop_naver_shopping_worker
+  --     writes any reason, 'manual_stop' by default, and never the signature),
+  --     'probe_security_block' (mi_block_naver_shopping_worker_lane; unchanged), a Naver-page
+  --     signature without an automatic exit today and any hand-set reason never qualify, even
+  --     when an opener survives from an earlier circuit (the atomic success, the stop and a
+  --     manual close are not re-declared here and leave the column as it was).
   -- Nested so that a claim on a closed circuit never reads the new column.
   if normalized_worker_role = 'primary' and current_row.circuit_state = 'open' then
-    primary_after_standby_failure := current_row.circuit_opened_by_worker is not null
+    primary_after_standby_failure := coalesce(
+      current_row.circuit_opened_by_worker is not null
       and current_row.circuit_opened_by_worker <> normalized_worker_id
+      and current_row.transient_system_probe_attempts = 0
+      and (current_row.lease_until is null or current_row.lease_until <= v_now)
+      and (current_row.cooldown_until is null or current_row.cooldown_until <= v_now)
       and (
-        pg_catalog.strpos(coalesce(current_row.circuit_reason, ''), ':') > 0
-        or current_row.circuit_reason in (
+        current_row.circuit_reason in (
           'probe_incomplete',
           'probe_interrupted',
-          'transient_standby_handoff_ready',
           'transient_recovery_manual_required'
         )
-      );
+        or (
+          current_row.circuit_reason = current_row.failure_signature
+          and pg_catalog.split_part(current_row.circuit_reason, ':', 2) in (
+            'native_host_response_timeout',
+            'provider_deadline_exceeded',
+            'native_host_input_closed',
+            'naver_page_timeout',
+            'naver_page_script_timeout',
+            'local_worker_commit_unavailable',
+            'naver_next_data_missing',
+            'naver_page_script_failed',
+            'naver_page_read_state_unstable',
+            'naver_page_navigation_result_missing',
+            'naver_page_navigation_failed',
+            'provider_browser_collection_failed',
+            'provider_browser_launch_failed',
+            'provider_browser_dependency_missing',
+            'native_host_input_failed',
+            'native_host_request_id_mismatch',
+            'native_host_page_delivery_failed',
+            'native_host_collection_failed'
+          )
+        )
+      ),
+      false
+    );
   end if;
 
   -- This is a true terminal for automatic admission. Only the existing manual
   -- control path may move the circuit again; worker polls stay read-only even
   -- if runtime evidence or heartbeat state changes later. 2026-09-27: except for
-  -- the primary when a different worker opened the circuit last (see above).
+  -- the primary's early probe on a standby-originated episode (see above).
   if current_row.circuit_state = 'open'
     and current_row.circuit_reason = 'transient_recovery_manual_required'
     and not primary_after_standby_failure then
@@ -844,7 +895,8 @@ begin
   -- Once the single standby handoff for this last-known-good boundary has
   -- failed, no caller can reopen the automatic loop. Persist the terminal
   -- reason only once; later polls are read-only denials. 2026-09-27: a handoff that
-  -- the standby failed does not hold the returning primary (probe below).
+  -- the standby failed in a standby-originated episode does not hold the returning
+  -- primary (probe below); after the primary's own probes it does, as before.
   if transient_recovery_open and standby_handoff_used and not primary_after_standby_failure then
     if current_row.circuit_reason is distinct from 'transient_recovery_manual_required' then
       update public.naver_shopping_worker_coordination
@@ -886,11 +938,11 @@ begin
   -- gate and the worker treat it exactly like today's probes (autoRecovery): a navigation
   -- failure gets auto_navigation_probe (no budget); any other code gets
   -- auto_transient_system_probe and consumes one of the primary's two transient probes
-  -- (never more than two). No quiet period. The opener is cleared, so the primary's own
-  -- failed, incomplete or expired probe stamps the primary and falls back to the normal
-  -- rules: at most one early probe per circuit a different worker opened, no loop.
-  if primary_after_standby_failure
-    and (current_row.lease_until is null or current_row.lease_until <= v_now) then
+  -- (never more than two). No quiet period. The opener is kept; when this probe fails, is
+  -- released incomplete or expires, the primary becomes the opener and the normal rules
+  -- apply for the rest of the episode: the primary's first failed probe ends the early path,
+  -- no loop.
+  if primary_after_standby_failure then
     update public.naver_shopping_worker_coordination
     set circuit_state = 'half_open',
         circuit_reason = case
@@ -899,7 +951,6 @@ begin
           else 'auto_transient_system_probe'
         end,
         circuit_opened_at = null,
-        circuit_opened_by_worker = null,
         probe_tracker_id = null,
         probe_started_at = null,
         failure_signature = null,
@@ -964,7 +1015,6 @@ begin
     set circuit_state = 'half_open',
         circuit_reason = 'auto_navigation_probe',
         circuit_opened_at = null,
-        circuit_opened_by_worker = null,
         probe_tracker_id = null,
         probe_started_at = null,
         failure_signature = null,
@@ -1011,7 +1061,6 @@ begin
     set circuit_state = 'half_open',
         circuit_reason = 'auto_transient_system_probe',
         circuit_opened_at = null,
-        circuit_opened_by_worker = null,
         probe_tracker_id = null,
         probe_started_at = null,
         failure_signature = null,
@@ -1124,7 +1173,6 @@ begin
     set circuit_state = 'half_open',
         circuit_reason = 'auto_transient_system_probe',
         circuit_opened_at = null,
-        circuit_opened_by_worker = null,
         probe_tracker_id = null,
         probe_started_at = v_now,
         failure_signature = null,
@@ -1234,7 +1282,12 @@ begin
           else 'probe_interrupted'
         end,
         circuit_opened_at = v_now,
-        circuit_opened_by_worker = current_row.lease_worker_id,
+        -- 2026-09-27: an expired probe the registered primary held makes the primary the opener.
+        circuit_opened_by_worker = case
+          when current_row.lease_worker_id = current_row.primary_worker_id
+          then current_row.lease_worker_id
+          else current_row.circuit_opened_by_worker
+        end,
         probe_started_at = null,
         lease_worker_id = null,
         lease_token = null,
@@ -1436,12 +1489,15 @@ begin
         when current_row.circuit_state = 'half_open' then v_now
         else current_row.circuit_opened_at
       end,
-      -- 2026-09-27: a probe released incomplete records its holder as the opener.
+      -- 2026-09-27: a probe the registered primary released incomplete makes the primary the
+      -- opener; a probe that recovers the circuit closes the episode and clears it.
       circuit_opened_by_worker = case
         when auto_recovery_no_work then current_row.circuit_opened_by_worker
-        when auto_navigation_recovered then current_row.circuit_opened_by_worker
-        when transient_system_recovered then current_row.circuit_opened_by_worker
-        when current_row.circuit_state = 'half_open' then current_row.lease_worker_id
+        when auto_navigation_recovered then null
+        when transient_system_recovered then null
+        when current_row.circuit_state = 'half_open'
+          and current_row.lease_worker_id = current_row.primary_worker_id
+        then current_row.lease_worker_id
         else current_row.circuit_opened_by_worker
       end,
       failure_signature = case

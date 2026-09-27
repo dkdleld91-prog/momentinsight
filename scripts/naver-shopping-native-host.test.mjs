@@ -4735,13 +4735,211 @@ test("collector survives an unavailable session store without ever closing the l
   const [parkedTabId] = window.tabIds;
   assert.equal(fake.tabMap.get(parkedTabId).url, "about:blank");
 
-  // Without the session marker the parked window is treated like any window.
+  // Without the session marker the parked window is treated like any window:
+  // an unreadable store is not an empty one, so nothing is adopted either.
   fake.calls.length = 0;
   await runtime.collectPages(collectionWindowRequest(), async () => {});
   assert.equal(collectionWindowCalls(fake, "tabs.create").length, 1);
   assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
   assert.equal(fake.windowMap.size, 1);
   assert.deepEqual(fake.windowMap.get(windowId).tabIds, [parkedTabId]);
+});
+
+test("collector adopts a minimized about:blank window as its parked one when a restart lost the record", async () => {
+  // Chrome restart or an extension reload empties chrome.storage.session while
+  // the parked window stays. tabs.create into that minimized window would
+  // restore it on macOS (measured), so its single blank tab is reused.
+  for (const [label, seedTab] of [
+    ["parked on about:blank", "about:blank"],
+    ["about:blank committing to itself", { url: "about:blank", pendingUrl: "about:blank" }],
+  ]) {
+    const fake = fakeCollectionChrome({ windows: [{ id: 7, state: "minimized", tabs: [seedTab] }] });
+    const [tabId] = fake.windowMap.get(7).tabIds;
+    let recordedAtFirstPage = null;
+    await loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async (page) => {
+      if (page.pageIndex === 1) recordedAtFirstPage = JSON.parse(JSON.stringify(fake.session));
+    });
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.create"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [], label);
+    // Recorded before the first page, so a worker restart mid-collection still
+    // reuses the tab left on its search page.
+    assert.deepEqual(recordedAtFirstPage, { momentInsightRankCollectionWindow: { windowId: 7, tabId } }, label);
+    assert.deepEqual(collectionTabUpdates(fake), [
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map((pageIndex) => [tabId, collectionWindowPageUrl(pageIndex), false]),
+      [tabId, "about:blank", undefined],
+    ], label);
+    assert.deepEqual(fake.windowMap.get(7).tabIds, [tabId], label);
+    assert.equal(fake.windowMap.get(7).state, "minimized", label);
+    assert.deepEqual(fake.tabMap.get(tabId), { id: tabId, windowId: 7, url: "about:blank" }, label);
+    assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId } }, label);
+  }
+});
+
+test("collector adopts nothing but a lone minimized about:blank tab of the only window", async () => {
+  for (const [label, windows, record] of [
+    ["visible window on about:blank", [{ id: 7, state: "normal", tabs: ["about:blank"] }]],
+    ["maximized window on about:blank", [{ id: 7, state: "maximized", tabs: ["about:blank"] }]],
+    ["minimized on a search page", [{ id: 7, state: "minimized", tabs: ["https://search.shopping.naver.com/search/all?query=x&pagingIndex=8"] }]],
+    ["minimized on the new tab page", [{ id: 7, state: "minimized", tabs: ["chrome://newtab/"] }]],
+    ["minimized on a look-alike blank address", [{ id: 7, state: "minimized", tabs: ["about:blank#owner"] }]],
+    ["address typed into the blank tab", [{ id: 7, state: "minimized", tabs: [{ url: "about:blank", pendingUrl: "https://mail.example.com/owner" }] }]],
+    ["two blank tabs", [{ id: 7, state: "minimized", tabs: ["about:blank", "about:blank"] }]],
+    ["two minimized blank windows", [
+      { id: 7, state: "minimized", tabs: ["about:blank"] },
+      { id: 8, state: "minimized", tabs: ["about:blank"] },
+    ]],
+    ["a malformed record", [{ id: 7, state: "minimized", tabs: ["about:blank"] }], { windowId: "7" }],
+  ]) {
+    const fake = fakeCollectionChrome({ windows });
+    if (record) fake.session.momentInsightRankCollectionWindow = record;
+    const sessionBefore = JSON.parse(JSON.stringify(fake.session));
+    const tabsBefore = [...fake.tabMap.values()].map((tab) => ({ ...tab }));
+    await loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async () => {});
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), [
+      ["tabs.create", { url: collectionWindowPageUrl(1), active: false }],
+    ], label);
+    const collectionTabId = collectionWindowCalls(fake, "tabs.update")[0][1];
+    assert.equal(tabsBefore.some((tab) => tab.id === collectionTabId), false, label);
+    assert.equal(collectionWindowCalls(fake, "tabs.update").every(([, id]) => id === collectionTabId), true, label);
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [["tabs.remove", collectionTabId]], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.create"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [], label);
+    assert.deepEqual([...fake.tabMap.values()], tabsBefore, label);
+    assert.deepEqual(windows.map(({ id }) => fake.windowMap.get(id).state), windows.map(({ state }) => state), label);
+    assert.deepEqual(fake.session, sessionBefore, label);
+  }
+
+  // An incognito window is never the profile's collection surface: the
+  // collector opens its own window and leaves the incognito tab alone.
+  const incognito = fakeCollectionChrome({ windows: [{ id: 9, state: "minimized", incognito: true, tabs: ["about:blank"] }] });
+  const [incognitoTabId] = incognito.windowMap.get(9).tabIds;
+  await loadCollectionWindowRuntime(incognito).collectPages(collectionWindowRequest(), async () => {});
+  assert.deepEqual(collectionWindowCalls(incognito, "windows.create"), [
+    ["windows.create", { url: collectionWindowPageUrl(1), focused: false, state: "minimized" }],
+  ]);
+  assert.equal(collectionWindowCalls(incognito, "tabs.update").some(([, id]) => id === incognitoTabId), false);
+  assert.deepEqual(incognito.tabMap.get(incognitoTabId), { id: incognitoTabId, windowId: 9, url: "about:blank" });
+  assert.notEqual(incognito.session.momentInsightRankCollectionWindow.windowId, 9);
+});
+
+test("collector parking goes on after a rejected about:blank update and never changes the reported result", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const cut = (startText, endText) => {
+    const start = serviceWorker.indexOf(startText);
+    const end = serviceWorker.indexOf(endText, start);
+    assert.ok(start >= 0 && end > start, startText);
+    return serviceWorker.slice(start, end);
+  };
+  // The person's own tab closes mid-collection, so the collection tab is the
+  // last tab of the last window when it is released; then that tab closes too,
+  // after the release listed the windows and before it is blanked.
+  for (const [label, failure, expected] of [
+    ["complete", null, ["collection_complete", undefined]],
+    ["typed failure", "naver_page_script_timeout", ["collection_error", "naver_page_script_timeout"]],
+  ]) {
+    const fake = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["chrome://newtab/"] }] });
+    const [ownerTabId] = fake.windowMap.get(7).tabIds;
+    const update = fake.chrome.tabs.update;
+    fake.chrome.tabs.update = async (id, properties) => {
+      if (properties.url === "about:blank" && fake.tabMap.has(id)) fake.closeTab(id);
+      return update(id, properties);
+    };
+    const handlerRuntime = runInNewContext(`
+      const PAGE_COUNT = 8;
+      const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+      ${cut("const COLLECTION_WINDOW_ANCHOR_KEY", "const LEGACY_CONTROLLER_PAGE_URL")}
+      ${cut("const TYPED_COLLECTION_ERROR_PATTERN", "function wait(milliseconds)")}
+      async function wait() {}
+      function pageRequestDelay() { return 3_500; }
+      function searchUrl(keyword, pageIndex) { return \`https://search.shopping.naver.com/search/all?pagingIndex=\${pageIndex}\`; }
+      async function waitForTabComplete() {}
+      async function saveStatus() {}
+      async function clearVerificationState() {}
+      async function surfaceVerificationTab(tabId) { return tabId; }
+      ${cut("async function saveCollectionProgress(pageIndex)", 'async function saveStatus(status, detail = "")')}
+      async function handleCollect(message, port) {
+        ${cut('if (message?.type === "collect") {', 'if (message?.type === "summary")')}
+      }
+      ({ handleCollect });
+    `, {
+      chrome: fake.chrome,
+      readNextData: async (tabId) => {
+        if (fake.tabMap.has(ownerTabId)) fake.closeTab(ownerTabId);
+        if (failure) throw new Error(failure);
+        return `next-data-${tabId}`;
+      },
+    });
+    const messages = [];
+    await handlerRuntime.handleCollect({
+      type: "collect",
+      requestId: "request-closed-park",
+      request: collectionWindowRequest(),
+    }, { postMessage: (message) => messages.push(message) });
+    const last = messages.at(-1);
+    assert.deepEqual([last.type, last.code, last.errorDetail], [...expected, undefined], label);
+    assert.equal(messages.filter(({ type }) => type === "collection_page").length, failure ? 0 : 8, label);
+    const [[, collectionTabId]] = collectionWindowCalls(fake, "tabs.update");
+    assert.notEqual(collectionTabId, ownerTabId, label);
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [], label);
+    assert.deepEqual(collectionTabUpdates(fake).at(-1), [collectionTabId, "about:blank", undefined], label);
+    assert.equal(fake.windowMap.size, 0, label);
+    // The rejected blanking does not end the park: the window is still recorded
+    // and its minimize tried, both swallowed now that the window is gone.
+    assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: collectionTabId } }, label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [
+      ["windows.update", 7, { state: "minimized" }],
+    ], label);
+    // That record is harmless: the next collection finds no window, opens its
+    // own and records that one instead.
+    fake.chrome.tabs.update = update;
+    fake.calls.length = 0;
+    await loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async () => {});
+    const [[newWindowId, newWindow]] = [...fake.windowMap.entries()];
+    assert.equal(collectionWindowCalls(fake, "windows.create").length, 1, label);
+    assert.deepEqual(fake.session, {
+      momentInsightRankCollectionWindow: { windowId: newWindowId, tabId: newWindow.tabIds[0] },
+    }, label);
+  }
+
+  // Chrome also rejects tabs.update while a person drags the tab. The tab
+  // stays on its search page, yet it is still minimized and recorded, so the
+  // next collection reuses it instead of tabs.create into a minimized window.
+  const busy = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["chrome://newtab/"] }] });
+  const [busyOwnerTabId] = busy.windowMap.get(7).tabIds;
+  const busyUpdate = busy.chrome.tabs.update;
+  busy.chrome.tabs.update = async (id, properties) => {
+    if (properties.url !== "about:blank") return busyUpdate(id, properties);
+    busy.calls.push(["tabs.update", id, { ...properties }]);
+    throw new Error("Tabs cannot be edited right now (user may be dragging a tab).");
+  };
+  const busyRuntime = loadCollectionWindowRuntime(busy, {
+    readNextData: async (tabId) => {
+      if (busy.tabMap.has(busyOwnerTabId)) busy.closeTab(busyOwnerTabId);
+      return `next-data-${tabId}`;
+    },
+  });
+  await busyRuntime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  const [busyTabId] = busy.windowMap.get(7).tabIds;
+  assert.equal(busy.tabMap.get(busyTabId).url, collectionWindowPageUrl(1));
+  assert.deepEqual(collectionWindowCalls(busy, "tabs.remove"), []);
+  assert.equal(busy.windowMap.get(7).state, "minimized");
+  assert.deepEqual(busy.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: busyTabId } });
+
+  busy.chrome.tabs.update = busyUpdate;
+  busy.calls.length = 0;
+  await busyRuntime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  assert.deepEqual(collectionWindowCalls(busy, "tabs.create"), []);
+  assert.deepEqual(collectionWindowCalls(busy, "windows.update"), []);
+  assert.deepEqual(collectionTabUpdates(busy), [
+    [busyTabId, collectionWindowPageUrl(1), false],
+    [busyTabId, "about:blank", undefined],
+  ]);
+  assert.equal(busy.windowMap.get(7).state, "minimized");
 });
 
 // 2026-09-27: only the stage code reached the server. The extension keeps a

@@ -698,7 +698,8 @@ async function clearCompletedCollectionVerificationState() {
 // with this service worker (Chrome 149 and the owner's branded Chrome,
 // measured). So the collector opens its own minimized window only when the
 // profile has no normal window, reuses that window's single parked tab while it
-// is still the profile's only, minimized surface, and parks the last tab of the
+// is still the profile's only, minimized surface (adopting such a surface on
+// about:blank when a restart lost the record), and parks the last tab of the
 // last window on about:blank instead of closing it.
 async function normalCollectionWindows() {
   try {
@@ -711,10 +712,13 @@ async function normalCollectionWindows() {
   }
 }
 
+// undefined: the session store was read and holds no record (Chrome restart or
+// extension reload). null: the store is unreadable or the record is malformed.
 async function loadCollectionWindowAnchor() {
   try {
     const stored = await chrome.storage.session.get(COLLECTION_WINDOW_ANCHOR_KEY);
     const anchor = stored?.[COLLECTION_WINDOW_ANCHOR_KEY];
+    if (anchor === undefined) return undefined;
     return Number.isInteger(anchor?.windowId) && Number.isInteger(anchor?.tabId) ? anchor : null;
   } catch {
     return null;
@@ -775,7 +779,21 @@ async function reusableCollectionAnchorTab(windows) {
   if (tabUrl !== "about:blank" && !tabUrl.startsWith("https://search.shopping.naver.com/")) return null;
   if (tabs[0].pendingUrl != null && String(tabs[0].pendingUrl) !== tabUrl) return null;
   const anchor = await loadCollectionWindowAnchor();
+  if (anchor === undefined) return adoptParkedCollectionTab(onlyWindow, tabs[0]);
   return anchor?.windowId === onlyWindow.id && anchor.tabId === tabs[0].id ? anchor.tabId : null;
+}
+
+// Chrome restart or an extension reload empties chrome.storage.session while
+// the parked window stays (or is restored): the profile's only window,
+// minimized, holding one tab on about:blank. tabs.create into it would restore
+// it on macOS (measured), so that exact surface is adopted and recorded. A tab
+// on any other address, a search page included, is never adopted without the
+// record, and neither is a visible window (the checks above).
+async function adoptParkedCollectionTab(onlyWindow, onlyTab) {
+  if (onlyTab?.url !== "about:blank") return null;
+  if (!Number.isInteger(onlyWindow?.id) || !Number.isInteger(onlyTab.id)) return null;
+  await saveCollectionWindowAnchor(onlyWindow.id, onlyTab.id);
+  return onlyTab.id;
 }
 
 async function openCollectionTab(url) {

@@ -339,7 +339,7 @@
     {
       "id": "shopping-local-worker-contract",
       "file": "src/server/naver-shopping/local-worker-contract.mjs",
-      "sha256": "82274e82d941e81defe3bdac636304e883edd8e3ba8cca48a7b7f4c2dbbe564d"
+      "sha256": "a6d33ac5bbaf116b5d026bba88ea0eac664c6b29f864907790e26518b4e2f83d"
     },
     {
       "id": "shopping-local-worker-schedule",

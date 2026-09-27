@@ -612,10 +612,20 @@ test("collection error detail replaces only a remaining ASCII job keyword of thr
   assert.equal(sanitizeCollectionErrorDetail("Could not establish connection", { keyword: "on" }), "Could not establish connection");
   assert.equal(sanitizeCollectionErrorDetail("No current window", { keyword: "온열찜질기" }), "No current window");
   assert.equal(sanitizeCollectionErrorDetail("No current window", { keyword: 42 }), "No current window");
+  // Three keyword characters, not counting the spaces between tokens: "A B"
+  // is two, so it never cuts "ab" out of Chrome's own words ("No t<kw> with").
+  for (const keyword of ["여성 A B", "a b", " A  B ", "a\tb"]) {
+    assert.equal(sanitizeCollectionErrorDetail("No tab with id: 41.", { keyword }), "No tab with id: 41.", keyword);
+  }
+  assert.equal(
+    sanitizeCollectionErrorDetail("Error: A B C failed", { keyword: "여성 A B C" }),
+    "Error: <kw> failed",
+  );
   // Regular-expression characters in a keyword are literal.
   assert.equal(sanitizeCollectionErrorDetail("item a.b+c broke", { keyword: "a.b+c" }), "item <kw> broke");
   assert.equal(sanitizeCollectionErrorDetail("item axb+c broke", { keyword: "a.b+c" }), "item axb+c broke");
-  // A keyword that straddles the length cut leaves no fragment behind.
+  // A keyword that straddles the length cut leaves no fragment behind in this
+  // function (the extension cuts its own copy at 120 first; see the contract).
   const straddling = sanitizeCollectionErrorDetail(`${"x".repeat(115)} samsung galaxy`, { keyword: "samsung galaxy" });
   assert.doesNotMatch(straddling, /sam|gal/u);
   assert.ok(straddling.length <= COLLECTION_ERROR_DETAIL_MAX_CHARS);

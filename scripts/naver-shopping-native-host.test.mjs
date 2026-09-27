@@ -4416,11 +4416,66 @@ test("verification keeps the collector tab open and its later cleanup parks inst
   assert.equal(await loadCollectionWindowRuntime(surfaced).surfaceVerificationTab(newerTabId), newerTabId);
   assert.deepEqual(collectionWindowCalls(surfaced, "tabs.remove"), [["tabs.remove", olderTabId]]);
   assert.equal(surfaced.local.momentInsightRankVerificationTabId, newerTabId);
+
+  // ...so an older verification tab that is the last tab of the profile's last
+  // non-incognito window is parked, not closed, while the newer one is shown.
+  const lastWindow = fakeCollectionChrome({ windows: [
+    { id: 7, tabs: ["https://nid.naver.com/"] },
+    { id: 9, incognito: true, tabs: ["https://search.shopping.naver.com/"] },
+  ] });
+  const [lastOlderTabId] = lastWindow.windowMap.get(7).tabIds;
+  const [incognitoNewerTabId] = lastWindow.windowMap.get(9).tabIds;
+  lastWindow.local.momentInsightRankVerificationTabId = lastOlderTabId;
+  assert.equal(
+    await loadCollectionWindowRuntime(lastWindow).surfaceVerificationTab(incognitoNewerTabId),
+    incognitoNewerTabId,
+  );
+  assert.deepEqual(collectionWindowCalls(lastWindow, "tabs.remove"), []);
+  assert.deepEqual(lastWindow.windowMap.get(7).tabIds, [lastOlderTabId]);
+  assert.equal(lastWindow.tabMap.get(lastOlderTabId).url, "about:blank");
+  assert.equal(lastWindow.windowMap.get(7).state, "minimized");
+  assert.deepEqual(lastWindow.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: lastOlderTabId } });
+  assert.equal(lastWindow.windowMap.get(9).state, "normal");
+  assert.equal(lastWindow.local.momentInsightRankVerificationTabId, incognitoNewerTabId);
+});
+
+test("collector reuses its minimized parked tab left on a search page, also while that page settles", async () => {
+  // A service-worker restart mid-collection leaves the parked tab on its last
+  // search page instead of about:blank. tabs.create into the minimized window
+  // would restore it on macOS (measured), so that tab is reused as it is.
+  const searchPageUrl = "https://search.shopping.naver.com/search/all?query=x&pagingIndex=8";
+  for (const [label, disturb] of [
+    ["left on a search page", (tab) => { tab.url = searchPageUrl; }],
+    ["search page committing to the same address", (tab) => {
+      tab.url = searchPageUrl;
+      tab.pendingUrl = searchPageUrl;
+    }],
+    ["about:blank committing to itself", (tab) => { tab.pendingUrl = "about:blank"; }],
+  ]) {
+    const fake = fakeCollectionChrome();
+    const runtime = loadCollectionWindowRuntime(fake);
+    await runtime.collectPages(collectionWindowRequest(), async () => {});
+    const [[windowId, window]] = [...fake.windowMap.entries()];
+    const [anchorTabId] = window.tabIds;
+    assert.equal(window.state, "minimized", label);
+    disturb(fake.tabMap.get(anchorTabId));
+
+    fake.calls.length = 0;
+    await runtime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 6, pageEnd: 8 });
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.create"), [], label);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [], label);
+    assert.deepEqual(collectionTabUpdates(fake)[0], [anchorTabId, collectionWindowPageUrl(6), false], label);
+    assert.deepEqual(fake.windowMap.get(windowId).tabIds, [anchorTabId], label);
+    assert.equal(fake.windowMap.get(windowId).state, "minimized", label);
+    assert.equal(fake.tabMap.get(anchorTabId).url, "about:blank", label);
+  }
 });
 
 test("collector never takes over its parked tab once it is visible or someone navigates it", async () => {
   for (const [label, disturb] of [
     ["navigated elsewhere", (tab) => { tab.url = "https://example.com/owner"; }],
+    ["navigated to a look-alike host", (tab) => { tab.url = "https://search.shopping.naver.com.example/owner"; }],
     ["address typed into the parked tab", (tab) => { tab.pendingUrl = "https://mail.example.com/owner"; }],
     ["restored by verification or a person", (_tab, window) => { window.state = "normal"; }],
     ["another tab opened in the parked window", (_tab, window, fake) => {
@@ -4633,6 +4688,80 @@ test("native host re-sanitizes the extension's Chrome text with the request keyw
   assert.doesNotMatch(nativeHost, /error\.detail = /u);
   assert.doesNotMatch(serviceWorker, /\.detail = /u);
   assert.match(serviceWorker, /errorDetail: error\.errorDetail/u);
+});
+
+test("native host exchange rethrows a collection_error with its code unchanged and the request keyword masked", async () => {
+  const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
+  const slice = (startText, endText) => {
+    const start = nativeHost.indexOf(startText);
+    const end = nativeHost.indexOf(endText, start);
+    assert.ok(start >= 0 && end > start, startText);
+    return nativeHost.slice(start, end);
+  };
+  const safeCodeSource = slice("function safeCode(error) {", "function runTrigger(start) {");
+  const exchangeSource = slice("    async exchange(message) {", "\n  });\n  const summary = await runLocalShoppingWorker(");
+  const exchangeError = async (response, keyword) => {
+    const written = [];
+    const { exchange } = runInNewContext(`
+      const RESPONSE_TIMEOUT_MS = 14 * 60_000;
+      let progressSink = null;
+      ${safeCodeSource}
+      ({
+        ${exchangeSource}
+      });
+    `, {
+      crypto: { randomUUID: () => "request-exchange" },
+      writeMessage: (payload) => written.push(payload),
+      nextMessage: async () => ({ requestId: "request-exchange", ...response }),
+      assertNativeExchangeRequestId,
+      createNativePageStreamCollector,
+      resolveNativeExchangeWait,
+      sanitizeCollectionErrorDetail,
+    });
+    let thrown = null;
+    try {
+      await exchange({
+        type: "collect",
+        pageStart: 1,
+        pageEnd: 8,
+        request: { keyword, deadlineAt: new Date(Date.now() + 60_000).toISOString() },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    assert.ok(thrown, "collection_error must reject the exchange");
+    assert.deepEqual(written.map((payload) => [payload.type, payload.requestId]), [["collect", "request-exchange"]]);
+    return thrown;
+  };
+  const detailOf = (error) => (Object.hasOwn(error, "errorDetail") ? error.errorDetail : undefined);
+
+  for (const [label, response, keyword, expected] of [
+    ["ASCII keyword masked",
+      { type: "collection_error", code: "naver_page_navigation_failed", errorDetail: "x Nike Air failed" },
+      "nike air", ["naver_page_navigation_failed", "x <kw> failed"]],
+    ["Chrome text kept as it is",
+      { type: "collection_error", code: "naver_page_navigation_failed", errorDetail: "No current window" },
+      "남자팬티", ["naver_page_navigation_failed", "No current window"]],
+    ["address cut before the keyword step",
+      { type: "collection_error", code: "naver_page_script_failed", errorDetail: 'Cannot access contents of url "https://search.shopping.naver.com/search/all?query=nike"' },
+      "nike", ["naver_page_script_failed", "Cannot access contents of"]],
+    ["no detail from an extension without the field",
+      { type: "collection_error", code: "naver_page_timeout" },
+      "nike air", ["naver_page_timeout", undefined]],
+    ["a malformed detail is dropped",
+      { type: "collection_error", code: "naver_page_timeout", errorDetail: 42 },
+      "nike air", ["naver_page_timeout", undefined]],
+    ["the detail never enters the fallback code",
+      { type: "collection_error", errorDetail: "No current window" },
+      "nike air", ["native_host_collection_failed", "No current window"]],
+    ["the code is typed exactly as before",
+      { type: "collection_error", code: "Naver Page Failed!", errorDetail: "No current window" },
+      "nike air", ["naver_page_failed_", "No current window"]],
+  ]) {
+    const error = await exchangeError(response, keyword);
+    assert.deepEqual([error.message, error.code, detailOf(error)], [expected[0], expected[0], expected[1]], label);
+    assert.equal(Object.hasOwn(error, "detail"), false, label);
+  }
 });
 
 test("Chrome worker removes legacy controller tabs and only surfaces Naver verification", () => {

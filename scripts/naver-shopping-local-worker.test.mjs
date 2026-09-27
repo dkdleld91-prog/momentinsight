@@ -2903,3 +2903,81 @@ test("makes failure-release transport errors visible in the final summary", asyn
   });
   assert.match(logs.join("\n"), /local_worker_failure_release_failed/);
 });
+
+// 2026-09-27 standby failure isolation (20260927120000): the unchanged worker must accept the
+// new DB replies — an isolated standby failure that already released the lane, and the
+// distinct `standby_benched` refusal.
+test("an isolated standby host-local failure that released the lane is not released twice", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("naver_page_navigation_failed");
+      error.code = "naver_page_navigation_failed";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls, {
+    recordFailure: {
+      ok: true,
+      recorded: true,
+      circuitState: "closed",
+      failureStreak: 0,
+      laneReleased: true,
+      standbyIsolated: true,
+      standbyFailureStreak: 2,
+      standbyBenchedUntil: "2026-09-27T11:22:06.712Z",
+    },
+  });
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_WORKER_ID: "test-standby-worker",
+      MI_NAVER_SHOPPING_WORKER_ROLE: "standby",
+    },
+    fetchImpl, provider, nowMs: () => NOW, randomUUID: uuidSequence(), skipLock: true,
+  });
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.releaseFailed, 0);
+  assert.equal(summary.haltedCode, "naver_page_navigation_failed");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "system");
+  assert.equal(failure.errorCode, "naver_page_navigation_failed");
+  assert.equal(calls.coordination.some((call) => call.action === "release-lane"), false);
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("a benched standby is refused before any collection", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_WORKER_ID: "test-standby-worker",
+      MI_NAVER_SHOPPING_WORKER_ROLE: "standby",
+    },
+    fetchImpl: authenticatedFetch([], calls, {
+      claimLane: {
+        ok: true,
+        granted: false,
+        reason: "standby_benched",
+        benchedUntil: "2026-09-27T11:22:06.712Z",
+        circuitState: "closed",
+        cadenceMinutes: 10,
+      },
+    }),
+    provider: { async collect() { collectCount += 1; }, async close() {} },
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.status, "standby");
+  assert.equal(summary.collectorLaneReason, "standby_benched");
+  assert.equal(collectCount, 0);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(calls.coordination.map((call) => call.action), ["claim-lane"]);
+});

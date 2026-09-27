@@ -20,7 +20,7 @@ description: 모먼트 인사이트 N30 순위 수집 정지·인계 실패·Upt
 - 익명 curl의 418(차단 페이지)만으로 차단이라 단정하지 않는다. 로그인된 수집 프로필은 다르게 동작한다.
 
 ## 1. 3분 진단
-1. 코디네이션(`naver_shopping_worker_coordination`, lane_key=global): `primary_seen_at`, `lease_worker_id`, `circuit_state`/`circuit_reason`/`circuit_opened_at`, `cooldown_until`, `last_block_code`, `failure_streak`, `runtime_version`.
+1. 코디네이션(`naver_shopping_worker_coordination`, lane_key=global): `primary_seen_at`, `lease_worker_id`, `circuit_state`/`circuit_reason`/`circuit_opened_at`/`circuit_opened_by_worker`, `cooldown_until`, `last_block_code`, `failure_streak`, `runtime_version`, 대기기 벤치 `standby_failure_worker_id`/`standby_failure_streak`/`standby_last_failure_code`/`standby_benched_until`(2026-09-27~).
 2. 최근 런(`naver_shopping_worker_runs`)과 이벤트(`naver_shopping_scheduler_events`: tracker_committed / finite_window_committed / job_failed / quarantine_set) — 누가, 언제까지, 어떤 코드로.
 3. 집계: `node ~/.config/momentinsight/tools/tally126.mjs <sinceISO>` (LIST=1이면 커밋 내역), 증거: `naver_shopping_failure_evidence`(v2는 trace·diff 포함).
 4. 맥 로그 `~/Library/Logs/MomentInsight/`: `naver-shopping-native-host.log`(1초 만에 `exit status=0` 반복 = 서버가 일을 안 줌, `status=1` = 게이트 거절), `mi-rank-watchdog.log`, `naver-shopping-chrome-scheduler.log`. 절전 이력 `pmset -g log | grep -E "Sleep|Wake"`, 전원 `pmset -g batt`.
@@ -35,6 +35,8 @@ description: 모먼트 인사이트 N30 순위 수집 정지·인계 실패·Upt
 | `runtime_identity_invalid`/런 없음 + 서버 release 변경 직후 | 워커 버전 불일치 | 윈도우 PowerShell 한 줄(mi-runtime-release 참고) |
 | `naver_verification_required`·로그인 리다이렉트 | 수집 프로필 네이버 로그인 풀림 | 대표가 해당 Chrome 프로필에서 재로그인(자격 증명은 절대 대신 입력하지 않음) |
 | 418이 로그인 프로필에서도 발생 | 네트워크 일시 차단 | 요청량을 늘리지 말고 해제 대기 |
+| `standby_benched_until` 이 미래(대기기 요약 `collectorLaneReason=standby_benched`) | 대기기 자기 기기 문제(창 없음·확장·네이티브 호스트·로컬 기한)로 한 사건에서 2회 이상 실패 → 대기기만 30분(2회)/60분(3회+) 쉼. 전역 회로·주작업기는 영향 없음 | 맥 Chrome 수집 프로필 창·확장·네이티브 호스트 로그 확인 → 고쳤으면 3-1 벤치 해제 SQL(안 풀어도 시간이 지나면 자동 해제) |
+| 회로 open + `circuit_opened_by_worker` 가 대기기(diagnose.mjs "대기기에서 시작된 회로") | 대기기 실패로 시작된 회로(대기기 검증 실패·수동 종단 `transient_recovery_manual_required` 포함). 주작업기가 이 회로에서 자기 자동 검증을 아직 안 썼으면(`transient_system_probe_attempts`=0) 돌아와 첫 claim 에서 바로 검증 1건. **예외 — 즉시 검증 없이 예전 규칙 그대로**: ① `manual_stop` 등 수동 정지(`mi_stop_naver_shopping_worker`, 콜론이 든 사유 포함) ② `probe_security_block` ③ 보안 `cooldown_until` 이 아직 미래(끝난 뒤에야 적용) ④ 임대가 살아 있음 ⑤ 자동 출구 없는 네이버 페이지 서명(예: `naver_next_data_schema_drift`) ⑥ 주작업기가 연 회로, 주작업기 실패가 같은 서명 사슬의 1회째였던 회로, 주작업기 검증이 이미 실패·미완료·만료된 회로(열 값이 주작업기로 바뀜, 일시 오류 2회 뒤 대기기 인계 실패 → 수동 종단 유지) ⑦ 사유가 `probe_incomplete`·`probe_interrupted`·수동 종단인데 `last_failure_code` 가 일시 오류·대기기 기기 코드가 아님(예: 차단 호출이 안 된 채 해제·만료된 네이버 차단 `naver_http_429`, 추적기 코드). canary(`manual_canary`)는 끝나면(실패·미완료·만료) 열 값이 비거나(대기기가 잡음) 주작업기로 바뀌어(주작업기가 잡음) 예전 규칙 그대로. **알려진 한계**: 손 SQL 로 `mi_stop_naver_shopping_worker` 에 현재 실패 서명과 글자까지 같은 사유를 넣은 경우만 남은 대기기 값으로 즉시 검증(`docs/RUNBOOK.md` S2 절) | 주작업기 전원·Chrome 확인. 예외면 그 사유의 행대로(수동 정지는 대표 판단, 보안 차단은 cooldown 대기, 수동 종단은 3 의 조건부 회로 정리 SQL) |
 
 ## 3. 조건부 회로 정리 SQL (대표 실행, 결과 1행이어야 정상)
 ```sql
@@ -46,6 +48,15 @@ where lane_key='global' and circuit_state='open' and circuit_reason='<정확한 
 returning lane_key, circuit_state, primary_worker_id, primary_seen_at;
 ```
 실행 후 1~2분 안에 대기기 런이 생기고 `current_stage=collecting`으로 페이지가 넘어가는지 확인한다.
+
+### 3-1. 대기기 벤치 해제 SQL (대표 실행, 결과 1행이어야 정상)
+```sql
+update public.naver_shopping_worker_coordination
+set standby_benched_until = null, standby_failure_streak = 0
+where lane_key = 'global' and standby_benched_until is not null
+returning standby_failure_worker_id, standby_last_failure_code, standby_last_failure_at;
+```
+벤치는 대기기 기기 문제를 고친 뒤에만 푼다. 고치지 않고 풀면 다시 2회 실패한 뒤 또 걸린다(격리 규칙: `docs/RUNBOOK.md` "S2 대기기 실패 격리").
 
 ## 4. 설계 사실(설명할 때 쓸 것)
 - 인계: 주작업기 180초 무신호 → 대기기 허용. 주작업기가 돌아오면 대기기는 `primary_online`으로 물러난다(종료가 아니라 대기). 작업 통로는 단일 임대(최대 35분)라 두 대 동시 수집은 불가능하며, 요청량 증가는 네이버 차단(2026-09-09 6시간 정지)을 부른다 → 동시 수집은 권하지 않는다.

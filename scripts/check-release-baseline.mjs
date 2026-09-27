@@ -1618,6 +1618,19 @@ const checks = {
     && shoppingChromeWorker.includes("naver_network_restricted")
     && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
     && shoppingChromeWorker.includes("chrome.tabs.remove(tabId)")
+    // 1.1.33: a profile without a normal window gets one minimized collector
+    // window; the last tab of the last window is parked, never closed.
+    && shoppingChromeWorker.includes('chrome.windows.create({ url, focused: false, state: "minimized" })')
+    && shoppingChromeWorker.includes("async function releaseCollectionTab(tabId)")
+    && shoppingChromeWorker.includes('chrome.tabs.update(tabId, { url: "about:blank" })')
+    && shoppingChromeWorker.includes("windows.filter((window) => window?.incognito !== true)")
+    && shoppingChromeWorker.includes('if (onlyWindow?.state !== "minimized") return null;')
+    // 1.1.33: the sanitized Chrome text rides beside the typed code end to end.
+    && shoppingChromeWorker.includes("const COLLECTION_ERROR_DETAIL_MAX_CHARS = 120;")
+    && shoppingLocalWorkerContract.includes("export function sanitizeCollectionErrorDetail(value, options = {})")
+    && shoppingNativeHost.includes("sanitizeCollectionErrorDetail(response?.errorDetail, {")
+    && shoppingLocalWorker.includes("...errorDetailPayload,")
+    && shoppingLocalWorkerHandler.includes('const FAILURE_ERROR_DETAIL_EVIDENCE_VERSION = "collection-error-v1";')
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && shoppingNativeHostCore.includes("parseNaverNextDataPage")
     && shoppingNativeHostCore.includes("buildNativeWindowFromRows")
@@ -1782,6 +1795,12 @@ const checks = {
     && shoppingChromeWorker.includes('collectionStageCode = "naver_page_navigation_failed"')
     && shoppingLocalWorker.includes('options.requireWakeSignal === true')
     && shoppingLocalWorker.includes('const wake = await action({ action: "claim-wake", ...lanePayload })')
+    // 1.1.33: only the primary's exact half-open auto-recovery grant skips the
+    // wake gate, still for one job.
+    && shoppingLocalWorker.includes("function halfOpenAutoRecoveryProbe(lane, workerRole) {")
+    && shoppingLocalWorker.includes('return workerRole === "primary"')
+    && shoppingLocalWorker.includes("if (wake.wake !== true && !halfOpenProbe) {")
+    && shoppingLocalWorker.includes("if (probeTrackerId || autoRecovery) effectiveMaxJobs = 1;")
     && shoppingLocalWorker.includes('action: "claim-lane"')
     && shoppingLocalWorker.includes('action: "release-lane"')
     && shoppingLocalWorker.includes('action: "block-lane"')

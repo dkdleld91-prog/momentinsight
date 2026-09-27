@@ -788,6 +788,62 @@ test("forwards bounded collection evidence with a tracker failure report and dro
   }
 });
 
+// 2026-09-27 standby incident: "No current window" never reached the server.
+// The sanitized Chrome text rides with the collection failure report only.
+test("forwards a sanitized Chrome error detail with the collection failure report and never with fail", async () => {
+  for (const [label, keyword, errorDetail, expected] of [
+    ["chrome text", "온열찜질기", "No current window", "No current window"],
+    ["address cut", "온열찜질기", 'Cannot access contents of url "https://search.shopping.naver.com/search/all?query=x"', "Cannot access contents of"],
+    ["non-ASCII keyword stripped", "온열찜질기", "온열찜질기 failed", "failed"],
+    ["ASCII keyword replaced", "nike air", "failed for Nike Air", "failed for <kw>"],
+    ["bounded", "온열찜질기", "x".repeat(5000), "x".repeat(120)],
+    ["not a string", "온열찜질기", 42, null],
+    ["absent", "온열찜질기", undefined, null],
+  ]) {
+    const calls = [];
+    const logs = [];
+    const job = { ...JOB, keyword };
+    const summary = await runLocalShoppingWorker({
+      env: workerEnv(),
+      fetchImpl: authenticatedFetch([
+        { body: { ok: true, job } },
+        { body: { ok: true, releasedCount: 1 } },
+      ], calls, {
+        recordFailure: { ok: true, recorded: true, circuitState: "open", laneReleased: true },
+      }),
+      provider: {
+        async collect() {
+          const error = new Error("naver_page_navigation_failed");
+          error.code = "naver_page_navigation_failed";
+          if (errorDetail !== undefined) error.errorDetail = errorDetail;
+          throw error;
+        },
+        async close() {},
+      },
+      log: (event) => logs.push(event),
+      nowMs: () => NOW,
+      randomUUID: uuidSequence(),
+      skipLock: true,
+    });
+    assert.equal(summary.haltedCode, "naver_page_navigation_failed", label);
+    assert.equal(summary.failed, 1, label);
+    const [fail] = calls.filter((call) => call.action === "fail");
+    assert.equal(fail.errorCode, "naver_page_navigation_failed", label);
+    assert.equal(Object.hasOwn(fail, "errorDetail"), false, label);
+    const failures = calls.coordination.filter((call) => call.action === "record-failure");
+    assert.equal(failures.length, 1, label);
+    assert.equal(failures[0].errorCode, "naver_page_navigation_failed", label);
+    assert.equal(failures[0].scope, "system", label);
+    if (expected === null) {
+      assert.equal(Object.hasOwn(failures[0], "errorDetail"), false, label);
+      assert.equal(logs.some((event) => event.startsWith("local_worker_collection_error_detail:")), false, label);
+    } else {
+      assert.equal(failures[0].errorDetail, expected, label);
+      assert.ok(logs.includes(`local_worker_collection_error_detail:${expected}`), label);
+    }
+  }
+});
+
 test("reconciles a lost stable finite submit as already committed without touching cadence success or failure ledgers", async () => {
   const calls = [];
   const summary = await runLocalShoppingWorker({
@@ -1258,6 +1314,312 @@ test("an automatic circuit recovery queues trackers first and runs exactly one p
   ]);
   assert.equal(calls.filter((call) => call.action === "claim").length, 1);
   assert.equal(calls.find((call) => call.action === "claim")?.autoRecovery, true);
+});
+
+// 2026-09-27 incident: the primary came back at 20:21 but its one-minute
+// rank-remote poll released each half-open grant for want of a wake signal, so
+// the recovery probe waited for rank-catch-up. Only the primary's exact
+// half-open automatic-recovery grant now skips the wake gate, for one job.
+const HALF_OPEN_AUTO_RECOVERY_LANE = Object.freeze({
+  ok: true,
+  granted: true,
+  reason: "granted",
+  circuitState: "half_open",
+  autoRecovery: true,
+  probeTrackerId: null,
+  cadenceMinutes: 10,
+});
+const ONE_COMMITTED = Object.freeze({
+  ok: true,
+  committedCount: 1,
+  alreadyCommittedCount: 0,
+  leaseLostCount: 0,
+  collectionConflictCount: 0,
+  processedCount: 1,
+});
+const STANDBY_ENV = Object.freeze({
+  MI_NAVER_SHOPPING_WORKER_ID: "macbook-standby",
+  MI_NAVER_SHOPPING_WORKER_ROLE: "standby",
+});
+
+test("the primary's rank-remote poll runs a granted half-open auto-recovery probe without a wake signal", async () => {
+  const calls = [];
+  const logs = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    runTrigger: "rank-remote",
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: false } },
+      { body: { ok: true, total: 74, queued: 0, alreadyQueued: 74, alreadyProcessing: 0 } },
+      { body: { ok: true, job: JOB } },
+      { body: ONE_COMMITTED },
+    ], calls, { claimLane: HALF_OPEN_AUTO_RECOVERY_LANE }),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    requireWakeSignal: true,
+    log: (event) => logs.push(event),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed",
+    claimed: 1,
+    submitted: 1,
+    failed: 0,
+    releaseFailed: 0,
+    atomicSuccesses: 1,
+    autoRecoveryProbe: true,
+    cadenceMinutes: 10,
+    remoteWake: false,
+    queuedTotal: 74,
+    queued: 0,
+    alreadyQueued: 74,
+    alreadyProcessing: 0,
+  });
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "claim-wake",
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+  ]);
+  const [claim] = calls.filter((call) => call.action === "claim");
+  assert.equal(claim.autoRecovery, true);
+  assert.equal(claim.runTrigger, "rank-remote");
+  assert.deepEqual(calls.coordination.map((call) => call.action), [
+    "claim-lane",
+    "progress",
+    "progress",
+    "record-success",
+    "release-lane",
+  ]);
+  assert.equal(calls.coordination[0].workerRole, "primary");
+  assert.ok(logs.includes("local_worker_auto_recovery_probe"));
+});
+
+test("a pending wake is consumed by the primary's half-open probe and still yields exactly one job", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    runTrigger: "rank-remote",
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: true } },
+      { body: { ok: true, total: 74, queued: 0, alreadyQueued: 74, alreadyProcessing: 0 } },
+      { body: { ok: true, job: JOB } },
+      { body: ONE_COMMITTED },
+    ], calls, { claimLane: HALF_OPEN_AUTO_RECOVERY_LANE }),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.remoteWake, true);
+  assert.equal(Object.hasOwn(summary, "autoRecoveryProbe"), false);
+  assert.equal(summary.submitted, 1);
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "claim-wake",
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+  ]);
+});
+
+test("a primary half-open probe with no claimable job releases the lane without opening Naver", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    runTrigger: "rank-remote",
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: false } },
+      { body: { ok: true, waiting: true, reason: "account_priority_active" } },
+      { body: { ok: true, job: null } },
+    ], calls, { claimLane: HALF_OPEN_AUTO_RECOVERY_LANE }),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.status, "completed");
+  assert.equal(summary.claimed, 0);
+  assert.equal(summary.autoRecoveryProbe, true);
+  assert.equal(collectCount, 0);
+  assert.deepEqual(calls.map((call) => call.action), ["claim-wake", "queue-all-active-trackers", "claim"]);
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
+test("a failed primary half-open probe on rank-remote halts after its single job", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    runTrigger: "rank-remote",
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: false } },
+      { body: { ok: true, total: 74, queued: 0, alreadyQueued: 74, alreadyProcessing: 0 } },
+      { body: { ok: true, job: JOB } },
+      { body: { ok: true, releasedCount: 1 } },
+    ], calls, {
+      claimLane: HALF_OPEN_AUTO_RECOVERY_LANE,
+      recordFailure: { ok: true, recorded: true, circuitState: "open", laneReleased: true },
+    }),
+    provider: {
+      async collect() {
+        collectCount += 1;
+        throw new Error("naver_page_navigation_failed");
+      },
+      async close() {},
+    },
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(collectCount, 1);
+  assert.equal(summary.haltedCode, "naver_page_navigation_failed");
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim-wake", "queue-all-active-trackers", "claim", "fail"]);
+  assert.equal(calls.coordination.some((call) => call.action === "release-lane"), false);
+});
+
+test("the primary's rank-remote poll keeps the wake gate for every grant that is not an exact half-open auto recovery", async (t) => {
+  for (const [label, claimLane] of [
+    ["manual canary probe", { ...HALF_OPEN_AUTO_RECOVERY_LANE, autoRecovery: false, probeTrackerId: JOB.claims[0].trackerId }],
+    ["closed circuit", { ...HALF_OPEN_AUTO_RECOVERY_LANE, circuitState: "closed" }],
+    ["missing circuit state", { ...HALF_OPEN_AUTO_RECOVERY_LANE, circuitState: undefined }],
+    ["string autoRecovery", { ...HALF_OPEN_AUTO_RECOVERY_LANE, autoRecovery: "true" }],
+    ["ordinary grant", { ok: true, granted: true, reason: "granted", cadenceMinutes: 10 }],
+  ]) {
+    await t.test(label, async () => {
+      const calls = [];
+      let collectCount = 0;
+      const summary = await runLocalShoppingWorker({
+        env: workerEnv(),
+        runTrigger: "rank-remote",
+        fetchImpl: authenticatedFetch([{ body: { ok: true, wake: false } }], calls, { claimLane }),
+        provider: {
+          async collect() { collectCount += 1; return completeWindow(); },
+          async close() {},
+        },
+        requireWakeSignal: true,
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+      assert.equal(summary.status, "idle");
+      assert.equal(summary.remoteWake, false);
+      assert.equal(Object.hasOwn(summary, "autoRecoveryProbe"), false);
+      assert.equal(collectCount, 0);
+      assert.deepEqual(calls.map((call) => call.action), ["claim-wake"]);
+      assert.equal(calls.coordination.at(-1).action, "release-lane");
+    });
+  }
+});
+
+test("a standby keeps the wake gate for a half-open grant and for its replayed one-shot handoff", async (t) => {
+  for (const [label, claimLane] of [
+    ["standby navigation probe", HALF_OPEN_AUTO_RECOVERY_LANE],
+    ["standby transient handoff", { ...HALF_OPEN_AUTO_RECOVERY_LANE, standbyHandoff: true }],
+    ["replayed standby handoff", {
+      ...HALF_OPEN_AUTO_RECOVERY_LANE,
+      reason: "already_granted",
+      alreadyGranted: true,
+      standbyHandoff: true,
+    }],
+  ]) {
+    await t.test(label, async () => {
+      const calls = [];
+      let collectCount = 0;
+      const summary = await runLocalShoppingWorker({
+        env: { ...workerEnv(), ...STANDBY_ENV },
+        runTrigger: "rank-remote",
+        fetchImpl: authenticatedFetch([{ body: { ok: true, wake: false } }], calls, { claimLane }),
+        provider: {
+          async collect() { collectCount += 1; return completeWindow(); },
+          async close() {},
+        },
+        requireWakeSignal: true,
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+      assert.equal(summary.status, "idle");
+      assert.equal(summary.remoteWake, false);
+      assert.equal(Object.hasOwn(summary, "autoRecoveryProbe"), false);
+      assert.equal(collectCount, 0);
+      assert.deepEqual(calls.map((call) => call.action), ["claim-wake"]);
+      assert.equal(calls.coordination[0].workerRole, "standby");
+      assert.equal(calls.coordination.at(-1).action, "release-lane");
+    });
+  }
+});
+
+test("a claim-wake failure right after a primary half-open grant opens nothing and releases the lane", async (t) => {
+  for (const [label, wakeResponse] of [
+    ["coordination 503", { status: 503, body: { ok: false, code: "LOCAL_WORKER_COORDINATION_UNAVAILABLE" } }],
+    ["transport error", { error: new TypeError("fetch failed") }],
+  ]) {
+    await t.test(label, async () => {
+      const calls = [];
+      let collectCount = 0;
+      await assert.rejects(runLocalShoppingWorker({
+        env: workerEnv(),
+        runTrigger: "rank-remote",
+        fetchImpl: authenticatedFetch([wakeResponse], calls, { claimLane: HALF_OPEN_AUTO_RECOVERY_LANE }),
+        provider: {
+          async collect() { collectCount += 1; return completeWindow(); },
+          async close() {},
+        },
+        requireWakeSignal: true,
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      }));
+      assert.equal(collectCount, 0);
+      assert.deepEqual(calls.map((call) => call.action), ["claim-wake"]);
+      assert.deepEqual(calls.coordination.map((call) => call.action), ["claim-lane", "release-lane"]);
+    });
+  }
+});
+
+test("a rank-catch-up half-open probe is unchanged: no wake claim and no probe marker", async () => {
+  const calls = [];
+  const logs = [];
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, total: 74, queued: 0, alreadyQueued: 74, alreadyProcessing: 0 } },
+      { body: { ok: true, job: JOB } },
+      { body: ONE_COMMITTED },
+    ], calls, { claimLane: HALF_OPEN_AUTO_RECOVERY_LANE }),
+    provider: {
+      async collect() { return completeWindow(); },
+      async close() {},
+    },
+    log: (event) => logs.push(event),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.submitted, 1);
+  assert.equal(Object.hasOwn(summary, "remoteWake"), false);
+  assert.equal(Object.hasOwn(summary, "autoRecoveryProbe"), false);
+  assert.deepEqual(calls.map((call) => call.action), ["queue-all-active-trackers", "claim", "submit"]);
+  assert.equal(logs.includes("local_worker_auto_recovery_probe"), false);
 });
 
 test("a bounded runner repeats claim under one signed run while preserving the 30-day turn", async () => {

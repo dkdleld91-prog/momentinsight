@@ -23,6 +23,44 @@ const LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 * 60_000;
 const COLLECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
+// 1.1.33 (2026-09-27 standby incident): the single sanitizer for the original
+// browser error text that rides beside a typed failure code (extension ->
+// native host -> local worker -> server failure evidence). Printable ASCII only,
+// cut at the first "http" / "://" / " url" / "?" so no address or query rides
+// along, whitespace collapsed, at most 120 characters, and an ASCII job keyword
+// (3+ characters) that still appears is replaced by "<kw>" where it appears.
+// Idempotent. Never part of a failure code or circuit signature, never sent to
+// an RPC. The extension keeps the same rule without the keyword step
+// (collectionErrorDetail in service-worker.js, parity-tested).
+export const COLLECTION_ERROR_DETAIL_MAX_CHARS = 120;
+const COLLECTION_ERROR_DETAIL_CUT_MARKERS = Object.freeze(["http", "://", " url", "?"]);
+const COLLECTION_ERROR_DETAIL_KEYWORD_MIN_CHARS = 3;
+
+function collectionErrorDetailKeywordPattern(keyword) {
+  if (typeof keyword !== "string") return null;
+  const tokens = keyword.replace(/[^\x20-\x7E]+/gu, " ").trim().split(/\s+/u).filter(Boolean);
+  if (tokens.join(" ").length < COLLECTION_ERROR_DETAIL_KEYWORD_MIN_CHARS) return null;
+  const escaped = tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\/]/gu, "\\$&"));
+  return new RegExp(escaped.join("\\s*"), "giu");
+}
+
+export function sanitizeCollectionErrorDetail(value, options = {}) {
+  if (typeof value !== "string" || !value) return "";
+  const printable = value.slice(0, 1_000).replace(/[^\x20-\x7E]+/gu, " ");
+  const cutAt = Math.min(
+    printable.length,
+    ...COLLECTION_ERROR_DETAIL_CUT_MARKERS
+      .map((marker) => printable.indexOf(marker))
+      .filter((index) => index >= 0),
+  );
+  let text = printable.slice(0, cutAt).replace(/\s+/gu, " ").trim();
+  // The keyword is replaced before the length cut so a keyword that straddles
+  // the 120th character cannot leave a fragment behind.
+  const keywordPattern = collectionErrorDetailKeywordPattern(options.keyword);
+  if (keywordPattern) text = text.replace(keywordPattern, "<kw>");
+  return text.slice(0, COLLECTION_ERROR_DETAIL_MAX_CHARS).trim();
+}
+
 function contractError(code) {
   const error = new Error(code);
   error.code = code;

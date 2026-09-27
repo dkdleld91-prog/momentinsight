@@ -38,7 +38,10 @@ import {
   productExposureItemsFromOrganic,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 import { selectRepresentativeTrackingRank } from "../src/server/handlers/naver-rank-trackers.mjs";
-import { validateStrictLocalWorkerWindow } from "../src/server/naver-shopping/local-worker-contract.mjs";
+import {
+  sanitizeCollectionErrorDetail,
+  validateStrictLocalWorkerWindow,
+} from "../src/server/naver-shopping/local-worker-contract.mjs";
 
 function assertZshSyntax(scriptPath, source) {
   const lint = spawnSync("/bin/zsh", ["-n", scriptPath], { encoding: "utf8" });
@@ -2785,8 +2788,13 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(verificationSurfaceSource, /chrome\.windows\.update\(tab\.windowId, \{ state: "normal", focused: true \}\)/u);
   assert.match(verificationSurfaceSource, /chrome\.tabs\.update\(tabId, \{ active: true \}\)/u);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
-  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true/u);
-  assert.doesNotMatch(nonVerificationSurfaceSource, /chrome\.windows\.update/u);
+  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true|focused:\s*true/u);
+  // Outside verification the collector may only hide its own window.
+  assert.deepEqual(
+    Array.from(nonVerificationSurfaceSource.matchAll(/chrome\.windows\.update\(([^)]*)\)/gu), (match) => match[1]),
+    ['windowId, { state: "minimized" }'],
+  );
+  assert.match(serviceWorker, /chrome\.windows\.create\(\{ url, focused: false, state: "minimized" \}\)/u);
   const runWorkerSource = serviceWorker.slice(
     serviceWorker.indexOf('async function runWorker(trigger = "manual", options = {})'),
     serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", serviceWorker.indexOf('async function runWorker(trigger = "manual", options = {})')),
@@ -3942,6 +3950,691 @@ test("page-eight status and verification cleanup failures still emit collection_
   assert.equal(runtime.readCount(), readsBeforeExpiredRequest);
 });
 
+// 2026-09-27 incident: the Mac standby profile had no normal window, so
+// chrome.tabs.create() rejected "No current window" four times and opened the
+// global circuit. A fake Chrome models what was measured on Chrome 149: a
+// window closes with its last tab, tabs.create needs a current window, macOS
+// shows an unfocused window as normal despite state "minimized", and a
+// minimize issued too early can be undone.
+function fakeCollectionChrome({
+  windows = [],
+  getAllThrows = false,
+  createRejects = "",
+  tabsCreateRejects = "",
+  sessionThrows = false,
+  minimizeIgnored = 0,
+} = {}) {
+  const calls = [];
+  const windowMap = new Map();
+  const tabMap = new Map();
+  const session = {};
+  const local = {};
+  let nextId = 1000;
+  let ignoredMinimizes = minimizeIgnored;
+  const addTab = (windowId, url, pendingUrl) => {
+    const id = nextId;
+    nextId += 1;
+    tabMap.set(id, { id, windowId, url, ...(pendingUrl ? { pendingUrl } : {}) });
+    windowMap.get(windowId).tabIds.push(id);
+    return id;
+  };
+  const removeTab = (id) => {
+    const tab = tabMap.get(id);
+    if (!tab) throw new Error(`No tab with id: ${id}.`);
+    tabMap.delete(id);
+    const window = windowMap.get(tab.windowId);
+    window.tabIds = window.tabIds.filter((tabId) => tabId !== id);
+    // Chrome closes a window whose last tab is removed.
+    if (window.tabIds.length === 0) windowMap.delete(window.id);
+  };
+  for (const seed of windows) {
+    windowMap.set(seed.id, {
+      id: seed.id,
+      state: seed.state || "normal",
+      incognito: seed.incognito === true,
+      tabIds: [],
+    });
+    for (const tab of seed.tabs || []) {
+      if (typeof tab === "string") addTab(seed.id, tab);
+      else addTab(seed.id, tab.url, tab.pendingUrl);
+    }
+  }
+  const chrome = {
+    windows: {
+      async getAll(query) {
+        calls.push(["windows.getAll", JSON.parse(JSON.stringify(query))]);
+        if (getAllThrows) throw new Error("windows_unavailable");
+        return [...windowMap.values()].map((window) => ({
+          id: window.id,
+          state: window.state,
+          type: "normal",
+          incognito: window.incognito,
+          tabs: window.tabIds.map((id) => ({ ...tabMap.get(id) })),
+        }));
+      },
+      async create(properties) {
+        calls.push(["windows.create", { ...properties }]);
+        if (createRejects) throw new Error(createRejects);
+        const id = nextId;
+        nextId += 1;
+        // macOS shows an unfocused window as normal despite state: "minimized".
+        windowMap.set(id, { id, state: "normal", incognito: false, tabIds: [] });
+        const tabId = addTab(id, properties.url);
+        return { id, state: "normal", focused: false, tabs: [{ id: tabId, windowId: id }] };
+      },
+      async update(id, properties) {
+        calls.push(["windows.update", id, { ...properties }]);
+        const window = windowMap.get(id);
+        if (!window) throw new Error(`No window with id: ${id}.`);
+        if (properties.state === "minimized" && ignoredMinimizes > 0) {
+          ignoredMinimizes -= 1;
+          return { id, state: window.state };
+        }
+        if (properties.state) window.state = properties.state;
+        return { id, state: window.state };
+      },
+      async get(id) {
+        const window = windowMap.get(id);
+        if (!window) throw new Error(`No window with id: ${id}.`);
+        return { id, state: window.state };
+      },
+    },
+    tabs: {
+      async create(properties) {
+        calls.push(["tabs.create", { ...properties }]);
+        if (tabsCreateRejects) throw new Error(tabsCreateRejects);
+        const [current] = windowMap.values();
+        if (!current) throw new Error("No current window");
+        const id = addTab(current.id, properties.url);
+        return { id, windowId: current.id };
+      },
+      async update(id, properties) {
+        calls.push(["tabs.update", id, { ...properties }]);
+        const tab = tabMap.get(id);
+        if (!tab) throw new Error(`No tab with id: ${id}.`);
+        if (properties.url) {
+          tab.url = properties.url;
+          delete tab.pendingUrl;
+        }
+        return { id, windowId: tab.windowId };
+      },
+      async get(id) {
+        const tab = tabMap.get(id);
+        if (!tab) throw new Error(`No tab with id: ${id}.`);
+        return { id, windowId: tab.windowId, url: tab.url };
+      },
+      async remove(id) {
+        calls.push(["tabs.remove", id]);
+        removeTab(id);
+      },
+    },
+    storage: {
+      session: {
+        async get(key) {
+          if (sessionThrows) throw new Error("session_unavailable");
+          return { [key]: session[key] };
+        },
+        async set(values) {
+          if (sessionThrows) throw new Error("session_unavailable");
+          Object.assign(session, JSON.parse(JSON.stringify(values)));
+        },
+      },
+      local: {
+        async get(keys) {
+          const requested = Array.isArray(keys) ? keys : [keys];
+          return Object.fromEntries(requested.map((key) => [key, local[key]]));
+        },
+        async set(values) { Object.assign(local, values); },
+        async remove(keys) { for (const key of keys) delete local[key]; },
+      },
+    },
+  };
+  return {
+    chrome,
+    calls,
+    windowMap,
+    tabMap,
+    session,
+    local,
+    closeWindow(id) {
+      for (const tabId of [...windowMap.get(id).tabIds]) removeTab(tabId);
+    },
+  };
+}
+
+function loadCollectionWindowRuntime(fake, { readNextData, recordWait = () => {} } = {}) {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const slice = (startText, endText) => {
+    const start = serviceWorker.indexOf(startText);
+    const end = serviceWorker.indexOf(endText, start);
+    assert.ok(start >= 0 && end > start, startText);
+    return serviceWorker.slice(start, end);
+  };
+  return runInNewContext(`
+    const PAGE_COUNT = 8;
+    const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+    const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
+    const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
+    const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
+    ${slice("const COLLECTION_WINDOW_ANCHOR_KEY", "const LEGACY_CONTROLLER_PAGE_URL")}
+    ${slice("const TYPED_COLLECTION_ERROR_PATTERN", "function wait(milliseconds)")}
+    ${slice("async function verificationState()", "function nextKstHour(hour)")}
+    async function wait(milliseconds) { recordWait(milliseconds); }
+    function pageRequestDelay() { return 3_500; }
+    function searchUrl(keyword, pageIndex) {
+      return \`https://search.shopping.naver.com/search/all?query=\${keyword}&pagingIndex=\${pageIndex}\`;
+    }
+    async function waitForTabComplete() {}
+    async function saveStatus() {}
+    ${slice("async function saveCollectionProgress(pageIndex)", 'async function saveStatus(status, detail = "")')}
+    ({ collectPages, clearVerificationState, surfaceVerificationTab, releaseCollectionTab });
+  `, {
+    chrome: fake.chrome,
+    readNextData: readNextData || (async (tabId) => `next-data-${tabId}`),
+    recordWait,
+  });
+}
+
+const collectionWindowRequest = () => ({
+  keyword: "남자팬티",
+  limit: 300,
+  rankPolicy: "organic_only",
+  deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+});
+const collectionWindowPageUrl = (pageIndex) =>
+  `https://search.shopping.naver.com/search/all?query=남자팬티&pagingIndex=${pageIndex}`;
+const collectionWindowCalls = (fake, name) => fake.calls.filter(([callName]) => callName === name);
+const collectionTabUpdates = (fake) => collectionWindowCalls(fake, "tabs.update")
+  .map(([, id, properties]) => [id, properties.url, properties.active]);
+
+test("collector opens one minimized own window only when the profile has no normal window and parks it", async () => {
+  const fake = fakeCollectionChrome({ minimizeIgnored: 1 });
+  const runtime = loadCollectionWindowRuntime(fake);
+  const delivered = [];
+  let statesAtFirstPage = null;
+  await runtime.collectPages(collectionWindowRequest(), async (page) => {
+    delivered.push(page.pageIndex);
+    if (page.pageIndex === 1) statesAtFirstPage = [...fake.windowMap.values()].map((window) => window.state);
+  });
+
+  assert.deepEqual(delivered, [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.getAll")[0], [
+    "windows.getAll",
+    { windowTypes: ["normal"], populate: true },
+  ]);
+  // Minimized before the first page is read, not only at release.
+  assert.deepEqual(statesAtFirstPage, ["minimized"]);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.create"), [
+    ["windows.create", { url: collectionWindowPageUrl(1), focused: false, state: "minimized" }],
+  ]);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), []);
+  assert.equal(fake.windowMap.size, 1);
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [tabId] = window.tabIds;
+  assert.equal(window.state, "minimized");
+  // The first minimize is undone by Chrome's asynchronous show; the retry sticks.
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [
+    ["windows.update", windowId, { state: "minimized" }],
+    ["windows.update", windowId, { state: "minimized" }],
+  ]);
+  assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId, tabId } });
+  assert.deepEqual(collectionTabUpdates(fake), [
+    ...[2, 3, 4, 5, 6, 7, 8].map((pageIndex) => [tabId, collectionWindowPageUrl(pageIndex), false]),
+    [tabId, "about:blank", undefined],
+  ]);
+  assert.equal(fake.tabMap.get(tabId).url, "about:blank");
+
+  // The next collection reuses the parked tab: no window, no tabs.create.
+  fake.calls.length = 0;
+  await runtime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 6, pageEnd: 8 });
+  assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+  assert.deepEqual(collectionTabUpdates(fake), [
+    [tabId, collectionWindowPageUrl(6), false],
+    [tabId, collectionWindowPageUrl(7), false],
+    [tabId, collectionWindowPageUrl(8), false],
+    [tabId, "about:blank", undefined],
+  ]);
+  assert.equal(fake.windowMap.size, 1);
+  assert.equal(fake.windowMap.get(windowId).state, "minimized");
+});
+
+test("collector keeps the unchanged tab lifecycle whenever a normal window exists", async () => {
+  for (const seed of [
+    [{ id: 7, tabs: ["chrome://newtab/"] }],
+    [{ id: 7, tabs: ["chrome://newtab/"] }, { id: 8, tabs: ["https://example.com/"] }],
+    // A minimized window of the person's own is still a normal window.
+    [{ id: 7, state: "minimized", tabs: ["about:blank"] }],
+  ]) {
+    const fake = fakeCollectionChrome({ windows: seed });
+    fake.session.momentInsightRankCollectionWindow = { windowId: 8, tabId: 1001 };
+    const runtime = loadCollectionWindowRuntime(fake);
+    await runtime.collectPages(collectionWindowRequest(), async () => {});
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), [
+      ["tabs.create", { url: collectionWindowPageUrl(1), active: false }],
+    ]);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+    const collectionTabId = collectionWindowCalls(fake, "tabs.update")[0][1];
+    assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [["tabs.remove", collectionTabId]]);
+    assert.equal(fake.windowMap.size, seed.length);
+    assert.equal(fake.tabMap.size, seed.reduce((total, window) => total + window.tabs.length, 0));
+  }
+});
+
+test("collector counts only non-incognito windows as the profile's own", async () => {
+  // An incognito window alone does not keep a collection surface: open our own.
+  const onlyIncognito = fakeCollectionChrome({ windows: [{ id: 9, incognito: true, tabs: ["chrome://newtab/"] }] });
+  await loadCollectionWindowRuntime(onlyIncognito).collectPages(collectionWindowRequest(), async () => {});
+  assert.deepEqual(collectionWindowCalls(onlyIncognito, "windows.create"), [
+    ["windows.create", { url: collectionWindowPageUrl(1), focused: false, state: "minimized" }],
+  ]);
+  assert.deepEqual(collectionWindowCalls(onlyIncognito, "tabs.create"), []);
+  assert.equal(onlyIncognito.windowMap.get(9).tabIds.length, 1);
+  const ownWindow = [...onlyIncognito.windowMap.values()].find((window) => !window.incognito);
+  assert.equal(onlyIncognito.tabMap.get(ownWindow.tabIds[0]).url, "about:blank");
+  assert.equal(ownWindow.state, "minimized");
+
+  // The last tab of the last non-incognito window is parked even while an
+  // incognito window is open.
+  const mixed = fakeCollectionChrome({ windows: [
+    { id: 7, tabs: ["https://search.shopping.naver.com/"] },
+    { id: 9, incognito: true, tabs: ["chrome://newtab/"] },
+  ] });
+  const [tabId] = mixed.windowMap.get(7).tabIds;
+  await loadCollectionWindowRuntime(mixed).releaseCollectionTab(tabId);
+  assert.deepEqual(collectionWindowCalls(mixed, "tabs.remove"), []);
+  assert.equal(mixed.tabMap.get(tabId).url, "about:blank");
+  assert.deepEqual(mixed.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId } });
+});
+
+test("collector falls back to the unchanged tab path when Chrome cannot list windows", async () => {
+  const withWindow = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["chrome://newtab/"] }], getAllThrows: true });
+  await loadCollectionWindowRuntime(withWindow).collectPages(collectionWindowRequest(), async () => {});
+  assert.equal(collectionWindowCalls(withWindow, "tabs.create").length, 1);
+  assert.equal(collectionWindowCalls(withWindow, "tabs.remove").length, 1);
+  assert.deepEqual(collectionWindowCalls(withWindow, "windows.create"), []);
+
+  const withoutWindow = fakeCollectionChrome({ getAllThrows: true });
+  await assert.rejects(
+    loadCollectionWindowRuntime(withoutWindow).collectPages(collectionWindowRequest(), async () => {}),
+    (error) => error?.message === "naver_page_navigation_failed" && error.errorDetail === "No current window",
+  );
+  assert.deepEqual(collectionWindowCalls(withoutWindow, "windows.create"), []);
+});
+
+test("collector types window creation and mid-collection window loss as navigation failures", async () => {
+  const refused = fakeCollectionChrome({ createRejects: "Browser window creation is not allowed." });
+  await assert.rejects(
+    loadCollectionWindowRuntime(refused).collectPages(collectionWindowRequest(), async () => {}),
+    (error) => error?.message === "naver_page_navigation_failed"
+      && error.errorDetail === "Browser window creation is not allowed.",
+  );
+  assert.deepEqual(collectionWindowCalls(refused, "tabs.update"), []);
+  assert.deepEqual(collectionWindowCalls(refused, "tabs.remove"), []);
+  assert.deepEqual(refused.session, {});
+
+  const closed = fakeCollectionChrome();
+  const delivered = [];
+  const runtime = loadCollectionWindowRuntime(closed);
+  await assert.rejects(
+    runtime.collectPages(collectionWindowRequest(), async (page) => {
+      delivered.push(page.pageIndex);
+      // The person closes the collector window while page 1 is delivered.
+      if (page.pageIndex === 1) closed.closeWindow([...closed.windowMap.keys()][0]);
+    }),
+    (error) => error?.message === "naver_page_navigation_failed" && /^No tab with id: \d+\.$/u.test(error.errorDetail),
+  );
+  assert.deepEqual(delivered, [1]);
+  assert.equal(closed.windowMap.size, 0);
+});
+
+test("collector never closes the profile's last window when it releases a tab", async () => {
+  // A person closed every other tab while the collection tab was open.
+  const fake = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["chrome://newtab/"] }] });
+  const runtime = loadCollectionWindowRuntime(fake, {
+    readNextData: async (tabId) => {
+      const ownerTab = fake.windowMap.get(7).tabIds.find((id) => id !== tabId);
+      if (ownerTab != null) await fake.chrome.tabs.remove(ownerTab);
+      return `next-data-${tabId}`;
+    },
+  });
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  assert.equal(collectionWindowCalls(fake, "tabs.create").length, 1);
+  const [collectionTabId] = fake.windowMap.get(7).tabIds;
+  assert.ok(Number.isInteger(collectionTabId));
+  assert.deepEqual(
+    collectionWindowCalls(fake, "tabs.remove").map(([, id]) => id).filter((id) => id === collectionTabId),
+    [],
+  );
+  assert.equal(fake.tabMap.get(collectionTabId).url, "about:blank");
+  assert.equal(fake.windowMap.get(7).state, "minimized");
+  assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: collectionTabId } });
+});
+
+test("collector tab release never throws and leaves the tab rather than closing it blindly", async () => {
+  const fake = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["https://search.shopping.naver.com/"] }] });
+  const [tabId] = fake.windowMap.get(7).tabIds;
+  fake.chrome.tabs.update = () => { throw new TypeError("tabs.update is unavailable"); };
+  const runtime = loadCollectionWindowRuntime(fake);
+  assert.equal(await runtime.releaseCollectionTab(tabId), undefined);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), []);
+  assert.equal(fake.windowMap.get(7).tabIds.length, 1);
+
+  // A slice without the window constants (as other VM tests load collectPages)
+  // still completes: the release swallows its own ReferenceError.
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const bestEffortStart = serviceWorker.indexOf("async function saveCollectionProgress(pageIndex)");
+  const collectEnd = serviceWorker.indexOf("async function saveStatus(status, detail = \"\")", bestEffortStart);
+  const handlerStart = serviceWorker.indexOf('if (message?.type === "collect") {');
+  const handlerEnd = serviceWorker.indexOf('if (message?.type === "summary")', handlerStart);
+  const helperStart = serviceWorker.indexOf("const TYPED_COLLECTION_ERROR_PATTERN");
+  const helperEnd = serviceWorker.indexOf("function wait(milliseconds)", helperStart);
+  for (const [label, readNextData, expected] of [
+    ["complete", async () => "page", ["collection_complete", undefined]],
+    ["typed failure", async () => { throw new Error("naver_page_script_timeout"); }, ["collection_error", "naver_page_script_timeout"]],
+  ]) {
+    const lonely = fakeCollectionChrome({ windows: [{ id: 7, state: "normal", tabs: [] }] });
+    const handlerRuntime = runInNewContext(`
+      const PAGE_COUNT = 8;
+      const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+      ${serviceWorker.slice(helperStart, helperEnd)}
+      async function wait() {}
+      function pageRequestDelay() { return 3_500; }
+      function searchUrl(keyword, pageIndex) { return \`https://search.shopping.naver.com/search/all?pagingIndex=\${pageIndex}\`; }
+      async function waitForTabComplete() {}
+      async function saveStatus() {}
+      async function clearVerificationState() {}
+      async function surfaceVerificationTab(tabId) { return tabId; }
+      ${serviceWorker.slice(bestEffortStart, collectEnd)}
+      async function handleCollect(message, port) {
+        ${serviceWorker.slice(handlerStart, handlerEnd)}
+      }
+      ({ handleCollect });
+    `, { chrome: lonely.chrome, readNextData });
+    const messages = [];
+    await handlerRuntime.handleCollect({
+      type: "collect",
+      requestId: "request-release",
+      request: collectionWindowRequest(),
+    }, { postMessage: (message) => messages.push(message) });
+    const last = messages.at(-1);
+    assert.deepEqual([last.type, last.code], expected, label);
+    // The profile's only window keeps its tab: nothing was removed.
+    assert.deepEqual(collectionWindowCalls(lonely, "tabs.remove"), [], label);
+    assert.equal(lonely.windowMap.get(7).tabIds.length, 1, label);
+  }
+});
+
+test("verification keeps the collector tab open and its later cleanup parks instead of closing", async () => {
+  const fake = fakeCollectionChrome();
+  const runtime = loadCollectionWindowRuntime(fake, {
+    readNextData: async () => { throw new Error("naver_verification_required"); },
+  });
+  await assert.rejects(
+    runtime.collectPages(collectionWindowRequest(), async () => {}),
+    (error) => error?.message === "naver_verification_required",
+  );
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [tabId] = window.tabIds;
+  assert.equal(window.state, "normal");
+  assert.equal(fake.local.momentInsightRankVerificationTabId, tabId);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update").at(-1), [
+    "windows.update",
+    windowId,
+    { state: "normal", focused: true },
+  ]);
+
+  fake.calls.length = 0;
+  await runtime.clearVerificationState();
+  assert.equal(fake.local.momentInsightRankVerificationTabId, undefined);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), []);
+  assert.equal(fake.tabMap.get(tabId).url, "about:blank");
+  assert.equal(fake.windowMap.get(windowId).state, "minimized");
+
+  // A verification tab that shares its window with other tabs is still removed.
+  const shared = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["chrome://newtab/", "https://nid.naver.com/"] }] });
+  const verificationTabId = shared.windowMap.get(7).tabIds[1];
+  shared.local.momentInsightRankVerificationTabId = verificationTabId;
+  await loadCollectionWindowRuntime(shared).clearVerificationState();
+  assert.deepEqual(collectionWindowCalls(shared, "tabs.remove"), [["tabs.remove", verificationTabId]]);
+
+  // Surfacing a newer verification tab releases the older one by the same rule.
+  const surfaced = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["https://nid.naver.com/", "https://search.shopping.naver.com/"] }] });
+  const [olderTabId, newerTabId] = surfaced.windowMap.get(7).tabIds;
+  surfaced.local.momentInsightRankVerificationTabId = olderTabId;
+  assert.equal(await loadCollectionWindowRuntime(surfaced).surfaceVerificationTab(newerTabId), newerTabId);
+  assert.deepEqual(collectionWindowCalls(surfaced, "tabs.remove"), [["tabs.remove", olderTabId]]);
+  assert.equal(surfaced.local.momentInsightRankVerificationTabId, newerTabId);
+});
+
+test("collector never takes over its parked tab once it is visible or someone navigates it", async () => {
+  for (const [label, disturb] of [
+    ["navigated elsewhere", (tab) => { tab.url = "https://example.com/owner"; }],
+    ["address typed into the parked tab", (tab) => { tab.pendingUrl = "https://mail.example.com/owner"; }],
+    ["restored by verification or a person", (_tab, window) => { window.state = "normal"; }],
+    ["another tab opened in the parked window", (_tab, window, fake) => {
+      const id = 9_999;
+      fake.tabMap.set(id, { id, windowId: window.id, url: "https://example.com/second" });
+      window.tabIds.push(id);
+    }],
+  ]) {
+    const fake = fakeCollectionChrome();
+    const runtime = loadCollectionWindowRuntime(fake);
+    await runtime.collectPages(collectionWindowRequest(), async () => {});
+    const [[windowId, window]] = [...fake.windowMap.entries()];
+    const [anchorTabId] = window.tabIds;
+    assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId, tabId: anchorTabId } }, label);
+    disturb(fake.tabMap.get(anchorTabId), window, fake);
+    const before = { ...fake.tabMap.get(anchorTabId) };
+    const tabsBefore = [...window.tabIds];
+
+    fake.calls.length = 0;
+    await runtime.collectPages(collectionWindowRequest(), async () => {});
+    assert.equal(collectionWindowCalls(fake, "tabs.create").length, 1, label);
+    assert.equal(collectionWindowCalls(fake, "tabs.update").some(([, id]) => id === anchorTabId), false, label);
+    // Nothing is minimized or surfaced while the person's window is in view.
+    assert.deepEqual(collectionWindowCalls(fake, "windows.update"), [], label);
+    assert.deepEqual(fake.windowMap.get(windowId).tabIds, tabsBefore, label);
+    assert.deepEqual(fake.tabMap.get(anchorTabId), before, label);
+  }
+});
+
+test("collector bounds its minimize retries to four, 150 ms apart", async () => {
+  // A window manager that never honours the minimize: the collector still
+  // collects, tries exactly four times per attempt window and never loops.
+  const waits = [];
+  const fake = fakeCollectionChrome({ minimizeIgnored: 100 });
+  const runtime = loadCollectionWindowRuntime(fake, { recordWait: (milliseconds) => waits.push(milliseconds) });
+  await runtime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  const [[windowId]] = [...fake.windowMap.entries()];
+  // Four at creation, four more when the still-visible window is parked.
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), Array(8).fill(
+    ["windows.update", windowId, { state: "minimized" }],
+  ));
+  assert.deepEqual(waits, Array(16).fill(150));
+  assert.equal(fake.tabMap.get(fake.windowMap.get(windowId).tabIds[0]).url, "about:blank");
+});
+
+test("collector survives an unavailable session store without ever closing the last window", async () => {
+  const fake = fakeCollectionChrome({ sessionThrows: true });
+  const runtime = loadCollectionWindowRuntime(fake);
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  assert.equal(fake.windowMap.size, 1);
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [parkedTabId] = window.tabIds;
+  assert.equal(fake.tabMap.get(parkedTabId).url, "about:blank");
+
+  // Without the session marker the parked window is treated like any window.
+  fake.calls.length = 0;
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  assert.equal(collectionWindowCalls(fake, "tabs.create").length, 1);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
+  assert.equal(fake.windowMap.size, 1);
+  assert.deepEqual(fake.windowMap.get(windowId).tabIds, [parkedTabId]);
+});
+
+// 2026-09-27: only the stage code reached the server. The extension keeps a
+// sanitized copy of Chrome's own text beside the unchanged code.
+test("extension keeps a sanitized Chrome error text beside the stage code, never inside it", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const helperStart = serviceWorker.indexOf("const TYPED_COLLECTION_ERROR_PATTERN");
+  const helperEnd = serviceWorker.indexOf("function wait(milliseconds)", helperStart);
+  const { typedCollectionError, collectionErrorDetail } = runInNewContext(
+    `${serviceWorker.slice(helperStart, helperEnd)}\n({ typedCollectionError, collectionErrorDetail });`,
+  );
+  const typed = (error, fallback = "naver_page_navigation_failed") => typedCollectionError(error, fallback);
+
+  const noWindow = typed(new Error("No current window"));
+  assert.equal(noWindow.message, "naver_page_navigation_failed");
+  assert.equal(noWindow.errorDetail, "No current window");
+  const refused = typed(new Error('Cannot access contents of url "https://search.shopping.naver.com/search/all?query=남자팬티&pagingIndex=2". Extension manifest must request permission to access this host.'), "naver_page_script_failed");
+  assert.equal(refused.message, "naver_page_script_failed");
+  assert.equal(refused.errorDetail, "Cannot access contents of");
+  assert.equal(typed(new Error("탭 오류 tab error")).errorDetail, "tab error");
+  assert.equal(typed(new Error("x".repeat(500))).errorDetail.length, 120);
+  // A self-typed failure (its message is the code) carries no detail.
+  for (const code of ["naver_page_timeout", "provider_deadline_exceeded", "naver_verification_required"]) {
+    assert.equal(Object.hasOwn(typed(new Error(code)), "errorDetail"), false, code);
+  }
+  // A code-only error keeps its code and its Chrome text rides beside it.
+  const codeOnlyError = new Error("Could not establish connection. Receiving end does not exist.");
+  codeOnlyError.code = "native_host_communication_failed";
+  const codeOnly = typed(codeOnlyError, "naver_page_script_failed");
+  assert.equal(codeOnly.message, "native_host_communication_failed");
+  assert.equal(codeOnly.errorDetail, "Could not establish connection. Receiving end does not exist.");
+  // An explicit detail is kept (sanitized) over the message.
+  const explicit = new Error("naver_page_navigation_failed");
+  explicit.errorDetail = "Frame with ID 0 is showing error page https://x.example/?q=1";
+  assert.equal(typed(explicit).errorDetail, "Frame with ID 0 is showing error page");
+  // An address-only text leaves nothing to keep.
+  assert.equal(Object.hasOwn(typed(new Error("https://nid.naver.com/nidlogin.login")), "errorDetail"), false);
+
+  // The extension rule is the shared contract rule without its keyword step.
+  for (const value of [
+    "No current window",
+    "No tab with id: 41.",
+    "net::ERR_ABORTED",
+    'Cannot access contents of url "https://nid.naver.com/nidlogin.login?url=x"',
+    "Cannot access a chrome:// URL",
+    "탭 오류 tab error",
+    "x".repeat(500),
+    `  ${"word \t".repeat(40)}`,
+    "",
+    42,
+    null,
+  ]) {
+    const detail = collectionErrorDetail(value);
+    assert.equal(detail, sanitizeCollectionErrorDetail(value), String(value));
+    assert.match(detail, /^[\x20-\x7E]{0,120}$/u);
+    assert.equal(collectionErrorDetail(detail), detail);
+  }
+});
+
+test("collection_error carries the sanitized Chrome text beside the unchanged code", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const slice = (startText, endText) => {
+    const start = serviceWorker.indexOf(startText);
+    const end = serviceWorker.indexOf(endText, start);
+    assert.ok(start >= 0 && end > start, startText);
+    return serviceWorker.slice(start, end);
+  };
+  for (const [label, fakeOptions, expectedDetail] of [
+    // 09-27: a profile with windows but a stale current window.
+    ["tabs.create refused", { windows: [{ id: 7, tabs: ["chrome://newtab/"] }], tabsCreateRejects: "No current window" }, "No current window"],
+    ["windows.create refused", { createRejects: "Browser window creation is not allowed." }, "Browser window creation is not allowed."],
+  ]) {
+    const fake = fakeCollectionChrome(fakeOptions);
+    const runtime = runInNewContext(`
+      const PAGE_COUNT = 8;
+      const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+      ${slice("const COLLECTION_WINDOW_ANCHOR_KEY", "const LEGACY_CONTROLLER_PAGE_URL")}
+      ${slice("const TYPED_COLLECTION_ERROR_PATTERN", "function wait(milliseconds)")}
+      async function wait() {}
+      function pageRequestDelay() { return 3_500; }
+      function searchUrl(keyword, pageIndex) { return \`https://search.shopping.naver.com/search/all?pagingIndex=\${pageIndex}\`; }
+      async function waitForTabComplete() {}
+      async function readNextData() { return "page"; }
+      async function saveStatus() {}
+      async function clearVerificationState() {}
+      async function surfaceVerificationTab(tabId) { return tabId; }
+      ${slice("async function saveCollectionProgress(pageIndex)", 'async function saveStatus(status, detail = "")')}
+      async function handleCollect(message, port) {
+        ${slice('if (message?.type === "collect") {', 'if (message?.type === "summary")')}
+      }
+      ({ handleCollect });
+    `, { chrome: fake.chrome });
+    const messages = [];
+    await runtime.handleCollect({
+      type: "collect",
+      requestId: "request-detail",
+      request: collectionWindowRequest(),
+    }, { postMessage: (message) => messages.push({ ...message }) });
+    assert.deepEqual(messages, [{
+      type: "collection_error",
+      requestId: "request-detail",
+      code: "naver_page_navigation_failed",
+      errorDetail: expectedDetail,
+    }], label);
+
+    // A failure raised before Chrome is touched carries no detail key.
+    const expired = [];
+    await runtime.handleCollect({
+      type: "collect",
+      requestId: "request-expired",
+      request: { ...collectionWindowRequest(), deadlineAt: new Date(Date.now() - 1).toISOString() },
+    }, { postMessage: (message) => expired.push({ ...message }) });
+    assert.deepEqual(expired, [{
+      type: "collection_error",
+      requestId: "request-expired",
+      code: "provider_deadline_exceeded",
+    }], label);
+  }
+});
+
+test("native host re-sanitizes the extension's Chrome text with the request keyword and never folds it into the code", () => {
+  const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    nativeHost,
+    /import \{ sanitizeCollectionErrorDetail \} from "\.\.\/src\/server\/naver-shopping\/local-worker-contract\.mjs";/u,
+  );
+  const branch = nativeHost.slice(
+    nativeHost.indexOf('if (response?.type === "collection_error") {'),
+    nativeHost.indexOf('if (response?.type === "collection_page") {'),
+  );
+  assert.match(branch, /const code = safeCode\(response\?\.code \|\| "native_host_collection_failed"\);/u);
+  assert.match(branch, /const error = new Error\(code\);\s*error\.code = code;/u);
+  assert.match(
+    branch,
+    /sanitizeCollectionErrorDetail\(response\?\.errorDetail, \{\s*keyword: message\.request\?\.keyword,\s*\}\)/u,
+  );
+  assert.match(branch, /if \(errorDetail\) error\.errorDetail = errorDetail;\s*throw error;/u);
+  // `detail` would be appended to some failure codes by the worker; never use it.
+  assert.doesNotMatch(nativeHost, /error\.detail = /u);
+  assert.doesNotMatch(serviceWorker, /\.detail = /u);
+  assert.match(serviceWorker, /errorDetail: error\.errorDetail/u);
+});
+
 test("Chrome worker removes legacy controller tabs and only surfaces Naver verification", () => {
   const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
   const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
@@ -3975,7 +4668,11 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   assert.doesNotMatch(requestSource, /chrome\.runtime\.sendMessage|chrome\.tabs\.|chrome\.windows\.|controller-run/u);
   assert.match(verificationSurfaceSource, /chrome\.windows\.update\(tab\.windowId, \{ state: "normal", focused: true \}\)/u);
   assert.match(verificationSurfaceSource, /chrome\.tabs\.update\(tabId, \{ active: true \}\)/u);
-  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true|chrome\.windows\.update/u);
+  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true|focused:\s*true/u);
+  assert.deepEqual(
+    Array.from(nonVerificationSurfaceSource.matchAll(/chrome\.windows\.update\(([^)]*)\)/gu), (match) => match[1]),
+    ['windowId, { state: "minimized" }'],
+  );
   assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: false \}\)/u);
   assert.match(serviceWorker, /chrome\.tabs\.update\(tabId, \{ url, active: false \}\)/u);
   assert.doesNotMatch(serviceWorker, /CONTROLLER_RESUME_TIMEOUT_MS|ensureControllerTab|prepareControllerForDispatch|waitForControllerResumed|changeInfo\.frozen|autoDiscardable:\s*false|controller-run/u);

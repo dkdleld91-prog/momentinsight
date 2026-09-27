@@ -8,6 +8,7 @@ import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ENDPOINT_PATH,
   localWorkerRankRequest,
+  sanitizeCollectionErrorDetail,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "../src/server/naver-shopping/local-worker-contract.mjs";
@@ -342,6 +343,22 @@ function isCadenceNeutralTrackerFailure(job, scope, failureCode) {
   return scope === "tracker"
     && job?.kind !== "lookup"
     && FINITE_WINDOW_CADENCE_NEUTRAL_FAILURE_CODES.has(baseCode);
+}
+
+// 1.1.33 (2026-09-27 incident): claim-lane grants the single half-open
+// automatic-recovery lease to whichever run asks first, and on a returning
+// primary that is usually the one-minute rank-remote poll. That poll used to
+// drop the grant for want of a wake signal (release keeps the circuit half-open
+// with no work), so the probe waited for the next rank-catch-up alarm, up to
+// ten more minutes. Only this exact DB grant, and only on the primary, may skip
+// the wake gate; the run is still capped at one job and the DB still hands out
+// one half-open lease per open circuit. A standby keeps the wake gate so its
+// one-shot handoff is not spent more often than before.
+function halfOpenAutoRecoveryProbe(lane, workerRole) {
+  return workerRole === "primary"
+    && lane?.granted === true
+    && lane.autoRecovery === true
+    && String(lane.circuitState || "").toLowerCase() === "half_open";
 }
 
 function workerCoordinationIdentity(env) {
@@ -789,6 +806,7 @@ export async function runLocalShoppingWorker(options = {}) {
     }
     laneClaimed = true;
     autoRecovery = lane.autoRecovery === true;
+    const halfOpenProbe = halfOpenAutoRecoveryProbe(lane, workerIdentity.workerRole);
     probeTrackerId = String(lane.probeTrackerId || "").trim().toLowerCase() || null;
     if (probeTrackerId && !UUID_PATTERN.test(probeTrackerId)) {
       throw new Error("local_worker_probe_tracker_invalid");
@@ -798,13 +816,18 @@ export async function runLocalShoppingWorker(options = {}) {
       summary.cadenceMinutes = Number(lane.cadenceMinutes);
     }
     if (options.requireWakeSignal === true) {
+      // A pending wake is still consumed exactly as before, so a probe never
+      // leaves a wake behind for the next poll.
       const wake = await action({ action: "claim-wake", ...lanePayload });
-      if (wake.wake !== true) {
+      summary.remoteWake = wake.wake === true;
+      if (wake.wake !== true && !halfOpenProbe) {
         summary.status = "idle";
-        summary.remoteWake = false;
         return summary;
       }
-      summary.remoteWake = true;
+      if (wake.wake !== true) {
+        summary.autoRecoveryProbe = true;
+        log("local_worker_auto_recovery_probe");
+      }
     }
     if (options.queueAllTrackers === true || summary.remoteWake === true || autoRecovery) {
       const queued = await action({ action: "queue-all-active-trackers", ...lanePayload });
@@ -959,6 +982,14 @@ export async function runLocalShoppingWorker(options = {}) {
         const failureCode = safeFailureCode(error);
         const failureEvidence = boundedFailureEvidence(error?.evidence);
         const evidencePayload = failureEvidence ? { evidence: failureEvidence } : {};
+        // 1.1.33: the sanitized original Chrome text. It rides with the
+        // collection failure report only, never with fail (the tracker's
+        // last_error) and never inside the failure code.
+        const collectionErrorDetail = sanitizeCollectionErrorDetail(error?.errorDetail, {
+          keyword: job.keyword,
+        });
+        const errorDetailPayload = collectionErrorDetail ? { errorDetail: collectionErrorDetail } : {};
+        if (collectionErrorDetail) log(`local_worker_collection_error_detail:${collectionErrorDetail}`);
         if (resultAccounted) {
           restoreBaselineCadence(summary);
           summary.status = "control_plane_failed";
@@ -1135,6 +1166,7 @@ export async function runLocalShoppingWorker(options = {}) {
             failureReport = await action({
               action: "record-failure",
             ...evidencePayload,
+            ...errorDetailPayload,
               ...lanePayload,
               job: failureJob,
               errorCode: effectiveFailureCode,

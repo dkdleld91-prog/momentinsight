@@ -7,6 +7,7 @@ import {
   verifyLocalWorkerSignature,
 } from "../local-worker-auth.mjs";
 import {
+  COLLECTION_ERROR_DETAIL_MAX_CHARS,
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
   STABLE_FINITE_CANARY_KEYWORD,
@@ -14,6 +15,7 @@ import {
   isStableFiniteCanaryJob,
   localWorkerCollectionKey,
   localWorkerRankRequest,
+  sanitizeCollectionErrorDetail,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "./local-worker-contract.mjs";
@@ -547,4 +549,76 @@ test("creates deterministic tracker plus collection idempotency keys", () => {
   assert.equal(left, right);
   assert.notEqual(left, other);
   assert.match(left, /^[a-f0-9]{64}$/u);
+});
+
+// 2026-09-27 standby incident: the original Chrome text ("No current window")
+// never reached the server. The shared sanitizer keeps a short, address-free,
+// keyword-free copy beside the typed code.
+test("collection error detail keeps printable ASCII only and cuts at the first address or query marker", () => {
+  assert.equal(COLLECTION_ERROR_DETAIL_MAX_CHARS, 120);
+  for (const value of [undefined, null, 123, {}, [], "", "   "]) {
+    assert.equal(sanitizeCollectionErrorDetail(value), "", String(value));
+  }
+  assert.equal(sanitizeCollectionErrorDetail("No current window"), "No current window");
+  assert.equal(sanitizeCollectionErrorDetail("No tab with id: 41."), "No tab with id: 41.");
+  assert.equal(sanitizeCollectionErrorDetail("net::ERR_ABORTED"), "net::ERR_ABORTED");
+  assert.equal(
+    sanitizeCollectionErrorDetail("Frame with ID 0 is showing error page"),
+    "Frame with ID 0 is showing error page",
+  );
+  assert.equal(
+    sanitizeCollectionErrorDetail('Cannot access contents of url "https://search.shopping.naver.com/search/all?query=남자팬티&pagingIndex=2". Extension manifest must request permission to access this host.'),
+    "Cannot access contents of",
+  );
+  assert.equal(sanitizeCollectionErrorDetail("Cannot access a chrome://settings/ URL"), "Cannot access a chrome");
+  assert.equal(sanitizeCollectionErrorDetail("failed at http 403 page"), "failed at");
+  assert.equal(sanitizeCollectionErrorDetail("bad request ?query=nike"), "bad request");
+  assert.equal(sanitizeCollectionErrorDetail("탭 오류   tab\t\nerror 남자팬티"), "tab error");
+  assert.equal(sanitizeCollectionErrorDetail("x".repeat(500)).length, COLLECTION_ERROR_DETAIL_MAX_CHARS);
+  assert.equal(sanitizeCollectionErrorDetail(`${"a ".repeat(59)}bcdef`), `${"a ".repeat(59)}bc`.trim().slice(0, 120));
+  for (const value of [
+    "No current window",
+    'Cannot access contents of url "https://nid.naver.com/nidlogin.login?url=x"',
+    "탭 오류 tab error",
+    "x".repeat(500),
+    `  ${"word ".repeat(40)}`,
+  ]) {
+    const once = sanitizeCollectionErrorDetail(value);
+    assert.match(once, /^[\x20-\x7E]{0,120}$/u);
+    assert.equal(sanitizeCollectionErrorDetail(once), once);
+    assert.doesNotMatch(once, /http|:\/\/| url|\?/u);
+  }
+});
+
+test("collection error detail replaces only a remaining ASCII job keyword of three or more characters", () => {
+  assert.equal(
+    sanitizeCollectionErrorDetail("failed for Nike Air while loading", { keyword: "nike air" }),
+    "failed for <kw> while loading",
+  );
+  assert.equal(
+    sanitizeCollectionErrorDetail("Error: nike air max failed", { keyword: "나이키 air max" }),
+    "Error: nike <kw> failed",
+  );
+  assert.equal(
+    sanitizeCollectionErrorDetail("Error: NikeAirMax failed", { keyword: "nike air max" }),
+    "Error: <kw> failed",
+  );
+  assert.equal(
+    sanitizeCollectionErrorDetail("No tab with id: 41.", { keyword: "tab" }),
+    "No <kw> with id: 41.",
+  );
+  // Short and non-ASCII keywords never erase the Chrome text.
+  assert.equal(sanitizeCollectionErrorDetail("No current window", { keyword: "no" }), "No current window");
+  assert.equal(sanitizeCollectionErrorDetail("Could not establish connection", { keyword: "on" }), "Could not establish connection");
+  assert.equal(sanitizeCollectionErrorDetail("No current window", { keyword: "온열찜질기" }), "No current window");
+  assert.equal(sanitizeCollectionErrorDetail("No current window", { keyword: 42 }), "No current window");
+  // Regular-expression characters in a keyword are literal.
+  assert.equal(sanitizeCollectionErrorDetail("item a.b+c broke", { keyword: "a.b+c" }), "item <kw> broke");
+  assert.equal(sanitizeCollectionErrorDetail("item axb+c broke", { keyword: "a.b+c" }), "item axb+c broke");
+  // A keyword that straddles the length cut leaves no fragment behind.
+  const straddling = sanitizeCollectionErrorDetail(`${"x".repeat(115)} samsung galaxy`, { keyword: "samsung galaxy" });
+  assert.doesNotMatch(straddling, /sam|gal/u);
+  assert.ok(straddling.length <= COLLECTION_ERROR_DETAIL_MAX_CHARS);
+  const replaced = sanitizeCollectionErrorDetail("failed for nike air", { keyword: "nike air" });
+  assert.equal(sanitizeCollectionErrorDetail(replaced, { keyword: "nike air" }), replaced);
 });

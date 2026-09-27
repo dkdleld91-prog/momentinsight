@@ -10,6 +10,7 @@ import {
 // 여기서는 집계된 정수와 그 조회 신뢰도만 돌려받는다.
 import { observeActiveProductKeywordGroups } from "../rank-capacity.mjs";
 import {
+  WORKER_COMMIT_STALL_MINUTES,
   commitAgeMinutes,
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
   workerCommitStalledFromSignals,
@@ -54,9 +55,11 @@ const FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, qu
 //                          lastSuccessAt(last_checked_at)과 이름만 비슷할 뿐 축이 다르다.
 //                          판독 불가는 null — 0 으로 접으면 "방금 커밋했다"는 정반대
 //                          단정이 되므로 trackers 의 0-fail-safe 규약을 따르지 않는다.
-//   commitStalled        — "의도된 정지 아님 AND 하트비트 신선(<15분) AND 커밋 90분+
-//                          없음 AND 활성 상품 추적기 > 0". queueStalled 와 독립인 새
-//                          불리언이며 이 상태도 최상위 ok 를 false 로 뒤집는다.
+//   commitStalled        — "의도된 정지 아님 AND 커밋 45분 이상 없음 AND 활성 상품
+//                          추적기 > 0". 어느 작업기가 살아 있는지(하트비트)와 무관하다
+//                          (2026-09-27 에 하트비트 신선 조건을 빼고 90분 초과 → 45분 이상으로
+//                          바꿨다 — 아래 커밋 축 주석). queueStalled 와 독립인 불리언이며 이
+//                          상태도 최상위 ok 를 false 로 뒤집는다.
 // 이 축이 필요한 이유(2026-09-03 게이트 장애 2시간): 트래커 격리 코드로 전 키워드가
 // 실패하면 레인 claim(primary_seen_at)은 매분 갱신되는데 커밋은 0 이다. 그 상태에서
 // 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해 아래 queueStalled 조건 (1)이 영원히
@@ -180,9 +183,12 @@ export function rankCollectionHealthBody(input = {}) {
   // 공개 activeProduct 는 0 이지만 monitoringReliable=false 로 거짓 정상을 막는다.
   // 커밋 나이는 팩트로 유지하되 deliberateStop 중에는 복구 불리언을 누른다. Naver 제한
   // cooldown·수동 정지 중 watchdog 이 Chrome 을 다시 깨우면 안 되기 때문이다.
+  // 2026-09-27: 하트비트 신선 조건을 뺐다. 주작업기가 꺼지고 대기기가 실패만 하던 70분
+  // (19:24:28~20:34:48 KST) 동안 primary_seen_at 이 낡아 이 축이 거짓이었고, 이 응답의 ok 에는
+  // 침묵 축이 없어 끝까지 ok:true 였다. 이제 어느 작업기가 살아 있든 커밋이 45분 이상 없으면
+  // ok:false 다. heartbeatAgeMinutes 키는 그대로 사실값으로만 싣는다(워치독 재기동 가드용).
   const lastCommitAgeMinutes = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now });
   const commitStalled = !recoverySuppressed && activeProduct > 0 && workerCommitStalledFromSignals({
-    primarySeenAt: input.primarySeenAt,
     lastSuccessAt: input.lastSuccessAt,
     now,
   });
@@ -283,6 +289,18 @@ export function workerRecoverySuppressedFromRow(row, now) {
 
 export function workerControlHealthyFromRow(row, now) {
   return !workerRecoverySuppressedFromRow(row, now);
+}
+
+// 200 본문의 캐시 만료 시각. 기본은 CACHE_TTL_MS(60초)지만, 커밋 정체 경계
+// (last_success_at + WORKER_COMMIT_STALL_MINUTES 분)가 그 안에 있으면 경계에서 끝낸다.
+// 2026-09-27 기준 "커밋 19:24:28.823 → 20:09:28.823 에 ok:false" 를 캐시가 최대 60초
+// 늦추지 않게 하려는 것이다. 경계가 이미 지났거나 커밋 기록을 읽지 못하면 기본값 그대로다.
+export function rankHealthCacheExpiresAt(now, lastSuccessAt) {
+  const ttlExpiry = now + CACHE_TTL_MS;
+  const committedAt = Date.parse(String(lastSuccessAt || ""));
+  if (!Number.isFinite(committedAt)) return ttlExpiry;
+  const stallAt = committedAt + WORKER_COMMIT_STALL_MINUTES * 60_000;
+  return stallAt > now ? Math.min(ttlExpiry, stallAt) : ttlExpiry;
 }
 
 // 조회만 담당하는 얇은 래퍼. 판정은 전부 위 순수 함수가 한다(테스트가 실행 검증한다).
@@ -518,7 +536,7 @@ export default {
         body,
         status: 200,
         extraHeaders: { "cache-control": CACHE_CONTROL },
-        expiresAt: now + CACHE_TTL_MS,
+        expiresAt: rankHealthCacheExpiresAt(now, coordination.lastSuccessAt),
       };
       return protectedJson(request, body, 200, {
         ...CORS_OPTIONS,

@@ -257,6 +257,8 @@ test("A2: 순위 헬스 장애 boolean 또는 상품 커밋 노후화를 배포 
     },
     { label: "commit age unknown", lanePatch: { lastCommitAgeMinutes: null } },
     { label: "commit age stale", lanePatch: { lastCommitAgeMinutes: 91 } },
+    // 2026-09-27: 헬스의 커밋 정체가 "45분 이상"이므로 배포 게이트도 45분부터 받지 않는다.
+    { label: "commit age at 45", lanePatch: { lastCommitAgeMinutes: 45 } },
     { label: "active product invalid", trackerPatch: { activeProduct: null } },
   ];
 
@@ -288,6 +290,28 @@ test("A2: 순위 헬스 장애 boolean 또는 상품 커밋 노후화를 배포 
         await closeServer(server);
       }
     });
+  }
+});
+
+test("A2: 상품 커밋 나이 44분(45분 경계 직전)은 아직 정상으로 받는다", async () => {
+  const release = "abc123def456";
+  const rankHealthBody = {
+    ...RANK_HEALTH_STUB_BODY,
+    lanes: {
+      ...RANK_HEALTH_STUB_BODY.lanes,
+      product: { ...RANK_HEALTH_STUB_BODY.lanes.product, lastCommitAgeMinutes: 44, commitStalled: false },
+    },
+  };
+  const { server, url } = await startStubServer({ release, rankHealthBody });
+  try {
+    const result = await runVerifyLive(
+      verifyLiveEnv({ MI_VERIFY_LIVE_BASE_URL: url, MI_VERIFY_LIVE_RELEASE: release }),
+    );
+    assert.equal(result.code, 0, `stdout=${result.stdout} stderr=${result.stderr}`);
+    assert.match(result.stdout, /PASS 4\)/u);
+    assert.match(result.stdout, /lastCommitAgeMinutes=44 max=45/u);
+  } finally {
+    await closeServer(server);
   }
 });
 
@@ -358,7 +382,9 @@ test("A2: skip-fetch 분기·8키·장애 boolean·상품 커밋 신선도 계�
   assert.ok(verifyLive.includes("activeProductValid"));
   assert.ok(verifyLive.includes("productCommitFresh"));
   assert.ok(verifyLive.includes("productLane?.commitStalled === false"));
-  assert.ok(verifyLive.includes("lastCommitAgeMinutes <= WORKER_COMMIT_STALL_MINUTES"));
+  // 헬스 commitStalled 가 "45분 이상"이므로 신선 상한은 미만(<)이다(2026-09-27).
+  assert.ok(verifyLive.includes("lastCommitAgeMinutes < WORKER_COMMIT_STALL_MINUTES"));
+  assert.ok(!verifyLive.includes("lastCommitAgeMinutes <= WORKER_COMMIT_STALL_MINUTES"));
   const arrayStart = verifyLive.indexOf("const RANK_HEALTH_KEYS = [");
   const arrayEnd = verifyLive.indexOf("];", arrayStart);
   const declared = [...verifyLive.slice(arrayStart, arrayEnd).matchAll(/"([A-Za-z]+)"/gu)].map((match) => match[1]);

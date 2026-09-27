@@ -204,3 +204,38 @@
 - 사고: 주작업기가 꺼진 채 런타임 1.1.32 를 올리자 대기기가 70분간 `runtime_identity_invalid` 로 거절(런타임 마이그레이션이 코디네이션 정체를 NULL 로 비우고 주작업기 첫 런으로만 채워졌다). 임시 복구는 대표가 코디네이션에 기대 정체를 채우는 조건부 SQL.
 - 수정: `20260919030000_naver_shopping_standby_runtime_identity_registration.sql` — 정체가 통째로 비어 있고 주작업기가 180초 이상 무신호일 때에 한해 대기기를 허용. 정체 고정은 진행 관문이 그대로 수행.
 - 이 수정이 DB 에 적용되기 전에는 주작업기가 꺼진 상태에서 런타임 인상을 배포하지 않는다. 맥 Chrome 이 재시작되지 않으면(`chrome_quit_incomplete`) 확장이 옛 버전으로 남으므로 대표에게 ⌘Q 후 재실행을 요청한다.
+
+## N30 70분 정지 후속 (2026-09-27)
+
+- 사고: 09-27 19:33 데스크탑 주작업기 종료 → 맥 대기기는 수집 프로필에 창이 없어 매번 `naver_page_navigation_failed` → 전역 회로 open → 20:21 주작업기 복귀 뒤 20:34:48 탐침 커밋. 커밋 공백 70분 동안 헬스는 `ok:true`(경보 없음).
+
+### S1 경보·플레이스
+
+- **경보 판정**: `/api/rank-collection-health` 의 `lanes.product.commitStalled: true` = 활성 상품 추적기가 있는데
+  마지막 커밋(`naver_shopping_worker_coordination.last_success_at`) 뒤 **45분 이상** 커밋이 없다. 이때 최상위 `ok:false`.
+  어느 작업기가 살아 있는지와 무관하다(주작업기가 꺼져 하트비트가 낡아도 뜬다). 의도된 정지(`manual_stop`·`manual_canary`·
+  네이버 쿨다운)·수동복구 대기(`transient_recovery_manual_required`)·활성 0건은 예전처럼 제외한다.
+  09-27 기준: 19:24:28.823 커밋 → 20:09:28.823 부터 `ok:false` → 20:34:48.822 커밋에 해제. 헬스 60초 캐시는 45분 경계를 넘겨 들고 있지 않는다.
+- **근거**: 14일 커밋 공백 실측 — 45분 초과 11건은 전부 실제 정지(최소 69.3분), 정상 최대 38.2분. 예전 기준(90분 초과 + 하트비트 15분 안쪽)은 09-27 을 못 잡았다.
+- **크론과의 차이**: 상품 크론은 같은 판정 함수를 쓰되 주작업기 진척이 30분 안이면 `503 NAVER_RANK_WORKER_NO_COMMIT`(문구 "45분 이상"),
+  30분 넘게 끊기면 `503 NAVER_RANK_WORKER_SILENT`, 09:05·15:05 슬롯 뒤 60분 유예 중이면 판정하지 않는다. 헬스는 유예가 없다.
+- **경보를 받으면**: 코디네이션 행의 `circuit_state`·`circuit_reason`·`primary_seen_at`·`last_failure_code` 부터 본다(`docs/skills/mi-collection-incident/SKILL.md`).
+  맥 워치독은 `commit_stalled action=none` 으로 기록만 하고 Chrome 을 재기동하지 않는다 — 원인이 주작업기·서버·DB 어디든 켜지는 신호라서다.
+- **배포 검증**: `verify-live` 4) 의 상품 커밋 나이 상한은 `< 45`. 커밋이 45분 넘게 없는 중에 배포하면 FAIL 이 정상이다(첫 커밋 뒤 다시 돌린다).
+- **확인 필요(대표)**: UptimeRobot 수집 모니터 키워드가 `"ok":true`(없으면 DOWN) 또는 `"commitStalled":false`(없으면 DOWN)인지. 다른 키워드면 이 경보가 폰에 오지 않는다.
+- **플레이스 러너**(`scripts/place-rank-actions-worker.mjs`): 20건 상한을 없앴다. 서버가 '할 일 없음'이라 할 때까지 한 건씩(동시 1) 처리하고,
+  새 할 일은 시작 후 45분 안에서만 받는다. 로그 `Naver place rank worker window` 의 `stopReason`:
+
+  | stopReason | 뜻 | 실행 결과 |
+  |---|---|---|
+  | `drained` | 받을 일 없음 | 성공 |
+  | `time_budget` | 45분 지남, 남은 일은 다음 예약 실행(매시 :37 등) | 성공 + `::notice::` 한 줄 |
+  | `job_cap` | 안전 상한 200건 | 성공 + `::notice::` 한 줄 |
+  | `revisit` | 이번 실행에 결과를 기록한 추적기가 재시도 일정으로 다시 옴(= 밀린 일을 다 받음) | 성공 + `::notice::` 한 줄 |
+  | `lookup_timeout` | 조회가 보호 시간(최대 330초) 안에 안 끝남, 두 번째 브라우저를 띄우지 않고 멈춤 | 실패 |
+  | `lookup_failing` | 저장한 뒤 조회 3연속 실패(차단 의심) | 실패 |
+  | `worker_api_lost` | 저장한 뒤 워커 API 불가 — 예전 경로로 넘기지 않음 | 실패 |
+
+  조회 실패·부분 결과·결과 전송 실패가 한 건이라도 있으면 지금처럼 실패(빨간 X)다. 결과 전송에 실패한 추적기가 처리 권한(360초) 만료로
+  다시 오면 다시 세지 않고 건너뛴 뒤 남은 일을 계속 받는다(한 실행 3번까지). 예전 경로(서버 → Render) 조건은 그대로다: 아직 한 건도
+  저장하지 못했는데 워커 API 불가, 또는 조회 연속 2회 실패. 워크플로 yml 은 바꾸지 않았다(`timeout-minutes: 100` ≥ 준비 4 + 예산 45 + 꼬리 10 + 예전 단계 여유 40, 테스트가 고정).

@@ -99,6 +99,8 @@ const activeProduct = rankHealth.body?.trackers?.activeProduct;
 const activeProductValid = Number.isInteger(activeProduct) && activeProduct >= 0;
 // 활성 상품이 있을 때만 최근 commit 이 필수다. activeProduct=0인 정상 무작업 환경은
 // 마지막 commit 이 없거나 오래된 것이 자연스럽지만, 음수/비정수 관측은 계약 위반이다.
+// 헬스의 commitStalled 가 "WORKER_COMMIT_STALL_MINUTES(45)분 이상"이므로 신선 상한은
+// 미만(<)이다(2026-09-27).
 const productCommitFresh = activeProductValid
   && productLane?.commitStalled === false
   && (activeProduct === 0
@@ -106,7 +108,7 @@ const productCommitFresh = activeProductValid
       || (Number.isInteger(lastCommitAgeMinutes) && lastCommitAgeMinutes >= 0))
     : (Number.isInteger(lastCommitAgeMinutes)
       && lastCommitAgeMinutes >= 0
-      && lastCommitAgeMinutes <= WORKER_COMMIT_STALL_MINUTES));
+      && lastCommitAgeMinutes < WORKER_COMMIT_STALL_MINUTES));
 const rankContractHealthy = rankHealth.status === 200
   && rankKeys.length === RANK_HEALTH_KEYS.length
   && rankKeys.every((key, index) => key === RANK_HEALTH_KEYS[index])

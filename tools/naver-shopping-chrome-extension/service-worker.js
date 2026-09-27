@@ -44,6 +44,7 @@ const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
 const COLLECTION_WINDOW_ANCHOR_KEY = "momentInsightRankCollectionWindow";
 const COLLECTION_WINDOW_MINIMIZE_ATTEMPTS = 4;
 const COLLECTION_WINDOW_MINIMIZE_SETTLE_MS = 150;
+const COLLECTION_TAB_PARK_COMMIT_CHECKS = 5;
 const LEGACY_CONTROLLER_PAGE_URL = new URL(chrome.runtime.getURL("popup.html"));
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
@@ -745,6 +746,22 @@ async function minimizeCollectionWindow(windowId) {
   return false;
 }
 
+// tabs.update resolves before about:blank commits, and the native host asks
+// for the next pass right after collection_complete. A parked tab still on its
+// search page with pendingUrl "about:blank" is refused for reuse, and
+// tabs.create into the minimized window would restore it on macOS (measured).
+async function waitForParkedTabCommit(tabId) {
+  try {
+    for (let check = 0; check < COLLECTION_TAB_PARK_COMMIT_CHECKS; check += 1) {
+      if (check > 0) await wait(COLLECTION_WINDOW_MINIMIZE_SETTLE_MS);
+      const tab = await chrome.tabs.get(tabId).catch(() => null);
+      if (!tab || (tab.url === "about:blank" && tab.pendingUrl == null)) return;
+    }
+  } catch {
+    // The park goes on without the wait; the next run then opens a tab instead.
+  }
+}
+
 async function reusableCollectionAnchorTab(windows) {
   if (!Array.isArray(windows) || windows.length !== 1) return null;
   const [onlyWindow] = windows;
@@ -794,6 +811,7 @@ async function releaseCollectionTab(tabId) {
     const onlyTabs = Array.isArray(onlyWindow?.tabs) ? onlyWindow.tabs : [];
     if (onlyWindow && onlyTabs.length === 1 && onlyTabs[0]?.id === tabId) {
       await chrome.tabs.update(tabId, { url: "about:blank" }).catch(() => {});
+      await waitForParkedTabCommit(tabId);
       await saveCollectionWindowAnchor(onlyWindow.id, tabId);
       if (onlyWindow.state !== "minimized") await minimizeCollectionWindow(onlyWindow.id);
       return;

@@ -3955,7 +3955,9 @@ test("page-eight status and verification cleanup failures still emit collection_
 // global circuit. A fake Chrome models what was measured on Chrome 149: a
 // window closes with its last tab, tabs.create needs a current window, macOS
 // shows an unfocused window as normal despite state "minimized", and a
-// minimize issued too early can be undone.
+// minimize issued too early can be undone. With commitAfterGets, tabs.update
+// resolves while the new address is only pendingUrl and commits on that tab's
+// commitAfterGets-th tabs.get (Infinity: never).
 function fakeCollectionChrome({
   windows = [],
   getAllThrows = false,
@@ -3963,10 +3965,12 @@ function fakeCollectionChrome({
   tabsCreateRejects = "",
   sessionThrows = false,
   minimizeIgnored = 0,
+  commitAfterGets = 0,
 } = {}) {
   const calls = [];
   const windowMap = new Map();
   const tabMap = new Map();
+  const getsBeforeCommit = new Map();
   const session = {};
   const local = {};
   let nextId = 1000;
@@ -4052,7 +4056,10 @@ function fakeCollectionChrome({
         calls.push(["tabs.update", id, { ...properties }]);
         const tab = tabMap.get(id);
         if (!tab) throw new Error(`No tab with id: ${id}.`);
-        if (properties.url) {
+        if (properties.url && commitAfterGets > 0) {
+          tab.pendingUrl = properties.url;
+          getsBeforeCommit.set(id, commitAfterGets);
+        } else if (properties.url) {
           tab.url = properties.url;
           delete tab.pendingUrl;
         }
@@ -4061,7 +4068,16 @@ function fakeCollectionChrome({
       async get(id) {
         const tab = tabMap.get(id);
         if (!tab) throw new Error(`No tab with id: ${id}.`);
-        return { id, windowId: tab.windowId, url: tab.url };
+        if (tab.pendingUrl != null && getsBeforeCommit.has(id)) {
+          const remaining = getsBeforeCommit.get(id) - 1;
+          getsBeforeCommit.set(id, remaining);
+          if (remaining <= 0) {
+            tab.url = tab.pendingUrl;
+            delete tab.pendingUrl;
+            getsBeforeCommit.delete(id);
+          }
+        }
+        return { id, windowId: tab.windowId, url: tab.url, ...(tab.pendingUrl != null ? { pendingUrl: tab.pendingUrl } : {}) };
       },
       async remove(id) {
         calls.push(["tabs.remove", id]);
@@ -4098,6 +4114,10 @@ function fakeCollectionChrome({
     local,
     closeWindow(id) {
       for (const tabId of [...windowMap.get(id).tabIds]) removeTab(tabId);
+    },
+    // A person closing one tab (not recorded as a collector call).
+    closeTab(id) {
+      removeTab(id);
     },
   };
 }
@@ -4203,6 +4223,37 @@ test("collector opens one minimized own window only when the profile has no norm
   ]);
   assert.equal(fake.windowMap.size, 1);
   assert.equal(fake.windowMap.get(windowId).state, "minimized");
+});
+
+test("collector records its window as soon as it opens it, so a restarted worker still reuses the tab", async () => {
+  const fake = fakeCollectionChrome();
+  let firstPageDelivered;
+  const sessionAtFirstPage = new Promise((resolve) => { firstPageDelivered = resolve; });
+  // The service worker dies while page 1 is delivered: collectPages never
+  // settles and its finally (the release, which records the anchor too) never runs.
+  void loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async () => {
+    firstPageDelivered(JSON.parse(JSON.stringify(fake.session)));
+    return new Promise(() => {});
+  });
+  const recorded = await sessionAtFirstPage;
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [tabId] = window.tabIds;
+  assert.deepEqual(recorded, { momentInsightRankCollectionWindow: { windowId, tabId } });
+  assert.equal(window.state, "minimized");
+  assert.equal(fake.tabMap.get(tabId).url, collectionWindowPageUrl(1));
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.update"), []);
+
+  // The restarted worker (chrome.storage.session outlives it) reuses the tab
+  // left on its search page instead of tabs.create into the minimized window.
+  fake.calls.length = 0;
+  await loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async () => {}, { pageStart: 6, pageEnd: 8 });
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+  assert.deepEqual(collectionTabUpdates(fake)[0], [tabId, collectionWindowPageUrl(6), false]);
+  assert.deepEqual(fake.windowMap.get(windowId).tabIds, [tabId]);
+  assert.equal(fake.windowMap.get(windowId).state, "minimized");
+  assert.equal(fake.tabMap.get(tabId).url, "about:blank");
 });
 
 test("collector keeps the unchanged tab lifecycle whenever a normal window exists", async () => {
@@ -4316,6 +4367,84 @@ test("collector never closes the profile's last window when it releases a tab", 
   assert.equal(fake.tabMap.get(collectionTabId).url, "about:blank");
   assert.equal(fake.windowMap.get(7).state, "minimized");
   assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: collectionTabId } });
+});
+
+test("collector parks only its own lone tab of the profile's only window and otherwise removes it", async () => {
+  // The collection tab is already gone (closed mid-collection) and the only
+  // window holds one tab of the person's: that tab is never blanked.
+  const foreign = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["https://example.com/owner"] }] });
+  const [foreignTabId] = foreign.windowMap.get(7).tabIds;
+  const missingTabId = 4_242;
+  assert.equal(await loadCollectionWindowRuntime(foreign).releaseCollectionTab(missingTabId), undefined);
+  assert.deepEqual(foreign.calls.filter(([name]) => name !== "windows.getAll"), [["tabs.remove", missingTabId]]);
+  assert.deepEqual(foreign.tabMap.get(foreignTabId), { id: foreignTabId, windowId: 7, url: "https://example.com/owner" });
+  assert.equal(foreign.windowMap.get(7).state, "normal");
+  assert.deepEqual(foreign.session, {});
+
+  // With another non-incognito window open, a collection tab alone in its
+  // window is removed as before: that window closes, the profile stays loaded.
+  const twoWindows = fakeCollectionChrome({ windows: [
+    { id: 7, tabs: ["https://search.shopping.naver.com/search/all?query=x"] },
+    { id: 8, tabs: ["https://example.com/owner"] },
+  ] });
+  const [loneTabId] = twoWindows.windowMap.get(7).tabIds;
+  assert.equal(await loadCollectionWindowRuntime(twoWindows).releaseCollectionTab(loneTabId), undefined);
+  assert.deepEqual(twoWindows.calls.filter(([name]) => name !== "windows.getAll"), [["tabs.remove", loneTabId]]);
+  assert.equal(twoWindows.tabMap.has(loneTabId), false);
+  assert.deepEqual([...twoWindows.windowMap.keys()], [8]);
+  assert.equal(twoWindows.windowMap.get(8).state, "normal");
+  assert.deepEqual(twoWindows.session, {});
+});
+
+test("collector leaves the person's remaining tab alone when its own tab is closed mid-collection", async () => {
+  // The Windows primary shares its profile window: the person closes the
+  // collector tab while page 1 is delivered and one tab of theirs remains.
+  const fake = fakeCollectionChrome({ windows: [{ id: 7, tabs: ["https://example.com/owner"] }] });
+  const [ownerTabId] = fake.windowMap.get(7).tabIds;
+  const delivered = [];
+  await assert.rejects(
+    loadCollectionWindowRuntime(fake).collectPages(collectionWindowRequest(), async (page) => {
+      delivered.push(page.pageIndex);
+      if (page.pageIndex === 1) fake.closeTab(fake.windowMap.get(7).tabIds.find((id) => id !== ownerTabId));
+    }),
+    (error) => error?.message === "naver_page_navigation_failed" && /^No tab with id: \d+\.$/u.test(error.errorDetail),
+  );
+  assert.deepEqual(delivered, [1]);
+  const [[, collectionTabId]] = collectionWindowCalls(fake, "tabs.update");
+  assert.notEqual(collectionTabId, ownerTabId);
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [["tabs.remove", collectionTabId]]);
+  assert.equal(collectionWindowCalls(fake, "tabs.update").some(([, id]) => id === ownerTabId), false);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+  assert.deepEqual(fake.windowMap.get(7).tabIds, [ownerTabId]);
+  assert.deepEqual(fake.tabMap.get(ownerTabId), { id: ownerTabId, windowId: 7, url: "https://example.com/owner" });
+  assert.equal(fake.windowMap.get(7).state, "normal");
+  assert.deepEqual(fake.session, {});
+});
+
+test("collector with two non-incognito windows removes its tab even when it is alone in one of them", async () => {
+  // The person closed the other tab of the collector's window; their second
+  // window keeps the profile loaded, so nothing is parked.
+  const fake = fakeCollectionChrome({ windows: [
+    { id: 7, tabs: ["chrome://newtab/"] },
+    { id: 8, tabs: ["https://example.com/owner"] },
+  ] });
+  const [ownerTabId] = fake.windowMap.get(7).tabIds;
+  const runtime = loadCollectionWindowRuntime(fake, {
+    readNextData: async (tabId) => {
+      if (fake.tabMap.has(ownerTabId)) fake.closeTab(ownerTabId);
+      return `next-data-${tabId}`;
+    },
+  });
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  const [[, created]] = collectionWindowCalls(fake, "tabs.create");
+  assert.equal(created.url, collectionWindowPageUrl(1));
+  const collectionTabId = collectionWindowCalls(fake, "tabs.update")[0][1];
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.remove"), [["tabs.remove", collectionTabId]]);
+  assert.equal(collectionTabUpdates(fake).some(([, url]) => url === "about:blank"), false);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+  assert.deepEqual([...fake.windowMap.keys()], [8]);
+  assert.equal(fake.windowMap.get(8).state, "normal");
+  assert.deepEqual(fake.session, {});
 });
 
 test("collector tab release never throws and leaves the tab rather than closing it blindly", async () => {
@@ -4505,6 +4634,25 @@ test("collector never takes over its parked tab once it is visible or someone na
   }
 });
 
+test("collector reuses its parked tab only while the marker names both that window and that tab", async () => {
+  const fake = fakeCollectionChrome();
+  const runtime = loadCollectionWindowRuntime(fake);
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [parkedTabId] = window.tabIds;
+  assert.equal(window.state, "minimized");
+  fake.session.momentInsightRankCollectionWindow = { windowId: windowId + 1, tabId: parkedTabId };
+
+  fake.calls.length = 0;
+  await runtime.collectPages(collectionWindowRequest(), async () => {});
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), [
+    ["tabs.create", { url: collectionWindowPageUrl(1), active: false }],
+  ]);
+  assert.equal(collectionWindowCalls(fake, "tabs.update").some(([, id]) => id === parkedTabId), false);
+  assert.deepEqual(fake.windowMap.get(windowId).tabIds, [parkedTabId]);
+  assert.equal(fake.tabMap.get(parkedTabId).url, "about:blank");
+});
+
 test("collector bounds its minimize retries to four, 150 ms apart", async () => {
   // A window manager that never honours the minimize: the collector still
   // collects, tries exactly four times per attempt window and never loops.
@@ -4519,6 +4667,63 @@ test("collector bounds its minimize retries to four, 150 ms apart", async () => 
   ));
   assert.deepEqual(waits, Array(16).fill(150));
   assert.equal(fake.tabMap.get(fake.windowMap.get(windowId).tabIds[0]).url, "about:blank");
+});
+
+test("collector waits, bounded, for its parked tab to commit about:blank before it reports", async () => {
+  // tabs.update resolves before about:blank commits, and the native host asks
+  // for the next pass right after collection_complete. A tab still on its
+  // search page with pendingUrl "about:blank" is refused for reuse, and
+  // tabs.create into the minimized window would restore it on macOS.
+  const waits = [];
+  const fake = fakeCollectionChrome({ commitAfterGets: 3 });
+  const runtime = loadCollectionWindowRuntime(fake, { recordWait: (milliseconds) => waits.push(milliseconds) });
+  await runtime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  const [[windowId, window]] = [...fake.windowMap.entries()];
+  const [tabId] = window.tabIds;
+  assert.deepEqual(fake.tabMap.get(tabId), { id: tabId, windowId, url: "about:blank" });
+  // Two settle waits for the minimize at creation, two while about:blank commits.
+  assert.deepEqual(waits, Array(4).fill(150));
+  assert.deepEqual(fake.session, { momentInsightRankCollectionWindow: { windowId, tabId } });
+
+  fake.calls.length = 0;
+  await runtime.collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  assert.deepEqual(collectionWindowCalls(fake, "tabs.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.create"), []);
+  assert.deepEqual(collectionWindowCalls(fake, "windows.update"), []);
+  assert.deepEqual(collectionTabUpdates(fake), [
+    [tabId, collectionWindowPageUrl(1), false],
+    [tabId, "about:blank", undefined],
+  ]);
+  assert.deepEqual(fake.tabMap.get(tabId), { id: tabId, windowId, url: "about:blank" });
+
+  // A commit that never lands costs at most four more 150 ms waits; the tab is
+  // still parked, recorded and minimized, and the release still resolves.
+  const stuckWaits = [];
+  const stuck = fakeCollectionChrome({ commitAfterGets: Infinity });
+  await loadCollectionWindowRuntime(stuck, { recordWait: (milliseconds) => stuckWaits.push(milliseconds) })
+    .collectPages(collectionWindowRequest(), async () => {}, { pageStart: 1, pageEnd: 1 });
+  const [[stuckWindowId, stuckWindow]] = [...stuck.windowMap.entries()];
+  const [stuckTabId] = stuckWindow.tabIds;
+  assert.deepEqual(stuckWaits, Array(6).fill(150));
+  assert.equal(stuck.tabMap.get(stuckTabId).pendingUrl, "about:blank");
+  assert.deepEqual(collectionWindowCalls(stuck, "tabs.remove"), []);
+  assert.equal(stuckWindow.state, "minimized");
+  assert.deepEqual(stuck.session, { momentInsightRankCollectionWindow: { windowId: stuckWindowId, tabId: stuckTabId } });
+
+  // A tab closed while it parks ends the wait at once.
+  const closedWaits = [];
+  const closed = fakeCollectionChrome({
+    windows: [{ id: 7, tabs: ["https://search.shopping.naver.com/"] }],
+    commitAfterGets: Infinity,
+  });
+  const [closedTabId] = closed.windowMap.get(7).tabIds;
+  closed.chrome.tabs.get = async () => { throw new Error(`No tab with id: ${closedTabId}.`); };
+  await loadCollectionWindowRuntime(closed, { recordWait: (milliseconds) => closedWaits.push(milliseconds) })
+    .releaseCollectionTab(closedTabId);
+  // Only the two settle waits of the minimize that follows.
+  assert.deepEqual(closedWaits, Array(2).fill(150));
+  assert.equal(closed.windowMap.get(7).state, "minimized");
+  assert.deepEqual(closed.session, { momentInsightRankCollectionWindow: { windowId: 7, tabId: closedTabId } });
 });
 
 test("collector survives an unavailable session store without ever closing the last window", async () => {
@@ -4762,6 +4967,56 @@ test("native host exchange rethrows a collection_error with its code unchanged a
     assert.deepEqual([error.message, error.code, detailOf(error)], [expected[0], expected[0], expected[1]], label);
     assert.equal(Object.hasOwn(error, "detail"), false, label);
   }
+});
+
+test("native provider rethrows the exchange's own error so its Chrome text reaches the worker", async () => {
+  const nowMs = Date.parse("2026-09-27T11:00:00.000Z");
+  const navigationError = () => {
+    const error = new Error("naver_page_navigation_failed");
+    error.code = error.message;
+    error.errorDetail = "No current window";
+    return error;
+  };
+
+  // The first exchange fails before any page arrives: no evidence to attach.
+  const first = navigationError();
+  const withoutPages = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() { throw first; },
+  });
+  let caught = null;
+  try { await withoutPages.collect(request(nowMs)); } catch (error) { caught = error; }
+  assert.equal(caught, first);
+  assert.deepEqual([caught.message, caught.code, caught.errorDetail], [
+    "naver_page_navigation_failed",
+    "naver_page_navigation_failed",
+    "No current window",
+  ]);
+  assert.equal(Object.hasOwn(caught, "evidence"), false);
+  assert.equal(Object.hasOwn(caught, "detail"), false);
+
+  // The second pass fails after a drifting first pass: the pass evidence is
+  // attached to the same error beside its Chrome text.
+  const second = navigationError();
+  const messages = [];
+  const afterOnePass = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      if (messages.length === 1) {
+        return { type: "collection", captureId: "detail-capture-1", pages: renderedOrderDriftPages() };
+      }
+      throw second;
+    },
+  });
+  caught = null;
+  try { await afterOnePass.collect(request(nowMs)); } catch (error) { caught = error; }
+  assert.equal(messages.length, 2);
+  assert.equal(caught, second);
+  assert.equal(caught.errorDetail, "No current window");
+  assert.equal(caught.code, "naver_page_navigation_failed");
+  assert.equal(caught.evidence?.passes.length, 1);
+  assert.match(caught.evidence.trace.at(-1), /^throw naver_page_navigation_failed:/u);
 });
 
 test("Chrome worker removes legacy controller tabs and only surfaces Naver verification", () => {

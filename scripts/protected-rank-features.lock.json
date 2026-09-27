@@ -630,7 +630,7 @@
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "f89890ccb1870717d806b83015f32b8134007f20ccd4aa9cb5abf1bff7944a01"
+      "sha256": "37383b43f13121f8089faefbc1556ac9df0fe47ed5985a74f0765501a3dd817c"
     },
     {
       "id": "shopping-local-worker-session-boundary",

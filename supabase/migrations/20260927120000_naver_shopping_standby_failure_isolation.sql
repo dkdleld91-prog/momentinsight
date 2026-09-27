@@ -6,11 +6,18 @@
 -- opened; its navigation probes failed again at 20:03:00 and 20:19:58 and reopened it). The
 -- returning primary waited for circuit_opened_at + 10 minutes: probe 20:34:03, commit 20:34:48.
 -- Runtime neutral (no runtime literal, unchanged RPC signatures, safe for running workers):
---   * circuit_opened_by_worker records the worker whose failure opened the circuit from closed
---     (the start of a circuit episode). It is kept through open -> half_open and becomes the
+--   * circuit_opened_by_worker records the worker that started a circuit episode. While the
+--     circuit is closed it holds the worker whose failure started the current failure-signature
+--     streak (the one failure that does not open it); the failure that opens the circuit from
+--     closed then stamps the registered primary when the primary's failure started that streak
+--     or opens it, and otherwise the failing worker. So a chain the primary took part in is
+--     never standby-originated. It is kept through open -> half_open and becomes the
 --     registered primary as soon as a half-open probe the primary held fails, is released
---     incomplete or expires; a standby's failed probe keeps it. A probe that recovers the
---     circuit in release clears it;
+--     incomplete or expires; a standby's failed, incomplete or expired automatic probe
+--     (auto_navigation_probe, auto_transient_system_probe) keeps it, and a standby's manual
+--     canary (mi_request_naver_shopping_worker_probe, 'manual_canary') that fails, is released
+--     incomplete or expires clears it (NULL = today's rules). A probe that recovers the circuit
+--     in release clears it;
 --   * a standby-device failure (codes below) reported by a worker that is not the registered
 --     primary no longer advances the global failure signature and never opens a closed
 --     circuit; it benches that standby instead (2 in one episode = 30 minutes, 3 or more =
@@ -545,14 +552,23 @@ begin
       circuit_state = case when should_open then 'open' else circuit_state end,
       circuit_reason = case when should_open then next_signature else circuit_reason end,
       circuit_opened_at = case when should_open then v_now else circuit_opened_at end,
-      -- 2026-09-27: a closed -> open failure stamps the worker that started this circuit
-      -- episode. A failed half-open probe hands it to the registered primary only when the
-      -- primary held the probe; a standby's failed probe keeps it (claim reads it).
+      -- 2026-09-27: the worker that started this circuit episode (claim reads it only while
+      -- the circuit is open). A closed failure that does not open the circuit starts a
+      -- signature streak (next_streak = 1) and records its worker; the closed -> open failure
+      -- stamps the registered primary when the primary's failure started that streak or opens
+      -- it, otherwise the failing worker. A failed half-open probe hands it to the registered
+      -- primary when the primary held the probe; a standby's failed automatic probe keeps it and
+      -- a standby's failed manual canary clears it (the old rules apply).
       circuit_opened_by_worker = case
-        when not should_open then circuit_opened_by_worker
+        when not should_open then failing_worker_id
+        when current_row.circuit_state = 'closed'
+          and current_row.circuit_opened_by_worker = current_row.primary_worker_id
+        then current_row.primary_worker_id
         when current_row.circuit_state = 'closed' then failing_worker_id
         when failing_worker_id = current_row.primary_worker_id then failing_worker_id
-        else circuit_opened_by_worker
+        when current_row.circuit_reason in ('auto_navigation_probe', 'auto_transient_system_probe')
+        then circuit_opened_by_worker
+        else null
       end,
       probe_started_at = case when should_open then null else probe_started_at end,
       lease_worker_id = case when should_open then null else lease_worker_id end,
@@ -696,9 +712,11 @@ begin
 
   -- 2026-09-27 (standby failure isolation): the registered primary is not held behind a
   -- circuit episode that only a different worker's failures produced. circuit_opened_by_worker
-  -- names the worker whose failure opened the circuit from closed; it survives open ->
-  -- half_open, and it becomes the registered primary as soon as a half-open probe the primary
-  -- held fails, is released incomplete or expires (failure, release and the expiry below). On
+  -- names the worker whose failure opened the circuit from closed, or the registered primary
+  -- when the primary's failure started that signature streak; it survives open -> half_open,
+  -- it becomes the registered primary as soon as a half-open probe the primary held fails, is
+  -- released incomplete or expires, and a standby's manual canary that ends so clears it
+  -- (failure, release and the expiry below). On
   -- 09-27 the standby's own failures and probes kept the circuit open while the primary was
   -- off; a standby handoff that fails even ends in the manual terminal below. The calling
   -- primary takes one half-open probe at once only when all of these hold:
@@ -1295,10 +1313,16 @@ begin
           else 'probe_interrupted'
         end,
         circuit_opened_at = v_now,
-        -- 2026-09-27: an expired probe the registered primary held makes the primary the opener.
+        -- 2026-09-27: an expired probe the registered primary held makes the primary the opener;
+        -- a standby's expired manual canary clears it, its expired automatic probe keeps it.
         circuit_opened_by_worker = case
           when current_row.lease_worker_id = current_row.primary_worker_id
           then current_row.lease_worker_id
+          when coalesce(current_row.circuit_reason, '') not in (
+            'auto_navigation_probe',
+            'auto_transient_system_probe'
+          )
+          then null
           else current_row.circuit_opened_by_worker
         end,
         probe_started_at = null,
@@ -1503,7 +1527,8 @@ begin
         else current_row.circuit_opened_at
       end,
       -- 2026-09-27: a probe the registered primary released incomplete makes the primary the
-      -- opener; a probe that recovers the circuit closes the episode and clears it.
+      -- opener; a standby's manual canary released incomplete clears it (its automatic probe
+      -- keeps it); a probe that recovers the circuit closes the episode and clears it.
       circuit_opened_by_worker = case
         when auto_recovery_no_work then current_row.circuit_opened_by_worker
         when auto_navigation_recovered then null
@@ -1511,6 +1536,12 @@ begin
         when current_row.circuit_state = 'half_open'
           and current_row.lease_worker_id = current_row.primary_worker_id
         then current_row.lease_worker_id
+        when current_row.circuit_state = 'half_open'
+          and coalesce(current_row.circuit_reason, '') not in (
+            'auto_navigation_probe',
+            'auto_transient_system_probe'
+          )
+        then null
         else current_row.circuit_opened_by_worker
       end,
       failure_signature = case

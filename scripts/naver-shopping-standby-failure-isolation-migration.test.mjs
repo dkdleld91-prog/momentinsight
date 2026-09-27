@@ -10,10 +10,10 @@ import { PGlite } from "@electric-sql/pglite";
 // chrome.tabs.create 가 3ms 만에 거절됐고(naver_page_navigation_failed), 대기기 실패 2건이 전역
 // 회로를 열고 대기기 검증 실패 2건이 다시 열어 돌아온 주작업기가 20:34 까지 기다렸다.
 // 대기기 기기 쪽 실패 격리·벤치, 대기기에서 시작된 회로(수동 종단 포함)에서 주작업기 즉시 검증,
-// 적용 확인 SQL 과 되돌리기 SQL 을 실제 Postgres(PGlite)로 고정한다. 주작업기가 열었거나 자기
-// 검증을 이미 쓴 회로, 수동 정지·probe_security_block·보안 cooldown·살아 있는 임대, 차단 호출이
-// 안 된 채 해제·만료된 네이버 차단과 추적기 코드로 끝난 검증, 열 값이 없는(마이그레이션 전) 회로는
-// 옛 함수와 차등 비교로 동일함을 단정한다.
+// 적용 확인 SQL 과 되돌리기 SQL 을 실제 Postgres(PGlite)로 고정한다. 주작업기가 열었거나 실패
+// 사슬에 낀 회로, 주작업기가 자기 검증을 이미 쓴 회로, 수동 정지·canary·probe_security_block·
+// 보안 cooldown·살아 있는 임대, 차단 호출이 안 된 채 해제·만료된 네이버 차단과 추적기 코드로 끝난
+// 검증, 열 값이 없는(마이그레이션 전) 회로는 옛 함수와 차등 비교로 동일함을 단정한다.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrations = path.join(root, "supabase", "migrations");
@@ -40,6 +40,7 @@ const OLD = {
   rel: priorFunction("20260821180001_naver_shopping_error_taxonomy_hardening.sql", "mi_release_naver_shopping_worker_lane"),
   block: priorFunction("20260821180001_naver_shopping_error_taxonomy_hardening.sql", "mi_block_naver_shopping_worker_lane"),
   stop: priorFunction("20260811095137_naver_shopping_worker_control_plane.sql", "mi_stop_naver_shopping_worker"),
+  canary: priorFunction("20260811095137_naver_shopping_worker_control_plane.sql", "mi_request_naver_shopping_worker_probe"),
 };
 const newFunction = (name) => migration.match(new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`, "iu"))?.[0] || "";
 
@@ -137,7 +138,8 @@ async function fixture({ green = true } = {}) {
       updated_at timestamptz default now()
     );
     create table public.naver_rank_trackers (id uuid primary key, status text not null default 'active',
-      processing_until timestamptz, worker_quarantined_until timestamptz, retry_count integer default 0);
+      processing_until timestamptz, worker_quarantined_until timestamptz, retry_count integer default 0,
+      keyword text, product_id text, next_check_at timestamptz);
     create table public.naver_shopping_rank_lookup_jobs (id uuid primary key, status text, processing_until timestamptz);
     create table public.naver_shopping_worker_runs (run_id uuid primary key, worker_id text, runtime_version text, runtime_fingerprint text);
     create table public.naver_shopping_scheduler_events (event_id bigint generated always as identity primary key,
@@ -149,6 +151,7 @@ async function fixture({ green = true } = {}) {
   await db.exec(OLD.rel);
   await db.exec(OLD.block);
   await db.exec(OLD.stop);
+  await db.exec(OLD.canary);
   if (green) await db.exec(migration);
   return db;
 }
@@ -430,6 +433,51 @@ test("the standby's Naver-page codes still open the global circuit (opener recor
   assert.equal(row.standby_benched_until, null);
 });
 
+// Both hosts saw the same Naver-page failure: the chain is not standby-only, so the returning
+// primary keeps today's 30-minute quiet period whichever of the two failures opened the circuit.
+test("a failure chain the primary took part in is not standby-originated: the primary is the opener and waits as today (differential)", async (t) => {
+  for (const order of ["primaryFirst", "standbyFirst"]) {
+    const oldDb = await fixture({ green: false });
+    const newDb = await fixture();
+    t.after(() => { oldDb.close(); newDb.close(); });
+    const openers = [];
+    const run = async (db) => {
+      const out = [];
+      await seed(db, { primary_seen_at: order === "primaryFirst" ? "now()" : "now() - interval '1 hour'" });
+      if (order === "primaryFirst") {
+        const first = await primaryAttempt(db, "naver_page_timeout");
+        out.push(["first", brief(first.claim), first.failure, core(await lane(db))]);
+        await advance(db, 240); // the primary goes quiet after its failure; the standby takes the lane
+        const second = await standbyAttempt(db, "naver_page_timeout", "collecting");
+        out.push(["second", brief(second.claim), second.failure]);
+      } else {
+        const first = await standbyAttempt(db, "naver_page_timeout", "collecting");
+        out.push(["first", brief(first.claim), first.failure, core(await lane(db))]);
+        const second = await primaryAttempt(db, "naver_page_timeout");
+        out.push(["second", brief(second.claim), second.failure]);
+      }
+      const row = await lane(db);
+      if ("circuit_opened_by_worker" in row) openers.push(row.circuit_opened_by_worker);
+      out.push(["opened", core(row)]);
+      out.push(["primaryBack", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+      await advance(db, 30 * 60 + 1);
+      out.push(["primaryAfterQuiet", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+      return out;
+    };
+    const a = await run(oldDb);
+    const b = await run(newDb);
+    assert.deepEqual(b, a, order);
+    const byStep = Object.fromEntries(b.map((entry) => [entry[0], entry]));
+    assert.equal(byStep.first[2].circuitState, "closed", order);
+    assert.equal(byStep.second[2].circuitState, "open", order);
+    assert.equal(byStep.opened[1].circuit_reason, "collecting:naver_page_timeout", order);
+    assert.deepEqual(openers, [PRIMARY], `${order}: the primary's failure in the chain makes it the opener`);
+    assert.deepEqual(byStep.primaryBack[1], [false, "circuit_open", "open", null, null], order);
+    assert.deepEqual(byStep.primaryAfterQuiet[1], [true, "granted", "half_open", true, null], order);
+    assert.equal(byStep.primaryAfterQuiet[2].transient_system_probe_attempts, 1, order);
+  }
+});
+
 test("Naver blocking from the standby keeps today's global cooldown and probe_security_block (differential)", async (t) => {
   const oldDb = await fixture({ green: false });
   const newDb = await fixture();
@@ -624,6 +672,38 @@ test("no probe loop: the primary's own incomplete early probe falls back to the 
   assert.equal(again.reason, "circuit_open");
   await advance(db, 10 * 60 + 1);
   assert.equal((await claim(db, PRIMARY, "primary", PT)).circuitState, "half_open", "the normal 10-minute wait applies");
+});
+
+// The worker died (or hung) during the primary's own early navigation probe: the lease expires and
+// the next claim settles it. Whoever settles it, the primary becomes the opener, so the next early
+// probe does not come back every 35 minutes.
+test("no probe loop: the primary's own early probe that expires falls back to the 10-minute wait, whoever settles it", async (t) => {
+  for (const settler of ["primary", "standby"]) {
+    const db = await fixture();
+    t.after(() => db.close());
+    await seed(db, {
+      circuit_state: "'open'", circuit_reason: `'navigating:${NAV}'`, circuit_opened_at: "now() - interval '1 minute'",
+      failure_signature: `'navigating:${NAV}'`, failure_streak: "2", last_failure_code: `'${NAV}'`,
+      circuit_opened_by_worker: `'${STANDBY}'`,
+    });
+    assert.deepEqual(brief(await claim(db, PRIMARY, "primary", PT)), [true, "granted", "half_open", true, null], settler);
+    let row = await lane(db);
+    assert.equal(row.circuit_reason, "auto_navigation_probe", settler);
+    assert.equal(row.circuit_opened_by_worker, STANDBY, settler);
+    await progress(db, "navigating");
+    await advance(db, 2101);
+    const settle = settler === "primary" ? await claim(db, PRIMARY, "primary", PT) : await claim(db, STANDBY, "standby", ST);
+    assert.deepEqual(brief(settle), [false, "circuit_open", "open", null, false], settler);
+    row = await lane(db);
+    assert.equal(row.circuit_state, "open", settler);
+    assert.equal(row.circuit_reason, "probe_interrupted", settler);
+    assert.equal(row.lease_worker_id, null, settler);
+    assert.equal(row.circuit_opened_by_worker, PRIMARY, `${settler}: the primary's expired probe makes it the opener`);
+    assert.deepEqual(brief(await claim(db, PRIMARY, "primary", PT)), [false, "circuit_open", "open", null, null], `${settler}: no second early probe`);
+    await advance(db, 10 * 60 + 1);
+    assert.deepEqual(brief(await claim(db, PRIMARY, "primary", PT)), [true, "granted", "half_open", true, null], `${settler}: the normal 10-minute wait`);
+    assert.equal((await lane(db)).circuit_reason, "auto_navigation_probe", settler);
+  }
 });
 
 test("an expired standby probe keeps the episode's opener: the primary probes at once only in a standby-originated episode", async (t) => {
@@ -1076,6 +1156,75 @@ test("a manual stop with a ':' reason is refused as today, over a stale or a liv
     assert.notEqual(reply[1], "granted", entry[0]);
   }
   assert.equal((await lane(newDb)).circuit_opened_by_worker, STANDBY, "the stop leaves the column; the reason alone keeps the primary out");
+});
+
+// The owner's one-job canary (mi_request_naver_shopping_worker_probe, reason 'manual_canary') after
+// a manual stop, over an opener left behind by an earlier standby-originated episode. The canary
+// is not an automatic probe: when it fails, is released incomplete or expires, the column is
+// cleared (the standby held it) or names the primary (the primary held it), so the returning
+// primary gets exactly today's reply — the 30-minute quiet period after a failure, and no
+// automatic exit at all after an incomplete or expired canary.
+test("a manual canary that fails, is released incomplete or expires never gives the primary an early probe (differential)", async (t) => {
+  const canaryTracker = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  for (const holder of ["standby", "primary"]) {
+    for (const ending of ["fail", "incomplete", "expire"]) {
+      const oldDb = await fixture({ green: false });
+      const newDb = await fixture();
+      t.after(() => { oldDb.close(); newDb.close(); });
+      const openers = [];
+      const run = async (db) => {
+        const out = [];
+        await standbyTransientCircuit(db);
+        await atomicSuccess(db);
+        await db.query("insert into public.naver_rank_trackers(id, status, keyword, product_id) values ($1, 'active', '남자팬티', '12491798995')", [canaryTracker]);
+        out.push(["stop", (await db.query("select public.mi_stop_naver_shopping_worker('manual_stop') as r")).rows[0].r]);
+        out.push(["canary", (await db.query("select public.mi_request_naver_shopping_worker_probe($1) as r", [canaryTracker])).rows[0].r]);
+        if (holder === "primary") await db.exec("update public.naver_shopping_worker_coordination set primary_seen_at = now()");
+        const probe = holder === "primary" ? await claim(db, PRIMARY, "primary", PT) : await claim(db, STANDBY, "standby", ST);
+        out.push(["probe", brief(probe), core(await lane(db))]);
+        await progress(db, "collecting");
+        const [worker, token] = holder === "primary" ? [PRIMARY, PT] : [STANDBY, ST];
+        if (ending === "fail") {
+          const f = await fail(db, worker, token, "naver_page_timeout");
+          out.push(["fail", f]);
+          if (f.laneReleased !== true) await release(db, worker, token);
+        } else if (ending === "incomplete") {
+          out.push(["release", await releaseAfterWork(db, worker, token)]);
+        } else {
+          await advance(db, 2101);
+          out.push(["settle", brief(await claim(db, PRIMARY, "primary", PT))]);
+        }
+        const row = await lane(db);
+        if ("circuit_opened_by_worker" in row) openers.push(row.circuit_opened_by_worker);
+        out.push(["ended", core(row)]);
+        out.push(["primaryBack", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+        await advance(db, 30 * 60 + 1);
+        out.push(["primaryAfterQuiet", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+        await advance(db, 5 * 3600);
+        out.push(["primaryLater", brief(await claim(db, PRIMARY, "primary", PT))]);
+        return out;
+      };
+      const label = `${holder} ${ending}`;
+      const a = await run(oldDb);
+      const b = await run(newDb);
+      assert.deepEqual(b, a, label);
+      const byStep = Object.fromEntries(b.map((entry) => [entry[0], entry]));
+      assert.equal(byStep.canary[1].accepted, true, label);
+      assert.deepEqual(byStep.probe[1], [true, "granted", "half_open", false, null], label);
+      assert.equal(byStep.probe[2].circuit_reason, "manual_canary", label);
+      assert.equal(byStep.ended[1].circuit_state, "open", label);
+      assert.equal(byStep.ended[1].circuit_reason,
+        ending === "fail" ? "collecting:naver_page_timeout" : ending === "incomplete" ? "probe_incomplete" : "probe_interrupted", label);
+      assert.deepEqual(byStep.primaryBack[1], [false, "circuit_open", "open", null, null], `${label}: no early probe`);
+      if (ending === "fail") {
+        assert.deepEqual(byStep.primaryAfterQuiet[1], [true, "granted", "half_open", true, null], `${label}: the 30-minute quiet period`);
+      } else {
+        assert.deepEqual(byStep.primaryAfterQuiet[1], [false, "circuit_open", "open", null, null], `${label}: no automatic exit`);
+        assert.deepEqual(byStep.primaryLater[1], [false, "circuit_open", "open", null, null], `${label}: no automatic exit`);
+      }
+      assert.deepEqual(openers, [holder === "primary" ? PRIMARY : null], `${label}: the stale standby opener does not survive the canary`);
+    }
+  }
 });
 
 test("a Naver block on the primary's early probe keeps probe_security_block and its cooldown exactly as today", async (t) => {

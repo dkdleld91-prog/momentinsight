@@ -31,9 +31,10 @@ export const NAVER_RANK_WORKER_SILENT = "NAVER_RANK_WORKER_SILENT";
 export const NAVER_RANK_WORKER_SIGNAL_UNKNOWN = "NAVER_RANK_WORKER_SIGNAL_UNKNOWN";
 export const NAVER_RANK_WORKER_OUTDATED = "NAVER_RANK_WORKER_OUTDATED";
 // 2026-09-03(F11): SILENT(진척 표식 자체가 낡음)와 구분되는 네 번째 실패 축.
-// "레인 확보(primary_seen_at)는 매분 갱신되는데 수집 성공(last_success_at)이 90분+
+// "레인 확보(primary_seen_at)는 30분 안쪽인데 수집 성공(last_success_at)이 45분 이상
 // 없다" — 트래커 격리 코드로 전 키워드가 실패한 게이트 장애(2시간)에서 진척 판정이
 // active 로 남아 크론이 영구 202 를 내던 사각지대다. 기존 SILENT 의 의미·문구는 불변이다.
+// (2026-09-27: 판정 함수의 기준이 "90분 초과·하트비트 15분 안쪽" → "45분 이상"으로 바뀌었다.)
 export const NAVER_RANK_WORKER_NO_COMMIT = "NAVER_RANK_WORKER_NO_COMMIT";
 
 export function productRankCronBatchLimit(url) {
@@ -209,7 +210,7 @@ export function hybridWorkerNoCommitFailure(row, date = new Date()) {
   return {
     code: NAVER_RANK_WORKER_NO_COMMIT,
     status: "worker_no_commit",
-    message: `중앙 Chrome 자동 순환 작업기가 레인은 계속 확보하는데 ${WORKER_COMMIT_STALL_MINUTES}분 넘게 수집 성공을 한 건도 기록하지 못했습니다. 수집 게이트 상태를 확인해주세요.`,
+    message: `중앙 Chrome 자동 순환 작업기가 레인은 계속 확보하는데 ${WORKER_COMMIT_STALL_MINUTES}분 이상 수집 성공을 한 건도 기록하지 못했습니다. 수집 게이트 상태를 확인해주세요.`,
   };
 }
 
@@ -290,7 +291,7 @@ export async function hybridWorkerFailure(ctx, date = new Date()) {
   const signal = hybridWorkerSignalFromRow(row, date);
   // 진척이 active 여도 끝이 아니다 — 커밋 축(F11)이 남아 있다. 유예 안에서는 이 축도
   // 판정하지 않는다(슬롯 직후 첫 커밋까지 몇 분은 정상 무커밋 구간이다). 커밋이
-  // 90분 안이면 여기서 null 로 빠져 기존 202 경로 그대로다.
+  // 45분 안이면 여기서 null 로 빠져 기존 202 경로 그대로다.
   if (signal === "active") return hybridWorkerNoCommitFailure(row, date);
   if (signal === "unknown") {
     return {

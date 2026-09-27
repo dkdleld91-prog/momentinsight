@@ -36,16 +36,21 @@ export const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.32";
 // 같은 정상 흔들림은 흡수한다.
 export const WORKER_OUTDATED_SIGNING_WINDOW_MS = 1_800_000;
 
-// heartbeatAgeMinutes 를 "낡았다"고 읽기 시작하는 기준선. 2026-09-03(F11)부터는
-// 아래 workerCommitStalledFromSignals 의 "하트비트 신선" 판정에도 같은 값을 쓴다 —
-// 헬스·크론·워치독이 서로 다른 신선 기준을 쓰면 한쪽은 생존, 다른 쪽은 침묵이라고
-// 동시에 보고하는 구간이 생기기 때문에 축은 이 상수 하나로 고정한다.
+// heartbeatAgeMinutes 를 "낡았다"고 읽기 시작하는 기준선. 헬스 응답의 heartbeatAgeMinutes 를
+// 읽는 쪽(워치독 HEARTBEAT_FRESH_MINUTES, 관리자 화면 RANK_HEARTBEAT_STALE_MINUTES)이 같은
+// 값을 쓴다 — 서로 다른 신선 기준을 쓰면 한쪽은 생존, 다른 쪽은 침묵이라고 동시에 보고하는
+// 구간이 생기기 때문에 축은 이 상수 하나로 고정한다.
+// 2026-09-03(F11)~2026-09-27 에는 아래 커밋 정체 판정의 "하트비트 신선" 조건에도 썼지만,
+// 그 조건은 2026-09-27 사고로 뺐다(workerCommitStalledFromSignals 주석 참고).
 export const WORKER_HEARTBEAT_STALE_MINUTES = 15;
 
-// "레인은 잡히는데 커밋이 없다"를 정체로 읽기 시작하는 커밋 나이(분). 초과여야 정체다.
-// 90분 근거: 정상 수집 중 커밋(last_success_at)은 약 11분 간격으로 갱신되므로 8배 여유이고,
-// 슬롯 직후의 정상 무커밋 구간은 유예(HYBRID_WORKER_GRACE_MINUTES=60)가 이미 막는다.
-export const WORKER_COMMIT_STALL_MINUTES = 90;
+// "커밋이 없다"를 정체로 읽기 시작하는 커밋 나이(분). 이 값 "이상"이면 정체다(분 내림이라
+// 마지막 커밋 뒤 정확히 45분 00초부터 참, 44분 59.999초까지는 거짓). 2026-09-27 대표 승인으로
+// "90분 초과" → "45분 이상". 실측(tracker_committed = last_success_at 기준 14일 커밋 공백):
+// 45분을 넘은 11건은 전부 실제 정지(최소 69.3분)였고, 정상 가동 중 최대 공백은 38.2분이었다.
+// 90분일 때는 2026-09-27 의 70분 공백(19:24:28~20:34:48 KST)이 경보 없이 지나갔다.
+// 슬롯 직후의 정상 무커밋 구간은 크론 쪽 유예(HYBRID_WORKER_GRACE_MINUTES=60)가 따로 막는다.
+export const WORKER_COMMIT_STALL_MINUTES = 45;
 
 const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 
@@ -128,26 +133,26 @@ export function commitAgeMinutes(input = {}) {
   return Math.max(0, Math.floor((now - committedAt) / 60_000));
 }
 
-// 입력 { primarySeenAt, lastSuccessAt, now } → boolean.
-// true 는 "레인 확보(하트비트)는 15분 안쪽으로 신선한데, 마지막 수집 성공(커밋)은
-// 90분 넘게 없다"는 한 가지 상태만 뜻한다 — 2026-09-03 게이트 장애(트래커 격리 코드로
-// 전 키워드 실패, 레인은 매분 claim·커밋 0·2시간)의 지문이다. 이 상태에서는
-//   · queueStalled 가 원리적으로 못 본다(상품 실패 경로가 next_check_at 을 +5분씩
-//     재갱신해 due 적체 조건이 영원히 거짓이다),
-//   · 크론 진척 판정도 active 로 남는다(primary_seen_at 이 계속 갱신되므로).
-// 거짓으로 물러나는 자리들: 하트비트가 낡으면(수집기 자체가 죽음) 침묵 축의 일이고,
-// 커밋 기록이 아예 없으면(최초 배치 등) 단정할 근거가 없다. 판정 재료가 하나라도
-// 파싱되지 않으면 절대 참이 되지 않는다.
-// 하트비트가 신선한 한 커밋 나이는 last_success_at 단독에서 나온다는 점에 주의 —
-// heartbeatAgeMinutes 는 두 표식 중 최신을 쓰므로, 커밋이 신선하면 둘 다 신선이고
-// 이 판정은 자연히 거짓이다(모순 조합이 존재하지 않는다).
+// 입력 { lastSuccessAt, now } → boolean. primarySeenAt 을 함께 넘겨도 판정에 쓰지 않는다
+// (2026-09-27 이전 호출 모양 호환).
+// true 는 "마지막 수집 성공(코디네이션 last_success_at)이 WORKER_COMMIT_STALL_MINUTES 분
+// 이상 없다"는 한 가지 상태만 뜻한다. 어느 작업기(주작업기·대기기)가 살아 있는지와 무관하다 —
+// 대기기의 성공도 같은 last_success_at 을 갱신하므로, 주작업기를 꺼 두고 대기기가 수집하는
+// 동안에는 거짓이다.
+// 처음(2026-09-03 F11 게이트 장애: 트래커 격리 코드로 전 키워드 실패, 레인은 매분 claim·
+// 커밋 0·2시간)에는 "하트비트(primary_seen_at·last_success_at 중 최신) 15분 안쪽"을 AND 로
+// 걸었다. 하트비트가 낡은 경우는 침묵 축이 본다는 전제였지만, 헬스 API 의 ok 에는 침묵 축이
+// 없다(heartbeatAgeMinutes 는 숫자로만 싣는다). 그래서 2026-09-27 에는
+//   · 데스크탑 주작업기 전원 꺼짐 — 마지막 요청 19:32:38, 복귀 20:21:54,
+//   · 맥 대기기는 레인을 잡았지만 수집 창이 없어 매번 곧바로 실패(대기기 claim 은
+//     primary_seen_at 을 갱신하지 않는다),
+//   · 커밋 70분 공백(19:24:28.823~20:34:48.822 KST)
+// 이 겹쳐 헬스가 끝까지 ok:true 였다(queueStalled 는 6시간 축이라 못 본다).
+// 거짓으로 물러나는 자리: 커밋 기록이 없거나 파싱되지 않으면(최초 배치 등) 단정하지 않는다.
+// 활성 상품 추적기 0건 · 의도된 정지(쿨다운·manual_stop·manual_canary) · 수동복구 대기의
+// 억제는 호출자(rank-collection-health.mjs)가 건다. 크론(naver-rank-cron.mjs)은 진척이 active
+// 일 때만 이 판정을 부르므로 "진척 없음"은 계속 SILENT 가 먼저 받는다.
 export function workerCommitStalledFromSignals(input = {}) {
   const commitAge = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now: input.now });
-  if (commitAge === null || commitAge <= WORKER_COMMIT_STALL_MINUTES) return false;
-  const heartbeatAge = heartbeatAgeMinutes({
-    primarySeenAt: input.primarySeenAt,
-    lastSuccessAt: input.lastSuccessAt,
-    now: input.now,
-  });
-  return heartbeatAge < WORKER_HEARTBEAT_STALE_MINUTES;
+  return commitAge !== null && commitAge >= WORKER_COMMIT_STALL_MINUTES;
 }

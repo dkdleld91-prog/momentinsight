@@ -429,9 +429,10 @@ test("product cron keeps its 202 deferral while the hybrid worker keeps making p
 // ── F11: "레인은 잡히는데 커밋 0" 축 ─────────────────────────────
 // 2026-09-03 게이트 장애(2시간): 트래커 격리 코드로 전 키워드가 실패해도 primary_seen_at
 // 은 레인 claim 시 매분 갱신돼 진척 판정이 "active" 로 남았고, 크론은 영구 202 를 냈다.
-// 하트비트가 신선한데 last_success_at(커밋)이 90분+ 멈춘 상태는 202 로 감추지 않고
+// 진척이 active 인데 last_success_at(커밋)이 45분 이상 멈춘 상태는 202 로 감추지 않고
 // 새 코드 NAVER_RANK_WORKER_NO_COMMIT(503) 으로 보고한다. 기존 SILENT 의 의미·문구는 불변이다.
-test("F11: 레인은 매분 잡히는데 커밋이 90분+ 없으면 202 대신 503 NAVER_RANK_WORKER_NO_COMMIT", async (t) => {
+// (2026-09-27: 90분 초과 → 45분 이상, 하트비트 15분 안쪽 조건 제거 — 헬스와 같은 판정 함수.)
+test("F11: 레인은 매분 잡히는데 커밋이 45분 이상 없으면 202 대신 503 NAVER_RANK_WORKER_NO_COMMIT", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-08-01T02:00:00.000Z") }); // 11:00 KST, 유예 밖
   const stub = stubHybridCronEnvironment({
     coordinationRows: [{
@@ -452,26 +453,29 @@ test("F11: 레인은 매분 잡히는데 커밋이 90분+ 없으면 202 대신 5
     // 기존 침묵 코드와 절대 섞이지 않는다 — 침묵은 "레인 확보도 없음", 여기는 "확보만 있음".
     assert.notEqual(body.code, NAVER_RANK_WORKER_SILENT);
     assert.ok(!body.message.includes(`${HYBRID_WORKER_SILENCE_MINUTES}분 넘게 레인 확보도`), "SILENT 문구를 재사용하면 안 된다");
+    assert.ok(body.message.includes("45분 이상"), body.message);
   } finally {
     stub.restore();
   }
 });
 
-test("F11: 커밋 정체 판정은 90분 초과·하트비트 신선·기록 존재를 모두 요구한다", () => {
+test("F11: 커밋 정체 판정은 45분 이상·기록 존재만 요구한다(하트비트 무관, 2026-09-27)", () => {
   const judge = (primary, success, date) => hybridWorkerNoCommitFailure(
     { primary_seen_at: primary, last_success_at: success },
     date,
   );
   const now = new Date("2026-08-01T02:00:00.000Z"); // 11:00 KST
-  // 오늘 장애의 지문: 레인 claim 1분 전 · 커밋 2시간 전.
+  // 2026-09-03 게이트 장애의 지문: 레인 claim 1분 전 · 커밋 2시간 전.
   const incident = judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:00:00.000Z", now);
   assert.equal(incident.code, NAVER_RANK_WORKER_NO_COMMIT);
   assert.equal(incident.status, "worker_no_commit");
-  // 정확히 90분은 초과가 아니다.
-  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:30:00.000Z", now), null);
-  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:29:00.000Z", now).code, NAVER_RANK_WORKER_NO_COMMIT);
-  // 하트비트 자체가 낡으면(15분+) 이 축이 아니라 침묵 축의 일이다.
-  assert.equal(judge("2026-08-01T01:40:00.000Z", "2026-08-01T00:00:00.000Z", now), null);
+  assert.ok(incident.message.includes("45분 이상"), incident.message);
+  // 경계는 "이상"이다: 44분 59.999초는 아니고, 정확히 45분부터 정체다.
+  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T01:15:00.001Z", now), null);
+  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T01:15:00.000Z", now).code, NAVER_RANK_WORKER_NO_COMMIT);
+  // 2026-09-27: 하트비트가 15분 넘게 낡아도(진척은 30분 안) 커밋 정체다.
+  assert.equal(judge("2026-08-01T01:40:00.000Z", "2026-08-01T00:00:00.000Z", now).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(judge(null, "2026-08-01T00:00:00.000Z", now).code, NAVER_RANK_WORKER_NO_COMMIT);
   // 커밋 기록이 아예 없으면(최초 배치 등) 단정하지 않는다 — fail-safe.
   assert.equal(judge("2026-08-01T01:59:00.000Z", null, now), null);
   assert.equal(judge(null, null, now), null);
@@ -486,9 +490,17 @@ test("F11: 유예 창 안에서는 커밋 정체를 판정하지 않고, 유예 
   const afterGrace = new Date("2026-08-01T02:00:00.000Z"); // 11:00 KST
   const stalled = [{ primary_seen_at: "2026-08-01T01:59:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
   assert.equal((await hybridWorkerFailure(coordinationCtx(stalled), afterGrace)).code, NAVER_RANK_WORKER_NO_COMMIT);
-  // 커밋이 90분 안이면 202 경로 그대로다.
+  // 커밋이 45분 안이면 202 경로 그대로다.
   const committing = [{ primary_seen_at: "2026-08-01T01:59:00.000Z", last_success_at: "2026-08-01T01:50:00.000Z" }];
   assert.equal(await hybridWorkerFailure(coordinationCtx(committing), afterGrace), null);
+  const edge = [{ primary_seen_at: "2026-08-01T01:59:00.000Z", last_success_at: "2026-08-01T01:15:00.001Z" }];
+  assert.equal(await hybridWorkerFailure(coordinationCtx(edge), afterGrace), null, "44분 59.999초는 아직 202 다");
+  // 2026-09-27: 레인 확보가 20분 전(진척 active)이고 커밋이 2시간 없으면 202 가 아니라 NO_COMMIT 이다.
+  const heartbeatAging = [{ primary_seen_at: "2026-08-01T01:40:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
+  assert.equal((await hybridWorkerFailure(coordinationCtx(heartbeatAging), afterGrace)).code, NAVER_RANK_WORKER_NO_COMMIT);
+  // 진척까지 30분 넘게 끊기면(주작업기 꺼짐) 기존대로 SILENT 가 먼저 받는다.
+  const silent = [{ primary_seen_at: "2026-08-01T01:20:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
+  assert.equal((await hybridWorkerFailure(coordinationCtx(silent), afterGrace)).code, NAVER_RANK_WORKER_SILENT);
 });
 
 test("product cron accepts the explicit fallback without prewarming a provider", async () => {

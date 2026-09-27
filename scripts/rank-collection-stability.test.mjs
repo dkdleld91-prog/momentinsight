@@ -28,6 +28,7 @@ import {
 import rankCollectionHealthHandler, {
   deliberateWorkerStopFromRow,
   rankCollectionHealthBody,
+  rankHealthCacheExpiresAt,
   workerControlHealthyFromRow,
   workerRecoverySuppressedFromRow,
 } from "../src/server/handlers/rank-collection-health.mjs";
@@ -859,8 +860,8 @@ const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
 const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
 // 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 앞 3키는 이름·순서·의미 불변.
 //   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). fail-safe null.
-//   commitStalled        — "의도된 정지 아님 AND 하트비트 신선 AND 커밋 90분+ 없음
-//                          AND 활성 상품 추적기 > 0".
+//   commitStalled        — "의도된 정지 아님 AND 커밋 45분 이상 없음 AND 활성 상품
+//                          추적기 > 0"(2026-09-27: 하트비트 신선 조건 제거, 90분 초과 → 45분 이상).
 //                          queueStalled 와 독립이지만 수집 헬스 ok 는 false 로 뒤집는다.
 const HEALTH_PRODUCT_LANE_KEYS_IN_ORDER = [...HEALTH_LANE_KEYS_IN_ORDER, "lastCommitAgeMinutes", "commitStalled"];
 const HEALTH_FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
@@ -1274,7 +1275,7 @@ test("F2: 레인 stalledMinutes 도 분 단위 내림이며 6시간 경계는 �
 // 2026-09-03 게이트 장애(2시간): 트래커 격리 코드로 전 키워드가 실패해도 레인 claim 은
 // 매분 갱신되고(primary_seen_at 신선), 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해
 // queueStalled 조건 (1)("due 적체")이 영원히 거짓이었다 — 커밋 0 인데 모든 감시가 정상.
-// 그 사각지대를 "하트비트는 신선한데 커밋이 90분+ 없다"는 새 축으로 드러낸다.
+// 그 사각지대를 "커밋이 없다"는 새 축으로 드러낸다(2026-09-27 부터 45분 이상·하트비트 무관).
 test("F11: 오늘 장애 재현 — primary_seen_at 신선·last_success_at 2시간 전이면 commitStalled:true", () => {
   const body = rankCollectionHealthBody({
     now: NOW,
@@ -1296,7 +1297,7 @@ test("F11: 오늘 장애 재현 — primary_seen_at 신선·last_success_at 2시
   assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER, "place 레인은 3키 그대로다");
 });
 
-test("F11: commitStalled 는 세 조건의 AND — 하나라도 빠지면 거짓이다", () => {
+test("F11(2026-09-27): commitStalled 는 억제 없음·활성 추적기>0·커밋 45분 이상의 AND — 하트비트와 무관하다", () => {
   const base = {
     now: NOW,
     lanes: [],
@@ -1305,21 +1306,164 @@ test("F11: commitStalled 는 세 조건의 AND — 하나라도 빠지면 거짓
     trackers: { activeProduct: 86 },
   };
   assert.equal(rankCollectionHealthBody(base).lanes.product.commitStalled, true);
-  // 하트비트까지 낡았으면 수집기 자체가 죽은 것 — 침묵 축(queueStalled·크론 SILENT)의 일이다.
-  assert.equal(rankCollectionHealthBody({ ...base, primarySeenAt: at(-2 * HOUR) }).lanes.product.commitStalled, false);
+  // 2026-09-27: 주작업기가 꺼져 하트비트가 낡아도 커밋 정체다. 헬스 ok 에는 침묵 축이 없다.
+  const primaryOff = rankCollectionHealthBody({ ...base, primarySeenAt: at(-2 * HOUR) });
+  assert.equal(primaryOff.lanes.product.commitStalled, true);
+  assert.equal(primaryOff.ok, false);
+  assert.equal(rankCollectionHealthBody({ ...base, primarySeenAt: "" }).lanes.product.commitStalled, true);
   // 활성 상품 추적기가 없으면 커밋이 없는 것이 정상이다.
   assert.equal(rankCollectionHealthBody({ ...base, trackers: { activeProduct: 0 } }).lanes.product.commitStalled, false);
   assert.equal(rankCollectionHealthBody({ ...base, trackers: {} }).lanes.product.commitStalled, false);
+  // 의도된 정지(쿨다운·사람이 세운 정지)와 수동복구 대기는 복구 신호를 누른다(기존 그대로).
+  assert.equal(rankCollectionHealthBody({ ...base, deliberateStop: true }).lanes.product.commitStalled, false);
+  assert.equal(
+    rankCollectionHealthBody({ ...base, recoverySuppressed: true, controlHealthy: false }).lanes.product.commitStalled,
+    false,
+  );
   // 커밋 기록이 아예 없으면(신규 배치 등) 단정하지 않는다 — fail-safe null.
   const noStamp = rankCollectionHealthBody({ ...base, lastSuccessAt: "" });
   assert.equal(noStamp.lanes.product.lastCommitAgeMinutes, null);
   assert.equal(noStamp.lanes.product.commitStalled, false);
-  // 90분 경계는 초과여야 한다.
-  assert.equal(rankCollectionHealthBody({ ...base, lastSuccessAt: at(-90 * 60 * 1000) }).lanes.product.commitStalled, false);
+  // 45분 경계는 "이상"이다(분 내림): 44분 59.999초는 거짓, 45분 00초부터 참.
   assert.equal(
-    rankCollectionHealthBody({ ...base, lastSuccessAt: at(-(90 * 60 * 1000 + 60_000)) }).lanes.product.commitStalled,
-    true,
+    rankCollectionHealthBody({ ...base, lastSuccessAt: at(-(45 * 60 * 1000 - 1)) }).lanes.product.commitStalled,
+    false,
   );
+  assert.equal(rankCollectionHealthBody({ ...base, lastSuccessAt: at(-45 * 60 * 1000) }).lanes.product.commitStalled, true);
+});
+
+// 2026-09-27 70분 정지 실측 타임라인(KST). 데스크탑 주작업기 종료(마지막 요청 19:32:38) ·
+// 맥 대기기는 레인을 잡았지만 창이 없어 매번 naver_page_navigation_failed → 전역 회로 open(자동 사유,
+// cooldown 없음) · 주작업기 복귀 20:21:54 · 탐침 뒤 커밋 20:34:48.822. 옛 판정(90분 초과 AND 하트비트
+// 15분 안쪽)은 이 구간 내내 ok:true 였다.
+const INCIDENT_0927 = Object.freeze({
+  lastCommit: "19:24:28.823",
+  primaryLastSeen: "19:32:38",
+  primaryBack: "20:21:54",
+  recoveryCommit: "20:34:48.822",
+});
+const kst0927 = (clock) => Date.parse(`2026-09-27T${clock}+09:00`);
+const iso0927 = (clock) => new Date(kst0927(clock)).toISOString();
+const OPEN_AUTO_CIRCUIT_0927 = Object.freeze({
+  circuit_state: "open",
+  circuit_reason: "navigating:naver_page_navigation_failed",
+  cooldown_until: null,
+});
+const CLOSED_CIRCUIT_0927 = Object.freeze({ circuit_state: "closed", circuit_reason: null, cooldown_until: null });
+
+function incidentBodyAt(clock, { row = OPEN_AUTO_CIRCUIT_0927, primarySeenAt, lastSuccessAt } = {}) {
+  const now = kst0927(clock);
+  const committedAt = lastSuccessAt || iso0927(INCIDENT_0927.lastCommit);
+  return rankCollectionHealthBody({
+    now,
+    lanes: [
+      lane("product", committedAt, false),
+      lane("place", new Date(now - 30 * 60 * 1000).toISOString(), false),
+    ],
+    deliberateStop: deliberateWorkerStopFromRow(row, now),
+    recoverySuppressed: workerRecoverySuppressedFromRow(row, now),
+    controlHealthy: workerControlHealthyFromRow(row, now),
+    primarySeenAt: primarySeenAt || iso0927(INCIDENT_0927.primaryLastSeen),
+    lastSuccessAt: committedAt,
+    lastRunRuntimeVersion: EXPECTED_WORKER_RUNTIME_VERSION,
+    lastSignatureAt: new Date(now - 30_000).toISOString(),
+    trackers: { activeProduct: 49 },
+  });
+}
+
+test("2026-09-27 사고 재현 — 커밋 19:24:28.823 이면 45분 뒤 20:09:28.823 에 ok:false, 20:34:48.822 커밋에 해제", () => {
+  // 경보 직전: 커밋 뒤 44분 59.999초. 주작업기가 꺼졌어도 아직 정체가 아니다.
+  const before = incidentBodyAt("20:09:28.822");
+  assert.equal(before.lanes.product.lastCommitAgeMinutes, 44);
+  assert.equal(before.lanes.product.commitStalled, false);
+  assert.equal(before.ok, true);
+
+  // 경보 시작: 커밋 뒤 정확히 45분. 회로가 아직 닫혀 있든(대기기 실패 누적 중) 자동 사유로 열렸든 같다.
+  for (const row of [CLOSED_CIRCUIT_0927, OPEN_AUTO_CIRCUIT_0927]) {
+    const alert = incidentBodyAt("20:09:28.823", { row });
+    assert.equal(alert.heartbeatAgeMinutes, 36, "주작업기 하트비트는 이미 36분째 낡았다");
+    assert.equal(alert.lanes.product.lastCommitAgeMinutes, 45);
+    assert.equal(alert.lanes.product.commitStalled, true, row.circuit_state);
+    assert.equal(alert.queueStalled, false, "6시간 축은 이 사고를 못 본다");
+    assert.equal(alert.workerOutdated, false);
+    assert.equal(alert.ok, false, row.circuit_state);
+    assert.deepEqual(Object.keys(alert), HEALTH_KEYS_IN_ORDER, "최상위 8키 불변");
+    assert.deepEqual(Object.keys(alert.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER, "상품 레인 5키 불변");
+    assert.deepEqual(Object.keys(alert.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
+  }
+
+  // 주작업기 복귀(20:21:54) 뒤에도 커밋 전까지는 계속 경보다.
+  const primaryBack = incidentBodyAt("20:22:00", { primarySeenAt: iso0927(INCIDENT_0927.primaryBack) });
+  assert.equal(primaryBack.heartbeatAgeMinutes, 0);
+  assert.equal(primaryBack.lanes.product.lastCommitAgeMinutes, 57);
+  assert.equal(primaryBack.lanes.product.commitStalled, true);
+  assert.equal(primaryBack.ok, false);
+  const justBeforeCommit = incidentBodyAt("20:34:48.821", { primarySeenAt: iso0927("20:34:03") });
+  assert.equal(justBeforeCommit.lanes.product.commitStalled, true);
+  assert.equal(justBeforeCommit.ok, false);
+
+  // 해제: 탐침 성공 커밋 20:34:48.822 과 같은 순간에 정상으로 돌아온다.
+  const recovered = incidentBodyAt("20:34:48.822", {
+    row: CLOSED_CIRCUIT_0927,
+    primarySeenAt: iso0927("20:34:03"),
+    lastSuccessAt: iso0927(INCIDENT_0927.recoveryCommit),
+  });
+  assert.equal(recovered.lanes.product.lastCommitAgeMinutes, 0);
+  assert.equal(recovered.lanes.product.commitStalled, false);
+  assert.equal(recovered.ok, true, "커밋 한 건이면 바로 정상으로 돌아온다");
+});
+
+test("2026-09-27: 200 캐시는 커밋 정체 경계(last_success_at + 45분)를 넘겨 들고 있지 않는다", () => {
+  const committedAt = kst0927(INCIDENT_0927.lastCommit);
+  const stallAt = kst0927("20:09:28.823");
+  assert.equal(stallAt - committedAt, WORKER_COMMIT_STALL_MINUTES * 60_000);
+  // 경계가 60초 캐시 안에 있으면 경계에서 끝난다.
+  assert.equal(rankHealthCacheExpiresAt(kst0927("20:08:30"), iso0927(INCIDENT_0927.lastCommit)), stallAt);
+  // 경계가 멀면 기본 60초다.
+  assert.equal(rankHealthCacheExpiresAt(kst0927("19:30:00"), iso0927(INCIDENT_0927.lastCommit)), kst0927("19:31:00"));
+  // 경계가 이미 지났거나(정체 중) 커밋 기록을 읽지 못하면 기본 60초다.
+  assert.equal(rankHealthCacheExpiresAt(stallAt, iso0927(INCIDENT_0927.lastCommit)), stallAt + 60_000);
+  assert.equal(rankHealthCacheExpiresAt(kst0927("20:15:00"), iso0927(INCIDENT_0927.lastCommit)), kst0927("20:16:00"));
+  assert.equal(rankHealthCacheExpiresAt(kst0927("20:08:30"), ""), kst0927("20:09:30"));
+  assert.equal(rankHealthCacheExpiresAt(kst0927("20:08:30"), "not-a-date"), kst0927("20:09:30"));
+});
+
+test("2026-09-27: 대기기가 커밋 중이거나 추적기가 전부 멈췄거나 사람이 세운 정지면 커밋 정체가 아니다", () => {
+  const base = {
+    now: NOW,
+    lanes: [],
+    primarySeenAt: at(-3 * HOUR),
+    lastSuccessAt: at(-5 * 60 * 1000),
+    trackers: { activeProduct: 49 },
+  };
+  // 주작업기가 3시간째 꺼져 있어도 대기기 커밋이 last_success_at 을 갱신하면 정상이다.
+  const standbyCommitting = rankCollectionHealthBody(base);
+  assert.equal(standbyCommitting.lanes.product.commitStalled, false);
+  assert.equal(standbyCommitting.ok, true);
+  // 활성 상품 추적기 0건의 무커밋은 정상 무작업이다.
+  const allPaused = rankCollectionHealthBody({ ...base, lastSuccessAt: at(-3 * HOUR), trackers: { activeProduct: 0 } });
+  assert.equal(allPaused.lanes.product.commitStalled, false);
+  assert.equal(allPaused.ok, true);
+  // 사람이 세운 정지·1건 검증·네이버 쿨다운·수동복구 대기는 커밋 정체로 세지 않는다.
+  // ok:false 는 기존 계약(복구 억제 ≠ 정상) 그대로다.
+  const suppressedRows = [
+    { circuit_state: "open", circuit_reason: "manual_stop" },
+    { circuit_state: "open", circuit_reason: "manual_canary" },
+    { circuit_state: "open", circuit_reason: "transient_recovery_manual_required" },
+    { circuit_state: "open", circuit_reason: "security:naver_access_blocked", cooldown_until: at(HOUR) },
+  ];
+  for (const row of suppressedRows) {
+    const body = rankCollectionHealthBody({
+      ...base,
+      lastSuccessAt: at(-3 * HOUR),
+      deliberateStop: deliberateWorkerStopFromRow(row, NOW),
+      recoverySuppressed: workerRecoverySuppressedFromRow(row, NOW),
+      controlHealthy: workerControlHealthyFromRow(row, NOW),
+    });
+    assert.equal(body.lanes.product.commitStalled, false, row.circuit_reason);
+    assert.equal(body.lanes.product.lastCommitAgeMinutes, 180, "커밋 나이는 사실값으로 그대로 싣는다");
+    assert.equal(body.ok, false, row.circuit_reason);
+  }
 });
 
 test("F11: lastCommitAgeMinutes 는 코디네이션 last_success_at 기준 내림 정수·fail-safe null 이다", () => {
@@ -1339,7 +1483,7 @@ test("F11: lastCommitAgeMinutes 는 코디네이션 last_success_at 기준 내�
 });
 
 test("F11: 커밋 정체 순수 판정기 — commitAgeMinutes·workerCommitStalledFromSignals", () => {
-  assert.equal(WORKER_COMMIT_STALL_MINUTES, 90);
+  assert.equal(WORKER_COMMIT_STALL_MINUTES, 45);
   assert.equal(commitAgeMinutes({ lastSuccessAt: at(-2 * HOUR), now: NOW }), 120);
   assert.equal(commitAgeMinutes({ lastSuccessAt: at(-(119 * 60 * 1000 + 59_000)), now: NOW }), 119);
   assert.equal(commitAgeMinutes({ lastSuccessAt: at(60_000), now: NOW }), 0, "미래 시각은 0");
@@ -1348,10 +1492,13 @@ test("F11: 커밋 정체 순수 판정기 — commitAgeMinutes·workerCommitStal
   assert.equal(commitAgeMinutes({ now: NOW }), null);
 
   const judge = (primarySeenAt, lastSuccessAt) => workerCommitStalledFromSignals({ primarySeenAt, lastSuccessAt, now: NOW });
-  assert.equal(judge(at(-60_000), at(-2 * HOUR)), true, "오늘 장애의 지문");
-  assert.equal(judge(at(-20 * 60 * 1000), at(-2 * HOUR)), false, "하트비트 15분+ 는 이 축이 아니다");
-  assert.equal(judge(at(-60_000), at(-90 * 60 * 1000)), false, "정확히 90분은 초과가 아니다");
-  assert.equal(judge(at(-60_000), at(-(90 * 60 * 1000 + 60_000))), true);
+  assert.equal(judge(at(-60_000), at(-2 * HOUR)), true, "2026-09-03 게이트 장애의 지문");
+  assert.equal(judge(at(-20 * 60 * 1000), at(-2 * HOUR)), true, "하트비트가 낡아도 커밋 정체다(2026-09-27)");
+  assert.equal(judge("", at(-2 * HOUR)), true, "하트비트 기록이 없어도 커밋 나이만 본다");
+  assert.equal(workerCommitStalledFromSignals({ lastSuccessAt: at(-2 * HOUR), now: NOW }), true, "primarySeenAt 없이 불러도 된다");
+  assert.equal(judge(at(-60_000), at(-(45 * 60 * 1000 - 1))), false, "44분 59.999초는 아직 정상이다");
+  assert.equal(judge(at(-60_000), at(-45 * 60 * 1000)), true, "정확히 45분부터 정체다(이상)");
+  assert.equal(judge(at(-60_000), at(-44 * 60 * 1000)), false);
   assert.equal(judge(at(-60_000), ""), false, "커밋 기록 없음은 단정하지 않는다");
   assert.equal(workerCommitStalledFromSignals({}), false, "입력이 비면 절대 단정하지 않는다");
 });
@@ -2071,6 +2218,84 @@ test("F11: 핸들러가 오늘 장애를 실제 조회로 재현한다 — prima
     assert.equal(body.trackers.activeProduct, 86);
     assert.deepEqual(Object.keys(body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
     assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
+  } finally {
+    stub.restore();
+  }
+});
+
+test("2026-09-27: 핸들러 — 주작업기 꺼짐·자동 사유 회로 open 이면 20:09:28.823 부터 200/ok:false, 캐시가 경계를 넘기지 않는다", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: kst0927("20:08:30") });
+  let coordinationRow = {
+    ...OPEN_AUTO_CIRCUIT_0927,
+    primary_seen_at: iso0927(INCIDENT_0927.primaryLastSeen),
+    last_success_at: iso0927(INCIDENT_0927.lastCommit),
+  };
+  const stub = stubHealthRest((url, method) => {
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") return jsonRows([coordinationRow]);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_runs") return jsonRows([{ runtime_version: EXPECTED_WORKER_RUNTIME_VERSION }]);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_nonces") return jsonRows([{ created_at: new Date(Date.now() - 30_000).toISOString() }]);
+    const product = url.pathname === "/rest/v1/naver_rank_trackers";
+    const place = url.pathname === "/rest/v1/naver_place_rank_trackers";
+    if (!product && !place) return null;
+    if (method === "HEAD") {
+      if (url.searchParams.has("check_count")) return countRows(0);
+      const lastError = url.searchParams.get("last_error");
+      if (lastError === "not.is.null" || lastError === "is.null") return countRows(0);
+      return product ? countRows(49) : countRows(0);
+    }
+    const select = url.searchParams.get("select");
+    if (select === "last_checked_at") {
+      const lastCheckedAt = product ? coordinationRow.last_success_at : new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      return jsonRows([{ last_checked_at: lastCheckedAt }]);
+    }
+    return jsonRows([]);
+  });
+  try {
+    const handler = await freshRankHealthHandler("incident-2026-09-27");
+    const get = async () => {
+      const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+      return { status: response.status, body: await response.json() };
+    };
+    // 20:08:30 — 커밋 뒤 44분. 다른 관측 실패가 섞이지 않았음을 대조군으로 먼저 확인한다.
+    const early = await get();
+    assert.equal(early.status, 200);
+    assert.equal(early.body.lanes.product.lastCommitAgeMinutes, 44);
+    assert.equal(early.body.lanes.product.commitStalled, false);
+    assert.equal(early.body.ok, true);
+
+    // 경계 1ms 전까지는 캐시가 그대로 쓰인다(캐시를 끈 것이 아니다).
+    const callsAtEdge = stub.calls.length;
+    t.mock.timers.setTime(kst0927("20:09:28.822"));
+    assert.equal((await get()).body.ok, true);
+    assert.equal(stub.calls.length, callsAtEdge, "경계 전에는 캐시 응답이다");
+
+    // 커밋 뒤 정확히 45분. 60초 캐시(20:09:30 까지)가 ok:true 를 들고 있으면 안 된다.
+    t.mock.timers.setTime(kst0927("20:09:28.823"));
+    const alert = await get();
+    assert.ok(stub.calls.length > callsAtEdge, "경계에서 캐시가 끝나 다시 조회한다");
+    assert.equal(alert.status, 200);
+    assert.deepEqual(Object.keys(alert.body), HEALTH_KEYS_IN_ORDER);
+    assert.equal(alert.body.ok, false);
+    assert.equal(alert.body.queueStalled, false);
+    assert.equal(alert.body.workerOutdated, false);
+    assert.equal(alert.body.heartbeatAgeMinutes, 36);
+    assert.equal(alert.body.lanes.product.lastCommitAgeMinutes, 45);
+    assert.equal(alert.body.lanes.product.commitStalled, true);
+    assert.deepEqual(Object.keys(alert.body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
+    assert.equal(alert.body.trackers.activeProduct, 49);
+
+    // 주작업기 복귀(20:21:54) 뒤 탐침 커밋(20:34:48.822)이 들어오면 다음 조회에서 정상이다.
+    coordinationRow = {
+      ...CLOSED_CIRCUIT_0927,
+      primary_seen_at: iso0927("20:34:03"),
+      last_success_at: iso0927(INCIDENT_0927.recoveryCommit),
+    };
+    t.mock.timers.setTime(kst0927(INCIDENT_0927.recoveryCommit));
+    const recovered = await get();
+    assert.equal(recovered.status, 200);
+    assert.equal(recovered.body.lanes.product.lastCommitAgeMinutes, 0);
+    assert.equal(recovered.body.lanes.product.commitStalled, false);
+    assert.equal(recovered.body.ok, true);
   } finally {
     stub.restore();
   }

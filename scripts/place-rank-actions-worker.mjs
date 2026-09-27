@@ -14,9 +14,13 @@ export const DEFAULT_ENDPOINT = "https://insight.momentlabs.co.kr/api/naver-plac
 //   준비(체크아웃·브라우저 설치 + push 실행의 90초 대기) 약 4분,
 //   예산 직전에 받은 한 건의 꼬리(받기 120초 + 조회 보호 최대 330초 + 결과 120초) 약 10분,
 //   러너가 한 건도 저장하기 전에 손을 뗄 때(fallback) 이어받는 예전 단계(서버 → Render) 여유 40분
-// 을 빼고 남긴 값이다. 예전 단계의 이론상 최악(90초 대기 + 20묶음 × 262초 ≈ 89분)까지 보장하지는
-// 못하지만, fallback 은 저장 0건일 때만 나므로(아래) 정상 경로에서는 실행 초반에만 생긴다.
+// 을 빼고 남긴 값이다. fallback 은 시작 후 10분 안에서만 나므로(FALLBACK_WINDOW_MS) 예전 단계는 적어도
+// 100 − 4 − 10 = 86분을 갖는다. 예전 단계의 이론상 최악(90초 대기 + 20묶음 × 262초 ≈ 89분)은 20묶음이
+// 전부 요청 제한(260초) 직전까지 걸릴 때뿐이다.
 export const DEFAULT_TIME_BUDGET_MS = 45 * 60 * 1000;
+// 예전 경로로 넘길(fallback) 수 있는 시간(러너 수집 단계 시작부터). 이보다 늦게 넘기면 예전 단계가
+// 작업 제한 시간(100분) 안에 끝난다는 보장이 없고, 러너가 이미 쓴 시간만큼 알림도 늦어진다.
+export const FALLBACK_WINDOW_MS = 10 * 60 * 1000;
 // 정상 운영에서는 닿지 않는 안전 상한(2026-09-27 활성 플레이스 추적기 16곳). 닿아도 실패가 아니다.
 export const MAX_JOBS_PER_RUN = 200;
 // 결과를 기록하지 못한 추적기(결과 전송 실패·처리 권한 만료)가 리스 만료 뒤 다시 올 때 건너뛰는 횟수 상한.
@@ -25,8 +29,9 @@ export const LOOKUP_TIMEOUT_CODE = "place_rank_worker_lookup_timeout";
 const REQUEST_TIMEOUT_MS = 120000;
 // 서버가 준 조회 마감(providerDeadlineAt, 약 210초) 뒤 이만큼 더 기다려도 끝나지 않으면 멈춘 것으로 본다.
 // 최대값 330초는 서버 처리 권한(리스 360초) 안에 들어온다 — 보호 시간 초과로 lease_lost 가 생기지 않는다.
-const LOOKUP_GUARD_GRACE_MS = 60000;
-const LOOKUP_GUARD_MAX_MS = 330000;
+// (테스트가 서버 기본값 360초·조회 예산 210초와 함께 고정한다.)
+export const LOOKUP_GUARD_GRACE_MS = 60000;
+export const LOOKUP_GUARD_MAX_MS = 330000;
 // 한 건이라도 저장한 뒤 조회가 연달아 이만큼 실패하면(차단·러너 이상 의심) 이번 실행은 더 보내지 않는다.
 // 예전 20건 상한이 하던 '요청 폭주 방지'를 시간 예산 아래에서도 유지한다.
 const MAX_CONSECUTIVE_LOOKUP_ERRORS = 3;
@@ -34,6 +39,14 @@ const MAX_CONSECUTIVE_LOOKUP_ERRORS = 3;
 // 처리 권한이 그대로 남아 있다가 리스 만료 뒤 같은 추적기가 다시 받기 순서 맨 앞으로 온다.
 const RECORDED_OUTCOMES = new Set(["found", "not_found", "partial", "failed", "not_configured"]);
 const ERROR_CODE_PATTERN = /^[a-z0-9_:.-]{1,80}$/;
+// 이 멈춤 이유는 결과 전송이 lease_lost 로 돌아와 실패 건수가 0 이어도 실패(빨간 X)다.
+const FAILING_STOP_REASONS = new Set(["worker_api_lost", "lookup_timeout", "lookup_failing"]);
+// 예전 경로로 넘기지 않은 이유(공개 로그·오류 줄에 쓰는 설명).
+const HANDOFF_BLOCK_TEXT = {
+  saved: "trackers already saved",
+  lookup_succeeded: "a lookup already succeeded on this runner",
+  late: `more than ${FALLBACK_WINDOW_MS / 60000} minutes since start`,
+};
 
 function errorCode(error) {
   const message = String(error?.message || "");
@@ -93,9 +106,12 @@ async function lookupWithGuard(lookup, payload, delayMs) {
   }
 }
 
-// fallback=true 이면 워크플로가 예전 경로(서버 → Render 수집기)로 이어서 처리한다. 조건은 예전과 같다:
-// 아직 한 건도 저장하지 못했는데 워커 API 가 안 되거나(worker_api_unavailable) 조회가 연속 2회 실패
-// (runner_lookup_failing). 저장한 뒤 워커 API 가 끊기면 예전 경로도 같은 서버를 부르므로 넘기지 않고 실패로 끝낸다.
+// fallback=true 이면 워크플로가 예전 경로(서버 → Render 수집기)로 이어서 처리한다. 계기는 예전과 같다:
+// 워커 API 가 안 되거나(worker_api_unavailable) 저장 0건에서 조회가 연속 2회 실패(runner_lookup_failing).
+// 단, 늦은 fallback 은 없다 — 세 조건을 모두 채울 때만 넘긴다: 아무것도 저장하지 않았고, 이 러너에서 조회가
+// 한 번도 성공하지 않았고(쓸 수 있는 결과를 돌려준 적 없음), 시작 후 10분이 지나지 않았다. 하나라도 어기면
+// 넘기지 않고 실패(빨간 X)로 끝내며 이유(handoffBlockedBy: saved · lookup_succeeded · late)를 로그에 남긴다.
+// 예전 경로도 같은 서버를 부르고, 이미 센 추적기를 다시 세게 되며, 늦게 넘기면 작업 제한 시간에 걸린다.
 // stopReason: drained(받을 일 없음) · time_budget · job_cap · revisit · lookup_timeout · lookup_failing · worker_api_lost
 export async function runPlaceRankWorker({
   fetchImpl = fetch,
@@ -114,7 +130,27 @@ export async function runPlaceRankWorker({
   const attempted = new Map();
   let unrecordedRevisits = 0;
   let consecutiveLookupErrors = 0;
+  let lookupSuccesses = 0;
   const stopped = (stopReason) => ({ fallback: false, reason: "", drained: false, stopReason, totals });
+  // 예전 경로로 넘기면 안 되는 이유. 빈 문자열이면 넘겨도 된다.
+  const handoffBlockedBy = () => {
+    if (totals.saved > 0) return "saved";
+    if (lookupSuccesses > 0) return "lookup_succeeded";
+    if (now() - startedAt >= FALLBACK_WINDOW_MS) return "late";
+    return "";
+  };
+  const refuseHandoff = (stopReason, reason, blockedBy) => {
+    log("Naver place rank worker stopped " + JSON.stringify({
+      stopReason,
+      reason,
+      action: "no_handoff",
+      handoffBlockedBy: blockedBy,
+      saved: totals.saved,
+      lookupSucceeded: lookupSuccesses,
+      elapsedSeconds: Math.round((now() - startedAt) / 1000),
+    }));
+    return { fallback: false, reason, drained: false, stopReason, handoffBlockedBy: blockedBy, totals };
+  };
 
   for (;;) {
     if (totals.claimed >= maxJobs) return stopped("job_cap");
@@ -122,15 +158,8 @@ export async function runPlaceRankWorker({
 
     const claim = await postJson(fetchImpl, `${endpoint}?mode=worker-claim`, secret, {});
     if (claim.status !== 200 || claim.payload?.ok !== true || claim.payload?.worker !== true) {
-      if (totals.saved > 0) {
-        log("Naver place rank worker stopped " + JSON.stringify({
-          stopReason: "worker_api_lost",
-          reason: "worker_api_unavailable",
-          saved: totals.saved,
-          action: "no_handoff_after_save",
-        }));
-        return { fallback: false, reason: "worker_api_unavailable", drained: false, stopReason: "worker_api_lost", totals };
-      }
+      const blockedBy = handoffBlockedBy();
+      if (blockedBy) return refuseHandoff("worker_api_lost", "worker_api_unavailable", blockedBy);
       // 서버가 아직 새 기능 전 버전이거나 응답이 이상하면 이 러너는 손을 떼고 예전 경로에 맡긴다.
       return { fallback: true, reason: "worker_api_unavailable", drained: false, stopReason: "", totals };
     }
@@ -175,6 +204,8 @@ export async function runPlaceRankWorker({
       consecutiveLookupErrors += 1;
     } else {
       consecutiveLookupErrors = 0;
+      // 쓸 수 있는 결과(ok:false 가 아님)를 돌려줬으면 이 러너의 조회는 된다 — 이후로는 예전 경로로 넘기지 않는다.
+      if (result?.ok !== false) lookupSuccesses += 1;
     }
 
     const complete = await postJson(fetchImpl, `${endpoint}?mode=worker-complete`, secret, {
@@ -194,8 +225,13 @@ export async function runPlaceRankWorker({
     log("Naver place rank worker item " + JSON.stringify({ job: totals.claimed, outcome, lookupError: error ? error : undefined }));
 
     // 이 러너에서 연속으로 조회가 실패하고 아직 한 건도 저장하지 못했으면(예: 러너 IP 접근 제한)
-    // 나머지는 예전 경로에 맡긴다.
+    // 나머지는 예전 경로에 맡긴다. 넘길 수 없으면(조회 성공이 있었거나 10분 지남) 여기서 멈춘다 —
+    // 예전에 fallback 하던 자리라 러너가 보내는 요청 수는 예전과 같다.
     if (consecutiveLookupErrors >= 2 && totals.saved === 0) {
+      const blockedBy = handoffBlockedBy();
+      if (blockedBy) {
+        return refuseHandoff(lookupOutcome.timedOut ? "lookup_timeout" : "lookup_failing", "runner_lookup_failing", blockedBy);
+      }
       return { fallback: true, reason: "runner_lookup_failing", drained: false, stopReason: "", totals };
     }
     if (lookupOutcome.timedOut) return stopped("lookup_timeout");
@@ -203,18 +239,30 @@ export async function runPlaceRankWorker({
   }
 }
 
-// 실행 결과 판정. 실패·부분 결과·저장 뒤 워커 API 끊김만 빨간 X 이고, 많이 밀려서 멈춘 것은 알림 한 줄(성공)이다.
+// 실행 결과 판정. 실패·부분 결과·조회 멈춤(lookup_timeout·lookup_failing)·워커 API 끊김은 빨간 X 이고,
+// 많이 밀려서 멈춘 것은 알림 한 줄(성공)이다. 판정은 합계만이 아니라 멈춘 이유도 본다 — 조회가 멈추거나
+// 연달아 실패했는데 결과 전송이 lease_lost 로 돌아오면 실패 건수가 0 이라 합계만으로는 초록이 된다.
 export function placeRankWorkerVerdict(outcome) {
   const totals = outcome?.totals || {};
   if (outcome?.fallback) {
     return { fail: false, annotation: `::warning::Naver place rank worker handed off to the server collector (${outcome.reason})` };
   }
-  if (outcome?.stopReason === "worker_api_lost") {
-    return {
-      fail: true,
-      annotation: "",
-      message: `Naver place rank worker lost the worker API after saving ${Number(totals.saved || 0)} tracker(s); not handing off to the server collector (${outcome.reason || "worker_api_unavailable"})`,
-    };
+  const stopReason = String(outcome?.stopReason || "");
+  if (FAILING_STOP_REASONS.has(stopReason)) {
+    const blocked = HANDOFF_BLOCK_TEXT[outcome?.handoffBlockedBy];
+    const counts = ["claimed", "saved", "failed", "leaseLost", "lookupErrors"].map((key) => `${key}=${Number(totals[key] || 0)}`).join(" ");
+    let what = "";
+    if (stopReason === "worker_api_lost") {
+      what = `lost the worker API after saving ${Number(totals.saved || 0)} tracker(s)`;
+    } else if (stopReason === "lookup_timeout") {
+      what = "stopped (lookup_timeout): a lookup did not finish within the guard time";
+    } else {
+      what = "stopped (lookup_failing): lookups kept failing on this runner";
+    }
+    const handoff = stopReason === "worker_api_lost" || blocked
+      ? `; not handing off to the server collector (${outcome?.reason || "worker_api_unavailable"}${blocked ? `: ${blocked}` : ""})`
+      : "";
+    return { fail: true, annotation: "", message: `Naver place rank worker ${what}${handoff} [${counts}]` };
   }
   if (Number(totals.failed || 0) > 0) {
     return { fail: true, annotation: "", message: `Naver place rank worker finished with ${totals.failed} failed tracker(s)` };
@@ -251,6 +299,7 @@ async function main() {
     fallback: outcome.fallback,
     reason: outcome.reason,
     stopReason: outcome.stopReason,
+    handoffBlockedBy: outcome.handoffBlockedBy || undefined,
     elapsedSeconds: Math.round((Date.now() - startedAt) / 1000),
   }));
   if (process.env.GITHUB_OUTPUT) {

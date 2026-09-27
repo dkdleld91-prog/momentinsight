@@ -68,9 +68,10 @@ test("coordination lines show the bench columns, the opener and the transient pr
   assert.match(old.lines[2], /미적용/u);
 });
 
-test("the early-probe hint follows the claim rule: standby-originated, no own probe, no lease or cooldown, automatic reason", () => {
+test("the early-probe hint follows the claim rule: standby-originated, no own probe, no lease or cooldown, automatic reason and code", () => {
   const base = {
     circuit_state: "open", circuit_reason: "collecting:naver_page_timeout", failure_signature: "collecting:naver_page_timeout",
+    last_failure_code: "naver_page_timeout",
     circuit_opened_by_worker: "macbook-standby", primary_worker_id: "windows-desktop-primary", transient_system_probe_attempts: 0,
     lease_until: null, cooldown_until: null,
   };
@@ -79,6 +80,8 @@ test("the early-probe hint follows the claim rule: standby-originated, no own pr
     assert.equal(earlyProbeExpected({ ...base, circuit_reason: reason }, NOW), true, reason);
   }
   assert.equal(earlyProbeExpected({ ...base, circuit_reason: "navigating:native_host_collection_failed", failure_signature: "navigating:native_host_collection_failed" }, NOW), true);
+  // after a probe outcome the code is the last recorded failure code, normalised as the claim does
+  assert.equal(earlyProbeExpected({ ...base, circuit_reason: "probe_incomplete", last_failure_code: " Naver_Page_Navigation_Failed:tab " }, NOW), true);
   const refused = {
     closed: { circuit_state: "closed" },
     halfOpen: { circuit_state: "half_open" },
@@ -93,6 +96,12 @@ test("the early-probe hint follows the claim rule: standby-originated, no own pr
     securityBlock: { circuit_reason: "probe_security_block" },
     handoffReady: { circuit_reason: "transient_standby_handoff_ready" },
     noAutomaticExit: { circuit_reason: "collecting:naver_next_data_schema_drift", failure_signature: "collecting:naver_next_data_schema_drift" },
+    // a Naver block recorded on a probe whose block call never landed, a tracker code, no code at all
+    releasedAfterNaverBlock: { circuit_reason: "probe_incomplete", last_failure_code: "naver_http_429" },
+    expiredAfterNaverBlock: { circuit_reason: "probe_interrupted", last_failure_code: "naver_verification_required" },
+    handoffExpiredAfterNaverBlock: { circuit_reason: "transient_recovery_manual_required", last_failure_code: "naver_http_429" },
+    releasedOnTrackerCode: { circuit_reason: "probe_incomplete", last_failure_code: "provider_stable_rendered_order_unproven" },
+    releasedWithoutCode: { circuit_reason: "probe_incomplete", last_failure_code: null },
   };
   for (const [name, change] of Object.entries(refused)) assert.equal(earlyProbeExpected({ ...base, ...change }, NOW), false, name);
   assert.equal(earlyProbeExpected({ ...base, lease_until: at(-1), cooldown_until: at(-1) }, NOW), true, "expired lease and cooldown do not hold it");
@@ -100,7 +109,7 @@ test("the early-probe hint follows the claim rule: standby-originated, no own pr
 
 test("the hint's code list is the claim function's early-probe list", () => {
   const claim = migration.match(/create or replace function public\.mi_claim_naver_shopping_worker_lane\([\s\S]*?\n\$\$;/u)?.[0] || "";
-  const listed = claim.match(/primary_after_standby_failure := coalesce\([\s\S]*?split_part\(current_row\.circuit_reason, ':', 2\) in \(([\s\S]*?)\)/u)?.[1] || "";
+  const listed = claim.match(/primary_after_standby_failure := coalesce\([\s\S]*?and early_probe_code in \(([\s\S]*?)\)/u)?.[1] || "";
   const codes = [...listed.matchAll(/'([a-z0-9_]+)'/gu)].map((match) => match[1]);
   assert.equal(codes.length, 18);
   assert.deepEqual(EARLY_PROBE_CODES, codes);

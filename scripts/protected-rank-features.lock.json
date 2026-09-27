@@ -934,7 +934,7 @@
     {
       "id": "shopping-standby-failure-isolation",
       "file": "supabase/migrations/20260927120000_naver_shopping_standby_failure_isolation.sql",
-      "sha256": "ceb2746a26e9fea8a02eae5bb8ac93fc870ec06517f7d884b4cfcad09f55557b",
+      "sha256": "c548e1cf5138487041f301371bd5438ed3da6e55c994fe6e0996c774d01c432a",
       "rankMigration": true
     }
   ]

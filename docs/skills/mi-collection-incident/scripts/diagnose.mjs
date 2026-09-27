@@ -24,10 +24,14 @@ export const EARLY_PROBE_CODES = [
 export function earlyProbeExpected(c, nowMs = Date.now()) {
   const live = (at) => Boolean(at) && Date.parse(at) > nowMs;
   const reason = c.circuit_reason || "";
+  // 회로가 멈춘 코드: 실패 함수 서명이면 그 코드, 검증 결과 사유 3종이면 마지막 실패 코드
+  // (차단 호출이 안 된 네이버 차단·추적기 코드면 즉시 검증 없음)
+  const code = ["probe_incomplete", "probe_interrupted", "transient_recovery_manual_required"].includes(reason)
+    ? String(c.last_failure_code || "").trim().toLowerCase().split(":")[0]
+    : reason === c.failure_signature ? reason.split(":")[1] : null;
   return c.circuit_state === "open" && Boolean(c.circuit_opened_by_worker) && c.circuit_opened_by_worker !== c.primary_worker_id
     && Number(c.transient_system_probe_attempts || 0) === 0 && !live(c.lease_until) && !live(c.cooldown_until)
-    && (["probe_incomplete", "probe_interrupted", "transient_recovery_manual_required"].includes(reason)
-      || (reason === c.failure_signature && EARLY_PROBE_CODES.includes(reason.split(":")[1])));
+    && EARLY_PROBE_CODES.includes(code);
 }
 export function coordinationLines(c, nowMs = Date.now()) {
   const stale = c.primary_seen_at ? Math.round((nowMs - Date.parse(c.primary_seen_at)) / 60000) : null;

@@ -26,12 +26,14 @@
 --     standby handoff released `probe_incomplete` without a failure signature. It needs no
 --     live lease, no security cooldown and a reason only the automatic paths write
 --     (probe_incomplete, probe_interrupted, transient_recovery_manual_required, or the failure
---     function's own signature for a transient recovery or standby-device code). Its own
---     failed, incomplete or expired probe makes it the opener, so the 09-10 contract (quiet
---     periods, transient two-probe budget, single standby handoff, manual terminal) applies
---     from then on. A deliberate stop (mi_stop_naver_shopping_worker, any reason),
---     'probe_security_block' and a live security cooldown never qualify, whatever the column
---     holds;
+--     function's own signature) whose code is a transient recovery or standby-device code; for
+--     the three probe outcomes that code is the last recorded failure code, so a Naver block
+--     whose block call never landed (released or expired) or a tracker code keeps the old
+--     manual state. Its own failed, incomplete or expired probe makes it the opener, so the
+--     09-10 contract (quiet periods, transient two-probe budget, single standby handoff,
+--     manual terminal) applies from then on. A deliberate stop (mi_stop_naver_shopping_worker,
+--     any reason), 'probe_security_block' and a live security cooldown never qualify, whatever
+--     the column holds;
 --   * security-scope Naver blocking codes keep the global cooldown path unchanged, and a
 --     circuit episode the primary opened or joined keeps the existing behaviour unchanged.
 -- The three re-declared function bodies carry the marker `mi:standby-failure-isolation`
@@ -62,9 +64,9 @@
 -- price_compare codes, native_host_page_invalid / rows_invalid / pages_*, provider_* proof
 -- codes and local_worker_* codes. Naver blocking (scope 'security': naver_verification_required,
 -- naver_network_restricted, naver_http_418 / 429 / 403, naver_captcha_detected,
--- naver_auth_required, naver_access_blocked) never reaches the isolation branch: the failure
--- security branch plus the mi_block_naver_shopping_worker_lane global cooldown (30 / 60
--- minutes, half_open -> open 'probe_security_block') are unchanged.
+-- naver_auth_required, naver_access_blocked) never reaches the isolation branch or the early
+-- probe: the failure security branch plus the mi_block_naver_shopping_worker_lane global
+-- cooldown (30 / 60 minutes, half_open -> open 'probe_security_block') are unchanged.
 begin;
 
 set local lock_timeout = '5s';
@@ -639,6 +641,7 @@ declare
   processing_count integer := 0;
   v_now timestamptz := pg_catalog.clock_timestamp();
   primary_after_standby_failure boolean := false;
+  early_probe_code text;
 begin
   if normalized_worker_id !~ '^[a-z0-9][a-z0-9:_-]{2,63}$' then
     raise exception 'naver_shopping_worker_id_invalid';
@@ -707,52 +710,62 @@ begin
   --     So once the primary has failed its own probes the 09-10 contract applies exactly:
   --     quiet periods, the two-probe budget, the single standby handoff and the manual terminal;
   --   * no live lease and no security cooldown (the replies below stay exactly as before);
-  --   * the reason is one that only the automatic paths write: probe_incomplete,
-  --     probe_interrupted, transient_recovery_manual_required, or the failure function's own
-  --     signature (circuit_reason = failure_signature, '<stage>:<code>') for a transient
-  --     recovery code or a standby-device code. A deliberate stop (mi_stop_naver_shopping_worker
-  --     writes any reason, 'manual_stop' by default, and never the signature),
-  --     'probe_security_block' (mi_block_naver_shopping_worker_lane; unchanged), a Naver-page
-  --     signature without an automatic exit today and any hand-set reason never qualify, even
-  --     when an opener survives from an earlier circuit (the atomic success, the stop and a
-  --     manual close are not re-declared here and leave the column as it was).
+  --   * the reason is one that only the automatic paths write, and the code the episode
+  --     stopped on (early_probe_code) is a transient recovery code or a standby-device code:
+  --     the failure function's own signature (circuit_reason = failure_signature,
+  --     '<stage>:<code>') carries that code; after probe_incomplete, probe_interrupted or
+  --     transient_recovery_manual_required it is the last recorded failure code (the probe's
+  --     own failure, or the code that opened the circuit when the probe recorded none). So a
+  --     Naver block recorded on a probe whose mi_block_naver_shopping_worker_lane call never
+  --     landed (scripts/naver-shopping-local-worker.mjs only logs that failure and still
+  --     releases the lane; a dead worker lets the lease expire) and a tracker code keep today's
+  --     state. A deliberate stop (mi_stop_naver_shopping_worker writes any reason,
+  --     'manual_stop' by default, and never the signature), 'probe_security_block'
+  --     (mi_block_naver_shopping_worker_lane; unchanged), a Naver-page signature without an
+  --     automatic exit today and any hand-set reason never qualify, even when an opener
+  --     survives from an earlier circuit (the atomic success, the stop and a manual close are
+  --     not re-declared here and leave the column as it was).
   -- Nested so that a claim on a closed circuit never reads the new column.
   if normalized_worker_role = 'primary' and current_row.circuit_state = 'open' then
+    early_probe_code := case
+      when current_row.circuit_reason in (
+        'probe_incomplete',
+        'probe_interrupted',
+        'transient_recovery_manual_required'
+      )
+      then pg_catalog.split_part(
+        pg_catalog.lower(pg_catalog.btrim(coalesce(current_row.last_failure_code, ''))),
+        ':',
+        1
+      )
+      when current_row.circuit_reason = current_row.failure_signature
+      then pg_catalog.split_part(current_row.circuit_reason, ':', 2)
+    end;
     primary_after_standby_failure := coalesce(
       current_row.circuit_opened_by_worker is not null
       and current_row.circuit_opened_by_worker <> normalized_worker_id
       and current_row.transient_system_probe_attempts = 0
       and (current_row.lease_until is null or current_row.lease_until <= v_now)
       and (current_row.cooldown_until is null or current_row.cooldown_until <= v_now)
-      and (
-        current_row.circuit_reason in (
-          'probe_incomplete',
-          'probe_interrupted',
-          'transient_recovery_manual_required'
-        )
-        or (
-          current_row.circuit_reason = current_row.failure_signature
-          and pg_catalog.split_part(current_row.circuit_reason, ':', 2) in (
-            'native_host_response_timeout',
-            'provider_deadline_exceeded',
-            'native_host_input_closed',
-            'naver_page_timeout',
-            'naver_page_script_timeout',
-            'local_worker_commit_unavailable',
-            'naver_next_data_missing',
-            'naver_page_script_failed',
-            'naver_page_read_state_unstable',
-            'naver_page_navigation_result_missing',
-            'naver_page_navigation_failed',
-            'provider_browser_collection_failed',
-            'provider_browser_launch_failed',
-            'provider_browser_dependency_missing',
-            'native_host_input_failed',
-            'native_host_request_id_mismatch',
-            'native_host_page_delivery_failed',
-            'native_host_collection_failed'
-          )
-        )
+      and early_probe_code in (
+        'native_host_response_timeout',
+        'provider_deadline_exceeded',
+        'native_host_input_closed',
+        'naver_page_timeout',
+        'naver_page_script_timeout',
+        'local_worker_commit_unavailable',
+        'naver_next_data_missing',
+        'naver_page_script_failed',
+        'naver_page_read_state_unstable',
+        'naver_page_navigation_result_missing',
+        'naver_page_navigation_failed',
+        'provider_browser_collection_failed',
+        'provider_browser_launch_failed',
+        'provider_browser_dependency_missing',
+        'native_host_input_failed',
+        'native_host_request_id_mismatch',
+        'native_host_page_delivery_failed',
+        'native_host_collection_failed'
       ),
       false
     );

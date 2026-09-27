@@ -11,8 +11,9 @@ import { PGlite } from "@electric-sql/pglite";
 // 회로를 열고 대기기 검증 실패 2건이 다시 열어 돌아온 주작업기가 20:34 까지 기다렸다.
 // 대기기 기기 쪽 실패 격리·벤치, 대기기에서 시작된 회로(수동 종단 포함)에서 주작업기 즉시 검증,
 // 적용 확인 SQL 과 되돌리기 SQL 을 실제 Postgres(PGlite)로 고정한다. 주작업기가 열었거나 자기
-// 검증을 이미 쓴 회로, 수동 정지·probe_security_block·보안 cooldown·살아 있는 임대는 옛 함수와
-// 차등 비교로 동일함을 단정한다.
+// 검증을 이미 쓴 회로, 수동 정지·probe_security_block·보안 cooldown·살아 있는 임대, 차단 호출이
+// 안 된 채 해제·만료된 네이버 차단과 추적기 코드로 끝난 검증, 열 값이 없는(마이그레이션 전) 회로는
+// 옛 함수와 차등 비교로 동일함을 단정한다.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrations = path.join(root, "supabase", "migrations");
@@ -253,7 +254,7 @@ test("the device-code list is the documented one and never contains a Naver bloc
   const quoted = (list) => [...list.matchAll(/'([a-z0-9_]+)'/gu)].map((match) => match[1]);
   const transient = quoted(claimBody.match(/transient_recovery_open := current_row\.circuit_state = 'open'\s+and transient_failure_code in \(([\s\S]*?)\)/u)?.[1] || "");
   assert.equal(transient.length, 10);
-  const early = quoted(claimBody.match(/split_part\(current_row\.circuit_reason, ':', 2\) in \(([\s\S]*?)\)/u)?.[1] || "");
+  const early = quoted(claimBody.match(/and early_probe_code in \(([\s\S]*?)\)/u)?.[1] || "");
   assert.deepEqual([...early].sort(), [...new Set([...transient, ...STANDBY_DEVICE_CODES])].sort());
   for (const code of SECURITY_CODES) assert.equal(early.includes(code), false, code);
   assert.doesNotMatch(claimBody, /strpos\(/u, "no reason qualifies merely by containing ':'");
@@ -1116,4 +1117,130 @@ test("a probe that recovers the circuit in release closes the episode and clears
   assert.equal(row.circuit_state, "closed");
   assert.equal(row.circuit_reason, null);
   assert.equal(row.circuit_opened_by_worker, null);
+});
+
+// A navigation circuit ten minutes old, as the standby's two failures left it on the old functions
+// (or a standby-originated one on the new functions when `opener` names the standby).
+const navigationCircuit = (opener = {}) => ({
+  circuit_state: "'open'", circuit_reason: `'navigating:${NAV}'`, circuit_opened_at: "now() - interval '11 minutes'",
+  failure_signature: `'navigating:${NAV}'`, failure_streak: "2", last_failure_code: `'${NAV}'`, ...opener,
+});
+const standbyOpener = { circuit_opened_by_worker: `'${STANDBY}'` };
+// A standby probe on a navigation circuit, or the standby's transient handoff 31 minutes into its own transient circuit.
+async function standbyProbe(db, kind, opener) {
+  if (kind === "navigation") await seed(db, navigationCircuit(opener));
+  else {
+    await standbyTransientCircuit(db);
+    await advance(db, 31 * 60);
+  }
+  const probe = await claim(db, STANDBY, "standby", ST);
+  assert.equal(probe.granted, true, kind);
+  assert.equal(probe.circuitState, "half_open", kind);
+  await progress(db, "collecting");
+  return [brief(probe), probe.standbyHandoff ?? null];
+}
+async function releaseAfterWork(db, worker, token) {
+  await db.query("insert into public.naver_shopping_scheduler_events(event_type, run_id, lease_started_at) values ('tracker_claimed', $1, now())", [RUN]);
+  return release(db, worker, token);
+}
+
+// scripts/naver-shopping-local-worker.mjs: when the block-lane call fails the worker only logs
+// local_worker_global_cooldown_failed and still releases the lane in finally; a worker that dies
+// leaves the lease to expire. The Naver block is then only in last_failure_code.
+test("a Naver block recorded on a standby probe whose block call never landed keeps today's state, released or expired (differential)", async (t) => {
+  for (const kind of ["navigation", "handoff"]) {
+    for (const ending of ["release", "expire"]) {
+      const oldDb = await fixture({ green: false });
+      const newDb = await fixture();
+      t.after(() => { oldDb.close(); newDb.close(); });
+      const run = async (db, opener) => {
+        const out = [];
+        out.push(["probe", ...(await standbyProbe(db, kind, opener))]);
+        out.push(["security", await fail(db, STANDBY, ST, "naver_http_429", "security")]);
+        if (ending === "release") out.push(["release", await releaseAfterWork(db, STANDBY, ST)]);
+        else {
+          await advance(db, 2101);
+          out.push(["settle", brief(await claim(db, PRIMARY, "primary", PT))]);
+        }
+        out.push(["primaryBack", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+        await advance(db, 3600);
+        out.push(["primaryLater", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+        return out;
+      };
+      const a = await run(oldDb, {});
+      const b = await run(newDb, kind === "navigation" ? standbyOpener : {});
+      const label = `${kind} ${ending}`;
+      assert.deepEqual(b, a, label);
+      const byStep = Object.fromEntries(b.map((entry) => [entry[0], entry]));
+      assert.equal(byStep.primaryBack[1][0], false, label);
+      assert.equal(byStep.primaryBack[2].circuit_state, "open", label);
+      assert.equal(byStep.primaryBack[2].last_failure_code, "naver_http_429", label);
+      assert.equal(byStep.primaryBack[2].last_block_code, null, `${label}: no cooldown was applied`);
+      assert.equal(byStep.primaryLater[1][0], false, `${label}: still no automatic exit an hour later`);
+      const expected = kind === "handoff" && ending === "expire" ? "transient_recovery_manual_required"
+        : ending === "expire" ? "probe_interrupted" : "probe_incomplete";
+      assert.equal(byStep.primaryLater[2].circuit_reason, expected, label);
+      assert.equal((await lane(newDb)).circuit_opened_by_worker, STANDBY, `${label}: a standby-originated episode, still no early probe`);
+    }
+  }
+});
+
+test("a standby probe that ends probe_incomplete on a tracker code keeps today's state (differential)", async (t) => {
+  const tracker = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  for (const kind of ["navigation", "handoff"]) {
+    const oldDb = await fixture({ green: false });
+    const newDb = await fixture();
+    t.after(() => { oldDb.close(); newDb.close(); });
+    const run = async (db, opener) => {
+      const out = [];
+      await db.query("insert into public.naver_rank_trackers(id) values ($1) on conflict do nothing", [tracker]);
+      out.push(["probe", ...(await standbyProbe(db, kind, opener))]);
+      out.push(["tracker", await fail(db, STANDBY, ST, "provider_stable_rendered_order_unproven", "tracker", tracker)]);
+      out.push(["release", await releaseAfterWork(db, STANDBY, ST)]);
+      out.push(["primaryBack", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+      await advance(db, 3600);
+      out.push(["primaryLater", brief(await claim(db, PRIMARY, "primary", PT))]);
+      return out;
+    };
+    const a = await run(oldDb, {});
+    const b = await run(newDb, kind === "navigation" ? standbyOpener : {});
+    assert.deepEqual(b, a, kind);
+    const byStep = Object.fromEntries(b.map((entry) => [entry[0], entry]));
+    assert.deepEqual(byStep.primaryBack[1], [false, "circuit_open", "open", null, null], kind);
+    assert.equal(byStep.primaryBack[2].circuit_reason, "probe_incomplete", kind);
+    assert.equal(byStep.primaryBack[2].last_failure_code, "provider_stable_rendered_order_unproven", kind);
+    assert.deepEqual(byStep.primaryLater[1], [false, "circuit_open", "open", null, null], kind);
+    assert.equal((await lane(newDb)).circuit_opened_by_worker, STANDBY, kind);
+  }
+});
+
+test("a circuit opened before this migration (no opener): a failed or incomplete standby navigation probe keeps the 10-minute wait and the column NULL (differential)", async (t) => {
+  for (const ending of ["failure", "release"]) {
+    const oldDb = await fixture({ green: false });
+    const newDb = await fixture();
+    t.after(() => { oldDb.close(); newDb.close(); });
+    const openers = [];
+    const run = async (db) => {
+      const out = [];
+      out.push(["probe", ...(await standbyProbe(db, "navigation", {}))]);
+      await progress(db, "navigating");
+      if (ending === "failure") out.push(["failure", await fail(db, STANDBY, ST, NAV)]);
+      else out.push(["release", await releaseAfterWork(db, STANDBY, ST)]);
+      const row = await lane(db);
+      if ("circuit_opened_by_worker" in row) openers.push(row.circuit_opened_by_worker);
+      out.push(["primaryBack", brief(await claim(db, PRIMARY, "primary", PT)), core(await lane(db))]);
+      await advance(db, 10 * 60 + 1);
+      out.push(["afterQuiet", brief(await claim(db, PRIMARY, "primary", PT))]);
+      return out;
+    };
+    const a = await run(oldDb);
+    const b = await run(newDb);
+    assert.deepEqual(b, a, ending);
+    const byStep = Object.fromEntries(b.map((entry) => [entry[0], entry]));
+    assert.deepEqual(byStep.primaryBack[1], [false, "circuit_open", "open", null, null], ending);
+    assert.equal(byStep.primaryBack[2].circuit_reason, ending === "failure" ? `navigating:${NAV}` : "probe_incomplete", ending);
+    assert.deepEqual(byStep.afterQuiet[1], [true, "granted", "half_open", true, null], ending);
+    assert.deepEqual(openers, [null], `${ending}: the standby's probe leaves the column NULL`);
+    assert.equal((await lane(newDb)).circuit_opened_by_worker, null, ending);
+  }
 });

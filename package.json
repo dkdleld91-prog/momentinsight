@@ -64,5 +64,10 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
     "html2canvas": "1.4.1"
+  },
+  "overrides": {
+    "pptxgenjs": {
+      "image-size": "2.0.4"
+    }
   }
 }

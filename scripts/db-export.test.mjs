@@ -505,7 +505,16 @@ test("제한시간·재시도: 끊긴 연결은 5초 뒤 다시 시도하고, �
         }
         if (call.table === "brands" && hangs > 0) {
           hangs -= 1;
-          return new Promise((_, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+          // 멈춘 소켓 흉내. AbortSignal.timeout 타이머는 이벤트 루프를 붙잡지 않는다(unref). 실제 fetch 는 열린 소켓이
+          // 루프를 붙잡아 제한시간까지 기다리지만, 여기에는 소켓이 없어 루프가 비어 버린다. Node 22 CI 러너는 그 순간
+          // 이 테스트를 끊고 뒤 테스트까지 취소했다(2026-09 Quality Gate, 취소 6건). 끊길 때까지 ref 타이머로 루프를 붙잡는다.
+          return new Promise((_, reject) => {
+            const keepAlive = setInterval(() => {}, 1000);
+            init.signal.addEventListener("abort", () => {
+              clearInterval(keepAlive);
+              reject(init.signal.reason);
+            }, { once: true });
+          });
         }
         return null;
       },

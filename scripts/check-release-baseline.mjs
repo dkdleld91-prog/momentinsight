@@ -1737,6 +1737,29 @@ const checks = {
     && shoppingNativeHost.includes('sha256File(new URL("../src/server/naver-shopping/mobile-top-fallback.mjs"')
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs"')
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs"'),
+  // 1.1.34 (2026-09-29): Chrome ran a registered 1.1.32 service worker under 1.1.33 files
+  // for ten days. The running worker reports its compiled build, the host refuses a
+  // missing/different build before "ready", and the worker reloads itself (rate-limited)
+  // when the loaded or on-disk manifest differs. The build literal must move with
+  // manifest.json (bump.py), or every machine reloads every 30 minutes and never collects.
+  shoppingStaleServiceWorkerIsRefusedAndReloaded: shoppingChromeWorker.includes(`\nconst SERVICE_WORKER_BUILD = "${shoppingChromeManifest.version}";\n`)
+    && shoppingChromeWorker.includes("serviceWorkerBuild: SERVICE_WORKER_BUILD")
+    && shoppingChromeWorker.includes("SERVICE_WORKER_RELOAD_INTERVAL_MS = 30 * 60_000")
+    && shoppingChromeWorker.includes('fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" })')
+    && shoppingChromeWorker.includes("chrome.runtime.reload()")
+    && /async function requestWorkerRun\(trigger\) \{\s*await initializationPromise;[\s\S]{0,240}reloadIfServiceWorkerStale\([\s\S]{0,200}automaticVerificationCooldownActive\(trigger\)/u.test(shoppingChromeWorker)
+    && /async function initializeWorker\(\) \{\s*try \{\s*if \(await reloadIfServiceWorkerStale\("initialize"\)\)/u.test(shoppingChromeWorker)
+    && /running = true;[\s\S]{0,400}reloadIfServiceWorkerStale\([\s\S]{0,1200}nativeRunPortOpen = true;\s*port = chrome\.runtime\.connectNative\(NATIVE_HOST\)/u.test(shoppingChromeWorker)
+    && /if \(nativeRunPortOpen\) \{[\s\S]{0,400}return true;\s*\}\s*chrome\.runtime\.reload\(\);/u.test(shoppingChromeWorker)
+    && shoppingChromeWorker.includes('message?.type === "service_worker_stale"')
+    && shoppingNativeHost.indexOf("staleServiceWorkerBuild(start, identity.version)") > shoppingNativeHost.indexOf("const identity = await runtimeIdentity(start)")
+    && shoppingNativeHost.indexOf("staleServiceWorkerBuild(start, identity.version)") < shoppingNativeHost.indexOf('writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL })')
+    && shoppingNativeHost.includes("native_host_service_worker_stale build=${staleBuild} expected=${identity.version}")
+    && shoppingNativeHost.includes('await writeTerminalMessage({ type: "service_worker_stale" })')
+    && shoppingWindowsExtensionUpdater.includes("service_worker_registration_info")
+    && shoppingWindowsExtensionUpdater.includes("$serviceWorkerRegistrationTimeoutMs = 180000")
+    && shoppingWindowsExtensionUpdater.includes("MI_EXTENSION_SW_STALE")
+    && shoppingWindowsExtensionUpdater.indexOf("if ($registeredServiceWorkerVersion -ne $ExpectedVersion) {") < shoppingWindowsExtensionUpdater.indexOf("Write-Host $successMessage"),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes("BASELINE_CADENCE_MINUTES = 10")
     && shoppingChromeWorker.includes("CANDIDATE_CADENCE_MINUTES = 6")
     && shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes }]')

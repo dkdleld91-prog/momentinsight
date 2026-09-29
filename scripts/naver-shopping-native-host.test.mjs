@@ -5481,6 +5481,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
         trigger: "rank-remote",
         runtimeVersion: "1.1.9",
         serviceWorkerSha256: "0".repeat(64),
+        serviceWorkerBuild: "1.1.9",
       }),
       nativeMessageFrame({ action: "ready_ack" }),
     ]),
@@ -5499,6 +5500,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
     trigger: "rank-remote",
     runtimeVersion: "1.1.9",
     serviceWorkerSha256: "0".repeat(64),
+    serviceWorkerBuild: "1.1.9",
   }), "utf8");
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length, 0);

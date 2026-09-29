@@ -24,6 +24,8 @@ const FAILURE_TEXT = {
   naver_captcha_detected: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
   naver_http_418: "네이버 접근 제한을 감지해 자동 재시도를 기다립니다",
   naver_http_429: "네이버 요청 제한을 감지해 자동 재시도를 기다립니다",
+  extension_service_worker_stale: "확장 프로그램을 새로 불러오는 중입니다. 계속되면 chrome://extensions 에서 이 확장 프로그램을 새로고침해 주세요",
+  native_host_service_worker_stale: "chrome://extensions 에서 이 확장 프로그램을 새로고침해 주세요",
 };
 
 function failureText(code) {
@@ -40,6 +42,7 @@ function statusText(status) {
   }
   if (status?.status === "verification") return `확인 필요 · ${failureText(status.detail)}`;
   if (status?.status === "failed") return `확인 필요 · ${failureText(status.detail)}`;
+  if (status?.status === "stale") return `확인 필요 · ${failureText("extension_service_worker_stale")}`;
   return "자동 갱신 준비 완료";
 }
 

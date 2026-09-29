@@ -620,7 +620,7 @@
     {
       "id": "shopping-windows-extension-updater",
       "file": "scripts/windows/update-naver-shopping-chrome-extension.ps1",
-      "sha256": "8b2c43682c49985eb5bb3006e221f53b7e3ea7c4188785811b89b8360c73dced"
+      "sha256": "9c55178716e2f8ba9ed303fd389c638c2f2162a92d2118f0fe9481e95f02a8f9"
     },
     {
       "id": "shopping-chrome-extension-manifest",
@@ -630,7 +630,7 @@
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "516f8dccb4fae7421b764a7f481fb2a2b74385cd921947bac8c58c6afa6eb487"
+      "sha256": "cb13bce34d83dba0ed9bcb2625a345c0795526fb75f32d6f2be86455f66f8e19"
     },
     {
       "id": "shopping-local-worker-session-boundary",

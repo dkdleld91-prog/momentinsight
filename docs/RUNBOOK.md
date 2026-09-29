@@ -320,7 +320,10 @@
     onStartup(초기화), 모든 알람과 팝업 실행의 작업 요청 전(`requestWorkerRun`), 대기 이어받기를 포함한 모든 런의 네이티브
     연결 전(`runWorker`), 호스트가 `service_worker_stale` 로 답했을 때(포트를 닫은 뒤). 같은 목표 버전(디스크 manifest,
     못 읽으면 불러온 manifest)당 30분에 1회(`chrome.storage.local` 의 `momentInsightServiceWorkerReload`), 네이티브 연결이
-    열려 있으면 하지 않고, 시도를 먼저 기록하지 못하면 하지 않는다. 그 밖에는 상태 `stale`(팝업 "확장 프로그램을 새로
+    열려 있으면 하지 않고, 시도를 먼저 기록하지 못하면 하지 않는다. 연결 여부는 `chrome.runtime.reload()` 바로 앞에서 한 번
+    더 본다 — 자기 가드를 디스크가 바뀌기 전에 통과한 런이 기록·상태 저장을 기다리는 사이 연결을 열 수 있어서다(끊으면 F1 처럼
+    임대가 남는다). 그때는 새로고침하지 않고 시도 기록을 되돌려, 그 런이 끝난 뒤의 가드가 30분을 기다리지 않게 한다. 런은
+    `connectNative` 직전에 연결 표시를 켜고 포트를 닫은 뒤에 끈다. 그 밖에는 상태 `stale`(팝업 "확장 프로그램을 새로
     불러오는 중…"). 디스크를 보므로 Chrome 이 재시작되지 않은 경우(`chrome_quit_incomplete`)에도 발동한다. 둘 다 못 읽으면
     낡음으로 보지 않는다(호스트가 막는다).
   - 네이티브 호스트: `serviceWorkerBuild` 가 없거나(1.1.33 이하) 이 런의 `runtimeVersion` 과 다르면 `ready` 전, 곧 claim 전에
@@ -332,7 +335,10 @@
     (PS 5.1 `ConvertFrom-Json` 은 이 파일을 못 읽는다. 09-29 윈도우에서 실측한 확인 한 줄과 같은 방식). 등록 버전 =
     `-ExpectedVersion` 일 때만 `MI_EXTENSION_UPDATE_OK … extension_sw_registered_version=<버전>`. 다르면
     `MI_EXTENSION_SW_STALE … extension_sw_registered_version=<버전|none>` + ↻ 안내를 내고 종료 코드 1(파일 교체·작업 복구는
-    이미 끝난 상태다). ↻ 뒤에는 읽기 전용 확인 한 줄로 다시 본다.
+    이미 끝난 상태다). ↻ 뒤에는 읽기 전용 확인 한 줄로 다시 본다. 업데이트 전에 예약 작업이 꺼져 있었으면 업데이터는 작업을
+    꺼진 채 두므로 Chrome 이 다시 켜지지 않는다 → 기다리지 않고(등록 버전이 이미 같으면 OK) `MI_EXTENSION_SW_UNVERIFIED
+    reason=scheduled_task_disabled … extension_sw_registered_version=<버전|none>` + "작업을 켜고 시작한 뒤 확인 한 줄" 안내,
+    종료 코드 1. 이때는 ↻ 가 아니라 Chrome 을 다시 켜는 것이 먼저다.
   - 맥 워치독: 수집 프로필 `Secure Preferences` 의 등록 버전을 디스크 manifest 와 비교해 로그만 남긴다 —
     `extension_sw_stale registered=<등록> expected=<디스크> profile=Profile_5`(매 틱), `extension_sw_current version=<버전>
     profile=Profile_5`(값이 바뀔 때 1회), 판독 실패 `extension_sw_check_failed reason=…`(node 판독 5초 상한, 넘으면

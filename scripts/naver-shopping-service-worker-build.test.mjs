@@ -161,9 +161,12 @@ function guardRuntime({
   stored = {},
   failRead = false,
   failWrite = false,
+  failGiveBack = false,
   now = Date.parse("2026-09-29T07:00:00.000Z"),
 } = {}) {
-  const state = { reloads: 0, statuses: [], stored, now, fetches: [] };
+  // onRecord runs once, right after the reload attempt is written (the await
+  // window before chrome.runtime.reload()).
+  const state = { reloads: 0, statuses: [], stored, now, fetches: [], onRecord: null };
   class MockDate extends Date {
     static now() { return state.now; }
     constructor(...args) { super(...(args.length ? args : [state.now])); }
@@ -202,9 +205,21 @@ function guardRuntime({
             return Object.fromEntries(requested.map((key) => [key, state.stored[key]]));
           },
           async set(values) {
-            if (failWrite && Object.hasOwn(values, "momentInsightServiceWorkerReload")) throw new Error("storage_write_failed");
+            const reloadRecord = Object.hasOwn(values, "momentInsightServiceWorkerReload");
+            if (failWrite && reloadRecord) throw new Error("storage_write_failed");
+            // After the attempt is written, a second write of the key is the give-back.
+            if (failGiveBack && reloadRecord && !state.onRecord) throw new Error("storage_give_back_failed");
             if (Object.hasOwn(values, "momentInsightRankStatus")) state.statuses.push(values.momentInsightRankStatus);
             Object.assign(state.stored, values);
+            if (reloadRecord && state.onRecord) {
+              const onRecord = state.onRecord;
+              state.onRecord = null;
+              onRecord();
+            }
+          },
+          async remove(keys) {
+            if (failGiveBack) throw new Error("storage_give_back_failed");
+            for (const key of [keys].flat()) delete state.stored[key];
           },
         },
       },
@@ -303,6 +318,38 @@ test("service worker guard never reloads under an open native run, unrecorded or
   assert.equal(concurrent.state.reloads, 1);
 });
 
+// A run that passed its own guard before the disk moved can open its native port
+// while this attempt awaits storage; the reload would cut it and strand the lease.
+test("service worker guard re-checks the native run right before reloading and gives the attempt back", async () => {
+  const stale = { loadedVersion: "1.1.9", diskVersion: "1.1.9", build: "1.1.8" };
+  const fresh = guardRuntime(stale);
+  fresh.state.onRecord = () => fresh.helpers.setNativeRunPortOpen(true);
+  assert.equal(await fresh.helpers.reloadIfServiceWorkerStale("initialize"), true);
+  assert.equal(fresh.state.reloads, 0);
+  assert.equal(Object.hasOwn(fresh.state.stored, "momentInsightServiceWorkerReload"), false);
+  // The port closed: the guard after that run reloads at once, not 30 minutes later.
+  fresh.helpers.setNativeRunPortOpen(false);
+  assert.equal(await fresh.helpers.reloadIfServiceWorkerStale("native-host"), true);
+  assert.equal(fresh.state.reloads, 1);
+  assert.equal(fresh.state.stored.momentInsightServiceWorkerReload.reason, "native-host");
+
+  const earlier = { targetVersion: "1.1.9", build: "1.1.8", attemptedAt: fresh.state.now - (31 * 60_000), reason: "initialize" };
+  const withRecord = guardRuntime({ ...stale, stored: { momentInsightServiceWorkerReload: { ...earlier } } });
+  withRecord.state.onRecord = () => withRecord.helpers.setNativeRunPortOpen(true);
+  assert.equal(await withRecord.helpers.reloadIfServiceWorkerStale("run:rank-remote"), true);
+  assert.equal(withRecord.state.reloads, 0);
+  assert.deepEqual({ ...withRecord.state.stored.momentInsightServiceWorkerReload }, earlier);
+
+  // Giving back can fail: still no reload; the record only delays the next one.
+  for (const stored of [{}, { momentInsightServiceWorkerReload: { ...earlier } }]) {
+    const stuck = guardRuntime({ ...stale, stored, failGiveBack: true });
+    stuck.state.onRecord = () => stuck.helpers.setNativeRunPortOpen(true);
+    // eslint-disable-next-line no-await-in-loop
+    assert.equal(await stuck.helpers.reloadIfServiceWorkerStale("initialize"), true);
+    assert.equal(stuck.state.reloads, 0);
+  }
+});
+
 test("a stale worker never starts a run and initialization touches nothing but alarms", async () => {
   const request = slice(serviceWorker, "async function requestWorkerRun(trigger)", "function searchUrl");
   const gate = request.indexOf("reloadIfServiceWorkerStale(");
@@ -375,8 +422,10 @@ test("the lifecycle, every alarm and the queued follow-up all pass through the g
 
 // runWorker in a VM: the guard, the native port and the host's stale reply.
 function runWorkerRuntime({ stale = false, hostReply = null } = {}) {
-  const state = { connects: 0, disconnects: 0, statuses: [], guardReasons: [], order: [], pending: null };
+  // portOpenAt: nativeRunPortOpen as the guard, connectNative and the run message saw it.
+  const state = { connects: 0, disconnects: 0, statuses: [], guardReasons: [], order: [], pending: null, portOpenAt: [] };
   const worker = slice(serviceWorker, 'async function runWorker(trigger = "manual", options = {})', "chrome.runtime.onInstalled.addListener");
+  // The stubs below read runtime.portOpen() only while runWorker runs.
   const runtime = runInNewContext(`
     let running = false;
     let nativeRunPortOpen = false;
@@ -392,6 +441,7 @@ function runWorkerRuntime({ stale = false, hostReply = null } = {}) {
     async reloadIfServiceWorkerStale(reason) {
       state.guardReasons.push(reason);
       state.order.push(`guard:${reason}`);
+      state.portOpenAt.push(`guard:${reason}:${runtime.portOpen()}`);
       return reason === "native-host" ? true : stale;
     },
     async verificationState() { return { blockedUntil: 0 }; },
@@ -413,12 +463,14 @@ function runWorkerRuntime({ stale = false, hostReply = null } = {}) {
         lastError: null,
         connectNative() {
           state.connects += 1;
+          state.portOpenAt.push(`connect:${runtime.portOpen()}`);
           const listeners = { message: [], disconnect: [] };
           return {
             onMessage: { addListener(listener) { listeners.message.push(listener); } },
             onDisconnect: { addListener(listener) { listeners.disconnect.push(listener); } },
             postMessage(message) {
               if (message?.action !== "run") return;
+              state.portOpenAt.push(`run:${runtime.portOpen()}`);
               // The host writes its terminal frame (if any) and exits; Chrome then disconnects.
               if (hostReply) queueMicrotask(() => listeners.message.forEach((listener) => listener(hostReply)));
               setTimeout(() => listeners.disconnect.forEach((listener) => listener()), 0);
@@ -457,12 +509,27 @@ test("a host stale reply is not a collection failure and reloads only after the 
   assert.deepEqual(refused.state.statuses.map(({ status }) => status), ["running", "stale"]);
   assert.equal(refused.state.statuses.some(({ status }) => status === "failed"), false);
   assert.ok(refused.state.order.indexOf("disconnect") < refused.state.order.indexOf("guard:native-host"));
+  // The post-run guard must see the port closed, or it declines to reload.
+  assert.equal(refused.state.portOpenAt.at(-1), "guard:native-host:false");
   assert.equal(refused.runtime.portOpen(), false);
 
   const failed = runWorkerRuntime({ hostReply: { type: "error", code: "native_host_runtime_identity_invalid" } });
   await failed.runtime.runWorker("rank-remote");
   assert.equal(failed.state.statuses.at(-1).status, "failed");
   assert.equal(failed.state.guardReasons.includes("native-host"), false);
+});
+
+// F1 (2026-09-29 drill): a self-reload that cuts an open collection strands the
+// lane lease. The guard refuses to reload while this flag is set, so runWorker must
+// set it before connectNative and clear it only after closing the port.
+test("runWorker marks the native run open from just before connectNative until the port is closed", async () => {
+  const run = runWorkerRuntime({ hostReply: { type: "error", code: "native_host_runtime_identity_invalid" } });
+  assert.equal(run.runtime.portOpen(), false);
+  await run.runtime.runWorker("rank-remote");
+  assert.deepEqual(run.state.portOpenAt, ["guard:run:rank-remote:false", "connect:true", "run:true"]);
+  assert.equal(run.state.disconnects, 1);
+  assert.equal(run.runtime.portOpen(), false);
+  assert.equal(run.runtime.isRunning(), false);
 });
 
 test("the running identity carries the compiled build", async () => {
@@ -548,4 +615,24 @@ test("Windows updater reports success only after Chrome registered the expected 
   assert.match(staleBranch, /chrome:\/\/extensions/u);
   assert.match(staleBranch, /\n\s*exit 1\n\}/u);
   assert.doesNotMatch(staleBranch, /MI_EXTENSION_UPDATE_OK|\$successMessage/u);
+});
+
+test("Windows updater does not wait for a restart that a disabled task never makes", () => {
+  // The updater stops Chrome in every case but restarts it only through a task that
+  // was enabled before the update; a disabled task stays disabled.
+  const restore = slice(updater, "if ($scheduledTaskWasEnabled) {\n                Enable-ScheduledTask", "catch {\n            $restoreFailure = $_");
+  assert.match(restore, /Start-ScheduledTask -TaskPath \$taskPath -TaskName \$taskName/u);
+  assert.match(restore, /else \{\s*Disable-ScheduledTask/u);
+  const loop = slice(updater, "while ($true) {\n    $registeredServiceWorkerVersion", "$serviceWorkerRegistrationWatch.Stop()");
+  const matched = loop.indexOf("if ($registeredServiceWorkerVersion -eq $ExpectedVersion) { break }");
+  const disabled = loop.indexOf("if (-not $scheduledTaskWasEnabled) { break }");
+  assert.ok(matched >= 0 && disabled > matched, "a matching registration still counts; otherwise stop waiting at once");
+  assert.ok(disabled < loop.indexOf("Start-Sleep"));
+  const staleBranch = slice(updater, "if ($registeredServiceWorkerVersion -ne $ExpectedVersion) {", "Write-Host $successMessage");
+  const unverified = slice(staleBranch, "if (-not $scheduledTaskWasEnabled) {", "Write-Host \"MI_EXTENSION_SW_STALE");
+  assert.match(unverified, /Write-Host "MI_EXTENSION_SW_UNVERIFIED reason=scheduled_task_disabled [^"\n]*extension_sw_registered_version=\$reportedServiceWorkerVersion"/u);
+  assert.match(unverified, /Enable and start that task/u);
+  assert.doesNotMatch(unverified, /press the reload button[^"]*then run the read-only check line/u);
+  assert.match(unverified, /\n\s*exit 1\n\s*\}/u);
+  assert.doesNotMatch(unverified, /MI_EXTENSION_UPDATE_OK|\$successMessage/u);
 });

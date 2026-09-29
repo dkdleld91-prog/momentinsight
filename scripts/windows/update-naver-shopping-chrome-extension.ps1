@@ -473,8 +473,9 @@ finally {
 }
 if ($null -ne $updateFailure) { throw $updateFailure }
 if ($null -ne $restoreFailure) { throw "scheduled_task_restore_failed" }
-# 1.1.34: the files are in place and Chrome was restarted by the restored task.
-# Report success only when Chrome has registered the new service worker.
+# 1.1.34: the files are in place and Chrome was restarted by the restored task
+# (only a task enabled before the update is restarted). Report success only when
+# Chrome has registered the new service worker.
 $registeredServiceWorkerVersion = ""
 $serviceWorkerRegistrationWatch = [Diagnostics.Stopwatch]::StartNew()
 while ($true) {
@@ -482,6 +483,9 @@ while ($true) {
         -ProfilePath $profilePath `
         -ExpectedExtensionId $extensionId
     if ($registeredServiceWorkerVersion -eq $ExpectedVersion) { break }
+    # A task disabled before the update stays disabled, so nothing restarts
+    # Chrome: waiting cannot change the registration.
+    if (-not $scheduledTaskWasEnabled) { break }
     if ($serviceWorkerRegistrationWatch.ElapsedMilliseconds -ge $serviceWorkerRegistrationTimeoutMs) { break }
     Start-Sleep -Milliseconds $serviceWorkerRegistrationPollMs
 }
@@ -489,6 +493,11 @@ $serviceWorkerRegistrationWatch.Stop()
 $reportedServiceWorkerVersion = if ($registeredServiceWorkerVersion) { $registeredServiceWorkerVersion } else { "none" }
 $successMessage += " extension_sw_registered_version=$reportedServiceWorkerVersion"
 if ($registeredServiceWorkerVersion -ne $ExpectedVersion) {
+    if (-not $scheduledTaskWasEnabled) {
+        Write-Host "MI_EXTENSION_SW_UNVERIFIED reason=scheduled_task_disabled release=$ReleaseCommit version=$ExpectedVersion profile=$($profileDirectory.Replace(' ', '_')) extension_sw_registered_version=$reportedServiceWorkerVersion"
+        Write-Host "Files are updated, but the scheduled task '$taskPath$taskName' was disabled before the update and stays disabled, so Chrome was not restarted and the service worker could not be checked. Enable and start that task (or open Chrome with profile '$profileDirectory'), wait a minute, then run the read-only check line. If it shows STALE, press the reload button of 'Moment Insight N Shopping Rank' in chrome://extensions of that profile."
+        exit 1
+    }
     Write-Host "MI_EXTENSION_SW_STALE release=$ReleaseCommit version=$ExpectedVersion profile=$($profileDirectory.Replace(' ', '_')) extension_sw_registered_version=$reportedServiceWorkerVersion"
     Write-Host "Files are updated but Chrome still runs the old extension service worker. In the Chrome window of profile '$profileDirectory' open chrome://extensions, keep Developer mode on, press the reload button of 'Moment Insight N Shopping Rank', then run the read-only check line."
     exit 1

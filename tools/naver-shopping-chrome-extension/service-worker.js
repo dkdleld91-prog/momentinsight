@@ -1048,6 +1048,18 @@ async function attemptServiceWorkerReload(reason) {
     return true;
   }
   await saveStatus("stale", `${detail}:reloading`).catch(() => {});
+  // A run that passed its own guard before the disk moved can open its native
+  // port during the awaits above. Never cut it; give the attempt back so the
+  // guard after that run may reload without waiting out the interval.
+  if (nativeRunPortOpen) {
+    try {
+      if (previous) await chrome.storage.local.set({ [SERVICE_WORKER_RELOAD_KEY]: previous });
+      else await chrome.storage.local.remove(SERVICE_WORKER_RELOAD_KEY);
+    } catch {
+      // The record stays; the next reload of this target waits out the interval.
+    }
+    return true;
+  }
   chrome.runtime.reload();
   return true;
 }

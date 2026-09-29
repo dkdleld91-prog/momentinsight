@@ -4,9 +4,9 @@ const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 
 export const N30_TARGET_WORKER_ID = "windows-desktop-primary";
-export const N30_TARGET_RUNTIME_VERSION = "1.1.33";
+export const N30_TARGET_RUNTIME_VERSION = "1.1.34";
 export const N30_TARGET_RUNTIME_FINGERPRINT =
-  "b0b47390774e8b935542773eec960779533f4b6e71b73a6dd603c58391a3d36e";
+  "5db29dbd1ca354fb50756e073e57c52b2a95f978bea89ba57d7c8c1e41856daf";
 
 function requireUtcTimestamp(value, fieldName) {
   if (typeof value !== "string" || !ISO_UTC_PATTERN.test(value) || !Number.isFinite(Date.parse(value))) {

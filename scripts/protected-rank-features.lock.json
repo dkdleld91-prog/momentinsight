@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "1456bc46493b8231e54168bdc863fcd37304c5e672ee20e71396e5d22551361a"
+      "sha256": "94fd41042e3c6e007d8097239b781cf82fbe4c40a79f2fe9459a5ea8702d9bfc"
     },
     {
       "id": "product-organic-rank-server",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "0d0dd4dde9cbad438d6d348aabd2cf91b7dd0e9da80761bb6e1de15cd9f0f18c"
+      "sha256": "a9b536f5a2a9e372458961aae75a5fb5623d06b3a7db28702b444ca3be80eead"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "af3ccc4f62239bee5afb5b5f65a960ccb20e49ee967e8010c275717e49221c2e"
+      "sha256": "dae6d8a2c67b330865dc7c1097854f39e0c2c970b91d9cb8fb2d270370ad3ad5"
     },
     {
       "id": "shopping-cloud-worker",
@@ -625,12 +625,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "7bd667adb48a0e1d42c354f4fd7278eb9d544268b7b29e7aeb1dac0cdab49a06"
+      "sha256": "b109976469cee3ed5bdd36385ddc1869998a8d4e22df78a04931e37ad37af5ab"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "cb13bce34d83dba0ed9bcb2625a345c0795526fb75f32d6f2be86455f66f8e19"
+      "sha256": "7b7347a4de5060bd654e9035ff6711d2974cbe8247817279468e040e8a6d11c7"
     },
     {
       "id": "shopping-local-worker-session-boundary",
@@ -947,6 +947,12 @@
       "id": "shopping-dead-lease-takeover",
       "file": "supabase/migrations/20260929120000_naver_shopping_dead_lease_takeover.sql",
       "sha256": "ee0d81b415d51f0422afb9496ebc32ebead3272433e4c53ec1434e198a7762b0",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-runtime-1-1-34-dead-lease-and-live-service-worker",
+      "file": "supabase/migrations/20260929205303_naver_shopping_runtime_1_1_34_dead_lease_and_live_service_worker.sql",
+      "sha256": "58a0856868d86e4fd36093d29d6aa34212f21cd104c9cce6688a7d51ca99ef85",
       "rankMigration": true
     }
   ]

@@ -31,7 +31,7 @@ const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
 // getManifest() and the fetched service-worker.js bytes both describe files, so
 // only a literal compiled into the running script can tell. bump.py moves it
 // with manifest.json; the release baseline pins the pair.
-const SERVICE_WORKER_BUILD = "1.1.33";
+const SERVICE_WORKER_BUILD = "1.1.34";
 const SERVICE_WORKER_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const SERVICE_WORKER_RELOAD_KEY = "momentInsightServiceWorkerReload";
 const SERVICE_WORKER_RELOAD_INTERVAL_MS = 30 * 60_000;

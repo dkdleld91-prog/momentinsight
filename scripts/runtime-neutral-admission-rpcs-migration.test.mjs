@@ -1,7 +1,7 @@
 // 20260903213000 런타임 중립화 마이그레이션 회귀.
 //
 // 고정하려는 것: 계정 우선 등록·후보 케이던스 승격·운영 조회 RPC 가 현재
-// EXPECTED 런타임(1.1.33)에서도, 아직 존재하지 않는 미래 런타임에서도 똑같이
+// EXPECTED 런타임(1.1.34)에서도, 아직 존재하지 않는 미래 런타임에서도 똑같이
 // 동작한다.  2026-09-03 사고(런타임 리터럴 하드코딩으로 수집 2시간 정지)의
 // 재발을 막는 실동작 근거다.
 
@@ -21,8 +21,8 @@ const migrationName = "20260903213000_naver_shopping_runtime_neutral_admission_r
 const migration = fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8");
 
 const EXPECTED_RUNTIME = Object.freeze({
-  version: "1.1.33",
-  fingerprint: "b0b47390774e8b935542773eec960779533f4b6e71b73a6dd603c58391a3d36e",
+  version: "1.1.34",
+  fingerprint: "5db29dbd1ca354fb50756e073e57c52b2a95f978bea89ba57d7c8c1e41856daf",
 });
 // 아직 만들어지지 않은 런타임.  리터럴이 되살아나면 이 픽스처가 먼저 깨진다.
 const FUTURE_RUNTIME = Object.freeze({
@@ -455,7 +455,7 @@ test("형식이 어긋난 런타임 아이덴티티는 여전히 거부한다", 
 
   for (const [version, fingerprint] of [
     ["1.1", EXPECTED_RUNTIME.fingerprint],
-    ["v1.1.33", EXPECTED_RUNTIME.fingerprint],
+    ["v1.1.34", EXPECTED_RUNTIME.fingerprint],
     ["", EXPECTED_RUNTIME.fingerprint],
     [EXPECTED_RUNTIME.version, "z".repeat(64)],
     [EXPECTED_RUNTIME.version, "a".repeat(63)],

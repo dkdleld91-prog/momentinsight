@@ -26,7 +26,7 @@ bump.py 는 2026-09-19 가상 인상(1.1.32→1.1.33)으로 검증됨: 잠금·b
 - 근거 없는 인상 금지: 실패 집계(`node ~/.config/momentinsight/tools/tally126.mjs <sinceISO>`)와 `naver_shopping_failure_evidence` 행으로 원인을 먼저 확정한다. 증상별 연속 인상은 대표가 질책한 방식이다.
 
 ## 2. 인상 체크리스트 (N = 새 버전)
-1. 버전 리터럴 5곳: `tools/naver-shopping-chrome-extension/manifest.json`, `scripts/naver-shopping-local-worker.mjs`(EXPECTED_RUNTIME_VERSION), `src/server/handlers/naver-shopping-local-worker.mjs`, `src/server/naver-shopping/worker-runtime-expectation.mjs`(2곳), `src/server/handlers/naver-rank-trackers.mjs`.
+1. 버전 리터럴 6곳: `tools/naver-shopping-chrome-extension/manifest.json`, `tools/naver-shopping-chrome-extension/service-worker.js`(SERVICE_WORKER_BUILD — manifest 와 다르면 확장이 30분마다 스스로 새로고침만 하고 수집하지 않는다, 1.1.34~), `scripts/naver-shopping-local-worker.mjs`(EXPECTED_RUNTIME_VERSION), `src/server/handlers/naver-shopping-local-worker.mjs`, `src/server/naver-shopping/worker-runtime-expectation.mjs`(2곳), `src/server/handlers/naver-rank-trackers.mjs`.
 2. 지문: `node scripts/naver-shopping-runtime-fingerprint.mjs <N>` (13개 구성 파일 → 파일을 다 고친 뒤 계산).
 3. 감사 스크립트 2개(`naver-shopping-candidate-performance-audit.mjs`, `naver-shopping-account-rank-health-audit.mjs`)의 버전·지문.
 4. 마이그레이션: 직전 런타임 마이그레이션을 "begin;" 기준으로 나눠 지문·버전·`runtime_1_1_N_`만 치환(정체 핀만 이동), 머리말은 이번 변경의 실측 근거로 새로 쓴다.
@@ -40,8 +40,10 @@ bump.py 는 2026-09-19 가상 인상(1.1.32→1.1.33)으로 검증됨: 잠금·b
 - 알려진 가짜 실패: "Public build check blocked"는 오래된 dist 때문(파이프라인이 다시 빌드) / 워치독 F2·F13은 **이 맥이 실제 수집 중이면** `collection_active`로 어긋남 → 수집이 없을 때 재실행.
 - 라이브되는 순간 구버전 워커는 서버 게이트에서 막힌다 → **대표가 15분 안에 작업 가능할 때만 푸시**. 순서: 푸시 → `/health` release 폴링(약 12~14분) → 대표 ① Supabase SQL(바탕화면 `1.1.N-migration.txt`, TextEdit로 열어 둠, `requires_idle_control_plane`이면 2~3분 뒤 재시도) ② 윈도우 관리자 PowerShell 한 줄 → 맥은 워치독 자동.
 - 윈도우 한 줄: `Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/<40자sha>/scripts/windows/update-naver-shopping-chrome-extension.ps1 -OutFile "$env:TEMP\mi-update.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\mi-update.ps1" -ReleaseCommit <7자sha> -ExpectedVersion 1.1.N` → `MI_EXTENSION_UPDATE_OK`.
+- 서비스 워커(1.1.34~): Chrome 재시작이 확장 서비스 워커를 다시 등록한다는 보장은 없다(2026-09-29 맥 실측). 윈도우 업데이터는 작업 복구 뒤 최대 180초 등록 버전을 확인해 같을 때만 `MI_EXTENSION_UPDATE_OK … extension_sw_registered_version=1.1.N` 을 내고, 다르면 `MI_EXTENSION_SW_STALE`(종료 코드 1) → 대표가 그 프로필 `chrome://extensions` 에서 ↻ 후 확인 한 줄. 1.1.34+ 확장은 불러온·디스크 manifest 와 자기 빌드가 다르면 스스로 새로고침한다(같은 목표 버전당 30분 1회). 자세히: `docs/RUNBOOK.md` "3차 훈련 후속 1.1.34" `### C`.
 
 ## 4. 배포 후 검증과 기록
 - 첫 런의 `runtime_version`·지문, 코디네이션 핀, 회로 closed, 첫 커밋, 맥 워치독 로그(`sync_source_fast_forwarded` → `drift_sync_ok` → `chrome_restarted`).
+- 등록 서비스 워커 버전: 윈도우 `extension_sw_registered_version=1.1.N`, 맥 워치독 `extension_sw_current version=1.1.N`(워치독 재설치 뒤부터 나온다) 또는 `Secure Preferences` 확인 한 줄. 서버 신원(버전·지문)은 디스크 파일을 설명할 뿐 실행 중인 서비스 워커를 증명하지 않는다.
 - 24시간 뒤 집계로 효과 판정(실패율·유형별). 효과가 없으면 없다고 보고한다.
 - 메모리에 결과·지문·집계 기준 시각을 남긴다. 예약 점검은 별도 세션에 보고가 남아 대표가 못 본다 → 대표에게 "점검"이라고 보내 달라고 요청한다.

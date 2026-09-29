@@ -40,6 +40,8 @@ $nativeManifestPath = Join-Path $runtimePath "$hostName.json"
 $nativeRegistryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 $processShutdownTimeoutMs = 10000
 $processShutdownPollMs = 250
+$serviceWorkerRegistrationTimeoutMs = 180000
+$serviceWorkerRegistrationPollMs = 5000
 $sourceBase = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-chrome-extension"
 $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/MomentInsightNaverShoppingHost.cs"
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
@@ -103,6 +105,39 @@ function Resolve-LoadedExtensionPath {
         }
     }
     throw "loaded_extension_path_missing"
+}
+
+# 1.1.34 (2026-09-29): a Chrome restart does not always re-register an unpacked
+# extension's service worker (Mac Profile 5 ran the 1.1.32 worker under 1.1.33
+# files for ten days; the chrome://extensions reload fixed it). Windows
+# PowerShell 5.1 ConvertFrom-Json cannot read Secure Preferences, so this is the
+# string match of the read-only check line measured on Windows on 2026-09-29:
+# the text after "<id>":{ up to the next extension id object, then
+# service_worker_registration_info.version. "" when absent or unreadable.
+function Get-RegisteredServiceWorkerVersion {
+    param(
+        [string]$ProfilePath,
+        [string]$ExpectedExtensionId
+    )
+    $extensionKey = '"' + $ExpectedExtensionId + '":{'
+    foreach ($preferenceName in @("Secure Preferences", "Preferences")) {
+        $preferencePath = Join-Path $ProfilePath $preferenceName
+        if (-not (Test-Path -LiteralPath $preferencePath -PathType Leaf)) { continue }
+        try {
+            $preferenceText = [IO.File]::ReadAllText($preferencePath)
+        }
+        catch {
+            continue
+        }
+        $extensionIndex = $preferenceText.IndexOf($extensionKey, [StringComparison]::Ordinal)
+        if ($extensionIndex -lt 0) { continue }
+        $extensionText = $preferenceText.Substring($extensionIndex + $extensionKey.Length)
+        $nextExtension = [regex]::Match($extensionText, '"[a-p]{32}":\{')
+        if ($nextExtension.Success) { $extensionText = $extensionText.Substring(0, $nextExtension.Index) }
+        $registration = [regex]::Match($extensionText, '"service_worker_registration_info":\{"version":"([0-9]+\.[0-9]+\.[0-9]+)"')
+        if ($registration.Success) { return $registration.Groups[1].Value }
+    }
+    return ""
 }
 
 function Get-UpdateTargetProcesses {
@@ -438,4 +473,24 @@ finally {
 }
 if ($null -ne $updateFailure) { throw $updateFailure }
 if ($null -ne $restoreFailure) { throw "scheduled_task_restore_failed" }
+# 1.1.34: the files are in place and Chrome was restarted by the restored task.
+# Report success only when Chrome has registered the new service worker.
+$registeredServiceWorkerVersion = ""
+$serviceWorkerRegistrationWatch = [Diagnostics.Stopwatch]::StartNew()
+while ($true) {
+    $registeredServiceWorkerVersion = Get-RegisteredServiceWorkerVersion `
+        -ProfilePath $profilePath `
+        -ExpectedExtensionId $extensionId
+    if ($registeredServiceWorkerVersion -eq $ExpectedVersion) { break }
+    if ($serviceWorkerRegistrationWatch.ElapsedMilliseconds -ge $serviceWorkerRegistrationTimeoutMs) { break }
+    Start-Sleep -Milliseconds $serviceWorkerRegistrationPollMs
+}
+$serviceWorkerRegistrationWatch.Stop()
+$reportedServiceWorkerVersion = if ($registeredServiceWorkerVersion) { $registeredServiceWorkerVersion } else { "none" }
+$successMessage += " extension_sw_registered_version=$reportedServiceWorkerVersion"
+if ($registeredServiceWorkerVersion -ne $ExpectedVersion) {
+    Write-Host "MI_EXTENSION_SW_STALE release=$ReleaseCommit version=$ExpectedVersion profile=$($profileDirectory.Replace(' ', '_')) extension_sw_registered_version=$reportedServiceWorkerVersion"
+    Write-Host "Files are updated but Chrome still runs the old extension service worker. In the Chrome window of profile '$profileDirectory' open chrome://extensions, keep Developer mode on, press the reload button of 'Moment Insight N Shopping Rank', then run the read-only check line."
+    exit 1
+}
 Write-Host $successMessage

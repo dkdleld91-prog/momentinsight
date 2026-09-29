@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 순위 수집 워치독. 한 틱(10분)에 두 가지 일을 한다.
+# 순위 수집 워치독. 한 틱(10분)에 두 가지 일을 하고, 확장 등록 버전을 보고한다.
 # (i) 수집 장애 감시·Chrome 재기동 — 공개 집계 엔드포인트
 #     (/api/rank-collection-health)의 queue/worker 신호를 판정하고, 장애가 30분 이상
 #     연속으로 관측될 때만 Chrome 을 정상 종료 후 다시 연다. 한 연속 장애에는 1회만
@@ -7,6 +7,9 @@
 # (ii) 저장소 대비 설치 사본 드리프트 점검·자가 복구 — Application Support 사본이
 #     저장소보다 뒤처졌는지 14개 파일 해시로 대조하고, 게이트를 모두 통과할 때만
 #     설치기를 다시 돌려 사본을 스스로 되살린다.
+# (iii) 보고만(1.1.34) — 수집 프로필 Secure Preferences 에 등록된 확장 서비스 워커
+#     버전을 디스크 manifest 버전과 대조해 extension_sw_current/extension_sw_stale 을
+#     남긴다(아래 extension_sw_registration_pass 주석).
 # 판정을 내린 모든 분기는 반드시 한 줄을 로그로 남긴다. 다만 동기화 원본이 설정된
 # 적 없는 기계에서는 (ii) 가 아무 줄도 남기지 않고 조용히 건너뛴다.
 set -euo pipefail
@@ -33,6 +36,11 @@ SYNC_FETCH_TIMEOUT_SECONDS=60
 RUNTIME_COPY_PATH="${SUPPORT_DIRECTORY}/NaverShoppingBridge"
 SYNC_CONF_PATH="${SUPPORT_DIRECTORY}/mi-rank-runtime-sync.conf"
 SYNC_DISABLED="${MI_RANK_WATCHDOG_SYNC_DISABLED:-0}"
+# 확장 id 는 manifest.json 의 key 로 정해진다(윈도우 업데이터의 $extensionId 와 같다.
+# 테스트가 key 에서 다시 계산해 대조한다).
+EXTENSION_ID="pflggephankeefaeoaafkmggampnaefm"
+EXTENSION_SW_LAST_PATH="${SUPPORT_DIRECTORY}/mi-extension-sw.last"
+EXTENSION_SW_PROBE_TIMEOUT_SECONDS=5
 
 # 아래 14개는 scripts/install-naver-shopping-chrome-bridge.mjs 의 RUNTIME_FILES 를
 # 그대로 옮긴 것이다. 구성원과 순서가 그 목록과 같아야 한다(테스트가 설치기 소스를
@@ -229,8 +237,10 @@ chrome_restart_cycle() {   # $1 = 시작 로그 문구
   # /usr/bin/open --args would only re-activate the surviving instance and drop the
   # profile argument (2026-09-11 10:58 실측: chrome_restarted 를 찍었지만 10:29 에
   # 뜬 프로세스가 그대로였고 Profile 5 는 열리지 않음). Hand the profile launch
-  # to the running instance instead and say so; the extension files are reloaded
-  # only by a real restart, so this is logged as incomplete, not as restarted.
+  # to the running instance instead and say so. Only a real restart re-reads the
+  # unpacked manifest, so this is logged as incomplete, not as restarted. Even a
+  # real restart may keep the registered service worker (2026-09-29 F3, see
+  # extension_sw_registration_pass).
   if /usr/bin/pgrep -x 'Google Chrome' >/dev/null 2>&1; then
     log_event "chrome_quit_incomplete"
     "${CHROME_EXECUTABLE}" \
@@ -589,7 +599,11 @@ runtime_drift_pass() {
   # local_worker_runtime_identity_invalid 로 던진다. Chrome 은 브라우저 시작 시에만
   # unpacked 확장을 다시 읽으므로, 사본만 갱신하면 살아 있는 Chrome 이 옛 manifest
   # 버전을 새 사본에 계속 먹인다 — 방향만 반대인 불일치다. 즉 사본 동기화만으로는
-  # 부족하고 Chrome 재시작까지 해야 한 쌍이 맞물린다.
+  # 부족하고 Chrome 재시작까지 해야 manifest 버전이 맞물린다.
+  # 단 재시작이 등록된 서비스 워커까지 바꾼다는 보장은 없다(2026-09-29 F3: 09-28 재시작
+  # 뒤에도 1.1.32 서비스 워커가 1.1.33 파일 아래에서 돌았다). 1.1.34 부터는 확장이
+  # 자기 빌드와 manifest(디스크 포함)가 다르면 스스로 다시 불러오고, 아래
+  # extension_sw_registration_pass 가 등록 버전을 보고한다.
   if ! /usr/bin/pgrep -x 'Google Chrome' >/dev/null 2>&1; then
     # 다음 Chrome 시작이 새 확장을 스스로 읽는다. 지금 할 일은 없다.
     log_event "sync_chrome_restart_skipped reason=not_running"
@@ -619,6 +633,126 @@ set -e
 if (( DRIFT_VERDICT == 10 )); then
   exit 0
 fi
+
+# ── 확장 서비스 워커 등록 버전(1.1.34, 보고만) ──────────────────
+# 2026-09-29 실측(F3): Profile 5 는 디스크의 확장 파일·manifest 가 1.1.33 이고 09-28 에
+# Chrome 을 재시작했는데도 09-19 에 등록된 1.1.32 서비스 워커를 09-29 15:41 까지
+# 실행했다(Secure Preferences extensions.settings.<id>.service_worker_registration_info
+# .version = "1.1.32"). chrome://extensions 새로고침이 1.1.33 을 다시 등록했다.
+# 서버 지문은 디스크 파일 해시라 이것을 못 본다. 이 패스는 보고만 한다: Chrome 재기동은
+# 이것을 고친다는 보장이 없고, 실행 중인 Chrome 의 확장을 밖에서 안전하게 다시 불러올
+# 수단이 없으며, 1.1.34+ 확장은 스스로 다시 불러온다.
+# 로그: 낡음·판독 실패는 매 틱, 정상은 값이 바뀔 때 한 번(extension_sw_current).
+# 수집 프로필 설정이 없는 기계(테스트 HOME 포함)에서는 한 줄도 남기지 않는다.
+# 절대경로·확장 id 는 로그에 남기지 않는다(버전과 프로필 이름만). node 판독은 설치기와
+# 같은 백그라운드 + kill -0 방식으로 EXTENSION_SW_PROBE_TIMEOUT_SECONDS 까지만 기다린다.
+# 설치된 워치독 사본(launchd 가 실행하는 Application Support 사본)은 드리프트 동기화
+# 대상이 아니므로 이 패스는 워치독을 다시 설치한 뒤부터 돈다.
+extension_sw_registration_pass() {
+  setopt localoptions
+  set +e
+  [[ -f "${SCHEDULER_CONFIG_PATH}" ]] || return 0
+  local -a CONFIG_LINES
+  CONFIG_LINES=("${(@f)$(/bin/cat "${SCHEDULER_CONFIG_PATH}" 2>/dev/null)}")
+  local CHROME_APPLICATION_PATH="${CONFIG_LINES[1]:-}"
+  local PROFILE_DIRECTORY="${CONFIG_LINES[2]:-}"
+  if [[ ! "${PROFILE_DIRECTORY}" =~ '^(Default|Profile [1-9][0-9]{0,2})$' ]]; then
+    log_event "extension_sw_check_failed reason=chrome_profile_directory_invalid"
+    return 0
+  fi
+  if [[ "${CHROME_APPLICATION_PATH:t}" != "Google Chrome.app" ]]; then
+    log_event "extension_sw_check_failed reason=chrome_channel_unsupported"
+    return 0
+  fi
+  local PROFILE_LABEL="${PROFILE_DIRECTORY// /_}"
+  local PROFILE_PATH="${USER_HOME}/Library/Application Support/Google/Chrome/${PROFILE_DIRECTORY}"
+  local SAVED_PATH="${PATH}" NODE_BIN=""
+  export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+  NODE_BIN="$(command -v node)" || NODE_BIN=""
+  export PATH="${SAVED_PATH}"
+  if [[ -z "${NODE_BIN}" ]]; then
+    log_event "extension_sw_check_failed reason=node_missing"
+    return 0
+  fi
+  local PROBE_OUTPUT="" PROBE_PID=0 PROBE_WAITED=0 RESULT=""
+  PROBE_OUTPUT="$(/usr/bin/mktemp "${SUPPORT_DIRECTORY}/mi-extension-sw.probe.XXXXXX" 2>/dev/null)" || PROBE_OUTPUT=""
+  if [[ -z "${PROBE_OUTPUT}" ]]; then
+    log_event "extension_sw_check_failed reason=probe_failed profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  MI_EXTENSION_ID="${EXTENSION_ID}" MI_CHROME_PROFILE_PATH="${PROFILE_PATH}" "${NODE_BIN}" -e '
+const fs = require("fs");
+const path = require("path");
+const version = (value) => (/^[0-9]+[.][0-9]+[.][0-9]+$/.test(String(value ?? "")) ? String(value) : "none");
+let parsed = false;
+let settings = null;
+for (const name of ["Secure Preferences", "Preferences"]) {
+  try {
+    const preferences = JSON.parse(fs.readFileSync(path.join(process.env.MI_CHROME_PROFILE_PATH, name), "utf8"));
+    parsed = true;
+    const found = preferences?.extensions?.settings?.[process.env.MI_EXTENSION_ID];
+    if (found && typeof found === "object") { settings = found; break; }
+  } catch {}
+}
+if (!parsed) { process.stdout.write("prefs_unreadable"); process.exit(0); }
+if (!settings) { process.stdout.write("extension_not_installed"); process.exit(0); }
+let disk = "none";
+try {
+  if (typeof settings.path === "string" && path.isAbsolute(settings.path)) {
+    disk = version(JSON.parse(fs.readFileSync(path.join(settings.path, "manifest.json"), "utf8")).version);
+  }
+} catch {}
+process.stdout.write(`registered=${version(settings.service_worker_registration_info?.version)} disk=${disk}`);
+' > "${PROBE_OUTPUT}" 2>/dev/null &
+  PROBE_PID=$!
+  # macOS 에는 timeout(1) 이 없다. kill -0 으로 생존만 확인하며 상한까지 센다.
+  while (( PROBE_WAITED < EXTENSION_SW_PROBE_TIMEOUT_SECONDS )); do
+    kill -0 "${PROBE_PID}" 2>/dev/null || break
+    /bin/sleep 1
+    PROBE_WAITED=$(( PROBE_WAITED + 1 ))
+  done
+  if kill -0 "${PROBE_PID}" 2>/dev/null; then
+    kill "${PROBE_PID}" 2>/dev/null
+    wait "${PROBE_PID}" 2>/dev/null
+    /bin/rm -f "${PROBE_OUTPUT}"
+    log_event "extension_sw_check_failed reason=probe_timeout profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  wait "${PROBE_PID}" 2>/dev/null
+  RESULT="$(/bin/cat "${PROBE_OUTPUT}" 2>/dev/null)" || RESULT=""
+  /bin/rm -f "${PROBE_OUTPUT}"
+  if [[ "${RESULT}" == "prefs_unreadable" || "${RESULT}" == "extension_not_installed" ]]; then
+    log_event "extension_sw_check_failed reason=${RESULT} profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  if [[ ! "${RESULT}" =~ '^registered=([0-9]+\.[0-9]+\.[0-9]+|none) disk=([0-9]+\.[0-9]+\.[0-9]+|none)$' ]]; then
+    log_event "extension_sw_check_failed reason=probe_failed profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  local REGISTERED="${match[1]}" DISK="${match[2]}"
+  if [[ "${DISK}" == "none" ]]; then
+    log_event "extension_sw_check_failed reason=manifest_unreadable profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  if [[ "${REGISTERED}" != "${DISK}" ]]; then
+    log_event "extension_sw_stale registered=${REGISTERED} expected=${DISK} profile=${PROFILE_LABEL}"
+    return 0
+  fi
+  local CURRENT_LINE="version=${DISK} profile=${PROFILE_LABEL}" LAST_LINE=""
+  LAST_LINE="$(/usr/bin/head -n 1 "${EXTENSION_SW_LAST_PATH}" 2>/dev/null)" || LAST_LINE=""
+  [[ "${LAST_LINE}" == "${CURRENT_LINE}" ]] && return 0
+  log_event "extension_sw_current ${CURRENT_LINE}"
+  [[ "${DRY_RUN}" == "1" ]] && return 0
+  print -r -- "${CURRENT_LINE}" > "${EXTENSION_SW_LAST_PATH}.$$" 2>/dev/null \
+    && /bin/chmod 600 "${EXTENSION_SW_LAST_PATH}.$$" 2>/dev/null \
+    && /bin/mv -f "${EXTENSION_SW_LAST_PATH}.$$" "${EXTENSION_SW_LAST_PATH}" 2>/dev/null
+  /bin/rm -f "${EXTENSION_SW_LAST_PATH}.$$" 2>/dev/null
+  return 0
+}
+
+set +e
+extension_sw_registration_pass
+set -e
 
 # ── 헬스 URL 허용목록 ────────────────────────────────────────
 HEALTH_URL="${MI_RANK_WATCHDOG_HEALTH_URL:-}"

@@ -3774,3 +3774,91 @@ test("F3: 임계값 상수가 SPEC 값과 일치한다", () => {
   assert.equal(RANK_REQUEUE_MIN_IDLE_MS, 21_600_000);
   assert.equal(RANK_REQUEUE_DAILY_CAP, 2);
 });
+
+// ─────────────────────────────────────────────────────────────
+// (1.1.34 C) 확장 서비스 워커 등록 버전 — 보고만 하는 워치독 패스
+// 2026-09-29 F3: 맥 Profile 5 는 1.1.33 파일·manifest 아래에서 09-19 에 등록된 1.1.32
+// 서비스 워커를 열흘 실행했다. 워치독은 Secure Preferences 의 등록 버전과 디스크 manifest
+// 버전을 대조해 남긴다. 실제 Chrome 프로필은 절대 읽지 않는다(가짜 HOME 안의 파일만).
+// ─────────────────────────────────────────────────────────────
+function seedExtensionRegistration(home, { registered, disk, secure = true, schedulerConf = true, app = "/Applications/Google Chrome.app", profile = "Profile 5", raw = null, fifo = false } = {}) {
+  const supportDirectory = path.join(home, "Library/Application Support/MomentInsight");
+  fs.mkdirSync(supportDirectory, { recursive: true });
+  if (schedulerConf) fs.writeFileSync(path.join(supportDirectory, "naver-shopping-chrome-scheduler.conf"), `${app}\n${profile}\n`);
+  const extensionDirectory = path.join(home, "checkout/tools/naver-shopping-chrome-extension");
+  fs.mkdirSync(extensionDirectory, { recursive: true });
+  if (disk) fs.writeFileSync(path.join(extensionDirectory, "manifest.json"), JSON.stringify({ version: disk }));
+  const profileDirectory = path.join(home, "Library/Application Support/Google/Chrome", profile);
+  fs.mkdirSync(profileDirectory, { recursive: true });
+  const preferencesPath = path.join(profileDirectory, secure ? "Secure Preferences" : "Preferences");
+  if (fifo) {
+    // 쓰는 쪽이 없는 FIFO 는 읽기를 영원히 막는다 — node 판독 시간 상한을 실제로 건드린다.
+    execFileSync("/usr/bin/mkfifo", [preferencesPath]);
+    return;
+  }
+  const settings = { extensions: { settings: { pflggephankeefaeoaafkmggampnaefm: { path: extensionDirectory, ...(registered ? { service_worker_registration_info: { version: registered } } : {}) } } } };
+  fs.writeFileSync(preferencesPath, raw ?? JSON.stringify(settings));
+}
+
+test("1.1.34 C: 워치독 확장 id 는 manifest key 에서 계산한 id 이고, 패스는 재기동 틱 뒤·헬스 판정 앞에 돈다", async () => {
+  const { deriveChromeExtensionId } = await import("./install-naver-shopping-chrome-bridge.mjs");
+  const manifest = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "tools/naver-shopping-chrome-extension/manifest.json"), "utf8"));
+  assert.ok(watchdogSource.includes(`EXTENSION_ID="${deriveChromeExtensionId(manifest.key)}"`));
+  const pass = watchdogSource.indexOf("\nextension_sw_registration_pass\n");
+  assert.ok(pass > watchdogSource.indexOf("if (( DRIFT_VERDICT == 10 )); then"));
+  assert.ok(pass < watchdogSource.indexOf("# ── 헬스 URL 허용목록"));
+  // node 판독은 시간 상한 안에서만 기다린다(설치기·fetch 와 같은 kill -0 방식).
+  const body = watchdogSource.slice(watchdogSource.indexOf("extension_sw_registration_pass() {"), pass);
+  assert.match(body, /' > "\$\{PROBE_OUTPUT\}" 2>\/dev\/null &\n  PROBE_PID=\$!/u);
+  assert.match(body, /while \(\( PROBE_WAITED < EXTENSION_SW_PROBE_TIMEOUT_SECONDS \)\); do/u);
+  assert.match(body, /extension_sw_check_failed reason=probe_timeout/u);
+});
+
+test("1.1.34 C: 워치독 서비스 워커 등록 점검 의사결정표(드라이런, 가짜 HOME)", darwinOnly, async (t) => {
+  const responseBody = JSON.stringify({ ok: true, lastSuccessAt: new Date().toISOString(), stalledMinutes: 3, queueStalled: false, workerOutdated: false, heartbeatAgeMinutes: 0, lanes: {}, trackers: {} });
+  const server = await startHealthServer(() => responseBody);
+  const homes = [];
+  t.after(() => {
+    server.close();
+    for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+  });
+  const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
+  const scenarios = [
+    { label: "수집 프로필 설정 없음 → 한 줄도 없음", seed: { schedulerConf: false, registered: "1.1.9", disk: "1.1.10" }, first: "healthy" },
+    { label: "F3 모양(등록 1.1.9, 디스크 1.1.10)", seed: { registered: "1.1.9", disk: "1.1.10" }, first: "extension_sw_stale registered=1.1.9 expected=1.1.10 profile=Profile_5" },
+    { label: "일치 → 한 번 보고", seed: { registered: "1.1.10", disk: "1.1.10" }, first: "extension_sw_current version=1.1.10 profile=Profile_5" },
+    { label: "일치 + 같은 값 이미 보고 → 조용함", seed: { registered: "1.1.10", disk: "1.1.10" }, last: "version=1.1.10 profile=Profile_5", first: "healthy" },
+    { label: "일치 + 다른 값 보고됨 → 다시 보고", seed: { registered: "1.1.10", disk: "1.1.10" }, last: "version=1.1.9 profile=Profile_5", first: "extension_sw_current version=1.1.10 profile=Profile_5" },
+    { label: "등록 정보 없음", seed: { disk: "1.1.10" }, first: "extension_sw_stale registered=none expected=1.1.10 profile=Profile_5" },
+    { label: "Preferences 쪽 기록도 읽는다", seed: { registered: "1.1.9", disk: "1.1.10", secure: false }, first: "extension_sw_stale registered=1.1.9 expected=1.1.10 profile=Profile_5" },
+    { label: "manifest 판독 불가", seed: { registered: "1.1.10" }, first: "extension_sw_check_failed reason=manifest_unreadable profile=Profile_5" },
+    { label: "prefs 깨짐", seed: { raw: "{not json" }, first: "extension_sw_check_failed reason=prefs_unreadable profile=Profile_5" },
+    { label: "확장 미설치", seed: { raw: JSON.stringify({ extensions: { settings: {} } }) }, first: "extension_sw_check_failed reason=extension_not_installed profile=Profile_5" },
+    { label: "다른 채널", seed: { app: "/Applications/Google Chrome Beta.app", registered: "1.1.9", disk: "1.1.10" }, first: "extension_sw_check_failed reason=chrome_channel_unsupported" },
+    { label: "프로필 이름 불량", seed: { profile: "../x", registered: "1.1.9", disk: "1.1.10" }, first: "extension_sw_check_failed reason=chrome_profile_directory_invalid" },
+    { label: "판독이 멈춤 → 시간 상한", seed: { fifo: true }, first: "extension_sw_check_failed reason=probe_timeout profile=Profile_5" },
+  ];
+  for (const scenario of scenarios) {
+    const home = createWatchdogHome(null);
+    homes.push(home);
+    seedExtensionRegistration(home, scenario.seed);
+    const supportDirectory = path.join(home, "Library/Application Support/MomentInsight");
+    if (scenario.last) fs.writeFileSync(path.join(supportDirectory, "mi-extension-sw.last"), `${scenario.last}\n`);
+    const startedAt = Date.now();
+    // eslint-disable-next-line no-await-in-loop
+    const { status, events, raw } = await runWatchdog(home, healthUrl, { syncDisabled: "1" });
+    assert.equal(status, 0, `${scenario.label} :: ${raw}`);
+    const afterSync = events.filter((event) => event !== "sync_disabled");
+    assert.ok(afterSync[0]?.startsWith(scenario.first), `${scenario.label} → ${scenario.first} :: ${raw}`);
+    // 보고 한 줄 뒤에도 헬스 판정은 그대로 이어진다.
+    assert.ok(afterSync.some((event) => event.startsWith("healthy")), `${scenario.label} :: ${raw}`);
+    // 로그에는 절대경로·확장 id 가 없다.
+    assert.doesNotMatch(raw, /pflggephankeefaeoaafkmggampnaefm|\/Users\/|\/private\/|\/var\/folders\//u, scenario.label);
+    // 드라이런은 마지막 보고 파일을 쓰지 않고, 판독 임시 파일도 남기지 않는다.
+    if (!scenario.last) {
+      assert.equal(fs.existsSync(path.join(supportDirectory, "mi-extension-sw.last")), false, scenario.label);
+    }
+    assert.deepEqual(fs.readdirSync(supportDirectory).filter((name) => name.startsWith("mi-extension-sw.probe")), [], scenario.label);
+    if (scenario.seed.fifo) assert.ok(Date.now() - startedAt < 15_000, `${scenario.label}: bounded`);
+  }
+});

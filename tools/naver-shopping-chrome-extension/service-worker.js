@@ -25,6 +25,18 @@ const CANDIDATE_CADENCE_RESET_PENDING_ALARM = "rank-candidate-reset-pending";
 const CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES = 365 * 24 * 60;
 const INITIALIZATION_SAFE_STATUSES = new Set(["completed", "standby", "ready"]);
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+// 1.1.34 (2026-09-29, Mac standby Profile 5): Chrome kept executing the service
+// worker it registered on 09-19 (1.1.32) until 09-29 15:41 although the unpacked
+// files and manifest on disk were 1.1.33 and Chrome had been restarted on 09-28.
+// getManifest() and the fetched service-worker.js bytes both describe files, so
+// only a literal compiled into the running script can tell. bump.py moves it
+// with manifest.json; the release baseline pins the pair.
+const SERVICE_WORKER_BUILD = "1.1.33";
+const SERVICE_WORKER_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
+const SERVICE_WORKER_RELOAD_KEY = "momentInsightServiceWorkerReload";
+const SERVICE_WORKER_RELOAD_INTERVAL_MS = 30 * 60_000;
+let serviceWorkerReloadInFlight = null;
+let nativeRunPortOpen = false;
 let candidateCadenceResetPendingMemory = null;
 // The Node host flushes its terminal frame and closes input; the Windows
 // launcher then releases its mutex immediately after child exit. Keep one
@@ -102,7 +114,9 @@ async function extensionRuntimeIdentity() {
         "SHA-256",
         await response.arrayBuffer(),
       ));
-      return { runtimeVersion, serviceWorkerSha256 };
+      // 1.1.34: the build compiled into this running script. The native host
+      // refuses a run whose build is missing or differs from runtimeVersion.
+      return { runtimeVersion, serviceWorkerSha256, serviceWorkerBuild: SERVICE_WORKER_BUILD };
     })();
   }
   return runtimeIdentityPromise;
@@ -554,6 +568,11 @@ async function automaticVerificationCooldownActive(trigger) {
 
 async function requestWorkerRun(trigger) {
   await initializationPromise;
+  // 1.1.34: stale code reloads itself (rate-limited) and never opens the native
+  // host; the host would refuse it before any lane claim anyway.
+  if (await reloadIfServiceWorkerStale(`run:${String(trigger || "")}`)) {
+    return { ok: false, started: false, code: "extension_service_worker_stale" };
+  }
   if (await automaticVerificationCooldownActive(trigger)) {
     await saveStatus("verification", "naver_verification_cooldown");
     return { ok: false, started: false, code: "naver_verification_cooldown" };
@@ -951,8 +970,104 @@ async function loadVisibleStatus() {
   return status;
 }
 
+// 1.1.34: the manifest on disk, read fresh. Chrome keeps the manifest it loaded
+// until the extension is reloaded, so a fast-forward without a real Chrome
+// restart (watchdog chrome_quit_incomplete) only shows here. Unreadable is "".
+async function serviceWorkerDiskManifestVersion() {
+  try {
+    const response = await fetch(chrome.runtime.getURL("manifest.json"), { cache: "no-store" });
+    if (!response.ok) return "";
+    const version = String((await response.json())?.version || "");
+    return SERVICE_WORKER_VERSION_PATTERN.test(version) ? version : "";
+  } catch {
+    return "";
+  }
+}
+
+// Stale when the loaded manifest or the manifest on disk is readable and differs
+// from the build compiled into this script. Unreadable is not proof of staleness
+// (the native host still refuses a build that differs from the reported version).
+// The reload target is the version on disk, else the loaded one.
+async function serviceWorkerBuildState() {
+  let loadedVersion = "";
+  try {
+    loadedVersion = String(chrome.runtime.getManifest().version || "");
+  } catch {
+    loadedVersion = "";
+  }
+  if (!SERVICE_WORKER_VERSION_PATTERN.test(loadedVersion)) loadedVersion = "";
+  const diskVersion = await serviceWorkerDiskManifestVersion();
+  return {
+    build: SERVICE_WORKER_BUILD,
+    loadedVersion,
+    diskVersion,
+    targetVersion: diskVersion || loadedVersion,
+    stale: (loadedVersion !== "" && loadedVersion !== SERVICE_WORKER_BUILD)
+      || (diskVersion !== "" && diskVersion !== SERVICE_WORKER_BUILD),
+  };
+}
+
+// Reloads a stale worker at most once per SERVICE_WORKER_RELOAD_INTERVAL_MS for
+// one target version, never under an open native run (cutting it would strand
+// the lane lease, 2026-09-29 drill), and never when the attempt cannot be
+// recorded first (an unrecorded reload could loop). chrome.runtime.reload()
+// re-reads the unpacked files and re-registers the worker (measured, Chrome for
+// Testing 149). Returns true while stale; the run must not start.
+async function attemptServiceWorkerReload(reason) {
+  const state = await serviceWorkerBuildState();
+  if (!state.stale) return false;
+  if (nativeRunPortOpen) return true;
+  const detail = `service_worker_build_stale:${state.build}:${state.targetVersion}`;
+  const now = Date.now();
+  let previous = null;
+  try {
+    const stored = await chrome.storage.local.get(SERVICE_WORKER_RELOAD_KEY);
+    previous = stored?.[SERVICE_WORKER_RELOAD_KEY] || null;
+  } catch {
+    await saveStatus("stale", detail).catch(() => {});
+    return true;
+  }
+  const attemptedAt = Number(previous?.attemptedAt || 0);
+  if (previous?.targetVersion === state.targetVersion
+    && attemptedAt > 0
+    && attemptedAt <= now
+    && now - attemptedAt < SERVICE_WORKER_RELOAD_INTERVAL_MS) {
+    await saveStatus("stale", detail).catch(() => {});
+    return true;
+  }
+  try {
+    await chrome.storage.local.set({
+      [SERVICE_WORKER_RELOAD_KEY]: {
+        targetVersion: state.targetVersion,
+        build: state.build,
+        attemptedAt: now,
+        reason: String(reason || "").slice(0, 40),
+      },
+    });
+  } catch {
+    return true;
+  }
+  await saveStatus("stale", `${detail}:reloading`).catch(() => {});
+  chrome.runtime.reload();
+  return true;
+}
+
+// Startup, onInstalled and onStartup can arrive together; one check serves all.
+function reloadIfServiceWorkerStale(reason) {
+  if (!serviceWorkerReloadInFlight) {
+    serviceWorkerReloadInFlight = attemptServiceWorkerReload(reason)
+      .finally(() => { serviceWorkerReloadInFlight = null; });
+  }
+  return serviceWorkerReloadInFlight;
+}
+
 async function initializeWorker() {
   try {
+    if (await reloadIfServiceWorkerStale("initialize")) {
+      // Keep only the wake-up alarms that retry the reload; touch nothing else.
+      await configureAlarms().catch(() => {});
+      return;
+    }
     const runtimeIdentity = await extensionRuntimeIdentity();
     const runtimeVersion = String(runtimeIdentity?.runtimeVersion || "");
     const serviceWorkerSha256 = String(runtimeIdentity?.serviceWorkerSha256 || "").toLowerCase();
@@ -972,6 +1087,8 @@ async function initializeWorker() {
     }
     if (storedStatus === "running") {
       await saveStatus("failed", "native_host_interrupted");
+    } else if (storedStatus === "stale") {
+      await saveStatus("ready", "");
     }
     await configureAlarms();
     await removeLegacyControllerTabs().catch(() => saveWorkerFailure());
@@ -1030,7 +1147,13 @@ async function runWorker(trigger = "manual", options = {}) {
   running = true;
   let port = null;
   let stopKeepAlive = null;
+  let hostRefusedServiceWorker = false;
   try {
+    // 1.1.34: every run, the queued follow-up below included, checks the running
+    // build before opening the native host.
+    if (await reloadIfServiceWorkerStale(`run:${String(trigger || "")}`)) {
+      return { ok: false, code: "extension_service_worker_stale" };
+    }
     const automatic = trigger !== "manual" || options.respectVerificationCooldown === true;
     const verification = await verificationState();
     if (automatic && verification.blockedUntil > Date.now()) {
@@ -1039,6 +1162,7 @@ async function runWorker(trigger = "manual", options = {}) {
     }
     await saveStatus("running", trigger);
     if (options.waitForNativeHandoff === true) await wait(PENDING_TRIGGER_HANDOFF_MS);
+    nativeRunPortOpen = true;
     port = chrome.runtime.connectNative(NATIVE_HOST);
     stopKeepAlive = startWorkerKeepAlive();
     const runtimeIdentity = await extensionRuntimeIdentity();
@@ -1081,6 +1205,9 @@ async function runWorker(trigger = "manual", options = {}) {
             finish(null, message.summary || {});
           } else if (message?.type === "error") {
             finish(new Error(String(message.code || "native_host_failed")));
+          } else if (message?.type === "service_worker_stale") {
+            // 1.1.34: the host refused this build before any lane claim.
+            finish(new Error("native_host_service_worker_stale"));
           }
         } catch (error) {
           finish(error);
@@ -1148,11 +1275,20 @@ async function runWorker(trigger = "manual", options = {}) {
   } catch (error) {
     await markCandidateCadenceResetPending();
     await configureAlarms(BASELINE_CADENCE_MINUTES).catch(() => {});
+    if (String(error?.message || "") === "native_host_service_worker_stale") {
+      // Not a collection failure: no server call was made. Reload below.
+      hostRefusedServiceWorker = true;
+      await saveStatus("stale", "native_host_service_worker_stale");
+      return { ok: false, code: "native_host_service_worker_stale" };
+    }
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {
     if (stopKeepAlive) stopKeepAlive();
     if (port) port.disconnect();
+    nativeRunPortOpen = false;
+    // 1.1.34: the port is closed, so the guard may reload this stale worker now.
+    if (hostRefusedServiceWorker) void reloadIfServiceWorkerStale("native-host");
     const nextTrigger = takePendingTrigger();
     running = false;
     if (nextTrigger) {

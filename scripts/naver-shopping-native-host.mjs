@@ -110,6 +110,22 @@ async function runtimeIdentity(start) {
   };
 }
 
+// 1.1.34 (2026-09-29, Mac standby Profile 5): runtimeVersion is
+// chrome.runtime.getManifest().version and serviceWorkerSha256 hashes the
+// service-worker.js read from disk, so both describe files. Chrome ran a
+// registered 1.1.32 worker under 1.1.33 files for ten days and this host
+// accepted it. serviceWorkerBuild is the literal compiled into the running
+// worker. Missing (1.1.33 and older) or different from this run's runtime
+// version is refused fail-closed before "ready", so before any lane claim or
+// server call: no lease, no job event, no failure streak. The host's own copy
+// must still match that version (the local worker checks it before its claim).
+// Not a fingerprint input: the worker file hash already covers the literal.
+function staleServiceWorkerBuild(start, version) {
+  const reported = typeof start?.serviceWorkerBuild === "string" ? start.serviceWorkerBuild.trim() : "";
+  if (VERSION_PATTERN.test(reported) && reported === version) return null;
+  return VERSION_PATTERN.test(reported) ? reported : "none";
+}
+
 function safeCode(error) {
   const value = typeof error === "string" ? error : error?.code || error?.message;
   return String(value || "native_host_failed")
@@ -225,6 +241,13 @@ async function main() {
   if (start?.action !== "run") throw new Error("native_host_start_invalid");
   const trigger = runTrigger(start);
   const identity = await runtimeIdentity(start);
+  const staleBuild = staleServiceWorkerBuild(start, identity.version);
+  if (staleBuild) {
+    process.stderr.write(`native_host_service_worker_stale build=${staleBuild} expected=${identity.version}\n`);
+    await writeTerminalMessage({ type: "service_worker_stale" });
+    process.exitCode = 1;
+    return;
+  }
   writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL });
   const readyAck = await nextMessage(30_000);
   validateCollectionProtocolAck(readyAck);

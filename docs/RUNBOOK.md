@@ -81,7 +81,9 @@
   26시간 동안 열리지 않았고 `chrome_ready`만 찍혔다. 스케줄러·워치독은 Chrome이 떠 있으면 실행파일로
   명령줄을 전달해 프로필을 로드한다(`chrome_profile_forwarded profile=… loaded=1`). `loaded=0`이 반복되면
   `lsof -p $(pgrep -x -o 'Google Chrome') | grep 'Chrome/Profile 5/'`로 직접 확인. 워치독의 `chrome_quit_incomplete`는
-  종료가 안 돼 확장 파일 재로딩이 안 된 상태이므로 대표가 Chrome을 완전히 종료(⌘Q)해야 새 확장이 실린다.
+  종료가 안 돼 새 manifest 를 다시 읽지 못한 상태다. 다만 Chrome 재시작이 곧 확장 갱신은 아니다 — 재시작이 서비스 워커를
+  다시 등록하지 않을 수 있다(2026-09-29 실측). 등록 버전을 확인하고 다르면 그 프로필의 `chrome://extensions` 에서 ↻ 한다.
+  1.1.34 부터는 확장이 디스크 manifest 와 자기 빌드가 다르면 스스로 새로고침한다(아래 `### C 옛 서비스 워커 차단`).
   대기 프로필은 네이버에 "로그인 상태 유지"로 로그인돼 있어야 한다(로그아웃 상태로 인계되면
   `naver_verification_required` → 레인 1시간 보호 대기가 주 작업기까지 막는다). 확인: 네이티브 호스트 로그
   `~/Library/Logs/MomentInsight/naver-shopping-native-host.log`에 1분마다 `start`가 찍혀야 대기기가 살아 있는 것.
@@ -103,11 +105,13 @@
   ③ `main` 배포(증상 ②의 검사 1 PASS) → ④ 해당 런타임 마이그레이션 1회 적용(증상 ⑤) → ⑤ 윈도우는
   관리자 PowerShell `mi-update.ps1 -ReleaseCommit <main 40자 해시> -ExpectedVersion <버전>` 출력의
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
-  `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
+  `drift_sync_ok` → `chrome_restarted` 확인(재시작만으로 서비스 워커 갱신은 보장되지 않는다 — 등록 버전 확인,
+  `### C 옛 서비스 워커 차단`) → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
 - **맥 대기기는 자동으로 따라온다(2026-09-13)**: 워치독이 10분마다 동기화 원본(맥 체크아웃 `main`)을
   `origin/main`으로 fast-forward 한 뒤(`sync_source_fast_forwarded from=… to=…`) 드리프트 동기화·Chrome
-  재기동을 이어서 한다. 수동 `git pull`은 더 이상 필요 없다. 보류 로그 `sync_source_behind action=none
+  재기동을 이어서 한다. 수동 `git pull`은 더 이상 필요 없다. Chrome 재기동이 확장 서비스 워커까지 바꾼다는 보장은
+  없다(`### C 옛 서비스 워커 차단`). 보류 로그 `sync_source_behind action=none
   reason=diverged|repository_dirty` 또는 `sync_source_pull_skipped reason=not_on_main`이 보이면 체크아웃을
   사람이 정리해야 한다(로컬 커밋·더러운 런타임 파일·다른 브랜치). `sync_source_fetch_failed`는 네트워크/ssh.
   사고 기록: 2026-09-12 14:10(1.1.26 라이브)부터 09-13 13:27까지 체크아웃이 1.1.25에 머물러 대기기가 매분
@@ -203,7 +207,7 @@
 
 - 사고: 주작업기가 꺼진 채 런타임 1.1.32 를 올리자 대기기가 70분간 `runtime_identity_invalid` 로 거절(런타임 마이그레이션이 코디네이션 정체를 NULL 로 비우고 주작업기 첫 런으로만 채워졌다). 임시 복구는 대표가 코디네이션에 기대 정체를 채우는 조건부 SQL.
 - 수정: `20260919030000_naver_shopping_standby_runtime_identity_registration.sql` — 정체가 통째로 비어 있고 주작업기가 180초 이상 무신호일 때에 한해 대기기를 허용. 정체 고정은 진행 관문이 그대로 수행.
-- 이 수정이 DB 에 적용되기 전에는 주작업기가 꺼진 상태에서 런타임 인상을 배포하지 않는다. 맥 Chrome 이 재시작되지 않으면(`chrome_quit_incomplete`) 확장이 옛 버전으로 남으므로 대표에게 ⌘Q 후 재실행을 요청한다.
+- 이 수정이 DB 에 적용되기 전에는 주작업기가 꺼진 상태에서 런타임 인상을 배포하지 않는다. 맥 Chrome 이 재시작되지 않으면(`chrome_quit_incomplete`) 확장이 옛 버전으로 남을 수 있고, 재시작해도 서비스 워커는 옛 것일 수 있다 — 등록 버전을 확인하고 다르면 ↻ 한다(`### C 옛 서비스 워커 차단`).
 
 ## N30 70분 정지 후속 (2026-09-27)
 
@@ -297,3 +301,57 @@
   - 대기기는 예전 그대로(wake 가 있을 때만) — 대기기 1회 인계를 더 자주 쓰지 않게 하려는 것이다.
   - 불변식 "1분 폴링은 신호가 없으면 네이버를 열지 않는다"의 유일한 예외다. 관측 가능한 표지는 DB 뿐이다: 회로 half_open 부여 직후의 `naver_shopping_worker_runs.run_trigger = 'rank-remote'` 런(윈도우 주작업기, 런 행은 작업을 받아 `navigating` 을 보고할 때만 생긴다). 요약 `autoRecoveryProbe: true`·로그 `local_worker_auto_recovery_probe` 는 주작업기에서만 생기는데, 윈도우 주작업기는 stderr 를 남기지 않고(`RedirectStandardError = false`) 맥은 늘 대기기(`MI_NAVER_SHOPPING_WORKER_ROLE=standby`)라 맥 로그에 이 표지가 없는 것이 정상이다.
 - 네이버 요청량: 페이지당 이동 1회 그대로(`about:blank` 비우기는 네트워크 요청 없음). 1분 폴링은 회로 창당 1회 상한 안에서 검증 시점만 앞당긴다(계속 실패하는 주작업기의 검증 간격 평균 약 15분 → 약 11분).
+
+## 3차 훈련 후속 1.1.34 (2026-09-29)
+
+### C 옛 서비스 워커 차단
+
+- 사고(F3): 맥 대기기 `Profile 5` 는 디스크의 확장 파일·manifest 가 1.1.33 인데도 09-19 에 등록된 1.1.32 서비스 워커를
+  09-29 15:41 까지 실행했다(09-28 Chrome 재시작 뒤에도. `Secure Preferences` 의
+  `extensions.settings.<id>.service_worker_registration_info.version` = `"1.1.32"`). 수동 ↻(`chrome://extensions` 새로고침)로
+  1.1.33 이 다시 등록됐다. 서버 지문은 디스크 manifest + 디스크 파일 해시라 이것을 못 잡는다. 윈도우는 09-28 업데이터
+  (Chrome 강제 종료·재시작) 뒤 1.1.33 으로 다시 등록됐다(이유 미확인).
+- 전제 교정: "Chrome 재시작 = 확장 갱신"이 아니다. 재시작이 서비스 워커를 다시 등록하지 않을 수 있다(늘 그렇다는 뜻은 아니다).
+  등록 버전을 확인하고, 다르면 그 프로필의 `chrome://extensions` 에서 ↻. 1.1.34 부터는 확장이 스스로 새로고침한다.
+- 1.1.34 동작:
+  - 확장: `service-worker.js` 의 `SERVICE_WORKER_BUILD`(bump.py 가 manifest 와 함께 옮긴다)를 신원 `serviceWorkerBuild` 로
+    보낸다. 가드는 불러온 manifest(`getManifest().version`)와 디스크 manifest(`fetch(chrome.runtime.getURL('manifest.json'),
+    {cache:'no-store'})`)를 BUILD 와 비교해 하나라도 다르면 `chrome.runtime.reload()` 한다. 도는 때: 시작·onInstalled·
+    onStartup(초기화), 모든 알람과 팝업 실행의 작업 요청 전(`requestWorkerRun`), 대기 이어받기를 포함한 모든 런의 네이티브
+    연결 전(`runWorker`), 호스트가 `service_worker_stale` 로 답했을 때(포트를 닫은 뒤). 같은 목표 버전(디스크 manifest,
+    못 읽으면 불러온 manifest)당 30분에 1회(`chrome.storage.local` 의 `momentInsightServiceWorkerReload`), 네이티브 연결이
+    열려 있으면 하지 않고, 시도를 먼저 기록하지 못하면 하지 않는다. 그 밖에는 상태 `stale`(팝업 "확장 프로그램을 새로
+    불러오는 중…"). 디스크를 보므로 Chrome 이 재시작되지 않은 경우(`chrome_quit_incomplete`)에도 발동한다. 둘 다 못 읽으면
+    낡음으로 보지 않는다(호스트가 막는다).
+  - 네이티브 호스트: `serviceWorkerBuild` 가 없거나(1.1.33 이하) 이 런의 `runtimeVersion` 과 다르면 `ready` 전, 곧 claim 전에
+    거절한다(fail-closed). stderr 한 줄 `native_host_service_worker_stale build=<빌드|none> expected=<버전>`, 확장에
+    `{type:"service_worker_stale"}`, 종료 코드 1. 서버 요청 0건이라 임대·`job_failed`·대기기 벤치 연속 실패가 없다. 확장은
+    이것을 수집 실패(`failed`)가 아닌 `stale` 로 남긴다. 호스트 사본과 확장 버전의 일치는 예전대로 로컬 워커가 claim 전에
+    확인한다(`local_worker_runtime_identity_invalid`). 지문 계산식은 그대로다(워커 파일 해시가 BUILD 를 이미 덮는다).
+  - 윈도우 업데이터: 작업 복구(Chrome 재시작) 뒤 `Secure Preferences` 를 문자열 정규식으로 최대 180초, 5초 간격 확인한다
+    (PS 5.1 `ConvertFrom-Json` 은 이 파일을 못 읽는다. 09-29 윈도우에서 실측한 확인 한 줄과 같은 방식). 등록 버전 =
+    `-ExpectedVersion` 일 때만 `MI_EXTENSION_UPDATE_OK … extension_sw_registered_version=<버전>`. 다르면
+    `MI_EXTENSION_SW_STALE … extension_sw_registered_version=<버전|none>` + ↻ 안내를 내고 종료 코드 1(파일 교체·작업 복구는
+    이미 끝난 상태다). ↻ 뒤에는 읽기 전용 확인 한 줄로 다시 본다.
+  - 맥 워치독: 수집 프로필 `Secure Preferences` 의 등록 버전을 디스크 manifest 와 비교해 로그만 남긴다 —
+    `extension_sw_stale registered=<등록> expected=<디스크> profile=Profile_5`(매 틱), `extension_sw_current version=<버전>
+    profile=Profile_5`(값이 바뀔 때 1회), 판독 실패 `extension_sw_check_failed reason=…`(node 판독 5초 상한, 넘으면
+    `reason=probe_timeout`). 드리프트 재기동 틱에는 돌지 않는다. **launchd 가 실행하는 워치독은 설치 사본이고 드리프트
+    동기화 대상이 아니라서, 이 패스는 워치독 재설치(`npm run install:rank-watchdog`, 대표 승인 별도 단계) 뒤부터 돈다.**
+    그 전 맥 확인은 `Secure Preferences` 를 직접 읽는 확인 한 줄(D 절)로 한다.
+- 실기 검증(2026-09-29, Chrome for Testing 149.0.7827.55, 임시 프로필·키를 뺀 확장이라 운영 네이티브 호스트와 무관):
+  ① Chrome 이 떠 있는 채 디스크 파일만 1.1.34→1.1.35 로 바뀜 → 옛 워커의 `requestWorkerRun` 이
+  `extension_service_worker_stale` 로 답하고 스스로 새로고침 → 새 워커 BUILD·manifest 1.1.35, 상태 `ready`, 등록 버전 1.1.35.
+  ② 고칠 수 없는 불일치(manifest 1.1.36, BUILD 1.1.35)로 시작 → 새로고침 1회 뒤 `stale`(30분 제한), 반복 없음.
+- 관측성 한계: 윈도우 주작업기의 거절은 서버에도 윈도우 로그에도 남지 않는다(런처 `RedirectStandardError = false`, 서버
+  요청 0건). 겉으로는 주작업기 무신호와 같다 → 45분 커밋 경보·업데이터 출력·확인 한 줄·팝업 문구로 본다
+  (`docs/skills/mi-collection-incident/SKILL.md` 판정표). 맥은 네이티브 호스트 로그에 거절 줄이 남는다.
+- 1.1.33 → 1.1.34 에는 한 번 손이 필요할 수 있다: 1.1.33 서비스 워커에는 자기 새로고침이 없고 1.1.34 호스트는 그것을
+  거절한다. 순서는 D 절(맥 ↻ 는 `drift_sync_ok` 뒤, 윈도우는 업데이터가 확인). ↻ 전에 그 프로필 `chrome://extensions` 의
+  개발자 모드가 켜져 있는지 본다(꺼진 프로필에서는 새로고침 뒤 압축 해제 확장이 꺼질 수 있다 — Chrome for Testing 149 실측).
+- 위험·한계: `SERVICE_WORKER_BUILD` 인상을 빠뜨리면 모든 기기가 30분마다 새로고침만 하고 수집하지 않는다(새 테스트와
+  baseline 핀 `shoppingStaleServiceWorkerIsRefusedAndReloaded` 가 푸시 전에 막는다). 파일이 반쯤 바뀐 순간의 새로고침은 같은
+  목표 버전 30분 제한 때문에 다음 시도가 최대 30분 늦어질 수 있다(↻ 로 즉시 해결). 브랜드 Chrome 에서
+  `chrome.runtime.reload()` 가 ↻ 와 똑같이 다시 등록하는지는 미확인이다 — 1.1.35 배포 때 첫 실측.
+- 되돌리기: 코드만 1.1.33 으로 되돌리면 가드가 `!==` 비교라 확장이 스스로 1.1.33 을 다시 불러온다. 런타임 SQL 적용 뒤에는
+  역방향 정체 마이그레이션이 필요하고 그 도구는 없다 — 앞으로 고치는 것이 기본이다.

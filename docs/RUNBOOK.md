@@ -153,8 +153,16 @@
   1.1.21 (2026-09-03) 유한 창 일반화·이음매 허용. 마이그레이션은 런타임 식별자(유한 창 대상 행·coordination 행·
   progress 입구 게이트)만 옮기며, 관문이 직전 버전의 유휴 제어 평면을 요구하므로 반드시 위 순서 ③ 다음에 적용한다.
 - **재발 방지**: 버전 인상 시 account-priority 게이트 등 runtime 리터럴을 품은 DB 함수를 전수 grep 한다 (`grep -rn "runtime_version is distinct from '" supabase/migrations` — 최종 정의의 무버전 유지는 `npm run check:release` 의 `shoppingAccountPriorityGateRuntimeNeutralOnRuntimeBump` 검사가 강제).
-- **안 되면 다음**: 마이그레이션 관문이 `requires_idle_control_plane`으로 거부하면 lease 만료(최대 35분,
-  `WORKER_COLLECTION_LEASE_SECONDS`)를 기다린 뒤 재적용한다. 되돌려야 하면 사전에 작성한 역전환 SQL을
+- **안 되면 다음**: 마이그레이션 관문이 `requires_idle_control_plane`으로 거부하면 코디네이션 행의 잠금 열
+  (`lease_worker_id`·`lease_token`·`lease_until`·`run_id`·`current_stage`)과 활성 추적기의 `processing_until`을 본다.
+  잠금이 만료돼도(`lease_until` 경과든 아래 3차 훈련 후속 A 의 죽은 잠금 인계든) 이 열은 남는다 — 기다리기만 해서는
+  비지 않는다. 비우는 것은 보유자의 release, 또는 만료 뒤 서버 관문을 통과한 작업기의 claim(부여 → `claiming` 이
+  DB progress 관문에서 거절 → 서버 release)뿐이다. 배포 창(서버 새 런타임·DB 옛 관문)에서 그런 작업기는 새 런타임
+  주작업기 하나다: 옛 런타임 작업기는 서버가 400 으로 DB 전에 막고, 새 런타임 대기기는 코디네이션 정체가 옛 버전이라
+  `runtime_identity_invalid`(인계 전 단계)로 거절된다. 그래서 윈도우 갱신(⑤)을 먼저 해 새 주작업기를 띄운다(관문 뒤
+  옛 윈도우는 어차피 수집하지 못한다). 그 claim 은 죽은 잠금이면 max(마지막 보유자 쓰기 + 6분, `navigating` + 16분)
+  뒤(20260929120000 적용 뒤), 아니면 `lease_until`(부여 + 최대 35분, `WORKER_COLLECTION_LEASE_SECONDS`) 뒤에 열을
+  비운다. 추적기 `processing_until`(claim + 35분)도 지나야 한다. 그 뒤 재적용한다. 되돌려야 하면 사전에 작성한 역전환 SQL을
   같은 정지 창 안에서 적용하고 직전 `main` 커밋으로 ③·⑤를 반복한다. 서명만 오고 진척이 없는 상태는
   증상 ①의 `NAVER_RANK_WORKER_SILENT`와 겹치므로 버전 대조를 먼저 끝낸 뒤 ①로 넘어간다.
 
@@ -297,3 +305,23 @@
   - 대기기는 예전 그대로(wake 가 있을 때만) — 대기기 1회 인계를 더 자주 쓰지 않게 하려는 것이다.
   - 불변식 "1분 폴링은 신호가 없으면 네이버를 열지 않는다"의 유일한 예외다. 관측 가능한 표지는 DB 뿐이다: 회로 half_open 부여 직후의 `naver_shopping_worker_runs.run_trigger = 'rank-remote'` 런(윈도우 주작업기, 런 행은 작업을 받아 `navigating` 을 보고할 때만 생긴다). 요약 `autoRecoveryProbe: true`·로그 `local_worker_auto_recovery_probe` 는 주작업기에서만 생기는데, 윈도우 주작업기는 stderr 를 남기지 않고(`RedirectStandardError = false`) 맥은 늘 대기기(`MI_NAVER_SHOPPING_WORKER_ROLE=standby`)라 맥 로그에 이 표지가 없는 것이 정상이다.
 - 네이버 요청량: 페이지당 이동 1회 그대로(`about:blank` 비우기는 네트워크 요청 없음). 1분 폴링은 회로 창당 1회 상한 안에서 검증 시점만 앞당긴다(계속 실패하는 주작업기의 검증 간격 평균 약 15분 → 약 11분).
+
+## 3차 훈련 후속 1.1.34 (2026-09-29)
+
+### A 죽은 잠금 인계
+
+- 사고(3차 훈련): 주작업기가 16:04:32 묶음을 잡고 수집하던 중 크롬·네이티브 호스트 강제 종료 → 16:04:39 추적기 claim 만 풀고(`fail`) record-failure·release 전에 죽어 레인 잠금이 16:39:32(35분)까지 남음 → 맥 대기기와 16:19:30 에 돌아온 주작업기 모두 `busy` → 16:44:32 에야 수집(16:45:49 커밋). 14일 원장에 같은 모양 2건 더(09-17 10:38Z 주작업기, 09-18 19:10Z 대기기).
+- 수정: `supabase/migrations/20260929120000_naver_shopping_dead_lease_takeover.sql` (런타임 무관·RPC 서명 불변·progress 관문 미변경, 새 열 7개 + BEFORE UPDATE 트리거 1개 + claim 재선언)
+  - 트리거가 잠금 보유자의 쓰기마다 `lease_heartbeat_at` 을 찍는다: 부여(새 토큰), touch(`lease_until`), 모든 progress 보고(단계·페이지·job), 원자 성공(`last_success_at`), 실패(`last_failure_at`). 주작업기 1분 폴(`primary_seen_at`·`updated_at`)·스케줄러 커서·회로 기록은 찍지 않는다. `navigating` 보고에는 `lease_collection_started_at` 도 찍는다(서버가 job 마다 `claiming` 을 먼저 쓰므로 한 런의 job 마다 다시 찍힌다). 둘 다 잠금과 함께 비워지고, 손 SQL 로 넣은 값은 트리거가 덮어쓴다.
+  - claim(`mi_claim_naver_shopping_worker_lane`)은 런타임 식별 검사 바로 뒤에서, 다른 (작업기, 토큰)의 잠금이 **보유자 쓰기 없음 6분** 이고 **그 잠금에서 시작한 수집이 16분 넘음(또는 수집 없음)** 이면 `lease_until` 만 지금으로 옮긴다(제자리 만료). 그 뒤는 기존 만료와 똑같다: 같은 작업기의 새 런은 바로 받고, 대기기는 주작업기 무신호(180초)일 때만 받는다(아니면 `primary_online`, 잠금은 만료로 돌려 둔다). 반쯤 열린 검증은 `probe_interrupted`/`transient_recovery_manual_required`(09-27 규칙 그대로)가 된다. 추적기 잠금은 건드리지 않는다(죽은 런의 추적기는 `processing_until` 뒤 기존 고아 복구). `runtime_identity_invalid` 로 거절되는 호출은 인계하지 않는다.
+  - 인계 기록(마지막 1건): `lease_reaped_at`·`lease_reaped_worker_id`·`lease_reaped_run_id`·`lease_reaped_stage`·`lease_reaped_by_worker_id`.
+  - 적용 순간 살아 있던 잠금은 심장박동이 없어 예전처럼 `lease_until`(35분) 만료만 한다.
+- 언제 풀리나: max(마지막 보유자 쓰기 + 6분, `navigating` + 16분) 뒤의 첫 claim. 주작업기가 살아 매분 폴하면 그 뒤 1분 안, 주작업기 예약 작업이 꺼져 있으면 맥 대기기의 다음 알람(최대 10분, 최악 `navigating` + 26분). 3차 훈련 재현(테스트): 16:04:32 `navigating` → 16:21:25 폴이 인계(부여 뒤 wake 없이 release) → 16:24:32 `rank-catch-up` 수집(전에는 16:44:32).
+- 왜 6분: 수집 중 한 페이지는 45초 탭 적재 + 15초 스크립트 + 6초 간격 + 30초 progress 응답 ≈ 96초 안에 보고되고, `submitting` 뒤 최장 무신호는 기본 타임아웃에서 submit 120초 + reconcile·fail·record-failure 각 30초 = 210초다. 실측: 1초 표본 최장 무신호 8.0초, 14일 묶음 전체(잡기 → 마지막 커밋) 최대 130.6초. 타임아웃 환경변수를 최대(240초/120초)로 올리면 submit 뒤 600초까지 가능하지만 그때는 네이버 요청이 없어 인계돼도 무해하다(커밋은 추적기 잠금이 지키고 옛 작업기의 성공·실패 기록은 `lease_lost`).
+- 왜 16분: 워커는 `navigating` 응답을 받은 뒤 요청 기한 = 그 시각 + 14분(`LOCAL_WORKER_REQUEST_TIMEOUT_MS`)을 정하고, 확장은 매 이동 전·매 적재 뒤, 네이티브 호스트는 매 교환 전에 기한을 본다. DB `navigating` + progress 응답 30초(기본값 — `MI_NAVER_SHOPPING_LOCAL_WORKER_API_TIMEOUT_MS` 는 어느 설치기·래퍼·설정도 쓰지 않는다) + 14분 + 마지막 이동의 적재 45초 + 스크립트 15초 = 15.5분 < 16분. 이 산술은 `scripts/naver-shopping-dead-lease-takeover-migration.test.mjs` 가 코드 상수를 읽어 고정한다(상수·순서가 바뀌거나 그 변수를 설정하는 파일이 생기면 테스트가 깨진다).
+- 동시 수집: 깨어 있고 벽시계가 단조인 작업기는 `navigating` 16분 뒤 새 네이버 이동을 시작하지 않는다. 그래서 두 작업기가 동시에 수집하지 않고 네이버 요청량도 그대로다(인계는 기존 claim 호출 안에서만 일어나고 새 폴·알람·재시도는 없다). 예외는 잠자기 복귀와 시계 역행뿐이다. 잠든 보유자(노트북)는 깰 때 로딩 중이던 1페이지까지만 끝내고 기한 확인에서 멈춘다. 벽시계가 뒤로 간 보유자는 다음 페이지 보고가 `lease_lost`(409)로 거절돼 네이티브 호스트가 멈추는데, 확장은 페이지 보고를 기다리지 않고 다음 페이지로 가므로 호스트가 끝날 때까지 그 패스의 페이지를 더 열 수 있다(호스트 종료는 보통 몇 초라 1페이지 안팎). 어느 경우든 옛 작업기의 다음 잠금 호출(progress·touch·성공·실패)은 `lease_lost` 다. 35분 만료에도 있던 잔여이며 이제 16분부터 생긴다.
+- 인계만으로는 런타임 마이그레이션의 유휴 관문(`requires_idle_control_plane`)이 풀리지 않는다: 만료는 잠금 열을 비우지 않는다. 비우는 경로는 증상 ⑦ 「안 되면 다음」.
+- 적용(대표, Supabase SQL 편집기, 런타임 배포보다 먼저): 레인이 빈 때(매시 x5:30~x3:30, x4:32 알람을 피해서) 마이그레이션 1회. `lock_timeout`(5초)에 걸리면 다시 실행한다.
+- 적용 확인(읽기 전용): `docs/sql/20260929120000_naver_shopping_dead_lease_takeover.verify-applied.sql` → 10행 모두 `applied = true`(함수 2·트리거 1·열 7). 다음 수집에서 `lease_heartbeat_at` 이 페이지마다(5~8초) 움직이고 `lease_collection_started_at` 이 `navigating` 시각이며, release 뒤 둘 다 null 이면 정상.
+- 되돌리기(필요할 때만): `docs/sql/20260929120000_naver_shopping_dead_lease_takeover.rollback.sql` — 트리거·트리거 함수를 지우고 claim 을 20260927120000 본문 그대로 복원한다(열 7개는 남기고 값만 비움). **20260927120000 되돌리기보다 먼저** 실행한다(09-27 되돌리기를 먼저 돌리면 트리거가 남고 claim 은 인계 없는 옛 본문이 된다 — 무해하지만 적용 확인이 헷갈린다).
+- 이후 claim 을 다시 선언하는 마이그레이션은 20260929120000 본문에서 복사한다(테스트가 최신 정의의 두 표지와 6/16분 조건을 검사한다). 타임스탬프를 옮기는 손 SQL·테스트는 트리거를 끄고 해야 하고(아니면 `lease_heartbeat_at` 이 다시 찍힌다), `lease_worker_id`/`lease_token` 을 바꾸는 손 SQL 은 새 부여로 취급된다.

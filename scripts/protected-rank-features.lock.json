@@ -942,6 +942,12 @@
       "file": "supabase/migrations/20260928022048_naver_shopping_runtime_1_1_33_collection_window_and_probe.sql",
       "sha256": "2d0f0d794c2d431c151b38ea5b3884c83e04e3e9a46513c775b4f7d4f402080d",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-dead-lease-takeover",
+      "file": "supabase/migrations/20260929120000_naver_shopping_dead_lease_takeover.sql",
+      "sha256": "ee0d81b415d51f0422afb9496ebc32ebead3272433e4c53ec1434e198a7762b0",
+      "rankMigration": true
     }
   ]
 }

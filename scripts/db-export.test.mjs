@@ -509,10 +509,13 @@ test("제한시간·재시도: 끊긴 연결은 5초 뒤 다시 시도하고, �
           // 루프를 붙잡아 제한시간까지 기다리지만, 여기에는 소켓이 없어 루프가 비어 버린다. Node 22 CI 러너는 그 순간
           // 이 테스트를 끊고 뒤 테스트까지 취소했다(2026-09 Quality Gate, 취소 6건). 끊길 때까지 ref 타이머로 루프를 붙잡는다.
           return new Promise((_, reject) => {
+            const signal = init?.signal;
+            if (!signal) return reject(new Error("test: hang intercept needs a request signal"));
+            if (signal.aborted) return reject(signal.reason);
             const keepAlive = setInterval(() => {}, 1000);
-            init.signal.addEventListener("abort", () => {
+            signal.addEventListener("abort", () => {
               clearInterval(keepAlive);
-              reject(init.signal.reason);
+              reject(signal.reason);
             }, { once: true });
           });
         }

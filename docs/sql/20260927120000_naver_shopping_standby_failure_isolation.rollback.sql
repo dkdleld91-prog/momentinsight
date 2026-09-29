@@ -6,6 +6,7 @@
 -- starts clean (no stale opener, no stale bench). After this, the applied check
 -- (docs/sql/20260927120000_naver_shopping_standby_failure_isolation.verify-applied.sql)
 -- shows applied = false for the three functions.
+-- 20260929120000 이 적용돼 있으면 docs/sql/20260929120000_naver_shopping_dead_lease_takeover.rollback.sql 을 먼저 실행한다.
 begin;
 
 set local lock_timeout = '5s';

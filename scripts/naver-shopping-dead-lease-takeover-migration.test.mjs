@@ -10,8 +10,9 @@ import { PGlite } from "@electric-sql/pglite";
 // 강제 종료됐다. 죽어 가던 워커는 16:04:39 에 추적기 claim 만 풀고(fail) record-failure·release 전에
 // 죽어, 레인 잠금이 16:39:32(35분)까지 남았다. 그 사이 맥 대기기와 16:19:30 에 돌아온 주작업기가 모두
 // `busy` 로 거절됐다. 죽은 잠금 인계: 보유자가 6분 동안 아무것도 쓰지 않았고 그 잠금에서 시작한 수집이
-// 16분 넘게 지났으면 다음 claim 이 그 잠금을 만료로 돌린다. 드릴 3 재현, 살아 있는 느린 작업기는 절대
-// 뺏기지 않음, 블록 위치(런타임 식별 검사 뒤·조기 탐침 계산 전), 한 런 안 여러 job 의 수집 시작 재도장,
+// 16분 넘게 지났으면(또는 그 잠금에서 수집이 시작된 적 없으면) 다음 claim 이 그 잠금을 만료로 돌린다.
+// 드릴 3 재현, navigating 전에 죽은 잠금(6분), 살아 있는 느린 작업기는 절대 뺏기지 않음, 블록 위치
+// (런타임 식별 검사 뒤·조기 탐침 계산 전), 트리거의 심장박동 열·수집 시작 재도장(한 런 안 여러 job 포함),
 // 16분 한계가 기대는 코드 상수, 새 열 없는 공정성 픽스처와의 결합, 적용 확인·되돌리기 SQL 을
 // 실제 Postgres(PGlite)로 고정한다.
 
@@ -240,6 +241,28 @@ test("applies twice; the trigger stamps only holder writes and clears with the l
   const h = (await lane(db)).lease_heartbeat_at;
   assert.equal(await touch(db, PRIMARY, T1604), true);
   assert.ok((await lane(db)).lease_heartbeat_at > h, "touch is a heartbeat");
+  // a failure that keeps the lane is a heartbeat on its own: the second one leaves current_stage
+  // at 'failed', so last_failure_at is the only watched column it changes
+  const securityFailure = async () => (await db.query(
+    "select public.mi_record_naver_shopping_worker_failure($1,$2,$3,'naver_http_429','security',null) as r",
+    [PRIMARY, T1604, RUN1604])).rows[0].r;
+  for (const round of [1, 2]) {
+    await advance(db, 30);
+    const beforeFailure = await lane(db);
+    if (round === 2) assert.equal(beforeFailure.current_stage, "failed");
+    const recorded = await securityFailure();
+    assert.equal(recorded.recorded, true);
+    assert.equal(recorded.laneReleased, false);
+    const afterFailure = await lane(db);
+    assert.equal(afterFailure.circuit_state, "closed");
+    assert.equal(afterFailure.current_stage, "failed");
+    assert.ok(afterFailure.lease_heartbeat_at > beforeFailure.lease_heartbeat_at, `failure ${round} is a heartbeat`);
+  }
+  // atomic success writes last_success_at (its RPCs are not in this fixture): a heartbeat on its own
+  await advance(db, 30);
+  const beforeSuccess = (await lane(db)).lease_heartbeat_at;
+  await db.exec("update public.naver_shopping_worker_coordination set last_success_at = now()");
+  assert.ok((await lane(db)).lease_heartbeat_at > beforeSuccess, "last_success_at is a heartbeat");
   assert.equal(await release(db, PRIMARY, T1604), true);
   row = await lane(db);
   assert.equal(row.lease_heartbeat_at, null);
@@ -307,6 +330,63 @@ test("drill 3 before the migration: busy until 16:39:32 (differential)", async (
   for (const key of ["standby1610", "poll1619", "poll1620", "poll1621", "catch1624"]) assert.equal(out[key].reason, "busy", key);
   assert.equal(out.oldProgress, true, "the dead run still owns the lane");
   await release(db, PRIMARY, T1604);
+});
+
+// A worker can die between the grant and its first `navigating`: Windows shuts down during the
+// one-minute poll's grant -> claim-wake -> release, or the native host is killed right after
+// claim-lane / queue-all. No collection ever started under that lease
+// (lease_collection_started_at is null), so 6 minutes of holder silence alone hands it over.
+test("a lease that never reached `navigating` is taken over after 6 silent minutes, not at lease_until (differential)", async () => {
+  const cases = [
+    { name: "grant only, the standby claims", job: false, claimer: [STANDBY, "standby", TSTANDBY, RUNSTANDBY, "mac-standby"] },
+    { name: "grant and one job claim, the primary's next run claims", job: true, claimer: [PRIMARY, "primary", TCATCH, RUNCATCH, "rank-catch-up"] },
+  ];
+  for (const c of cases) {
+    for (const green of [true, false]) {
+      const db = await fixture({ green });
+      let elapsed = 0;
+      let leaseFrom = 0; // the grant, or the job claim's touch, sets lease_until 35 minutes ahead
+      const wait = async (seconds) => {
+        elapsed += seconds;
+        await advance(db, seconds);
+      };
+      const [worker, role, token, run, trigger] = c.claimer;
+      assert.equal((await claimLane(db, PRIMARY, "primary", T1604, RUN1604, "rank-remote")).granted, true);
+      if (c.job) {
+        await wait(30);
+        await claimJob(db, PRIMARY, T1604, RUN1604, "rank-remote");
+        leaseFrom = elapsed;
+      }
+      // the worker dies here: no `navigating`, no record-failure, no release
+      await wait(5 * 60 + 59);
+      assert.equal((await claim(db, worker, role, token)).reason, "busy", `${c.name} (${green}): 5:59 silent`);
+      await wait(2);
+      const before = await lane(db);
+      assert.equal(before.lease_token, T1604);
+      assert.equal(before.current_stage, "claiming");
+      if (green) {
+        assert.ok(before.lease_heartbeat_at, "a lease granted after the migration has a heartbeat");
+        assert.equal(before.lease_collection_started_at, null, "no collection started under it");
+        const r = await claimLane(db, worker, role, token, run, trigger);
+        assert.equal(r.granted, true, `${c.name}: 6:01 silent, never navigating`);
+        const row = await lane(db);
+        assert.equal(row.lease_token, token);
+        assert.equal(row.lease_reaped_worker_id, PRIMARY);
+        assert.equal(row.lease_reaped_run_id, RUN1604);
+        assert.equal(row.lease_reaped_stage, "claiming");
+        assert.equal(row.lease_reaped_by_worker_id, worker);
+        assert.equal(row.circuit_state, "closed");
+      } else {
+        // before the migration the same lease blocks every other claim until lease_until
+        assert.equal((await claim(db, worker, role, token)).reason, "busy", `${c.name}: 6:01 silent`);
+        await wait(leaseFrom + 35 * 60 - elapsed - 1);
+        assert.equal((await claim(db, worker, role, token)).reason, "busy", `${c.name}: 1 s before lease_until`);
+        await wait(2);
+        assert.equal((await claimLane(db, worker, role, token, run, trigger)).granted, true, `${c.name}: lease_until passed`);
+      }
+      await db.close();
+    }
+  }
 });
 
 test("standby (b): takes a dead primary lease only while the primary heartbeat is stale", async (t) => {
@@ -450,6 +530,33 @@ test("every job of a run restarts the collection clock (multi-job re-stamp)", as
   );
 });
 
+// Defensive trigger rules the current code never reaches (every grant sets `claiming` and the
+// handler writes the `claiming` envelope before every job): a `navigating` for another tracker or
+// under another run, and a grant that lands in `navigating`, each start a new collection.
+test("the collection start is re-stamped for another tracker, another run and a grant into navigating", async (t) => {
+  const db = await fixture();
+  t.after(() => db.close());
+  const otherTracker = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+  assert.equal((await claimLane(db, PRIMARY, "primary", T1604, RUN1604, "rank-catch-up")).granted, true);
+  assert.equal(await progress(db, PRIMARY, T1604, RUN1604, "navigating", 0), true);
+  await advance(db, 60);
+  assert.equal(await progress(db, PRIMARY, T1604, RUN1604, "navigating", 0, { tracker: otherTracker }), true);
+  assert.ok(await collectionAgeSeconds(db) < 5, "navigating for another tracker restarts it");
+  await advance(db, 60);
+  // the progress gate keeps run_id for the lease, so only a direct write changes it
+  await db.exec(`update public.naver_shopping_worker_coordination set run_id = '${RUNCATCH}'`);
+  assert.ok(await collectionAgeSeconds(db) < 5, "navigating under another run restarts it");
+  await advance(db, 60);
+  assert.equal(await progress(db, PRIMARY, T1604, RUNCATCH, "navigating", 0, { tracker: otherTracker }), true);
+  assert.ok(await collectionAgeSeconds(db) >= 60, "the same tracker and run keep it");
+  await db.exec(`update public.naver_shopping_worker_coordination set lease_token = '${TCATCH}',
+    lease_until = now() + interval '35 minutes', current_stage = 'navigating'`);
+  const row = await lane(db);
+  assert.ok(row.lease_collection_started_at, "a grant into navigating starts a collection");
+  assert.ok(await collectionAgeSeconds(db) < 5);
+  assert.ok(row.lease_heartbeat_at >= row.lease_collection_started_at);
+});
+
 // The 16-minute collection bound is an arithmetic on code constants; this pins each of them.
 test("the 6- and 16-minute bounds hold for the code constants they rely on", () => {
   const minutes = (pattern) => Number(newClaim.match(pattern)[1]) * 60_000;
@@ -508,16 +615,19 @@ test("the 6- and 16-minute bounds hold for the code constants they rely on", () 
   assert.ok(onePageMs < heartbeatBoundMs && afterSubmittingMs < heartbeatBoundMs);
   assert.ok(heartbeatBoundMs < collectionBoundMs, "a live collection is protected by the 16-minute rule alone");
 
-  // the API timeout variable is only read by the worker: no installer, wrapper or config sets it
+  // the API timeout variable is only read by the worker: no installer, wrapper or config sets it.
+  // Dot files are read as well (.env.example, .env.local, .npmrc, ...). Skipped: VCS data,
+  // dependencies, build output and .claude (gitignored; in the main checkout it holds agents'
+  // worktrees, full copies of this repository whose worker file would be listed here).
   const setters = [];
-  const skip = new Set(["node_modules", ".git", "dist", "coverage"]);
+  const skip = new Set(["node_modules", ".git", "dist", "coverage", ".claude"]);
   const configExtensions = /\.(?:mjs|cjs|js|json|sh|zsh|ps1|psm1|cmd|bat|plist|template|example|env|ya?ml|toml|conf|ini|xml)$/u;
   const walk = (directory) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (skip.has(entry.name) || (entry.name.startsWith(".") && entry.name !== ".github")) continue;
+      if (skip.has(entry.name)) continue;
       const full = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.isFile() && configExtensions.test(entry.name)
+      else if (entry.isFile() && (entry.name.startsWith(".") || configExtensions.test(entry.name))
         && fs.readFileSync(full, "utf8").includes("MI_NAVER_SHOPPING_LOCAL_WORKER_API_TIMEOUT_MS")) {
         setters.push(path.relative(root, full).split(path.sep).join("/"));
       }
@@ -655,6 +765,10 @@ test("verify-applied SQL reads false before and true after; rollback restores th
   assert.equal(live.trim(), oldBody.trim());
   assert.ok(rollbackSql.includes(OLD.claim), "the rollback carries the 09-27 claim verbatim");
   assert.match(rollbackSql, /BEFORE docs\/sql\/20260927120000_naver_shopping_standby_failure_isolation\.rollback\.sql/u);
+  // and the 09-27 rollback, opened alone, says so too (before its first statement)
+  const isolationRollbackSql = readDoc("20260927120000_naver_shopping_standby_failure_isolation.rollback.sql");
+  const isolationHeader = isolationRollbackSql.slice(0, isolationRollbackSql.indexOf("\nbegin;\n"));
+  assert.match(isolationHeader, /^-- 20260929120000 이 적용돼 있으면 docs\/sql\/20260929120000_naver_shopping_dead_lease_takeover\.rollback\.sql 을 먼저 실행한다\.$/mu);
 });
 
 test("the newest claim definition keeps the takeover (a later re-declaration must copy it)", () => {

@@ -13,6 +13,7 @@ import {
   RUN_MARGIN_SECONDS,
   TASK_NAME,
   TASK_PATH,
+  WAIT_MINUTES,
   checkPowerShell51Line,
   drillLine,
   drillOutput,
@@ -30,6 +31,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 const serviceWorker = read("tools/naver-shopping-chrome-extension/service-worker.js");
 const updater = read("scripts/windows/update-naver-shopping-chrome-extension.ps1");
 const workerHandler = read("src/server/handlers/naver-shopping-local-worker.mjs");
+const runbook = read("docs/RUNBOOK.md");
+const runbookDrill = runbook.slice(runbook.indexOf("- **훈련 도구(윈도우 주작업기 정지)**"), runbook.indexOf("- **정상화 기준(배포 뒤)**"));
 const tool = path.join(root, "docs/skills/mi-collection-incident/scripts/windows-drill.mjs");
 const constant = (source, name) => Number(source.match(new RegExp(`const ${name} = ([\\d_]+);`, "u"))[1].replaceAll("_", ""));
 
@@ -68,6 +71,75 @@ function stopPredicate(line) {
 const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 const blockedSeconds = (allowed, hour, minute) => range(0, 59).filter((second) => !allowed({ hour, minute, second }));
 
+// 어떤 프로세스를 호스트로 세는지(Busy)·끄는지·크롬 본체 나이(Young)도 생성된 글자를 JavaScript 로 옮겨 표본 프로세스에 평가한다.
+// WQL 필터(Name='a' OR Name='b', 대소문자 무시)와 Where-Object 판정식(-eq/-ne/-like/-notlike, -gt (Get-Date).AddSeconds(n), -and/-or)만 다룬다.
+const wildcard = (pattern) => new RegExp(`^${[...pattern].map((ch) => (ch === "*" ? ".*" : ch === "?" ? "." : ch.replace(/[.+^${}()|[\]\\]/gu, "\\$&"))).join("")}$`, "iu");
+
+function wqlFilter(filter) {
+  const parts = filter.split(/\s+(OR|AND)\s+/u);
+  const joins = new Set(parts.filter((_, index) => index % 2 === 1));
+  assert.ok(joins.size <= 1, `WQL OR/AND mixed: ${filter}`);
+  const names = parts.filter((_, index) => index % 2 === 0).map((term) => {
+    const match = term.match(/^Name='([^']+)'$/u);
+    assert.ok(match, `WQL term: ${term}`);
+    return match[1].toLowerCase();
+  });
+  const any = !joins.has("AND");
+  return (process) => (any ? names.some((name) => name === process.Name.toLowerCase()) : names.every((name) => name === process.Name.toLowerCase()));
+}
+
+function wherePredicate(body) {
+  const js = body.replace(/\s+/gu, " ").trim()
+    .replace(/\$_\.(\w+) -(not)?like (['"])([^'"]*)\3/gu, (_, property, not, _quote, pattern) => `${not ? "!" : ""}h.like(p.${property}, ${JSON.stringify(pattern)})`)
+    .replace(/\$_\.(\w+) -(eq|ne) (['"])([^'"]*)\3/gu, (_, property, operator, _quote, value) => `${operator === "ne" ? "!" : ""}h.same(p.${property}, ${JSON.stringify(value)})`)
+    .replace(/\$_\.(\w+) -gt \(Get-Date\)\.AddSeconds\((-?\d+)\)/gu, (_, property, seconds) => `(p.${property} > h.now + (${seconds}) * 1000)`)
+    .replaceAll(" -and ", " && ").replaceAll(" -or ", " || ");
+  assert.doesNotMatch(js, /\$|\s-[a-z]+\s|Get-/iu, `untranslated PowerShell left: ${js}`);
+  // eslint-disable-next-line no-new-func
+  const run = new Function("p", "h", `return (${js});`);
+  // PowerShell 문자열 비교는 대소문자를 무시하고, $null 은 -eq/-like 가 거짓·-ne/-notlike 가 참이다.
+  const helpers = (now) => ({
+    now,
+    like: (value, pattern) => typeof value === "string" && wildcard(pattern).test(value),
+    same: (value, expected) => typeof value === "string" && value.toLowerCase() === expected.toLowerCase(),
+  });
+  return (process, now = 0) => Boolean(run(process, helpers(now)));
+}
+
+// Busy(프로세스 목록) → 호스트 수. null 은 CIM 조회 실패: -ErrorAction Stop 이어야 예외가 catch 로 가고, 그 밖은 빈 결과(0)다.
+function busyModel(line) {
+  const match = line.match(/function Busy \{ try \{ @\(Get-CimInstance Win32_Process -Filter \$f -ErrorAction (\w+) \| Where-Object \{ (.*?) \}\)\.Count \} catch \{ (\d+) \} \};/u);
+  assert.ok(match, "Busy");
+  const [, errorAction, where, caught] = match;
+  const filter = wqlFilter(line.match(/\$f="([^"]+)";/u)[1]);
+  const counts = wherePredicate(where);
+  return {
+    where,
+    busy: (processes) => (processes === null ? (errorAction === "Stop" ? Number(caught) : 0) : processes.filter((p) => filter(p) && counts(p)).length),
+  };
+}
+
+function youngModel(line) {
+  const match = line.match(/function Young \{ @\(Get-CimInstance Win32_Process -Filter "([^"]+)" -ErrorAction \w+ \| Where-Object \{ (.*?) \}\)\.Count -gt 0 \};/u);
+  assert.ok(match, "Young");
+  const filter = wqlFilter(match[1]);
+  const young = wherePredicate(match[2]);
+  return (processes, now) => processes.some((p) => filter(p) && young(p, now));
+}
+
+const EXTENSION_ORIGIN = "chrome-extension://pflggephankeefaeoaafkmggampnaefm/";
+const BRIDGE = "C:\\Users\\owner\\AppData\\Local\\MomentInsight\\NaverShoppingBridge";
+const CHROME_EXE = "\"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe\"";
+const PROCESSES = {
+  launcher: { Name: HOST_LAUNCHER, CommandLine: `"${BRIDGE}\\${HOST_LAUNCHER}" ${EXTENSION_ORIGIN} --parent-window=0` },
+  hostNode: { Name: "node.exe", CommandLine: `"C:\\Program Files\\nodejs\\node.exe" "${BRIDGE}\\${HOST_SCRIPT}" ${EXTENSION_ORIGIN}` },
+  otherNode: { Name: "node.exe", CommandLine: "\"C:\\Program Files\\nodejs\\node.exe\" C:\\dev\\tools\\server.mjs" },
+  unreadableNode: { Name: "node.exe", CommandLine: null },
+  chromeMain: { Name: "chrome.exe", CommandLine: `${CHROME_EXE} --profile-directory="Profile 1"` },
+  chromeRenderer: { Name: "chrome.exe", CommandLine: `${CHROME_EXE} --type=renderer --renderer-client-id=7` },
+  explorer: { Name: "explorer.exe", CommandLine: "C:\\Windows\\explorer.exe" },
+};
+
 test("every generated line is one Windows PowerShell 5.1 line and the checker catches what 5.1 cannot run", () => {
   for (const line of [drillLine(), drillLine({ dry: true }), drillLine({ center: 57, catchUpDigit: -1 }), restoreLine()]) {
     assert.deepEqual(checkPowerShell51Line(line), [], line.slice(0, 80));
@@ -103,6 +175,47 @@ test("① idle wait: the host must be absent longer than the extension's queued 
   assert.equal(allowed({ ...quiet, young: true }), false);
   // 45분 안에 한가한 순간이 없으면 끄지 않는다.
   assert.ok(line.includes("if (-not $go) { Write-Host \"DRILL_ABORTED_BUSY"));
+  // 대기 상한은 맥 catch-up 두 주기 이상(한가한 틈을 적어도 두 번 만난다)이고, RUNBOOK D 가 약속한 '최대 45분'과 같다.
+  const cadence = Math.max(constant(serviceWorker, "BASELINE_CADENCE_MINUTES"), constant(serviceWorker, "CANDIDATE_CADENCE_MINUTES"));
+  assert.ok(WAIT_MINUTES >= 2 * cadence, `wait ${WAIT_MINUTES}min < two ${cadence}min catch-up cycles`);
+  assert.ok(line.includes(`max=${WAIT_MINUTES}m`) && line.includes(`$until=(Get-Date).AddMinutes(${WAIT_MINUTES});`));
+  assert.ok(runbookDrill.includes(`최대 ${WAIT_MINUTES}분`), `RUNBOOK D must state the ${WAIT_MINUTES}-minute wait`);
+});
+
+test("① host count: Busy counts exactly the updater's host processes (without chrome.exe), and a failed query counts as busy", () => {
+  const line = drillLine();
+  const { where, busy } = busyModel(line);
+  const { launcher, hostNode, otherNode, unreadableNode, chromeMain, chromeRenderer, explorer } = PROCESSES;
+  assert.equal(busy([launcher]), 1, "launcher exe");
+  assert.equal(busy([hostNode]), 1, "node running the native host script");
+  assert.equal(busy([otherNode, unreadableNode, chromeMain, chromeRenderer, explorer]), 0, "unrelated node, chrome and others");
+  assert.equal(busy(Object.values(PROCESSES)), 2);
+  // CIM 조회 실패 = 바쁨(-ErrorAction Stop → catch { 99 }) → 멈추지 않는다.
+  assert.ok(busy(null) > 0, "failed CIM query must count as busy");
+  assert.equal(stopPredicate(line)({ hour: 10, minute: 0, second: 45, busy: busy(null) }), false);
+  // 끄는 대상은 세는 대상과 같은 필터·판정식이다.
+  assert.ok(line.includes(`Get-CimInstance Win32_Process -Filter $f -ErrorAction SilentlyContinue | Where-Object { ${where} } | ForEach-Object { Stop-Process -Id $_.ProcessId`));
+  // 업데이터(Get-UpdateTargetProcesses)가 끝나기를 기다리는 프로세스에서 chrome.exe 만 뺀 것과 같다.
+  const updaterBody = updater.match(/function Get-UpdateTargetProcesses \{[\s\S]*?Get-CimInstance Win32_Process -ErrorAction Stop \| Where-Object \{([\s\S]*?)\}\)/u);
+  assert.ok(updaterBody, "updater Get-UpdateTargetProcesses");
+  const updaterTarget = wherePredicate(updaterBody[1]);
+  for (const [name, process] of Object.entries(PROCESSES)) {
+    assert.equal(busy([process]) === 1, updaterTarget(process) && process.Name !== "chrome.exe", name);
+  }
+});
+
+test("① Chrome age: only the main process (no --type=) started within 120 seconds makes the drill wait", () => {
+  const young = youngModel(drillLine());
+  const now = Date.parse("2026-09-29T07:00:00Z");
+  const main = (secondsAgo) => ({ ...PROCESSES.chromeMain, CreationDate: now - secondsAgo * 1000 });
+  const renderer = (secondsAgo) => ({ ...PROCESSES.chromeRenderer, CreationDate: now - secondsAgo * 1000 });
+  assert.equal(young([main(60)], now), true);
+  assert.equal(young([main(119)], now), true);
+  assert.equal(young([main(121)], now), false);
+  // 렌더러·도우미(--type=)는 늘 새로 뜬다 — 본체가 오래됐으면 기다리지 않는다.
+  assert.equal(young([main(600), renderer(5)], now), false);
+  // 크롬이 아닌 새 프로세스는 보지 않는다.
+  assert.equal(young([{ ...PROCESSES.hostNode, CreationDate: now - 5000 }], now), false);
 });
 
 test("② second window and clock exclusions: seconds [18,32], 08:58-09:02 and 14:58-15:02, the catch-up minute", () => {

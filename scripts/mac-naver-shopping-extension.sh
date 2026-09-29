@@ -2,6 +2,7 @@
 # 맥 수집 프로필 확장의 등록 서비스 워커 확인과 확장 페이지 새 창 — 1.1.34 배포 절차 0)·3)·5) (docs/RUNBOOK.md "D 배포·훈련 도구").
 #   bash scripts/mac-naver-shopping-extension.sh check  읽기 전용: SW_VERSION=<등록> DISK_VERSION=<디스크 manifest> PROFILE=<프로필> VERDICT=OK|STALE|UNKNOWN
 #   bash scripts/mac-naver-shopping-extension.sh open   STALE 일 때만 수집 프로필 새 창 하나를 열어 그 창(id)만 chrome://extensions 로 옮긴다(대표가 ↻).
+#                                                       OK 면 ALREADY_CURRENT(0), UNKNOWN 이면 SW_UNKNOWN(7) — 둘 다 창을 열지 않는다.
 # 크롬 재시작은 확장 서비스 워커를 다시 등록하지 않을 수 있다(2026-09-29 실측: Profile 5 가 09-19 에 등록된 1.1.32 SW 를
 # 디스크 1.1.33 인 채로 실행) → 판정은 Secure Preferences 의 service_worker_registration_info.version 으로만 한다.
 # 대표의 다른 창·탭 주소는 바꾸지 않는다: front window 를 쓰지 않는다. 실행 전후 창 id 를 비교해 새로 생긴 창이 정확히 하나이고
@@ -75,8 +76,14 @@ open_extensions_window() {
   local verdict
   verdict="$(sw_check)"
   echo "${verdict}"
+  # 새로고침이 무해하다고 아는 것은 STALE(옛 SW 를 새 호스트가 거절하는 상태)뿐이다. 판독 실패(UNKNOWN)는 열지 않는다.
   case "${verdict}" in
     *"VERDICT=OK"*) echo "ALREADY_CURRENT 등록 SW 가 디스크와 같다 — 새로고침할 필요 없음"; return 0 ;;
+    *"VERDICT=STALE"*) ;;
+    *)
+      echo "SW_UNKNOWN 등록 SW 버전·확장 경로·디스크 manifest 중 하나를 못 읽었다 — 새로고침해도 되는지 몰라 창을 열지 않았다. 대표에게 수집 프로필(${PROFILE_DIRECTORY}) ${EXTENSION_URL} 카드의 버전·오류 확인 요청"
+      return 7
+      ;;
   esac
   if "${PGREP}" -f 'naver-shopping-native-host\.mjs' >/dev/null 2>&1; then
     echo "HOST_RUNNING 네이티브 호스트가 도는 중(수집 중일 수 있음) — 창을 열지 않았다. 1분 뒤 다시 실행"

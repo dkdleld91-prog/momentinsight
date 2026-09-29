@@ -16,6 +16,9 @@ const source = fs.readFileSync(script, "utf8");
 const code = source.split("\n").filter((line) => !/^\s*#/u.test(line)).join("\n");
 const EXTENSION_ID = "pflggephankeefaeoaafkmggampnaefm";
 const EXTENSION_URL = `chrome://extensions/?id=${EXTENSION_ID}`;
+// 맥 워치독이 호스트(수집 중)를 알아보는 pgrep 패턴과 같아야 한다.
+const watchdog = fs.readFileSync(path.join(root, "scripts", "watchdog", "mi-rank-watchdog.sh"), "utf8");
+const HOST_PGREP_PATTERN = "naver-shopping-native-host\\.mjs";
 
 const STUBS = {
   osascript: `#!/bin/bash
@@ -29,10 +32,12 @@ case "$script" in
   *) exit 1 ;;
 esac
 `,
+  // 인자 전체가 정확히 같을 때만 "실행 중"이라 답한다(패턴이 깨지면 호스트를 못 찾는 실제 pgrep 처럼 1).
   pgrep: `#!/bin/bash
+printf '%s\\n' "$*" >> "$STUB_DIR/pgrep.log"
 case "$*" in
-  *"-x Google Chrome"*) [[ -f "$STUB_DIR/chrome-running" ]] ;;
-  *"naver-shopping-native-host"*) [[ -f "$STUB_DIR/host-running" ]] ;;
+  '-x Google Chrome') [[ -f "$STUB_DIR/chrome-running" ]] ;;
+  '-f ${HOST_PGREP_PATTERN}') [[ -f "$STUB_DIR/host-running" ]] ;;
   *) exit 1 ;;
 esac
 `,
@@ -43,7 +48,7 @@ exit 0
 `,
 };
 
-function fixture(t, { registered = "1.1.33", disk = "1.1.34", windows = ["101", "102"], opens = ["103"], chromeRunning = true, hostRunning = false } = {}) {
+function fixture(t, { registered = "1.1.33", disk = "1.1.34", extensionListed = true, windows = ["101", "102"], opens = ["103"], chromeRunning = true, hostRunning = false } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "mi-mac-extension-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const stubDir = path.join(home, "stubs");
@@ -59,11 +64,13 @@ function fixture(t, { registered = "1.1.33", disk = "1.1.34", windows = ["101", 
   executable(path.join(stubDir, "pgrep"), STUBS.pgrep);
   executable(path.join(app, "Contents", "MacOS", "Google Chrome"), STUBS.chrome);
   fs.writeFileSync(path.join(support, "MomentInsight", "naver-shopping-chrome-scheduler.conf"), `${app}\nProfile 5\n`);
-  fs.writeFileSync(path.join(extension, "manifest.json"), JSON.stringify({ manifest_version: 3, version: disk }));
+  if (disk !== null) fs.writeFileSync(path.join(extension, "manifest.json"), JSON.stringify({ manifest_version: 3, version: disk }));
   // Chrome 이 쓰는 모양(키 정렬·한 줄) 그대로: 다른 확장이 뒤에 있어도 우리 확장만 읽는다.
+  // registered: null = 등록 정보 없음, disk: null = 디스크 manifest 없음, extensionListed: false = 우리 확장 항목 없음.
+  const ours = { location: 4, path: extension, ...(registered === null ? {} : { service_worker_registration_info: { version: registered } }) };
   fs.writeFileSync(path.join(profile, "Secure Preferences"), JSON.stringify({
     extensions: { settings: {
-      [EXTENSION_ID]: { location: 4, path: extension, service_worker_registration_info: { version: registered } },
+      ...(extensionListed ? { [EXTENSION_ID]: ours } : {}),
       aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: { path: "/elsewhere", service_worker_registration_info: { version: "9.9.9" } },
     } },
     protection: { macs: { extensions: { settings: { [EXTENSION_ID]: "ABCDEF" } } } },
@@ -149,6 +156,7 @@ test("open does not start Chrome, does not open while a host runs, and does noth
   const busyResult = busy.run("open");
   assert.equal(busyResult.status, 3);
   assert.match(busyResult.stdout, /HOST_RUNNING/u);
+  assert.equal(busy.readStub("pgrep.log").split("\n")[0], `-f ${HOST_PGREP_PATTERN}`);
   const current = fixture(t, { registered: "1.1.34" });
   const currentResult = current.run("open");
   assert.equal(currentResult.status, 0);
@@ -157,4 +165,33 @@ test("open does not start Chrome, does not open while a host runs, and does noth
     assert.equal(f.readStub("chrome-args"), "");
     assert.equal(f.readStub("osascript.log"), "");
   }
+});
+
+test("open refuses when the registered service worker cannot be read (UNKNOWN is not STALE)", (t) => {
+  const cases = [
+    { name: "no service_worker_registration_info", options: { registered: null }, verdict: "SW_VERSION= DISK_VERSION=1.1.34 PROFILE=Profile_5 VERDICT=UNKNOWN" },
+    { name: "extension not in Secure Preferences", options: { extensionListed: false }, verdict: "SW_VERSION= DISK_VERSION= PROFILE=Profile_5 VERDICT=UNKNOWN reason=extension_not_found" },
+    { name: "disk manifest missing", options: { disk: null }, verdict: "SW_VERSION=1.1.33 DISK_VERSION= PROFILE=Profile_5 VERDICT=UNKNOWN" },
+  ];
+  for (const { name, options, verdict } of cases) {
+    const f = fixture(t, options);
+    assert.equal(f.run("check").stdout.trim(), verdict, name);
+    const result = f.run("open");
+    assert.equal(result.status, 7, `${name}: ${result.stdout}`);
+    assert.match(result.stdout, /SW_UNKNOWN/u, name);
+    assert.doesNotMatch(result.stdout, /OPENED/u, name);
+    assert.equal(f.readStub("chrome-args"), "", `${name} must not open a window`);
+    assert.equal(f.readStub("osascript.log"), "", `${name} must not script Chrome`);
+    assert.equal(f.readStub("navigated"), "", `${name} must not navigate`);
+  }
+});
+
+test("the host guard uses the watchdog's pgrep pattern, which matches the running native host", () => {
+  const patternsIn = (text) => [...text.matchAll(/pgrep\S* -f '([^']+)'/giu)].map((match) => match[1]);
+  assert.deepEqual(patternsIn(code), [HOST_PGREP_PATTERN]);
+  assert.ok(patternsIn(watchdog).includes(HOST_PGREP_PATTERN), "scripts/watchdog/mi-rank-watchdog.sh");
+  // pgrep -f 는 전체 명령줄에 확장 정규식을 맞춘다.
+  const host = new RegExp(HOST_PGREP_PATTERN, "u");
+  assert.ok(host.test("/opt/homebrew/bin/node /Users/owner/Library/Application Support/MomentInsight/NaverShoppingBridge/naver-shopping-native-host.mjs chrome-extension://pflggephankeefaeoaafkmggampnaefm/"));
+  assert.ok(!host.test("/opt/homebrew/bin/node /Users/owner/dev/other-server.mjs"));
 });

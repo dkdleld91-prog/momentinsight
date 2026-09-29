@@ -5,7 +5,8 @@
 //   node windows-drill.mjs check <파일>     — 한 줄 파일의 PS 5.1 구조 검사(한 줄·괄호·-and/-or 혼용·PS7 전용 연산자)
 //   node windows-drill.mjs phase [시간=2]   — 제외 위상 측정(서버 기록 읽기 전용) → 인자 추천, 불안정하면 exit 3
 // 09-29 훈련은 수집 도중 크롬·호스트를 죽여 임대가 35분 남았다(F1). 이 한 줄은 호스트가 한가할 때만 멈추고,
-// 정지초가 지나거나 Ctrl+C 로 멈추면 finally 에서 예약 작업을 되살린다. 모든 줄은 출력 전에 checkPowerShell51Line 을 통과해야 한다.
+// 정지초가 지나면 finally 에서 예약 작업을 되살린다. Ctrl+C 뒤에도 finally 가 되살리도록 짰지만 PS 5.1 실기에서는 확인하지 않았다
+// (DRY 는 Enable/Disable/Start/Stop 을 돌리지 않는다) → DRILL_RESTORED 가 안 보이면 복구 한 줄. 모든 줄은 출력 전에 checkPowerShell51Line 을 통과해야 한다.
 import fs from "node:fs"; import os from "node:os"; import path from "node:path"; import { fileURLToPath } from "node:url";
 
 // 윈도우 업데이터(scripts/windows/update-naver-shopping-chrome-extension.ps1)가 멈추는 대상과 같다(테스트가 대조).
@@ -175,7 +176,7 @@ export function drillOutput(input = {}) {
     head,
     line,
     `# 기대: DRILL_WAITING → DRILL_STOPPED <시각> idle=<${IDLE_SECONDS} 이상>s → DRILL_LEFT 0 → (${o.seconds}초 뒤) DRILL_RESTORED <시각> task=Ready|Running. ${WAIT_MINUTES}분 안에 한가한 순간이 없으면 DRILL_ABORTED_BUSY(끄지 않고 복구만).`,
-    "# Ctrl+C 도 finally 에서 복구한다. 창을 클릭하면(빠른 편집) 스크립트가 멈추니 Esc. 창을 닫았거나 DRILL_RESTORED 가 안 보이면 아래 복구 한 줄(관리자 창, 여러 번 실행해도 안전):",
+    "# Ctrl+C 뒤에도 finally 가 되살리도록 짰다(PS 5.1 실기 미확인). 창을 클릭하면(빠른 편집) 스크립트가 멈추니 Esc. 창을 닫았거나 Ctrl+C 뒤 DRILL_RESTORED 가 안 보이면 아래 복구 한 줄(관리자 창, 여러 번 실행해도 안전):",
     restoreLine(),
   ];
 }

@@ -15,6 +15,7 @@ description: 모먼트 인사이트 N30 순위 수집 런타임(1.1.x) 버전 �
 | 배포 후 집계 | `LIST=1 node ~/.claude/skills/mi-runtime-release/scripts/tally.mjs <sinceISO>` |
 
 bump.py 는 2026-09-19 가상 인상(1.1.32→1.1.33)으로 검증됨: 잠금·baseline·contract 73/73·테스트 55건 통과. 동작 테스트 블록은 `--behaviour-file` 로 넣는다(없으면 최소 테스트).
+도구 원본은 저장소 `docs/skills/`다(`scripts/mi-runtime-release-tools.test.mjs` 가 bump.py 의 버전 리터럴 표·windows-oneliner.sh 출력을 고정). 도구를 고치면 저장소에 커밋하고, `~/.claude/skills` 사본은 그 커밋에서 복사해 맞춘다(1.1.34 최종 검토: 새 판이 스크래치패드에만 있고 저장소·`~/.claude` 는 옛 판이었다).
 
 # N30 런타임 인상·배포
 

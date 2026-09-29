@@ -3,7 +3,7 @@
 """N30 런타임 버전 인상 자동화.
 사용: python3 bump.py <worktree> <새버전 예 1.1.33> <slug 예 finite_cross_page> [--summary "한 줄 요약"] [--header-file f] [--behaviour-file f]
 전제: 수집기·워커·계약 코드 수정과 그 테스트를 먼저 끝낸 깨끗한 워크트리. 실패하면 `git checkout -- . && git clean -fd supabase scripts` 로 되돌린다.
-하는 일: 버전 리터럴 5곳 → 지문 계산 → 감사 2개 → 정체 핀 마이그레이션 → 새 테스트 생성·직전 테스트 보관 → package.json → 라이브 표면 테스트 8개 → baseline·contract 핀 → RUNBOOK."""
+하는 일: 버전 리터럴 6곳(서비스 워커 SERVICE_WORKER_BUILD 포함) → 지문 계산 → 감사 2개 → 정체 핀 마이그레이션 → 새 테스트 생성·직전 테스트 보관 → package.json → 라이브 표면 테스트 8개 → baseline·contract 핀 → RUNBOOK."""
 import sys, re, glob, os, subprocess, datetime
 args = sys.argv[1:]
 def opt(name, default=None):
@@ -47,6 +47,7 @@ def shift(text):  # PREV→OLD, OLD→NEW (버전·지문·태그), 자리표시
 try:
     # 1. 버전 리터럴
     sub("tools/naver-shopping-chrome-extension/manifest.json", [(f'"version": "{OLD}"', f'"version": "{NEW}"')])
+    sub("tools/naver-shopping-chrome-extension/service-worker.js", [(f'const SERVICE_WORKER_BUILD = "{OLD}";', f'const SERVICE_WORKER_BUILD = "{NEW}";')])
     sub("scripts/naver-shopping-local-worker.mjs", [(f'const EXPECTED_RUNTIME_VERSION = "{OLD}";', f'const EXPECTED_RUNTIME_VERSION = "{NEW}";')])
     sub("src/server/handlers/naver-shopping-local-worker.mjs", [(f'const EXPECTED_WORKER_RUNTIME_VERSION = "{OLD}";', f'const EXPECTED_WORKER_RUNTIME_VERSION = "{NEW}";')])
     sub("src/server/naver-shopping/worker-runtime-expectation.mjs", [(f'"{OLD}"', f'"{NEW}"')])

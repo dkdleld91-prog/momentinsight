@@ -1,4 +1,11 @@
 #!/bin/bash
 # 윈도우 관리자 PowerShell 한 줄 생성: bash windows-oneliner.sh <sha40> <version>
 echo "Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$1/scripts/windows/update-naver-shopping-chrome-extension.ps1 -OutFile \"\$env:TEMP\\mi-update.ps1\"; powershell -ExecutionPolicy Bypass -File \"\$env:TEMP\\mi-update.ps1\" -ReleaseCommit ${1:0:7} -ExpectedVersion $2"
-echo "# 기대 결과: MI_EXTENSION_UPDATE_OK release=${1:0:7} version=$2"
+echo "# 기대 결과: MI_EXTENSION_UPDATE_OK release=${1:0:7} version=$2 ... extension_sw_registered_version=$2 (1.1.34~: 작업 복구 뒤 등록 서비스 워커를 최대 3분 기다린다)"
+echo "# MI_EXTENSION_SW_STALE ... extension_sw_registered_version=<옛 버전|none> (종료 코드 1) 이면: 파일은 이미 바뀌었다 → 그 프로필 chrome://extensions 에서 개발자 모드 켜짐 확인 뒤 Moment Insight 카드 ↻ → 아래 확인 한 줄로 OK 확인(업데이터를 다시 돌리지 않는다)"
+echo "# MI_EXTENSION_SW_UNVERIFIED reason=scheduled_task_disabled (종료 코드 1) 이면: 업데이트 전에 예약 작업이 꺼져 있어 업데이터가 크롬을 다시 켜지 않았다(↻ 문제 아님) → 관리자 PowerShell 에서 다음 두 명령으로 작업을 켜고 시작 → 1분 뒤 아래 확인 한 줄(그래도 STALE 이면 ↻): Enable-ScheduledTask -TaskPath '\\MomentInsight\\' -TaskName NaverShoppingChrome; Start-ScheduledTask -TaskPath '\\MomentInsight\\' -TaskName NaverShoppingChrome"
+echo "# 등록 SW 확인 한 줄(읽기만, 일반 창 가능 — 배포 전 사전 확인, 업데이터 뒤 확인, MI_EXTENSION_SW_STALE 뒤 재확인). 크롬 재시작이 확장 서비스 워커를 다시 등록하지 않을 수 있다(2026-09-29 맥 실측) → Secure Preferences 등록 버전을 정규식으로 본다(PS 5.1 ConvertFrom-Json 은 이 파일을 못 읽는다). 기대: SW_VERSION=$2 DISK_VERSION=$2 PROFILE=<수집 프로필> VERDICT=OK"
+cat <<'PS'
+$b="$env:LOCALAPPDATA\MomentInsight\NaverShoppingBridge"; $pr=(@(Get-Content -Encoding UTF8 "$b\windows-chrome-scheduler.conf"))[1].Trim(); $t=Get-Content -Raw -Encoding UTF8 "$env:LOCALAPPDATA\Google\Chrome\User Data\$pr\Secure Preferences"; $k='"pflggephankeefaeoaafkmggampnaefm":{'; $i=$t.IndexOf($k); if ($i -lt 0) { "EXTENSION_NOT_FOUND profile=$pr" } else { $r=$t.Substring($i + $k.Length); $n=[regex]::Match($r, '"[a-p]{32}":\{'); if ($n.Success) { $r=$r.Substring(0, $n.Index) }; $v=[regex]::Match($r, '"service_worker_registration_info":\{"version":"([^"]+)"').Groups[1].Value; $p=[regex]::Match($r, '"path":"([^"]+)"').Groups[1].Value.Replace('\\', '\'); $m=(Get-Content -Raw -Encoding UTF8 (Join-Path $p 'manifest.json') | ConvertFrom-Json).version; "SW_VERSION=$v DISK_VERSION=$m PROFILE=$($pr.Replace(' ', '_')) VERDICT=$(if ($v -eq $m) { 'OK' } else { 'STALE' })" }
+PS
+echo "# VERDICT=STALE 이면: 그 기계 수집 프로필 크롬에서 chrome://extensions → Moment Insight 카드 새로고침(↻) 뒤 이 줄을 다시 실행해 OK 확인"

@@ -297,3 +297,40 @@
   - 대기기는 예전 그대로(wake 가 있을 때만) — 대기기 1회 인계를 더 자주 쓰지 않게 하려는 것이다.
   - 불변식 "1분 폴링은 신호가 없으면 네이버를 열지 않는다"의 유일한 예외다. 관측 가능한 표지는 DB 뿐이다: 회로 half_open 부여 직후의 `naver_shopping_worker_runs.run_trigger = 'rank-remote'` 런(윈도우 주작업기, 런 행은 작업을 받아 `navigating` 을 보고할 때만 생긴다). 요약 `autoRecoveryProbe: true`·로그 `local_worker_auto_recovery_probe` 는 주작업기에서만 생기는데, 윈도우 주작업기는 stderr 를 남기지 않고(`RedirectStandardError = false`) 맥은 늘 대기기(`MI_NAVER_SHOPPING_WORKER_ROLE=standby`)라 맥 로그에 이 표지가 없는 것이 정상이다.
 - 네이버 요청량: 페이지당 이동 1회 그대로(`about:blank` 비우기는 네트워크 요청 없음). 1분 폴링은 회로 창당 1회 상한 안에서 검증 시점만 앞당긴다(계속 실패하는 주작업기의 검증 간격 평균 약 15분 → 약 11분).
+
+## 3차 훈련 후속 1.1.34 (2026-09-29)
+
+### D 배포·훈련 도구
+
+- **배포 순서(1.1.34 확정 — 바꾸지 않는다)**:
+  0. 사전: 두 기계의 등록 서비스 워커(SW) 버전을 본다. 윈도우는 `bash docs/skills/mi-runtime-release/scripts/windows-oneliner.sh <sha40> <버전>` 이 함께 찍는 등록 SW 확인 한 줄(일반 PowerShell, 읽기 전용, Secure Preferences 정규식 → `SW_VERSION=… DISK_VERSION=… PROFILE=… VERDICT=OK|STALE`), 맥은 `bash scripts/mac-naver-shopping-extension.sh check`(읽기 전용, 같은 형식).
+  1. 대표 SQL-A(`20260929120000`, 죽은 잠금 인계, 런타임 무관) → 확인 SQL(verify-applied) 전부 true.
+  2. 푸시 1회(코드 + bump 1.1.34). 연속 푸시는 하지 않는다.
+  3. 맥: 워치독이 10분 안에 원본 폴더를 fast-forward 한다(`sync_source_fast_forwarded` → `drift_sync_ok`). 다른 세션의 미커밋 문서로 막히면(`sync_source_fast_forward_failed`·`repository_dirty`) 대표 승인 뒤 겹치는 파일만 stash → ff 하고, pop 전에 겹침을 다시 검사한다 — 겹치면 pop 하지 않고 stash 를 보관한 채 보고한다. 이어서 `bash scripts/mac-naver-shopping-extension.sh open` → 대표가 그 창의 Moment Insight 카드 새로고침(↻) → `bash scripts/mac-naver-shopping-extension.sh check` 가 `SW_VERSION=1.1.34 DISK_VERSION=1.1.34 … VERDICT=OK`.
+     - `open` 은 **새 창 하나만** 연다: 실행 전후 Chrome 창 id 를 비교해 새로 생긴 창이 정확히 하나이고, 그 탭이 스크립트가 연 `about:blank` 이며 최소화되지 않았을 때만 **그 id 의 창만** `chrome://extensions/?id=pflggephankeefaeoaafkmggampnaefm` 로 옮긴다. 대표의 다른 창·탭 주소는 바꾸지 않는다(09-29 에는 front window 의 활성 탭 주소를 바꿨다). 식별이 안 되면(`NO_NEW_WINDOW`·`AMBIGUOUS_NEW_WINDOWS`·`NOT_OUR_WINDOW`·`WINDOW_LIST_FAILED`) 아무 창도 옮기지 않으므로 대표에게 수집 프로필 창에서 주소 입력을 요청한다.
+     - 등록 SW 가 이미 디스크와 같으면(`ALREADY_CURRENT`) 열지 않는다. 네이티브 호스트가 도는 중(`HOST_RUNNING`, 수집 중일 수 있음)이면 열지 않는다(1분 뒤 다시). Chrome 이 꺼져 있으면 켜지 않는다(`CHROME_NOT_RUNNING`).
+  4. `/health` release LIVE 확인 → 대표 SQL-런타임(1.1.34, 유휴 관문 — `requires_idle_control_plane` 이면 2~3분 뒤 재시도) → 윈도우 관리자 PowerShell 한 줄(업데이터가 크롬 재시작 뒤 등록 SW 까지 확인한다. `MI_EXTENSION_SW_STALE` 이면 대표가 윈도우 수집 프로필 chrome://extensions 에서 ↻ → 등록 SW 확인 한 줄 `VERDICT=OK`).
+  5. 확인: 두 기계의 첫 1.1.34 런, 헬스 ok, 등록 SW 둘 다 1.1.34 → 아래 정상화 기준 N1~N10.
+  - 워치독 재설치(`npm run install:rank-watchdog`, launchd 조작)는 **별도 대표 승인 단계**다. launchd 는 Application Support 사본을 실행하므로 fast-forward 만으로는 새 워치독(`extension_sw_current`/`extension_sw_stale` 로그)이 돌지 않는다. 재설치는 `pgrep -f mi-rank-watchdog.sh` 가 비어 있을 때(설치기의 `kickstart -k` 가 도는 틱을 죽인다), 반드시 맥 원본 체크아웃에서 한다(다른 워크트리에서 돌리면 동기화 원본 경로가 그 워크트리로 바뀐다).
+  - 크롬 재시작은 확장 SW 재등록을 보장하지 않는다(맥 09-29 실측: 재시작 뒤에도 09-19 등록 1.1.32 SW 실행. 윈도우는 09-28 업데이터 뒤 재등록됨 — 이유 미확인). 워치독 `chrome_restarted` 는 SW 판정 근거가 아니다 → 판정은 등록 SW 확인으로만 한다.
+- **훈련 도구(윈도우 주작업기 정지)**: `node docs/skills/mi-collection-incident/scripts/windows-drill.mjs [정지초=900] [중심초=25] [반폭=7] [catch-up 분 끝자리=4, 끄기=-1]` → 관리자 PowerShell(5.1) 한 줄 + 복구 전용 한 줄(`… windows-drill.mjs restore` 로 따로도 나온다). 모든 줄은 출력 전에 PS 5.1 구조 검사(한 줄·괄호 짝·`-and`/`-or` 혼용·PS7 전용 연산자)를 통과해야 하고, 다른 한 줄도 `… windows-drill.mjs check <파일>` 로 검사한다. 테스트: `scripts/mi-collection-incident-windows-drill.test.mjs`.
+  - 멈추는 조건(모두 참일 때만): 호스트 프로세스(`MomentInsightNaverShoppingHost.exe`, `naver-shopping-native-host.mjs` 를 돌리는 `node.exe`)가 **12초 연속** 없음(확장은 수집 중 미뤄 둔 알람을 앞 런 종료 6초 뒤 연다 — `PENDING_TRIGGER_HANDOFF_MS`. 5초 기준으로는 그 연결 직전에 끌 수 있어 12초로 둔다) · 초가 [18,32] 밖(rank-remote 매분 :24~:27, 60 경계를 넘는 원형 거리) · 08:58~09:02·14:58~15:02 밖(rank-0900/1500 은 hh:00:01) · catch-up 분(그 분 전체 + 앞 분 50초~) 밖 · 크롬 본체 시작 120초 뒤 · 마지막으로 새로 잰 호스트 수 0(조회 실패 = 바쁨).
+  - 순서: 관리자 확인 → 예약 작업 끄기(`Disable-ScheduledTask`, 실패하면 아무것도 끄지 않음) → 한가함 대기(최대 45분, 못 찾으면 `DRILL_ABORTED_BUSY` — 끄지 않고 되살리기만) → 크롬 → 남은 호스트 → `Stop-ScheduledTask` → `DRILL_STOPPED idle=…s` → 3초 뒤 `DRILL_LEFT 0` → 정지초 → finally 에서 `Enable-ScheduledTask` → `Start-ScheduledTask` → `DRILL_RESTORED`. 대기·정지 중 Ctrl+C 도 finally 로 되살린다. 창을 닫으면 finally 가 돌지 않으므로 함께 찍히는 복구 한 줄을 쓴다(여러 번 실행해도 안전). 창을 클릭(빠른 편집)하면 스크립트가 멈추니 Esc.
+  - `DRY=1`: 아무것도 끄지 않는다. `DRILL_DRYRUN_WOULD_STOP … chrome=<n> host=0` 뒤 finally 가 복구 경로 `DRILL_DRYRUN_WOULD_RESTORE task=Ready restore=Enable-ScheduledTask,Start-ScheduledTask` 를 찍고, 생성기 출력에도 복구 한 줄이 붙는다. 여기에는 PowerShell 이 없으므로 DRY 실행이 PS 5.1 문법·CIM·관리자 판정·작업 이름을 실기에서 확인하는 첫 단계다.
+  - 기본 900초 근거: 대기기 인계 180초(`p_primary_stale_seconds`) + 맥 catch-up 한 주기(기본 10분·후보 6분 중 긴 쪽) 600초 + 한 런 여유 120초. 맥 대기기의 1분 `rank-remote` 는 wake 가 있어야 수집하므로 인계 뒤 실제 수집은 다음 catch-up 이다.
+  - 위상 측정(읽기 전용): `node docs/skills/mi-collection-incident/scripts/windows-drill.mjs phase [시간=2]` → rank-remote 초·catch-up 분 끝자리 최빈값으로 인자 한 줄. catch-up 주기가 10분이 아니거나(후보 6분) 표본 3개 미만·최빈 60% 미만이면 `PHASE_UNSTABLE` 로 exit 3 → 훈련을 미룬다. 위상은 확장이 갱신·새로고침되면 바뀐다(1.1.32→1.1.33 때 catch-up 분 끝자리 0→4) → 매 훈련 직전에 잰다.
+  - 남은 경합: 마지막 한가함 확인과 크롬 종료 사이(1초 이내)에 제외 목록 밖 알람(절전 해제 직후 밀린 알람 등)이 claim 하면 임대가 남을 수 있다. 그때는 A 의 죽은 잠금 인계가 풀어 준다(보유자 쓰기 없음 6분 + navigating 뒤 16분).
+- **정상화 기준(배포 뒤)**:
+
+  | 기준 | 무엇을 보나 | 합격 |
+  |---|---|---|
+  | N1 배포 | `/health` release, Quality Gate, `npm run verify:live` | release 가 푸시 sha7 로 시작, Quality Gate 성공, verify:live 통과 |
+  | N2 DB | SQL-A 확인 SQL, 코디네이션 행 | 확인 SQL 전부 true. 런타임 SQL 직후 `runtime_version` null → 첫 런 뒤 1.1.34·새 지문. `circuit_state=closed`, cooldown·bench 없음 |
+  | N3 윈도우 | 업데이터 출력, 런 | `MI_EXTENSION_UPDATE_OK … version=1.1.34 … runtime_fingerprint=<새 지문>` 과 등록 SW 1.1.34(`extension_sw_registered_version=1.1.34` 또는 등록 SW 확인 한 줄 `VERDICT=OK`). PS 뒤 10분 안 1.1.34 런, 20분 안 첫 커밋 |
+  | N4 맥 | 원본 HEAD, 워치독 로그, `check`, 네이티브 호스트 로그 | HEAD = 푸시 sha, `drift_sync_ok`, `check` 가 `SW_VERSION=1.1.34 … VERDICT=OK`. LIVE+SQL 뒤 호스트 로그 매분 `exit status=0`(`status=1`·`native_host_service_worker_stale` 없음) |
+  | N5 헬스 | `/api/rank-collection-health` | `ok:true`, `workerOutdated:false`, `lanes.product.commitStalled:false`, `heartbeatAgeMinutes` ≤ 1 |
+  | N6 임대 | 코디네이션 행 여러 번 | 런 사이마다 `lease_worker_id` null 이 관측된다(죽은 임대 없음) |
+  | N7 경보 | 헬스 `lanes.product.lastCommitAgeMinutes` | LIVE 뒤 첫 `finite_window_committed` 직후 0~1 로 돌아온다(유한창 커밋도 커밋으로 센다) |
+  | N8 훈련 DRY | `DRY=1` 한 줄(대표 관리자 PowerShell) | `DRILL_WAITING` → `DRILL_DRYRUN_WOULD_STOP … host=0` → `DRILL_DRYRUN_WOULD_RESTORE task=Ready`, 빨간 오류 없음 |
+  | N9 훈련 실제 | 한 줄 + 15초 간격 읽기 전용 감시 | `DRILL_STOPPED idle=12s 이상`, `DRILL_LEFT 0`. 60초 안 코디네이션 임대가 윈도우 것이 아님. STOPPED + 3분 뒤부터 맥 claim granted(idle 포함), 맥 catch-up 한 주기(약 14분) 안 커밋(할 일이 있을 때) 또는 `errorDetail` 증거 행. `DRILL_RESTORED` 뒤 2분 안 윈도우 `primary_seen_at` 신선·커밋 재개. 커밋 공백 45분 미만(경보 없음) |
+  | N10 24시간 | 집계(tally), 코디네이션, 맥 원본 | 실패율 2% 이하(1.1.33: 1.6%), 최대 커밋 공백 45분 미만, 1.1.34 발 신규 실패 코드 0, SW 자가 새로고침 기계당 1회 이하, 죽은 임대 사건 0, 맥 원본의 다른 세션 미커밋 문서 그대로 |

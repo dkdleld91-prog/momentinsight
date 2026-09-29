@@ -50,7 +50,19 @@ export const WORKER_HEARTBEAT_STALE_MINUTES = 15;
 // 45분을 넘은 11건은 전부 실제 정지(최소 69.3분)였고, 정상 가동 중 최대 공백은 38.2분이었다.
 // 90분일 때는 2026-09-27 의 70분 공백(19:24:28~20:34:48 KST)이 경보 없이 지나갔다.
 // 슬롯 직후의 정상 무커밋 구간은 크론 쪽 유예(HYBRID_WORKER_GRACE_MINUTES=60)가 따로 막는다.
+// 2026-09-29(1.1.34)부터 커밋 재료에 유한 창 커밋이 들어간다(latestCommitInstant). 유한 창 포함 14일
+// (09-15~09-29) 실측: 45분 이상 12건(훈련 3 의 50.5분, 09-19 대기기 단독 47.0분 포함), 그 밖의 최대 40.0분.
+// 임계값은 그대로다.
 export const WORKER_COMMIT_STALL_MINUTES = 45;
+
+// 작업기 시계로 찍힌 커밋 표식(상품 추적기 last_checked_at, 아래 latestCommitInstant)이 서버 now 보다
+// 이만큼을 넘게 앞서면 커밋 재료에서 뺀다(2026-09-29, 1.1.34). 서버는 수집 시각을 now+5분까지 받는다
+// (local-worker-contract.mjs LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS=300). 앞선 값을 그대로 쓰면 그만큼
+// 커밋이 "방금"으로 보여 정지를 가린다. 빼는 것은 그 값이 now+2분을 넘는 동안뿐이라, 시각이 지나
+// 2분 안으로 들어오면 다시 센다 — 그래서 막는 것은 먼 미래 값(손 SQL·시계 고장)이 경보를 무기한
+// 가리는 경우이고, 허용 범위(5분) 안의 앞섬은 경보를 최대 그 차이만큼 늦출 수 있다(RUNBOOK 1.1.34 B).
+// 서버 시각으로 찍는 last_success_at 에는 걸지 않는다(1.1.33 과 같다).
+export const WORKER_CHECKED_AT_MAX_AHEAD_MS = 120_000;
 
 const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 
@@ -120,24 +132,50 @@ export function heartbeatAgeMinutes(input = {}) {
   return Math.max(0, Math.floor((now - Math.max(...stamps)) / 60_000));
 }
 
-// 입력 { lastSuccessAt, now } → 커밋 나이(비음수 정수 분) 또는 null.
+// 입력 { lastSuccessAt, lastCheckedAt, now } → 두 커밋 표식 중 더 최신인 epoch ms, 둘 다 판독 불가면 null.
+// 2026-09-29(1.1.34): 커밋은 두 갈래라 표식도 둘이다.
+//   lastSuccessAt — 코디네이션 last_success_at. 원자적 300위 커밋(tracker_committed) 묶음 뒤
+//                   mi_record_naver_shopping_worker_success 만 서버 시각으로 찍는다.
+//   lastCheckedAt — 상품 추적기 표 MAX(last_checked_at). 300위 커밋(mi_commit_naver_shopping_worker_result)과
+//                   유한 창 커밋(mi_commit_naver_shopping_finite_worker_result) 둘 다 같은 트랜잭션에서
+//                   p_checked_at(작업기 수집 시각, 서버가 now-15분~now+5분으로 제한)으로 찍는다. 유한 창
+//                   커밋은 last_success_at 을 건드리지 않는다. 실패 경로는 이 열을 쓰지 않는다
+//                   (naver-rank-requeue.mjs). now+WORKER_CHECKED_AT_MAX_AHEAD_MS 를 넘는 값은 뺀다.
+// 2026-09-29 훈련 3: 16:45:49 유한 창 커밋이 last_success_at 에 안 잡혀 ok:false 가 16:56 까지 남았다.
+// lastCheckedAt 을 넘기지 않는 호출(1.1.33 모양)은 예전과 똑같이 last_success_at 만 본다.
+export function latestCommitInstant(input = {}) {
+  const stamps = [];
+  const successAt = parsedInstant(input.lastSuccessAt);
+  if (successAt !== null) stamps.push(successAt);
+  const checkedAt = parsedInstant(input.lastCheckedAt);
+  const now = Number(input.now ?? Date.now());
+  // now 를 읽지 못하면 앞섬을 가릴 수 없으므로 작업기 시각 표식은 쓰지 않는다(정지를 가리지 않는 쪽).
+  if (checkedAt !== null && Number.isFinite(now) && checkedAt - now <= WORKER_CHECKED_AT_MAX_AHEAD_MS) {
+    stamps.push(checkedAt);
+  }
+  return stamps.length ? Math.max(...stamps) : null;
+}
+
+// 입력 { lastSuccessAt, lastCheckedAt, now } → 커밋 나이(비음수 정수 분) 또는 null.
+// 기준은 latestCommitInstant(두 표식 중 최신, lastCheckedAt 은 선택)다.
 // heartbeatAgeMinutes 와 달리 "판독 불가"를 0 이 아니라 null 로 낸다 — 이 값의 소비자
 // (commitStalled, lastCommitAgeMinutes)에게 0 은 "방금 커밋했다"는 정반대 단정이기
 // 때문이다. null 은 아래 판정기에서 자연히 "단정하지 않음"으로 접힌다(fail-safe).
-// 미래 시각(작업기 시계 앞섬)은 음수 대신 0 으로 눌러 비음수 계약을 지킨다.
+// 미래 시각(시계 앞섬)은 음수 대신 0 으로 눌러 비음수 계약을 지킨다.
 export function commitAgeMinutes(input = {}) {
-  const committedAt = parsedInstant(input.lastSuccessAt);
-  if (committedAt === null) return null;
   const now = Number(input.now ?? Date.now());
   if (!Number.isFinite(now)) return null;
+  const committedAt = latestCommitInstant({ lastSuccessAt: input.lastSuccessAt, lastCheckedAt: input.lastCheckedAt, now });
+  if (committedAt === null) return null;
   return Math.max(0, Math.floor((now - committedAt) / 60_000));
 }
 
-// 입력 { lastSuccessAt, now } → boolean. primarySeenAt 을 함께 넘겨도 판정에 쓰지 않는다
-// (2026-09-27 이전 호출 모양 호환).
-// true 는 "마지막 수집 성공(코디네이션 last_success_at)이 WORKER_COMMIT_STALL_MINUTES 분
-// 이상 없다"는 한 가지 상태만 뜻한다. 어느 작업기(주작업기·대기기)가 살아 있는지와 무관하다 —
-// 대기기의 성공도 같은 last_success_at 을 갱신하므로, 주작업기를 꺼 두고 대기기가 수집하는
+// 입력 { lastSuccessAt, lastCheckedAt, now } → boolean. primarySeenAt 을 함께 넘겨도 판정에 쓰지
+// 않는다(2026-09-27 이전 호출 모양 호환). lastCheckedAt 은 선택이다(없으면 1.1.33 과 같다).
+// true 는 "마지막 커밋(코디네이션 last_success_at 과 상품 추적기 MAX(last_checked_at) 중 최신 —
+// 300위·유한 창 어느 쪽이든, latestCommitInstant)이 WORKER_COMMIT_STALL_MINUTES 분 이상 없다"는
+// 한 가지 상태만 뜻한다. 어느 작업기(주작업기·대기기)가 살아 있는지와 무관하다 —
+// 대기기의 성공도 같은 두 표식을 갱신하므로, 주작업기를 꺼 두고 대기기가 수집하는
 // 동안에는 거짓이다.
 // 처음(2026-09-03 F11 게이트 장애: 트래커 격리 코드로 전 키워드 실패, 레인은 매분 claim·
 // 커밋 0·2시간)에는 "하트비트(primary_seen_at·last_success_at 중 최신) 15분 안쪽"을 AND 로
@@ -153,6 +191,10 @@ export function commitAgeMinutes(input = {}) {
 // 억제는 호출자(rank-collection-health.mjs)가 건다. 크론(naver-rank-cron.mjs)은 진척이 active
 // 일 때만 이 판정을 부르므로 "진척 없음"은 계속 SILENT 가 먼저 받는다.
 export function workerCommitStalledFromSignals(input = {}) {
-  const commitAge = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now: input.now });
+  const commitAge = commitAgeMinutes({
+    lastSuccessAt: input.lastSuccessAt,
+    lastCheckedAt: input.lastCheckedAt,
+    now: input.now,
+  });
   return commitAge !== null && commitAge >= WORKER_COMMIT_STALL_MINUTES;
 }

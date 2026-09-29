@@ -100,7 +100,8 @@ const activeProductValid = Number.isInteger(activeProduct) && activeProduct >= 0
 // 활성 상품이 있을 때만 최근 commit 이 필수다. activeProduct=0인 정상 무작업 환경은
 // 마지막 commit 이 없거나 오래된 것이 자연스럽지만, 음수/비정수 관측은 계약 위반이다.
 // 헬스의 commitStalled 가 "WORKER_COMMIT_STALL_MINUTES(45)분 이상"이므로 신선 상한은
-// 미만(<)이다(2026-09-27).
+// 미만(<)이다(2026-09-27). 2026-09-29(1.1.34)부터 헬스의 커밋 나이는 코디네이션 last_success_at 과
+// 상품 추적기 MAX(last_checked_at) 중 최신 기준이라 유한 창 커밋도 신선으로 센다(여기 판정은 불변).
 const productCommitFresh = activeProductValid
   && productLane?.commitStalled === false
   && (activeProduct === 0

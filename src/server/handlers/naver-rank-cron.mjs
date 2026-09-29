@@ -12,6 +12,7 @@ import { latestLocalWorkerSlotAt } from "../naver-shopping/local-worker-schedule
 import {
   EXPECTED_WORKER_RUNTIME_VERSION,
   WORKER_COMMIT_STALL_MINUTES,
+  latestCommitInstant,
   workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../naver-shopping/worker-runtime-expectation.mjs";
@@ -35,6 +36,8 @@ export const NAVER_RANK_WORKER_OUTDATED = "NAVER_RANK_WORKER_OUTDATED";
 // 없다" — 트래커 격리 코드로 전 키워드가 실패한 게이트 장애(2시간)에서 진척 판정이
 // active 로 남아 크론이 영구 202 를 내던 사각지대다. 기존 SILENT 의 의미·문구는 불변이다.
 // (2026-09-27: 판정 함수의 기준이 "90분 초과·하트비트 15분 안쪽" → "45분 이상"으로 바뀌었다.)
+// (2026-09-29, 1.1.34: "수집 성공"은 last_success_at 과 상품 추적기 MAX(last_checked_at) 중 최신 —
+//  유한 창 커밋 포함, 헬스 commitStalled 와 같은 재료다.)
 export const NAVER_RANK_WORKER_NO_COMMIT = "NAVER_RANK_WORKER_NO_COMMIT";
 
 export function productRankCronBatchLimit(url) {
@@ -137,11 +140,16 @@ export function productRankCronExecutionMode(readiness = {}, options = {}) {
 // 그래서 코디네이션 행의 두 진척 표식을 본다.
 //   primary_seen_at — primary 워커가 전역 레인을 claim 할 때만 갱신된다
 //     (mi_claim_naver_shopping_worker_lane). 일이 없어도 워커가 살아 있으면 갱신된다.
-//   last_success_at — 실제 수집 성공 시각.
+//   last_success_at — 실제 수집 성공 시각(원자적 300위 묶음 커밋 뒤에만 찍힌다).
 // 둘 중 최신값이 HYBRID_WORKER_SILENCE_MINUTES 안이면 active 다.
+// 2026-09-29(1.1.34): 유한 창 커밋은 last_success_at 을 갱신하지 않고 상품 추적기 표의
+// last_checked_at 만 찍는다. 코디네이션만으로 실패(SILENT·NO_COMMIT)로 보일 때에 한해 그 표의
+// MAX(last_checked_at) 을 한 번 더 읽어 진척·커밋 재료에 넣는다 — 헬스(rank-collection-health.mjs)의
+// 커밋 축과 같은 "마지막 커밋"이다. 아래 hybridWorkerFailure 주석 참고.
 const WORKER_COORDINATION_TABLE = "naver_shopping_worker_coordination";
 const WORKER_RUNS_TABLE = "naver_shopping_worker_runs";
 const WORKER_NONCE_TABLE = "naver_shopping_worker_nonces";
+const PRODUCT_TRACKER_TABLE = "naver_rank_trackers";
 
 export function hybridWorkerProgressAt(row) {
   const stamps = [row?.primary_seen_at, row?.last_success_at]
@@ -174,12 +182,17 @@ async function hybridWorkerCoordinationRow(ctx) {
 }
 
 // 행 → "active" | "silent" | "unknown". 순수 판정이라 조회 실패를 볼 일이 없다.
-function hybridWorkerSignalFromRow(row, date = new Date()) {
+// 세 번째 인자(1.1.34)는 상품 추적기 표 MAX(last_checked_at) 이다 — 유한 창 커밋도 진척이다.
+// 헬스와 같은 latestCommitInstant 로 걸러 now+2분을 넘게 앞선 작업기 시각은 쓰지 않는다.
+// "unknown" 은 코디네이션 표식만으로 정한다(행을 못 읽으면 상품 표로 메우지 않는다).
+function hybridWorkerSignalFromRow(row, date = new Date(), productLastCheckedAt = "") {
   const nowMs = date.getTime();
   if (!row || !Number.isFinite(nowMs)) return "unknown";
-  const progressMs = hybridWorkerProgressAt(row);
+  const coordinationProgressMs = hybridWorkerProgressAt(row);
   // 두 표식이 모두 비어 있으면(최초 배치 직후 등) 침묵이라 단정하지 않는다.
-  if (progressMs <= 0) return "unknown";
+  if (coordinationProgressMs <= 0) return "unknown";
+  const productCommitMs = latestCommitInstant({ lastCheckedAt: productLastCheckedAt, now: nowMs }) ?? 0;
+  const progressMs = Math.max(coordinationProgressMs, productCommitMs);
   return progressMs >= nowMs - HYBRID_WORKER_SILENCE_MINUTES * 60_000 ? "active" : "silent";
 }
 
@@ -197,13 +210,16 @@ export async function hybridWorkerSignal(ctx, date = new Date()) {
 // 크론은 영구 202 ok 를 냈다. 침묵(SILENT)은 "레인 확보조차 없음"이고 여기는 "확보만
 // 있고 성과가 없음"이라, 두 코드는 절대 섞이지 않는다.
 // 행이 없거나 표식이 파싱되지 않으면 null(단정하지 않음)이다.
-export function hybridWorkerNoCommitFailure(row, date = new Date()) {
+// 2026-09-29(1.1.34): 세 번째 인자는 상품 추적기 표 MAX(last_checked_at) 이다(없으면 1.1.33 과 같다).
+// 유한 창 커밋은 last_success_at 을 갱신하지 않으므로 헬스와 같은 두 재료로 판정한다.
+export function hybridWorkerNoCommitFailure(row, date = new Date(), productLastCheckedAt = "") {
   if (!row) return null;
   const nowMs = date instanceof Date ? date.getTime() : Number(date);
   if (!Number.isFinite(nowMs)) return null;
   const stalled = workerCommitStalledFromSignals({
     primarySeenAt: row.primary_seen_at,
     lastSuccessAt: row.last_success_at,
+    lastCheckedAt: productLastCheckedAt,
     now: nowMs,
   });
   if (!stalled) return null;
@@ -211,6 +227,45 @@ export function hybridWorkerNoCommitFailure(row, date = new Date()) {
     code: NAVER_RANK_WORKER_NO_COMMIT,
     status: "worker_no_commit",
     message: `중앙 Chrome 자동 순환 작업기가 레인은 계속 확보하는데 ${WORKER_COMMIT_STALL_MINUTES}분 이상 수집 성공을 한 건도 기록하지 못했습니다. 수집 게이트 상태를 확인해주세요.`,
+  };
+}
+
+// 상품 추적기 표 MAX(last_checked_at) 한 줄. 헬스(rank-collection-health.mjs latestCheckedAt)와 같은
+// 조회다. 어떤 실패(supabaseAdmin 부재 · PostgREST error · 체인 throw)도 null 로 접는다 — 호출자는
+// null 이면 코디네이션만의 판정(1.1.33 과 같다)을 낸다. 행이 없으면 빈 문자열(표식 없음)이다.
+export async function hybridWorkerProductLastCheckedAt(ctx) {
+  if (!ctx?.supabaseAdmin) return null;
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from(PRODUCT_TRACKER_TABLE)
+      .select("last_checked_at")
+      .not("last_checked_at", "is", null)
+      .order("last_checked_at", { ascending: false })
+      .limit(1);
+    if (error || !Array.isArray(data)) return null;
+    return String(data[0]?.last_checked_at || "");
+  } catch {
+    return null;
+  }
+}
+
+// 코디네이션 행(과 선택 인자 상품 MAX(last_checked_at))에서 나오는 실패 한 가지 또는 null. 순수 함수다.
+// 진척(SILENT 축)과 커밋(NO_COMMIT 축)이 같은 상품 표식을 함께 쓴다.
+function hybridWorkerProgressFailure(row, date, productLastCheckedAt = "") {
+  const signal = hybridWorkerSignalFromRow(row, date, productLastCheckedAt);
+  // 진척이 active 여도 끝이 아니다 — 커밋 축(F11)이 남아 있다. 커밋이 45분 안이면 null 이다.
+  if (signal === "active") return hybridWorkerNoCommitFailure(row, date, productLastCheckedAt);
+  if (signal === "unknown") {
+    return {
+      code: NAVER_RANK_WORKER_SIGNAL_UNKNOWN,
+      status: "worker_signal_unknown",
+      message: "중앙 Chrome 자동 순환 작업기의 진척 기록을 읽지 못했습니다. 수집기 상태를 단정할 수 없습니다.",
+    };
+  }
+  return {
+    code: NAVER_RANK_WORKER_SILENT,
+    status: "worker_silent",
+    message: `중앙 Chrome 자동 순환 작업기가 ${HYBRID_WORKER_SILENCE_MINUTES}분 넘게 레인 확보도 수집 성공도 기록하지 않아 순위 수집이 멈췄습니다.`,
   };
 }
 
@@ -288,23 +343,22 @@ export async function hybridWorkerFailure(ctx, date = new Date()) {
   }
   if (hybridWorkerGraceActive(date)) return null;
   const row = await hybridWorkerCoordinationRow(ctx);
-  const signal = hybridWorkerSignalFromRow(row, date);
-  // 진척이 active 여도 끝이 아니다 — 커밋 축(F11)이 남아 있다. 유예 안에서는 이 축도
-  // 판정하지 않는다(슬롯 직후 첫 커밋까지 몇 분은 정상 무커밋 구간이다). 커밋이
-  // 45분 안이면 여기서 null 로 빠져 기존 202 경로 그대로다.
-  if (signal === "active") return hybridWorkerNoCommitFailure(row, date);
-  if (signal === "unknown") {
-    return {
-      code: NAVER_RANK_WORKER_SIGNAL_UNKNOWN,
-      status: "worker_signal_unknown",
-      message: "중앙 Chrome 자동 순환 작업기의 진척 기록을 읽지 못했습니다. 수집기 상태를 단정할 수 없습니다.",
-    };
-  }
-  return {
-    code: NAVER_RANK_WORKER_SILENT,
-    status: "worker_silent",
-    message: `중앙 Chrome 자동 순환 작업기가 ${HYBRID_WORKER_SILENCE_MINUTES}분 넘게 레인 확보도 수집 성공도 기록하지 않아 순위 수집이 멈췄습니다.`,
-  };
+  // 유예 안에서는 커밋 축도 판정하지 않는다(슬롯 직후 첫 커밋까지 몇 분은 정상 무커밋 구간이다).
+  // 코디네이션만으로 진척·커밋이 신선하면 여기서 null 로 빠져 기존 202 경로 그대로다 — 추가
+  // 조회가 없다(정상 경로 왕복 불변). 코디네이션을 못 읽으면(unknown) 상품 표로 메우지 않는다.
+  const coordinationOnly = hybridWorkerProgressFailure(row, date);
+  if (coordinationOnly?.code === NAVER_RANK_WORKER_SIGNAL_UNKNOWN) return coordinationOnly;
+  if (!coordinationOnly && latestCommitInstant({ lastSuccessAt: row.last_success_at }) !== null) return null;
+  // 2026-09-29(1.1.34): 유한 창 커밋은 last_success_at 을 갱신하지 않는다. SILENT·NO_COMMIT 으로
+  // 보일 때만 상품 추적기 표를 한 번 더 읽어 헬스와 같은 "마지막 커밋"(두 표식 중 최신)으로 다시
+  // 판정한다. 두 표식 중 최신은 코디네이션 표식보다 오래될 수 없으므로 이 재판정은 실패를 풀기만
+  // 하고 새로 만들지 않는다(SILENT → null/SILENT, NO_COMMIT → null/NO_COMMIT).
+  // 예외 하나: last_success_at 이 비어 있으면(신규 배치 등) 코디네이션만으로는 커밋 축을 단정하지
+  // 않으므로, 헬스와 같게 상품 표 하나로 판정한다(그때만 null → NO_COMMIT 이 될 수 있다).
+  // 읽기 실패면 1.1.33 과 같은 판정이다.
+  const productLastCheckedAt = await hybridWorkerProductLastCheckedAt(ctx);
+  if (productLastCheckedAt === null) return coordinationOnly;
+  return hybridWorkerProgressFailure(row, date, productLastCheckedAt);
 }
 
 function safeCount(value) {

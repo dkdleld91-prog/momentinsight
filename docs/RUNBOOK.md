@@ -212,7 +212,9 @@
 ### S1 경보·플레이스
 
 - **경보 판정**: `/api/rank-collection-health` 의 `lanes.product.commitStalled: true` = 활성 상품 추적기가 있는데
-  마지막 커밋(`naver_shopping_worker_coordination.last_success_at`) 뒤 **45분 이상** 커밋이 없다. 이때 최상위 `ok:false`.
+  마지막 커밋 뒤 **45분 이상** 커밋이 없다. 이때 최상위 `ok:false`. 마지막 커밋 = `naver_shopping_worker_coordination.last_success_at`
+  (300위 묶음 커밋만 찍는다)과 `naver_rank_trackers` 의 `max(last_checked_at)`(300위·유한 창 커밋 둘 다 찍는다) 중 최신이다
+  (1.1.34 부터 — 아래 `### B 경보: 유한창 커밋`). 크론 `NAVER_RANK_WORKER_NO_COMMIT`·`NAVER_RANK_WORKER_SILENT` 도 같은 "마지막 커밋"을 본다.
   어느 작업기가 살아 있는지와 무관하다(주작업기가 꺼져 하트비트가 낡아도 뜬다). 의도된 정지(`manual_stop`·`manual_canary`·
   네이버 쿨다운)·수동복구 대기(`transient_recovery_manual_required`)·활성 0건은 예전처럼 제외한다.
   09-27 기준: 19:24:28.823 커밋 → 20:09:28.823 부터 `ok:false` → 20:34:48.822 커밋에 해제. 헬스 60초 캐시는 45분 경계를 넘겨 들고 있지 않는다.
@@ -222,13 +224,18 @@
     (2026-09-28 라이브 실측 `cache-control: no-store`·`x-vercel-cache: MISS`) — 현재 실제 추가분은 0 이고, 이 덮어쓰기가 풀리면 약 3분이 붙는다.
   - 인프로세스 60초 캐시는 45분 경계에서 끊으므로(`rankHealthCacheExpiresAt`) 늦추지 않는다.
   - 그래서 지금 기준 폰 경보는 커밋 뒤 45~50분(CDN 캐시가 살아나면 최대 약 53분) 사이에 온다.
+  - 1.1.34 부터: `last_checked_at` 은 작업기 시계로 찍힌 수집 시각이라, 작업기 시계가 서버보다 앞서면 그만큼(서버 허용 최대 5분) 더 늦을 수 있다(최악 약 55분). 2분을 넘게 앞선 값은 그동안 커밋으로 세지 않는다. 실제 시계 차 크기는 미확인.
 - **런타임 배포 중에는 정상 경보가 뜬다**: 런타임 인상 배포 창(서버 release 변경 → 윈도우 워커 갱신 → 첫 커밋)에서 커밋 공백이
   45분을 넘으면 `ok:false`(`commitStalled:true`)가 **정상적으로** 뜬다. 오탐이 아니라 실제 커밋 공백이며, 첫 커밋 뒤 인프로세스 캐시(최대 60초)가 지나고 다음 UptimeRobot 점검에서 풀린다.
-- **근거**: 14일 커밋 공백 실측 — 45분 초과 11건은 전부 실제 정지(최소 69.3분), 정상 최대 38.2분. 예전 기준(90분 초과 + 하트비트 15분 안쪽)은 09-27 을 못 잡았다.
+- **근거**: 14일 커밋 공백 실측 — 45분 초과 11건은 전부 실제 정지(최소 69.3분), 정상 최대 38.2분(300위 커밋 `tracker_committed` 만 센 값). 예전 기준(90분 초과 + 하트비트 15분 안쪽)은 09-27 을 못 잡았다.
+  1.1.34 재료(유한 창 포함) 기준 14일(09-15~09-29): 45분 이상 12건 — 09-29 훈련 3 의 50.5분, 09-19 대기기 단독 47.0분 포함 — 그 밖의 최대 40.0분.
 - **크론과의 차이**: 상품 크론은 같은 판정 함수를 쓰되 주작업기 진척이 30분 안이면 `503 NAVER_RANK_WORKER_NO_COMMIT`(문구 "45분 이상"),
   30분 넘게 끊기면 `503 NAVER_RANK_WORKER_SILENT`, 09:05·15:05 슬롯 뒤 60분 유예 중이면 판정하지 않는다. 헬스는 유예가 없다.
+  1.1.34 부터 진척에도 유한 창 커밋(`max(last_checked_at)`)이 들어간다. 남는 차이는 축 길이뿐이다: 마지막 커밋이 30~45분 전이고
+  주작업기 하트비트도 30분 넘게 낡았으면 크론은 SILENT, 헬스는 `ok:true`(1.1.33 부터 있던 차이).
 - **경보를 받으면**: 코디네이션 행의 `circuit_state`·`circuit_reason`·`primary_seen_at`·`last_failure_code` 부터 본다(`docs/skills/mi-collection-incident/SKILL.md`).
   맥 워치독은 `commit_stalled action=none` 으로 기록만 하고 Chrome 을 재기동하지 않는다 — 원인이 주작업기·서버·DB 어디든 켜지는 신호라서다.
+  1.1.34 부터 코디네이션 행을 못 읽는 틱은 `health_not_recoverable action=none continuity=reset` 대신 이 줄이 남을 수 있다(조치는 같다, `### B` 참고).
 - **배포 검증**: `verify-live` 4) 의 상품 커밋 나이 상한은 `< 45`. 커밋이 45분 넘게 없는 중에 배포하면 FAIL 이 정상이다(첫 커밋 뒤 다시 돌린다).
 - **확인 필요(대표)**: UptimeRobot 수집 모니터 키워드가 `"ok":true`(없으면 DOWN) 또는 `"commitStalled":false`(없으면 DOWN)인지. 다른 키워드면 이 경보가 폰에 오지 않는다.
 - **플레이스 러너**(`scripts/place-rank-actions-worker.mjs`): 20건 상한을 없앴다. 서버가 '할 일 없음'이라 할 때까지 한 건씩(동시 1) 처리하고,
@@ -297,3 +304,35 @@
   - 대기기는 예전 그대로(wake 가 있을 때만) — 대기기 1회 인계를 더 자주 쓰지 않게 하려는 것이다.
   - 불변식 "1분 폴링은 신호가 없으면 네이버를 열지 않는다"의 유일한 예외다. 관측 가능한 표지는 DB 뿐이다: 회로 half_open 부여 직후의 `naver_shopping_worker_runs.run_trigger = 'rank-remote'` 런(윈도우 주작업기, 런 행은 작업을 받아 `navigating` 을 보고할 때만 생긴다). 요약 `autoRecoveryProbe: true`·로그 `local_worker_auto_recovery_probe` 는 주작업기에서만 생기는데, 윈도우 주작업기는 stderr 를 남기지 않고(`RedirectStandardError = false`) 맥은 늘 대기기(`MI_NAVER_SHOPPING_WORKER_ROLE=standby`)라 맥 로그에 이 표지가 없는 것이 정상이다.
 - 네이버 요청량: 페이지당 이동 1회 그대로(`about:blank` 비우기는 네트워크 요청 없음). 1분 폴링은 회로 창당 1회 상한 안에서 검증 시점만 앞당긴다(계속 실패하는 주작업기의 검증 간격 평균 약 15분 → 약 11분).
+
+## 3차 훈련 후속 1.1.34 (2026-09-29)
+
+### B 경보: 유한창 커밋
+
+- 결함: 훈련 3 에서 레인이 16:04:32~16:39:32 잠겼다. 마지막 300위 커밋 15:55:17 → 16:40:17 `ok:false`(정상). 그런데 16:45:49 유한 창 커밋(`finite_window_committed`)이
+  `last_success_at` 을 갱신하지 않아 다음 300위 커밋 16:56:00 까지 `ok:false` 가 이어졌다(경보 15.7분, 실제 무커밋은 5.5분).
+- 수정(서버만, DB 변경 없음, 런타임 무관): "마지막 커밋" = `naver_shopping_worker_coordination.last_success_at` 과 `naver_rank_trackers` 의 `max(last_checked_at)` 중 최신.
+  두 커밋 RPC(300위 `mi_commit_naver_shopping_worker_result`, 유한 창 `mi_commit_naver_shopping_finite_worker_result`)가 같은 트랜잭션에서 `last_checked_at = p_checked_at` 을 찍고, 실패 경로는 이 열을 쓰지 않는다.
+  판정 함수는 `src/server/naver-shopping/worker-runtime-expectation.mjs` 의 `latestCommitInstant` 하나다. 45분 임계값·"이상" 경계·8키/상품 레인 5키 표면은 그대로다.
+  - 헬스(`/api/rank-collection-health`): 상품 레인이 이미 읽는 `max(last_checked_at)` 을 그대로 쓴다 → 새 조회 0. 60초 캐시는 두 표식 중 최신 + 45분 경계에서 끊는다(예: 16:45:49 → 17:30:49).
+  - 크론(`/api/naver-rank-cron`): 코디네이션만으로 SILENT·NO_COMMIT 으로 보일 때(또는 `last_success_at` 이 비었을 때)만 상품 표를 한 번 더 읽는다 → 정상 경로 왕복 불변.
+    읽기 실패면 1.1.33 판정 그대로. SILENT(진척) 축도 같은 "마지막 커밋"을 진척으로 센다. 헬스와 같은 입력이면 같은 판정이다(대조표 테스트 `naver-rank-cron.test.mjs`).
+    남는 차이는 축 길이(크론 진척 30분 / 헬스 45분)뿐이다 — S1 "크론과의 차이".
+  - 시계 앞섬 가드: `last_checked_at` 은 작업기 시계다. 서버 now 보다 2분을 넘게 앞선 값은 그동안 커밋·진척으로 세지 않는다(`WORKER_CHECKED_AT_MAX_AHEAD_MS`) — 먼 미래 값(손 SQL·시계 고장)이 경보를 무기한 가리지 못한다.
+    한계: 서버가 받는 5분 안의 앞섬은 경보를 최대 그만큼 늦출 수 있다(S1 상한 줄). 실제 시계 차 크기는 미확인. `last_success_at`(서버 시각)에는 걸지 않는다.
+- 효과와 대가(반박 검토의 읽기 전용 14일 실측, 09-15~09-29): 300위 커밋만 셌을 때 45분 이상 공백 12건 가운데 **바뀌는 것은 2건**, 나머지 10건(69.3~658.1분)은 안에 유한 창 커밋이 없어 그대로다.
+  - 09-29 훈련 3: 60.7분(50.5 + 10.2) → 경보 15.7분 → 5.5분(의도한 수정).
+  - 09-19 15:36:39~17:03:38 대기기 단독 저속 구간: 87.0분(47.0 + 40.0, 그 안에 `group_claimed` 3건·`job_failed` 0건·16:23:38 유한 창 1건) → 경보 42.0분 → 2.0분.
+    1.1.33 결정은 이 공백을 "실제 정지"로 분류했었다. 즉 이 변경의 대가는 **대기기 단독·저처리량 구간과 300위 경로만 고장 난 구간에서 경보가 짧아지거나 켜졌다 꺼졌다 하는 것**이다
+    (유한 창 커밋만으로 커밋 나이가 45분 미만으로 유지되는 시간은 14일 중 26.1%, 유한 창 커밋 간격 중앙값 166.9분). 대표 승인 범위의 대가로 받아들인다.
+    "경보가 더 빨리 풀린다"만 보고하지 않는다 — 09-19 사례(42분 → 2분)를 함께 적는다.
+- 코디네이션 행을 못 읽는 경우(`reliable=false`, `ok` 는 어차피 false): 헬스의 커밋 축은 상품 표 하나로 잰다 → `commitStalled:true` 가 될 수 있다(1.1.33 은 `null`·`false`).
+  크론은 그대로 `NAVER_RANK_WORKER_SIGNAL_UNKNOWN`(상품 표로 메우지 않는다).
+- 맥 워치독 로그 변화(조치는 모두 그대로 — 재기동 없음):
+  - 유한 창 커밋만 45분 안에 있던 틱: `commit_stalled action=none` → `healthy stalled_minutes=…`.
+  - 코디네이션 판독 불가 + 상품 45분 이상: `health_not_recoverable action=none continuity=reset` → `commit_stalled action=none`(둘 다 연속 관측 리셋).
+- 배포: 1.1.34 푸시 커밋 하나에 함께 싣는다(서버 전용 선배포 없음 — D 절 순서). `naver-rank-cron.mjs` 는 잠금 파일이라 병합 뒤 `lock-regen.py` 로 sha 를 다시 만든다.
+- 배포 뒤 확인: `npm run verify:live` 4) PASS. 다음 유한 창 커밋(`diagnose.mjs` 의 마지막 커밋이 finite 인 시점) 뒤 60초 안에 `lanes.product.lastCommitAgeMinutes` 가 0~1 로 떨어지는지.
+  `diagnose.mjs`·`tally.mjs` 는 이미 두 이벤트를 모두 커밋으로 센다(변경 없음).
+- 되돌리기: 서버 커밋 revert + 잠금 sha 복원. DB 되돌리기 없음.
+- 범위 밖(그대로): `heartbeatAgeMinutes`(워치독 재기동 가드 재료), 45분 임계값.

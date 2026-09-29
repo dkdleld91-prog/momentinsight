@@ -9,6 +9,9 @@ description: 모먼트 인사이트 N30 순위 수집 정지·인계 실패·Upt
 | 3분 진단 한 번에(코디네이션·런·실패·증거 trace·공개 상태·맥 로그·뚜껑·전원·판정 힌트) | `node ~/.claude/skills/mi-collection-incident/scripts/diagnose.mjs [시간=6]` |
 | 조건부 회로 정리 SQL 생성(대표 실행용, 바탕화면+TextEdit) | `bash ~/.claude/skills/mi-collection-incident/scripts/recovery-sql.sh "<circuit_reason>"` |
 | 기간 집계 | `LIST=1 node ~/.claude/skills/mi-collection-incident/scripts/tally.mjs <sinceISO>` |
+| 윈도우 주작업기 훈련 한 줄(호스트가 한가할 때만 정지·finally 자동 복구, 첫 사용은 `DRY=1`, 복구 전용은 `restore`; `docs/RUNBOOK.md` "D 배포·훈련 도구") | `node ~/.claude/skills/mi-collection-incident/scripts/windows-drill.mjs 900 <중심초> 7 <catch-up 분 끝자리>` |
+| 훈련 위상 측정(읽기 전용, `PHASE_UNSTABLE` exit 3 = 훈련 미룸) | `node ~/.claude/skills/mi-collection-incident/scripts/windows-drill.mjs phase [시간=2]` |
+| 맥 등록 SW 확인(읽기 전용) · 확장 페이지 새 창(STALE 일 때만, 새로 연 그 창만 이동; UNKNOWN 은 `SW_UNKNOWN` 으로 거절) | 푸시 뒤에는 맥 원본 체크아웃, 푸시 전에는 배포 준비 워크트리에서 `bash scripts/mac-naver-shopping-extension.sh check` · `… open` |
 
 2026-09-19 실측: 진단 도구가 "맥 뚜껑 닫힘+배터리 → 15분마다 40초만 깨어나 provider_deadline_exceeded" 정지를 잡아냄. 뚜껑 닫힘 절전은 caffeinate 로 못 막는다(대표가 뚜껑 열고 전원 연결).
 

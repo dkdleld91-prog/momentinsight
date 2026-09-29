@@ -17,12 +17,18 @@ import productRankCronHandler, {
   hybridWorkerFailure,
   hybridWorkerGraceActive,
   hybridWorkerNoCommitFailure,
+  hybridWorkerProductLastCheckedAt,
   hybridWorkerProgressAt,
   hybridWorkerRecentlyActive,
   hybridWorkerSignal,
   safeProductRankCronSummary,
 } from "./naver-rank-cron.mjs";
-import { EXPECTED_WORKER_RUNTIME_VERSION } from "../naver-shopping/worker-runtime-expectation.mjs";
+import {
+  EXPECTED_WORKER_RUNTIME_VERSION,
+  WORKER_CHECKED_AT_MAX_AHEAD_MS,
+  WORKER_COMMIT_STALL_MINUTES,
+} from "../naver-shopping/worker-runtime-expectation.mjs";
+import { rankCollectionHealthBody } from "./rank-collection-health.mjs";
 
 const HYBRID_CRON_ENV_KEYS = [
   "NAVER_SHOPPING_RANK_MODE",
@@ -44,11 +50,14 @@ const HYBRID_CRON_SECRET = "unit-test-rank-cron-secret-0123456789";
 // 상태이고, 이 갈래에서는 낡은 실행본 판정이 성립하지 않아 아래 분기들이 원래 의도대로
 // 검증된다. 라우트를 비워 두면 postgrest-js 가 throw 를 3회 재시도하며 1s·2s·4s 를
 // 실제로 기다려 핸들러 테스트마다 7초가 붙는다(실측: 파일 전체 0.3초 → 28초).
+// 1.1.34: 코디네이션만으로 SILENT·NO_COMMIT 으로 보이면 크론이 상품 추적기 표 MAX(last_checked_at)
+// 를 한 번 더 읽는다. 기본값은 빈 결과(표식 없음 = 1.1.33 과 같은 판정)다.
 function stubHybridCronEnvironment({
   coordinationRows = [],
   wakeGranted = true,
   coordinationStatus = 200,
   workerRunRows = [{ runtime_version: EXPECTED_WORKER_RUNTIME_VERSION }],
+  productTrackerRows = [],
 }) {
   const previousEnv = Object.fromEntries(HYBRID_CRON_ENV_KEYS.map((key) => [key, process.env[key]]));
   const previousFetch = globalThis.fetch;
@@ -86,6 +95,12 @@ function stubHybridCronEnvironment({
     }
     if (url.includes("/rest/v1/naver_shopping_worker_runs")) {
       return new Response(JSON.stringify(workerRunRows), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/naver_rank_trackers")) {
+      return new Response(JSON.stringify(productTrackerRows), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -501,6 +516,198 @@ test("F11: 유예 창 안에서는 커밋 정체를 판정하지 않고, 유예 
   // 진척까지 30분 넘게 끊기면(주작업기 꺼짐) 기존대로 SILENT 가 먼저 받는다.
   const silent = [{ primary_seen_at: "2026-08-01T01:20:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
   assert.equal((await hybridWorkerFailure(coordinationCtx(silent), afterGrace)).code, NAVER_RANK_WORKER_SILENT);
+});
+
+// ── 1.1.34: 유한 창 커밋도 커밋이다(헬스와 같은 "마지막 커밋") ─────────────
+// 2026-09-29 훈련 3: 16:45:49 유한 창 커밋은 last_success_at 을 갱신하지 않아 헬스가 16:56 까지
+// ok:false 였다. 헬스와 크론은 같은 재료(코디네이션 last_success_at + 상품 추적기
+// MAX(last_checked_at))를 본다. 크론은 코디네이션만으로 SILENT·NO_COMMIT 으로 보일 때(와
+// last_success_at 이 비었을 때)만 상품 표를 한 번 읽는다.
+const AFTER_GRACE_0801 = new Date("2026-08-01T02:00:00.000Z"); // 11:00 KST, 유예 밖
+const MINUTE_MS = 60_000;
+const agoIso = (ms) => new Date(AFTER_GRACE_0801.getTime() - ms).toISOString();
+
+// productRows: 배열(성공) · Error(체인 throw) · "postgrest_error"(error 필드). calls 에 표 이름을 남긴다.
+function productTrackerCtx(coordinationRows, productRows, calls = []) {
+  return {
+    supabaseAdmin: {
+      from(table) {
+        calls.push(table);
+        if (table === "naver_rank_trackers") {
+          const chain = {
+            select() { return chain; },
+            not() { return chain; },
+            order() { return chain; },
+            async limit() {
+              if (productRows instanceof Error) throw productRows;
+              if (productRows === "postgrest_error") return { data: null, error: { message: "permission denied" } };
+              return { data: productRows, error: null };
+            },
+          };
+          return chain;
+        }
+        const rows = table === "naver_shopping_worker_runs"
+          ? [{ runtime_version: EXPECTED_WORKER_RUNTIME_VERSION }]
+          : coordinationRows;
+        const chain = {
+          select() { return chain; },
+          eq() { return chain; },
+          order() { return chain; },
+          async limit() { return { data: rows, error: null }; },
+        };
+        return chain;
+      },
+    },
+  };
+}
+const productRow = (iso) => [{ last_checked_at: iso }];
+
+test("1.1.34: 코디네이션으로는 NO_COMMIT 이어도 상품 추적기 커밋(유한 창)이 45분 안이면 크론 실패가 아니다", async () => {
+  const stale = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(2 * 60 * MINUTE_MS) }];
+  const failure = (productRows) => hybridWorkerFailure(productTrackerCtx(stale, productRows), AFTER_GRACE_0801);
+  assert.equal(await failure(productRow(agoIso(5 * MINUTE_MS))), null);
+  assert.equal(await failure(productRow(agoIso(45 * MINUTE_MS - 1))), null, "44분 59.999초는 아직 정상이다");
+  assert.equal((await failure(productRow(agoIso(45 * MINUTE_MS)))).code, NAVER_RANK_WORKER_NO_COMMIT, "정확히 45분부터 정체");
+  assert.equal((await failure([])).code, NAVER_RANK_WORKER_NO_COMMIT, "상품 표식이 없으면 코디네이션 판정 그대로");
+  // 읽기 실패는 1.1.33 과 같은 판정(코디네이션만)으로 물러난다 — 정지를 가리지 않는다.
+  assert.equal((await failure(new Error("db_down"))).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal((await failure("postgrest_error")).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(WORKER_COMMIT_STALL_MINUTES, 45);
+});
+
+test("1.1.34: SILENT 축도 같은 마지막 커밋을 본다 — 대기기 단독 유한 창 커밋(09-19 모양)이면 SILENT 가 아니다", async () => {
+  // 09-19 15:36:39 300위 커밋 뒤 주작업기 고장, 대기기 단독(대기기 claim 은 primary_seen_at 을 갱신하지
+  // 않는다), 16:23:38 유한 창 커밋. 16:37 크론은 예전에는 진척 61분 → SILENT 503 이었다(헬스는 1.1.34 에서 ok:true).
+  const standbyOnly = [{ primary_seen_at: agoIso(61 * MINUTE_MS), last_success_at: agoIso(61 * MINUTE_MS) }];
+  const failure = (productRows) => hybridWorkerFailure(productTrackerCtx(standbyOnly, productRows), AFTER_GRACE_0801);
+  assert.equal((await failure(new Error("db_down"))).code, NAVER_RANK_WORKER_SILENT, "코디네이션만으로는 침묵이다");
+  assert.equal(await failure(productRow(agoIso(13 * MINUTE_MS))), null, "유한 창 커밋 13분 전이면 진척·커밋 모두 신선");
+  // 진척 축은 30분이라, 유한 창 커밋이 30~45분 전이면 크론은 여전히 SILENT 다(헬스 45분 축과의 차이 — RUNBOOK 1.1.34 B).
+  assert.equal((await failure(productRow(agoIso(35 * MINUTE_MS)))).code, NAVER_RANK_WORKER_SILENT);
+  assert.equal((await failure(productRow(agoIso(50 * MINUTE_MS)))).code, NAVER_RANK_WORKER_SILENT);
+  assert.equal((await failure([])).code, NAVER_RANK_WORKER_SILENT);
+});
+
+test("1.1.34: last_success_at 이 비어 있으면 크론도 헬스처럼 상품 표 하나로 커밋 축을 잰다", async () => {
+  const noSuccess = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: null }];
+  const failure = (productRows) => hybridWorkerFailure(productTrackerCtx(noSuccess, productRows), AFTER_GRACE_0801);
+  assert.equal(await failure(productRow(agoIso(10 * MINUTE_MS))), null);
+  assert.equal((await failure(productRow(agoIso(50 * MINUTE_MS)))).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(await failure([]), null, "커밋 기록이 하나도 없으면 단정하지 않는다");
+  assert.equal(await failure(new Error("db_down")), null, "읽기 실패는 1.1.33 과 같다(단정하지 않음)");
+});
+
+test("1.1.34: 상품 추적기 표는 코디네이션 판정이 실패로 보일 때만 읽는다(정상 경로 왕복 불변)", async () => {
+  const productReads = async (coordinationRows, date = AFTER_GRACE_0801) => {
+    const calls = [];
+    await hybridWorkerFailure(productTrackerCtx(coordinationRows, [], calls), date);
+    return calls.filter((table) => table === "naver_rank_trackers").length;
+  };
+  const committing = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(10 * MINUTE_MS) }];
+  const noCommit = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(2 * 60 * MINUTE_MS) }];
+  const silent = [{ primary_seen_at: agoIso(61 * MINUTE_MS), last_success_at: agoIso(61 * MINUTE_MS) }];
+  const noSuccess = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: null }];
+  assert.equal(await productReads(committing), 0, "커밋이 신선하면 추가 조회 0");
+  assert.equal(await productReads(noCommit), 1);
+  assert.equal(await productReads(silent), 1);
+  assert.equal(await productReads(noSuccess), 1, "last_success_at 이 비면 헬스와 같게 읽는다");
+  assert.equal(await productReads([]), 0, "코디네이션을 못 읽으면(unknown) 상품 표로 메우지 않는다");
+  assert.equal(await productReads(noCommit, new Date("2026-08-01T00:30:00.000Z")), 0, "유예 안에서는 판정도 조회도 없다");
+});
+
+test("1.1.34: 작업기 시계가 서버보다 2분 넘게 앞선 상품 표식은 커밋·진척으로 세지 않는다", async () => {
+  assert.equal(WORKER_CHECKED_AT_MAX_AHEAD_MS, 2 * MINUTE_MS);
+  const ahead = (ms) => productRow(new Date(AFTER_GRACE_0801.getTime() + ms).toISOString());
+  const noCommit = [{ primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(2 * 60 * MINUTE_MS) }];
+  const silent = [{ primary_seen_at: agoIso(61 * MINUTE_MS), last_success_at: agoIso(61 * MINUTE_MS) }];
+  const failure = (rows, productRows) => hybridWorkerFailure(productTrackerCtx(rows, productRows), AFTER_GRACE_0801);
+  assert.equal(await failure(noCommit, ahead(2 * MINUTE_MS)), null, "2분까지는 시계 차로 받는다");
+  assert.equal((await failure(noCommit, ahead(2 * MINUTE_MS + 1))).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal((await failure(noCommit, ahead(365 * 24 * 60 * MINUTE_MS))).code, NAVER_RANK_WORKER_NO_COMMIT, "먼 미래 값이 정지를 가리지 않는다");
+  assert.equal((await failure(silent, ahead(3 * MINUTE_MS))).code, NAVER_RANK_WORKER_SILENT);
+});
+
+test("1.1.34: hybridWorkerNoCommitFailure 세 번째 인자·조회기의 fail-safe", async () => {
+  const row = { primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(2 * 60 * MINUTE_MS) };
+  assert.equal(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801, agoIso(5 * MINUTE_MS)), null);
+  assert.equal(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801, agoIso(45 * MINUTE_MS)).code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801, "").code, NAVER_RANK_WORKER_NO_COMMIT, "빈 값은 1.1.33 과 같다");
+  assert.equal(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801, "not-a-date").code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801).code, NAVER_RANK_WORKER_NO_COMMIT, "옛 호출 모양 호환");
+  assert.ok(hybridWorkerNoCommitFailure(row, AFTER_GRACE_0801).message.includes("45분 이상"));
+  assert.equal(await hybridWorkerProductLastCheckedAt(null), null);
+  assert.equal(await hybridWorkerProductLastCheckedAt({}), null);
+  assert.equal(await hybridWorkerProductLastCheckedAt(productTrackerCtx([], new Error("db_down"))), null);
+  assert.equal(await hybridWorkerProductLastCheckedAt(productTrackerCtx([], "postgrest_error")), null);
+  assert.equal(await hybridWorkerProductLastCheckedAt(productTrackerCtx([], [])), "");
+  assert.equal(
+    await hybridWorkerProductLastCheckedAt(productTrackerCtx([], productRow("2026-08-01T01:55:00.000Z"))),
+    "2026-08-01T01:55:00.000Z",
+  );
+});
+
+test("1.1.34: 크론 핸들러 — last_success_at 2시간 전이라도 유한 창 커밋 5분 전이면 202, 대기기 단독(09-19 모양)도 202", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER_GRACE_0801.getTime() });
+  const cases = [
+    { primary_seen_at: agoIso(MINUTE_MS), last_success_at: agoIso(2 * 60 * MINUTE_MS), finite: agoIso(5 * MINUTE_MS) },
+    { primary_seen_at: agoIso(61 * MINUTE_MS), last_success_at: agoIso(61 * MINUTE_MS), finite: agoIso(13 * MINUTE_MS) },
+  ];
+  for (const { finite, ...coordination } of cases) {
+    const stub = stubHybridCronEnvironment({
+      coordinationRows: [coordination],
+      productTrackerRows: productRow(finite),
+    });
+    try {
+      const response = await productRankCronHandler.fetch(hybridCronRequest());
+      const body = await response.json();
+      assert.equal(response.status, 202, JSON.stringify(body));
+      assert.equal(body.ok, true);
+      assert.equal(body.sourceStatus.shoppingRank.status, "worker_priority");
+      assert.equal(stub.calls.filter((url) => url.includes("/rest/v1/naver_rank_trackers")).length, 1);
+    } finally {
+      stub.restore();
+    }
+  }
+});
+
+// 헬스 commitStalled 와 크론 판정이 같은 입력에서 같은 답을 내는지 표로 대조한다. 한쪽만 재료를 바꾸면
+// 여기서 깨진다. band 행은 문서화된 차이다 — 크론의 진척(SILENT) 축은 30분이라 커밋이 30~45분 전이고
+// 주작업기 하트비트도 낡았으면 크론은 SILENT, 헬스(45분 축)는 정상이다(1.1.33 부터 있던 차이, RUNBOOK 1.1.34 B).
+test("1.1.34: 헬스 commitStalled 와 크론 판정은 같은 입력에서 같은 답을 낸다(대조표)", async () => {
+  const ahead = (ms) => new Date(AFTER_GRACE_0801.getTime() + ms).toISOString();
+  const rows = [
+    { name: "300위 커밋 신선", primary: agoIso(MINUTE_MS), success: agoIso(10 * MINUTE_MS), product: agoIso(11 * MINUTE_MS), cron: null, stalled: false },
+    { name: "유한 창만 신선", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: agoIso(5 * MINUTE_MS), cron: null, stalled: false },
+    { name: "유한 창 44:59.999", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: agoIso(45 * MINUTE_MS - 1), cron: null, stalled: false },
+    { name: "유한 창 45:00", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: agoIso(45 * MINUTE_MS), cron: NAVER_RANK_WORKER_NO_COMMIT, stalled: true },
+    { name: "상품 표식 없음", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: "", cron: NAVER_RANK_WORKER_NO_COMMIT, stalled: true },
+    { name: "last_success_at 없음·상품 10분", primary: agoIso(MINUTE_MS), success: null, product: agoIso(10 * MINUTE_MS), cron: null, stalled: false },
+    { name: "last_success_at 없음·상품 50분", primary: agoIso(MINUTE_MS), success: null, product: agoIso(50 * MINUTE_MS), cron: NAVER_RANK_WORKER_NO_COMMIT, stalled: true },
+    { name: "커밋 기록 없음", primary: agoIso(MINUTE_MS), success: null, product: "", cron: null, stalled: false },
+    { name: "대기기 단독 유한 창 13분(09-19)", primary: agoIso(61 * MINUTE_MS), success: agoIso(61 * MINUTE_MS), product: agoIso(13 * MINUTE_MS), cron: null, stalled: false },
+    { name: "침묵·모든 커밋 50분", primary: agoIso(61 * MINUTE_MS), success: agoIso(61 * MINUTE_MS), product: agoIso(50 * MINUTE_MS), cron: NAVER_RANK_WORKER_SILENT, stalled: true },
+    { name: "상품 표식 +3분(무시)", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: ahead(3 * MINUTE_MS), cron: NAVER_RANK_WORKER_NO_COMMIT, stalled: true },
+    { name: "상품 표식 +2분(허용)", primary: agoIso(MINUTE_MS), success: agoIso(120 * MINUTE_MS), product: ahead(2 * MINUTE_MS), cron: null, stalled: false },
+    { name: "침묵·커밋 35분(band)", primary: agoIso(61 * MINUTE_MS), success: agoIso(61 * MINUTE_MS), product: agoIso(35 * MINUTE_MS), cron: NAVER_RANK_WORKER_SILENT, stalled: false, band: true },
+  ];
+  for (const row of rows) {
+    const cron = await hybridWorkerFailure(
+      productTrackerCtx([{ primary_seen_at: row.primary, last_success_at: row.success }], row.product ? productRow(row.product) : []),
+      AFTER_GRACE_0801,
+    );
+    const health = rankCollectionHealthBody({
+      now: AFTER_GRACE_0801.getTime(),
+      lanes: [],
+      primarySeenAt: row.primary,
+      lastSuccessAt: row.success || "",
+      productLastCheckedAt: row.product,
+      trackers: { activeProduct: 49 },
+    });
+    assert.equal(cron?.code ?? null, row.cron, `크론: ${row.name}`);
+    assert.equal(health.lanes.product.commitStalled, row.stalled, `헬스: ${row.name}`);
+    assert.equal(health.ok, !row.stalled, `헬스 ok: ${row.name}`);
+    if (!row.band) assert.equal(cron !== null, health.lanes.product.commitStalled, `대조: ${row.name}`);
+  }
 });
 
 test("product cron accepts the explicit fallback without prewarming a provider", async () => {

@@ -42,11 +42,13 @@ import {
 import { placeTrackerPayload } from "../src/server/handlers/naver-place-rank-trackers.mjs";
 import {
   EXPECTED_WORKER_RUNTIME_VERSION,
+  WORKER_CHECKED_AT_MAX_AHEAD_MS,
   WORKER_COMMIT_STALL_MINUTES,
   WORKER_HEARTBEAT_STALE_MINUTES,
   WORKER_OUTDATED_SIGNING_WINDOW_MS,
   commitAgeMinutes,
   heartbeatAgeMinutes,
+  latestCommitInstant,
   workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../src/server/naver-shopping/worker-runtime-expectation.mjs";
@@ -859,7 +861,8 @@ const HEALTH_KEYS_IN_ORDER = [
 const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
 const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
 // 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 앞 3키는 이름·순서·의미 불변.
-//   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). fail-safe null.
+//   lastCommitAgeMinutes — 코디네이션 last_success_at 과 상품 MAX(last_checked_at)(productLastCheckedAt 입력)
+//                          중 최신 기준 커밋 나이(분). fail-safe null. 두 번째 재료는 1.1.34 부터.
 //   commitStalled        — "의도된 정지 아님 AND 커밋 45분 이상 없음 AND 활성 상품
 //                          추적기 > 0"(2026-09-27: 하트비트 신선 조건 제거, 90분 초과 → 45분 이상).
 //                          queueStalled 와 독립이지만 수집 헬스 ok 는 false 로 뒤집는다.
@@ -2080,6 +2083,12 @@ test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상
     assert.equal(body.queueStalled, true);
     assert.equal(body.ok, false);
     assert.equal(body.stalledMinutes, 600);
+    // 1.1.34: 이 스텁은 코디네이션 행을 돌려주지 않는다(판독 불가 → reliable=false). 커밋 축은 상품
+    // MAX(last_checked_at) 하나로 잰다 — 10시간 전이라 정체다(1.1.33 에서는 null·false 였다).
+    // 워치독 로그는 health_not_recoverable 대신 commit_stalled action=none 이 된다(조치는 같다).
+    assert.equal(body.heartbeatAgeMinutes, 0);
+    assert.equal(body.lanes.product.lastCommitAgeMinutes, 600);
+    assert.equal(body.lanes.product.commitStalled, true);
     // lanes 가 어느 레인인지 말한다.
     assert.equal(body.lanes.product.queueStalled, true);
     assert.equal(body.lanes.product.stalledMinutes, 600);
@@ -2296,6 +2305,236 @@ test("2026-09-27: 핸들러 — 주작업기 꺼짐·자동 사유 회로 open �
     assert.equal(recovered.body.lanes.product.lastCommitAgeMinutes, 0);
     assert.equal(recovered.body.lanes.product.commitStalled, false);
     assert.equal(recovered.body.ok, true);
+  } finally {
+    stub.restore();
+  }
+});
+
+// ── 2026-09-29(1.1.34): 유한 창 커밋도 커밋이다 ──
+// 훈련 3: 16:04:32 묶음 도중 주작업기를 강제 종료해 레인이 16:39:32 까지 잠겼다. 마지막 300위 커밋은
+// 15:55:17(원장 tracker_committed), 그 뒤 첫 커밋은 16:45:49 유한 창(finite_window_committed), 다음 300위
+// 커밋은 16:56:00 이다(유한 창 포함 공백 50.5분 + 10.2분). 유한 창 커밋은 last_success_at 을 갱신하지 않고
+// naver_rank_trackers.last_checked_at 만 찍어, 16:40:17 에 켜진 ok:false 가 16:56 까지 15.7분 남았다
+// (1.1.34 판정으로는 16:45:49 까지 5.5분). last_success_at 은 15:55:17 직후의 서버 시각이라 초 단위 근사다.
+const kst0929 = (clock) => Date.parse(`2026-09-29T${clock}+09:00`);
+const iso0929 = (clock) => new Date(kst0929(clock)).toISOString();
+const DRILL_0929 = Object.freeze({
+  lastTrackerCommit: "15:55:17.000",
+  alertStart: "16:40:17.000",
+  finiteCommit: "16:45:49.000",
+  nextTrackerCommit: "16:56:00.000",
+});
+
+function drillBodyAt(clock, { lastSuccessAt, productLastCheckedAt } = {}) {
+  const now = kst0929(clock);
+  const product = productLastCheckedAt || iso0929(DRILL_0929.lastTrackerCommit);
+  return rankCollectionHealthBody({
+    now,
+    lanes: [
+      lane("product", product, false),
+      lane("place", new Date(now - 30 * 60 * 1000).toISOString(), false),
+    ],
+    primarySeenAt: new Date(now - 60_000).toISOString(),
+    lastSuccessAt: lastSuccessAt || iso0929(DRILL_0929.lastTrackerCommit),
+    productLastCheckedAt: product,
+    lastRunRuntimeVersion: EXPECTED_WORKER_RUNTIME_VERSION,
+    lastSignatureAt: new Date(now - 30_000).toISOString(),
+    trackers: { activeProduct: 49 },
+  });
+}
+
+test("2026-09-29 훈련 3 재현 — 16:40:17 ok:false, 16:45:49 유한 창 커밋에 바로 해제(16:56 까지 끌지 않는다)", () => {
+  const before = drillBodyAt("16:40:16.999");
+  assert.equal(before.lanes.product.lastCommitAgeMinutes, 44);
+  assert.equal(before.ok, true);
+
+  const alert = drillBodyAt(DRILL_0929.alertStart);
+  assert.equal(alert.lanes.product.lastCommitAgeMinutes, 45);
+  assert.equal(alert.lanes.product.commitStalled, true);
+  assert.equal(alert.ok, false, "레인이 잠긴 45분 무커밋은 실제 정지다");
+
+  const justBeforeFinite = drillBodyAt("16:45:48.999");
+  assert.equal(justBeforeFinite.lanes.product.commitStalled, true);
+  assert.equal(justBeforeFinite.ok, false);
+
+  // 유한 창 커밋: last_success_at 은 15:55:17 그대로, 상품 추적기 last_checked_at 만 16:45:49.
+  const finite = drillBodyAt(DRILL_0929.finiteCommit, { productLastCheckedAt: iso0929(DRILL_0929.finiteCommit) });
+  assert.equal(finite.lanes.product.lastCommitAgeMinutes, 0);
+  assert.equal(finite.lanes.product.commitStalled, false);
+  assert.equal(finite.ok, true, "유한 창 커밋 한 건이면 바로 정상이다");
+  assert.equal(finite.heartbeatAgeMinutes, 1, "heartbeatAgeMinutes 재료(primary_seen_at·last_success_at)는 그대로다");
+  assert.deepEqual(Object.keys(finite), HEALTH_KEYS_IN_ORDER, "최상위 8키 불변");
+  assert.deepEqual(Object.keys(finite.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER, "상품 레인 5키 불변");
+  assert.deepEqual(Object.keys(finite.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
+
+  // 1.1.33 판정(두 번째 재료 없음)은 같은 순간 아직 정체였다 — F2 결함 그 자체.
+  const legacy = rankCollectionHealthBody({
+    now: kst0929(DRILL_0929.finiteCommit),
+    lanes: [],
+    lastSuccessAt: iso0929(DRILL_0929.lastTrackerCommit),
+    trackers: { activeProduct: 49 },
+  });
+  assert.equal(legacy.lanes.product.commitStalled, true);
+  assert.equal(legacy.ok, false);
+
+  // 유한 창 커밋 뒤 다음 300위 커밋 전까지도 정상이고, 그 뒤에도 정상이다.
+  const between = drillBodyAt("16:55:59.999", { productLastCheckedAt: iso0929(DRILL_0929.finiteCommit) });
+  assert.equal(between.lanes.product.lastCommitAgeMinutes, 10);
+  assert.equal(between.ok, true);
+  const afterTracker = drillBodyAt("16:57:00.000", {
+    lastSuccessAt: iso0929(DRILL_0929.nextTrackerCommit),
+    productLastCheckedAt: iso0929(DRILL_0929.nextTrackerCommit),
+  });
+  assert.equal(afterTracker.lanes.product.lastCommitAgeMinutes, 1);
+  assert.equal(afterTracker.ok, true);
+});
+
+test("1.1.34: 커밋 재료는 last_success_at 과 상품 MAX(last_checked_at) 중 최신이며, 오래된 쪽은 판정을 바꾸지 못한다", () => {
+  const base = { now: NOW, lanes: [], trackers: { activeProduct: 49 } };
+  const productLane = (patch) => rankCollectionHealthBody({ ...base, ...patch }).lanes.product;
+  // 상품 표가 더 최신(유한 창 커밋) → 그 값이 기준.
+  const finiteNewer = productLane({ lastSuccessAt: at(-2 * HOUR), productLastCheckedAt: at(-5 * 60 * 1000) });
+  assert.equal(finiteNewer.lastCommitAgeMinutes, 5);
+  assert.equal(finiteNewer.commitStalled, false);
+  // 상품 표가 더 오래됨(300위 커밋의 수집 시각) → last_success_at 이 기준, 1.1.33 과 같다.
+  const exactNewer = productLane({ lastSuccessAt: at(-2 * HOUR), productLastCheckedAt: at(-3 * HOUR) });
+  assert.equal(exactNewer.lastCommitAgeMinutes, 120);
+  assert.equal(exactNewer.commitStalled, true);
+  // 둘 다 45분 이상 → 정체. 경계는 두 표식 중 최신 기준 "이상"이다.
+  assert.equal(productLane({ lastSuccessAt: at(-50 * 60 * 1000), productLastCheckedAt: at(-46 * 60 * 1000) }).commitStalled, true);
+  assert.equal(productLane({ lastSuccessAt: at(-2 * HOUR), productLastCheckedAt: at(-(45 * 60 * 1000 - 1)) }).commitStalled, false);
+  assert.equal(productLane({ lastSuccessAt: at(-2 * HOUR), productLastCheckedAt: at(-45 * 60 * 1000) }).commitStalled, true);
+  // last_success_at 이 없어도 상품 표 하나로 잰다. 둘 다 없으면 단정하지 않는다.
+  assert.equal(productLane({ lastSuccessAt: "", productLastCheckedAt: at(-10 * 60 * 1000) }).lastCommitAgeMinutes, 10);
+  const none = productLane({ lastSuccessAt: "", productLastCheckedAt: "" });
+  assert.equal(none.lastCommitAgeMinutes, null);
+  assert.equal(none.commitStalled, false);
+  // 판독 불가 값은 무시한다.
+  assert.equal(productLane({ lastSuccessAt: at(-2 * HOUR), productLastCheckedAt: "not-a-date" }).lastCommitAgeMinutes, 120);
+  // 억제(의도된 정지)·활성 0 규칙은 그대로다.
+  assert.equal(productLane({ deliberateStop: true, lastSuccessAt: at(-3 * HOUR), productLastCheckedAt: at(-3 * HOUR) }).commitStalled, false);
+  assert.equal(productLane({ trackers: { activeProduct: 0 }, lastSuccessAt: at(-3 * HOUR), productLastCheckedAt: at(-3 * HOUR) }).commitStalled, false);
+});
+
+test("1.1.34: 작업기 시계가 서버보다 2분 넘게 앞선 상품 표식은 커밋으로 세지 않는다(정지를 가리지 않는다)", () => {
+  assert.equal(WORKER_CHECKED_AT_MAX_AHEAD_MS, 2 * 60 * 1000);
+  const base = { now: NOW, lanes: [], lastSuccessAt: at(-2 * HOUR), trackers: { activeProduct: 49 } };
+  const productLane = (productLastCheckedAt) => rankCollectionHealthBody({ ...base, productLastCheckedAt }).lanes.product;
+  // 2분까지는 시계 차로 받는다(커밋 나이 0).
+  assert.equal(productLane(at(2 * 60 * 1000)).lastCommitAgeMinutes, 0);
+  assert.equal(productLane(at(2 * 60 * 1000)).commitStalled, false);
+  // 2분을 넘으면 빼고 last_success_at 으로 판정한다.
+  assert.equal(productLane(at(2 * 60 * 1000 + 1)).lastCommitAgeMinutes, 120);
+  assert.equal(productLane(at(2 * 60 * 1000 + 1)).commitStalled, true);
+  assert.equal(productLane(at(365 * 24 * HOUR)).commitStalled, true, "먼 미래 값(손 SQL·시계 고장)이 경보를 무기한 가리지 않는다");
+  // last_success_at(서버 시각)에는 걸지 않는다 — 1.1.33 과 같다.
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(90 * 60 * 1000), now: NOW }), 0);
+  // 앞선 값만 있으면 판독 불가와 같다(단정하지 않음).
+  const onlyAhead = rankCollectionHealthBody({ ...base, lastSuccessAt: "", productLastCheckedAt: at(10 * 60 * 1000) }).lanes.product;
+  assert.equal(onlyAhead.lastCommitAgeMinutes, null);
+  assert.equal(onlyAhead.commitStalled, false);
+});
+
+test("1.1.34: 순수 판정기 — latestCommitInstant·commitAgeMinutes·workerCommitStalledFromSignals 의 두 번째 재료", () => {
+  assert.equal(latestCommitInstant({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(-60_000), now: NOW }), NOW - 60_000);
+  assert.equal(latestCommitInstant({ lastSuccessAt: at(-60_000), lastCheckedAt: at(-2 * HOUR), now: NOW }), NOW - 60_000);
+  assert.equal(latestCommitInstant({ lastCheckedAt: at(-60_000), now: NOW }), NOW - 60_000);
+  assert.equal(latestCommitInstant({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(3 * 60_000), now: NOW }), NOW - 2 * HOUR);
+  assert.equal(latestCommitInstant({ lastCheckedAt: at(-60_000), now: Number.NaN }), null, "now 를 못 읽으면 작업기 표식을 쓰지 않는다");
+  assert.equal(latestCommitInstant({ lastSuccessAt: "", lastCheckedAt: "bad", now: NOW }), null);
+  assert.equal(latestCommitInstant({}), null);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(-(10 * 60 * 1000 + 59_000)), now: NOW }), 10);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(60_000), now: NOW }), 0, "허용 안의 미래 시각은 0");
+  assert.equal(workerCommitStalledFromSignals({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(-(45 * 60 * 1000 - 1)), now: NOW }), false);
+  assert.equal(workerCommitStalledFromSignals({ lastSuccessAt: at(-2 * HOUR), lastCheckedAt: at(-45 * 60 * 1000), now: NOW }), true);
+  assert.equal(workerCommitStalledFromSignals({ lastSuccessAt: "", lastCheckedAt: at(-50 * 60 * 1000), now: NOW }), true);
+  // 두 번째 재료를 넘기지 않는 옛 호출 모양은 1.1.33 과 같다.
+  assert.equal(workerCommitStalledFromSignals({ lastSuccessAt: at(-2 * HOUR), now: NOW }), true);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(-2 * HOUR), now: NOW }), 120);
+});
+
+test("1.1.34: 200 캐시 경계는 두 커밋 표식 중 최신 + 45분이다", () => {
+  const finiteAt = iso0929(DRILL_0929.finiteCommit);
+  const lastSuccess = iso0929(DRILL_0929.lastTrackerCommit);
+  const nextStall = kst0929(DRILL_0929.finiteCommit) + WORKER_COMMIT_STALL_MINUTES * 60_000; // 17:30:49
+  assert.equal(rankHealthCacheExpiresAt(kst0929("17:30:00"), lastSuccess, finiteAt), nextStall);
+  // 두 번째 재료 없이(1.1.33) 부르면 경계(16:40:17)가 이미 지나 기본 60초다.
+  assert.equal(rankHealthCacheExpiresAt(kst0929("17:30:00"), lastSuccess), kst0929("17:31:00"));
+  // 오래된·판독 불가·2분 넘게 앞선 상품 값은 경계를 밀지 못한다.
+  assert.equal(rankHealthCacheExpiresAt(kst0929("16:39:30"), lastSuccess, iso0929("15:50:00")), kst0929(DRILL_0929.alertStart));
+  assert.equal(rankHealthCacheExpiresAt(kst0929("16:39:30"), lastSuccess, "not-a-date"), kst0929(DRILL_0929.alertStart));
+  assert.equal(rankHealthCacheExpiresAt(kst0929("16:39:30"), lastSuccess, iso0929("16:42:00")), kst0929(DRILL_0929.alertStart));
+});
+
+test("2026-09-29 훈련 3: 핸들러 — 16:40:17 ok:false, 16:45:49 유한 창 커밋 뒤 첫 조회에서 ok:true, 추가 왕복 없음", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: kst0929(DRILL_0929.alertStart) });
+  const coordinationRow = {
+    circuit_state: "closed",
+    circuit_reason: null,
+    cooldown_until: null,
+    primary_seen_at: iso0929("16:39:40"),
+    last_success_at: iso0929(DRILL_0929.lastTrackerCommit),
+  };
+  let productLastCheckedAt = iso0929(DRILL_0929.lastTrackerCommit);
+  const stub = stubHealthRest((url, method) => {
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") return jsonRows([coordinationRow]);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_runs") return jsonRows([{ runtime_version: EXPECTED_WORKER_RUNTIME_VERSION }]);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_nonces") return jsonRows([{ created_at: new Date(Date.now() - 30_000).toISOString() }]);
+    const product = url.pathname === "/rest/v1/naver_rank_trackers";
+    const place = url.pathname === "/rest/v1/naver_place_rank_trackers";
+    if (!product && !place) return null;
+    if (method === "HEAD") {
+      if (url.searchParams.has("check_count")) return countRows(0);
+      const lastError = url.searchParams.get("last_error");
+      if (lastError === "not.is.null" || lastError === "is.null") return countRows(0);
+      return product ? countRows(49) : countRows(0);
+    }
+    if (url.searchParams.get("select") === "last_checked_at") {
+      return jsonRows([{ last_checked_at: product ? productLastCheckedAt : new Date(Date.now() - 10 * 60 * 1000).toISOString() }]);
+    }
+    return jsonRows([]);
+  });
+  const reads = (table, select) => stub.calls.filter((call) => {
+    const url = new URL(call.url);
+    return call.method === "GET" && url.pathname === `/rest/v1/${table}` && (!select || url.searchParams.get("select") === select);
+  }).length;
+  try {
+    const handler = await freshRankHealthHandler("drill-2026-09-29");
+    const get = async () => {
+      const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+      return { status: response.status, body: await response.json() };
+    };
+    const alert = await get();
+    assert.equal(alert.status, 200);
+    assert.equal(alert.body.ok, false);
+    assert.equal(alert.body.lanes.product.commitStalled, true);
+    assert.equal(alert.body.lanes.product.lastCommitAgeMinutes, 45);
+    assert.equal(reads("naver_rank_trackers", "last_checked_at"), 1, "상품 레인 조회 한 번을 커밋 축이 같이 쓴다(왕복 추가 없음)");
+    assert.equal(reads("naver_shopping_worker_coordination"), 1);
+
+    // 16:45:49 유한 창 커밋. last_success_at 은 그대로 15:55:17, 상품 추적기만 갱신.
+    productLastCheckedAt = iso0929(DRILL_0929.finiteCommit);
+    t.mock.timers.setTime(kst0929(DRILL_0929.finiteCommit));
+    const recovered = await get();
+    assert.equal(recovered.status, 200);
+    assert.deepEqual(Object.keys(recovered.body), HEALTH_KEYS_IN_ORDER);
+    assert.deepEqual(Object.keys(recovered.body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
+    assert.equal(recovered.body.lanes.product.lastCommitAgeMinutes, 0);
+    assert.equal(recovered.body.lanes.product.commitStalled, false);
+    assert.equal(recovered.body.ok, true, "유한 창 커밋 뒤 첫 조회(캐시 만료 뒤)에서 정상이다");
+    assert.equal(reads("naver_rank_trackers", "last_checked_at"), 2, "요청당 상품 last_checked_at 조회는 여전히 한 번이다");
+    assert.equal(reads("naver_shopping_worker_coordination"), 2);
+
+    // 다음 경계(16:45:49 + 45분 = 17:30:49)까지 캐시가 ok:true 를 넘겨 들고 있지 않는다.
+    t.mock.timers.setTime(kst0929("17:30:48.999"));
+    const edgeCalls = stub.calls.length;
+    const edge = await get();
+    assert.equal(edge.body.ok, true);
+    assert.ok(stub.calls.length > edgeCalls, "60초 캐시가 이미 지나 다시 조회한다");
+    t.mock.timers.setTime(kst0929("17:30:49.000"));
+    const nextAlert = await get();
+    assert.equal(nextAlert.body.lanes.product.lastCommitAgeMinutes, 45);
+    assert.equal(nextAlert.body.ok, false, "경계에서 캐시가 끝나 ok:false 로 바뀐다");
   } finally {
     stub.restore();
   }

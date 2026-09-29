@@ -13,6 +13,7 @@ import {
   WORKER_COMMIT_STALL_MINUTES,
   commitAgeMinutes,
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
+  latestCommitInstant,
   workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../naver-shopping/worker-runtime-expectation.mjs";
@@ -47,16 +48,19 @@ const MANUAL_RECOVERY_CIRCUIT_REASON = "transient_recovery_manual_required";
 // CACHE_CONTROL 주석대로 no-store 라 캐시하지 않는다 — 2026-09-28 라이브 실측
 // cache-control: no-store, x-vercel-cache: MISS).
 // 엔트리에 status 와 헤더를 함께 담아 캐시 히트 시 원래 응답(200/503)을 그대로 재현한다.
-// 200 엔트리의 만료는 고정 60초가 아니라 rankHealthCacheExpiresAt 이 코디네이션
-// last_success_at 으로 정한다(커밋 정체 경계에서 끊는다).
+// 200 엔트리의 만료는 고정 60초가 아니라 rankHealthCacheExpiresAt 이 커밋 두 표식(코디네이션
+// last_success_at·상품 MAX(last_checked_at)) 중 최신으로 정한다(커밋 정체 경계에서 끊는다).
 let cached = null;
 
 // lanes 의 두 키. 입력 레인이 비어 있어도 공개 표면에는 이 두 키가 항상 실린다.
 const LANE_KEYS = ["product", "place"];
 const FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
 // 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 최상위 8키와 앞 3키는 불변이다.
-//   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). 레인 표의
-//                          lastSuccessAt(last_checked_at)과 이름만 비슷할 뿐 축이 다르다.
+//   lastCommitAgeMinutes — 커밋 나이(분). 2026-09-29(1.1.34)부터 코디네이션 last_success_at 과
+//                          상품 추적기 MAX(last_checked_at) 중 최신 기준이다(latestCommitInstant) —
+//                          유한 창 커밋은 last_success_at 을 갱신하지 않기 때문이다. 그래서 상품
+//                          레인에 타임스탬프가 있으면 lastCommitAgeMinutes <= stalledMinutes 다
+//                          (예외: 그 값이 now+2분을 넘게 앞서 재료에서 빠진 동안).
 //                          판독 불가는 null — 0 으로 접으면 "방금 커밋했다"는 정반대
 //                          단정이 되므로 trackers 의 0-fail-safe 규약을 따르지 않는다.
 //   commitStalled        — "의도된 정지 아님 AND 커밋 45분 이상 없음 AND 활성 상품
@@ -191,15 +195,18 @@ export function rankCollectionHealthBody(input = {}) {
   // (19:24:28~20:34:48 KST) 동안 primary_seen_at 이 낡아 이 축이 거짓이었고, 이 응답의 ok 에는
   // 침묵 축이 없어 끝까지 ok:true 였다. 이제 어느 작업기가 살아 있든 커밋이 45분 이상 없으면
   // ok:false 다. heartbeatAgeMinutes 키는 그대로 사실값으로만 싣는다(워치독 재기동 가드용).
-  const lastCommitAgeMinutes = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now });
-  const commitStalled = !recoverySuppressed && activeProduct > 0 && workerCommitStalledFromSignals({
-    lastSuccessAt: input.lastSuccessAt,
-    now,
-  });
+  // 2026-09-29(1.1.34): 커밋 재료는 두 표식 중 최신이다 — 코디네이션 last_success_at(300위 묶음
+  // 커밋만 찍는다)과 상품 추적기 표 MAX(last_checked_at)(300위·유한 창 커밋 둘 다 찍는다).
+  // 훈련 3 에서 16:45:49 유한 창 커밋 뒤에도 ok:false 가 16:56 까지 남았던 것을 막는다.
+  // productLastCheckedAt 은 핸들러가 위 lanes 의 상품 레인과 같은 조회 결과를 넘긴다(왕복 추가 없음).
+  // 넘기지 않으면(옛 호출 모양) 예전처럼 last_success_at 만 본다.
+  const commitSignals = { lastSuccessAt: input.lastSuccessAt, lastCheckedAt: input.productLastCheckedAt, now };
+  const lastCommitAgeMinutes = commitAgeMinutes(commitSignals);
+  const commitStalled = !recoverySuppressed && activeProduct > 0 && workerCommitStalledFromSignals(commitSignals);
   // 레인별 표면. 이력이 없는 레인(lastCheckedAt=0)은 최악-레인 후보에서 빠지는 것과 같은
   // 이유로 안전값이다. queueStalled 는 최상위와 같은 deliberateStop 억제를 받는다(OR 불변식).
-  // 상품 레인의 커밋 축 두 키는 레인 표가 아니라 코디네이션에서 나오므로, 레인 이력
-  // 유무와 무관하게 항상 실린다.
+  // 상품 레인의 커밋 축 두 키는 레인 3키와 별도 재료(코디네이션 last_success_at + 상품
+  // MAX(last_checked_at) 입력)에서 나오므로, 레인 이력 유무와 무관하게 항상 실린다.
   const laneBody = (key) => {
     const found = lanes.find((lane) => lane.key === key);
     const base = !found || !(found.lastCheckedAt > 0) ? { ...FAILSAFE_LANE } : {
@@ -296,13 +303,15 @@ export function workerControlHealthyFromRow(row, now) {
 }
 
 // 200 본문의 캐시 만료 시각. 기본은 CACHE_TTL_MS(60초)지만, 커밋 정체 경계
-// (last_success_at + WORKER_COMMIT_STALL_MINUTES 분)가 그 안에 있으면 경계에서 끝낸다.
+// (두 커밋 표식 중 최신 + WORKER_COMMIT_STALL_MINUTES 분)가 그 안에 있으면 경계에서 끝낸다.
 // 2026-09-27 기준 "커밋 19:24:28.823 → 20:09:28.823 에 ok:false" 를 캐시가 최대 60초
 // 늦추지 않게 하려는 것이다. 경계가 이미 지났거나 커밋 기록을 읽지 못하면 기본값 그대로다.
-export function rankHealthCacheExpiresAt(now, lastSuccessAt) {
+// 세 번째 인자(상품 MAX(last_checked_at), 1.1.34)를 넘기지 않으면 1.1.33 과 같다. 본문의 커밋 축과
+// 같은 latestCommitInstant 를 쓰므로 now+2분을 넘게 앞선 값은 경계를 밀지 못한다.
+export function rankHealthCacheExpiresAt(now, lastSuccessAt, productLastCheckedAt = "") {
   const ttlExpiry = now + CACHE_TTL_MS;
-  const committedAt = Date.parse(String(lastSuccessAt || ""));
-  if (!Number.isFinite(committedAt)) return ttlExpiry;
+  const committedAt = latestCommitInstant({ lastSuccessAt, lastCheckedAt: productLastCheckedAt, now });
+  if (committedAt === null) return ttlExpiry;
   const stallAt = committedAt + WORKER_COMMIT_STALL_MINUTES * 60_000;
   return stallAt > now ? Math.min(ttlExpiry, stallAt) : ttlExpiry;
 }
@@ -314,12 +323,14 @@ export function rankHealthCacheExpiresAt(now, lastSuccessAt) {
 // 넓혀 함께 읽는다. 반환은 불리언이 아니라 객체다. 두 표식의 쓰임:
 //   last_success_at — 커밋 축(lastCommitAgeMinutes·commitStalled, 2026-09-27 부터 하트비트와
 //                     무관하게 ok 를 뒤집는다), heartbeatAgeMinutes 의 재료, 그리고 200 캐시
-//                     만료(rankHealthCacheExpiresAt)까지 셋 모두를 움직인다.
+//                     만료(rankHealthCacheExpiresAt)까지 셋 모두를 움직인다. 커밋 축과 캐시 만료는
+//                     2026-09-29(1.1.34)부터 상품 MAX(last_checked_at) 과의 최신값을 쓴다.
 //   primary_seen_at — heartbeatAgeMinutes 의 재료로만 쓴다(사실값, 워치독 재기동 가드용).
 // 열이 아직 없는 환경으로 내려오면 cooldown_until 만 다시 읽는 축약 경로가 그대로
-// 살아 있다. 그 경로에서는 두 표식이 비어 있어 heartbeatAgeMinutes 는 0, 커밋 축은 판독
-// 불가(lastCommitAgeMinutes=null·commitStalled=false), 캐시 만료는 기본 60초지만,
-// reliable=false 이므로 최상위 ok 는 false 로 닫힌다.
+// 살아 있다. 그 경로(와 코디네이션 행을 못 읽은 경우)에서는 두 표식이 비어 있어
+// heartbeatAgeMinutes 는 0 이고, 커밋 축은 1.1.34 부터 상품 MAX(last_checked_at) 하나로만 잰다
+// (그것도 없으면 lastCommitAgeMinutes=null·commitStalled=false). 어느 경우든 reliable=false
+// 이므로 최상위 ok 는 false 로 닫힌다.
 async function deliberateWorkerStop(ctx, now) {
   const empty = {
     deliberateStop: false,
@@ -532,7 +543,10 @@ export default {
         // lastSuccessAt 과 이름만 같을 뿐 서로 섞이지 않는다. 이 값은 커밋 축
         // (lanes.product.lastCommitAgeMinutes·commitStalled → 최상위 ok)과
         // heartbeatAgeMinutes 에 쓰이고, 아래 캐시 만료(rankHealthCacheExpiresAt)도 정한다.
+        // 커밋 축과 캐시 만료는 아래 productLastCheckedAt 과의 최신값을 쓴다(1.1.34).
         lastSuccessAt: coordination.lastSuccessAt,
+        // 상품 레인과 같은 조회값(MAX(last_checked_at))을 커밋 축의 두 번째 재료로도 넘긴다.
+        productLastCheckedAt: productLatest,
         lastRunRuntimeVersion: lastRunObservation.value,
         lastSignatureAt: lastSignatureObservation.value,
         monitoringReliable,
@@ -548,7 +562,7 @@ export default {
         body,
         status: 200,
         extraHeaders: { "cache-control": CACHE_CONTROL },
-        expiresAt: rankHealthCacheExpiresAt(now, coordination.lastSuccessAt),
+        expiresAt: rankHealthCacheExpiresAt(now, coordination.lastSuccessAt, productLatest),
       };
       return protectedJson(request, body, 200, {
         ...CORS_OPTIONS,

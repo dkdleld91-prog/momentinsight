@@ -1260,7 +1260,7 @@ test("slot submit posts a start-day event and an end event one day before the la
   assert.deepEqual(posts.map((entry) => entry.payload), [
     { title: "[프라다] 거보 10슬롯 슬롯 시작", startsAt: "2026-10-02", endsAt: "2026-10-02", isAllDay: true, colorId: "5" },
     // 10/02 시작 30일 → 마지막 날 10/31, '슬롯 종료'는 하루 전 10/30 (대표 예시 그대로).
-    { title: "[프라다] 거보 10슬롯 슬롯 종료", startsAt: "2026-10-30", endsAt: "2026-10-30", isAllDay: true, colorId: "5" }
+    { title: "[프라다] 거보 10슬롯 슬롯 종료 하루 전", startsAt: "2026-10-30", endsAt: "2026-10-30", isAllDay: true, colorId: "5" }
   ]);
   assert.deepEqual(statuses.at(-1), ["슬롯 일정을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok"]);
 });
@@ -1304,7 +1304,7 @@ test("slot dates cover month end, leap day, year rollover and the one-day-before
   assert.equal(base.endKey, "2026-10-31");
   assert.equal(base.endNoticeKey, "2026-10-30");
   assert.equal(base.startTitle, "[프라다] 거보 10슬롯 슬롯 시작");
-  assert.equal(base.endTitle, "[프라다] 거보 10슬롯 슬롯 종료");
+  assert.equal(base.endTitle, "[프라다] 거보 10슬롯 슬롯 종료 하루 전");
   assert.equal(Object.hasOwn(base, "decisionKey"), false);
   assert.equal(Object.hasOwn(base, "decisionTitle"), false);
 

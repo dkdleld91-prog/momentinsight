@@ -14274,9 +14274,10 @@
         return moved.toISOString().slice(0, 10);
       }
 
-      // 슬롯 2건(기간 일정 + 연장 결정 알림)의 제목과 날짜를 한 번에 정한다.
-      // 종료일 = 시작일 + 일수 - 1(시작일 포함), 연장 결정일 = 종료일 - 1일이며
-      // 일수가 1이라 시작일보다 앞서면 시작일 당일로 끌어올린다.
+      // 슬롯 2건(시작일 하루 + 종료일 하루)의 제목과 날짜를 한 번에 정한다.
+      // 종료일 = 시작일 + 일수 - 1(시작일 포함). 여러 날에 걸친 기간 일정은 만들지
+      // 않는다 — 구글 캘린더가 기간 일정을 날마다 막대로 그리기 때문이다(대표 지시
+      // 2026-10-02 "시작 하나 종료 하나"). 일수가 1이면 두 건이 같은 날에 놓인다.
       function workSlotPlan(siteName, vendorLabel, startKey, days) {
         var site = String(siteName || "").trim();
         var vendor = String(vendorLabel || "").trim();
@@ -14287,16 +14288,14 @@
         if (workSlotDateKey(start, 0) !== start || !start) return { ok: false, message: "시작일을 확인해주세요." };
         if (!Number.isFinite(span) || span < 1 || span > 365) return { ok: false, message: "일수는 1~365 사이로 입력해주세요." };
         var endKey = workSlotDateKey(start, span - 1);
-        var decisionKey = workSlotDateKey(endKey, -1);
-        if (!endKey || !decisionKey) return { ok: false, message: "슬롯 기간을 계산할 수 없습니다." };
+        if (!endKey) return { ok: false, message: "슬롯 기간을 계산할 수 없습니다." };
         return {
           ok: true,
           days: span,
           startKey: start,
           endKey: endKey,
-          decisionKey: decisionKey < start ? start : decisionKey,
-          slotTitle: "[" + site + "] " + vendor + " 슬롯",
-          decisionTitle: "[" + site + "] " + vendor + " 연장 결정 (종료 D-1)"
+          startTitle: "[" + site + "] " + vendor + " 슬롯 시작",
+          endTitle: "[" + site + "] " + vendor + " 슬롯 종료"
         };
       }
 
@@ -16382,16 +16381,16 @@
         var created = 0;
         var failures = [];
         try {
-          await requestWorkItems("POST", workSlotItemPayload(plan.slotTitle, plan.startKey, plan.endKey));
+          await requestWorkItems("POST", workSlotItemPayload(plan.startTitle, plan.startKey, plan.startKey));
           created += 1;
         } catch (error) {
-          failures.push("슬롯 기간(" + plan.startKey + "~" + plan.endKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
+          failures.push("슬롯 시작(" + plan.startKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
         }
         try {
-          await requestWorkItems("POST", workSlotItemPayload(plan.decisionTitle, plan.decisionKey, plan.decisionKey));
+          await requestWorkItems("POST", workSlotItemPayload(plan.endTitle, plan.endKey, plan.endKey));
           created += 1;
         } catch (error) {
-          failures.push("연장 결정(" + plan.decisionKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
+          failures.push("슬롯 종료(" + plan.endKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
         }
         if (submit) submit.disabled = false;
         if (created) await loadWorkItems();

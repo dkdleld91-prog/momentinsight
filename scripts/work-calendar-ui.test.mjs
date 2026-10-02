@@ -1208,17 +1208,59 @@ test("slot helper is representative-only and the toggle drives aria-expanded", (
   assert.match(workSlotBindingSource, /workSlotForm\.addEventListener\("submit", function \(event\) \{\s*event\.preventDefault\(\);\s*submitWorkSlotSchedule\(\);/);
 });
 
-test("slot helper reuses the existing work item creation path for two all-day events", () => {
+test("slot helper reuses the existing work item creation path for two single-day all-day events", () => {
   // 대표실 일정 초안 저장과 같은 경로다: requestWorkItems("POST", workItemPayload(...)).
   const posts = workSlotSubmitSource.match(/await requestWorkItems\("POST", workSlotItemPayload\(/g) || [];
   assert.equal(posts.length, 2, "슬롯 등록은 기존 생성 경로로 2건을 보낸다");
   assert.equal(workSlotSubmitSource.includes("fetch("), false, "새 API 호출을 만들지 않는다");
   assert.match(workSlotPayloadSource, /var payload = workItemPayload\(\{[\s\S]{0,200}isAllDay: true\s*\}\);/);
 
-  // A: 기간 종일 일정(시작일~종료일). 기존 경로가 종일 기간을 그대로 지원한다.
-  assert.match(workSlotSubmitSource, /workSlotItemPayload\(plan\.slotTitle, plan\.startKey, plan\.endKey\)/);
-  // B: 연장 결정 알림 — 하루짜리 종일 일정.
-  assert.match(workSlotSubmitSource, /workSlotItemPayload\(plan\.decisionTitle, plan\.decisionKey, plan\.decisionKey\)/);
+  // 대표 지시 2026-10-02 "시작 하나 종료 하나": 시작일 하루 + 종료일 하루.
+  // 구글 캘린더가 기간 일정을 날마다 막대로 그리므로 시작~종료 기간 일정은 보내지 않는다.
+  assert.match(workSlotSubmitSource, /workSlotItemPayload\(plan\.startTitle, plan\.startKey, plan\.startKey\)/);
+  assert.match(workSlotSubmitSource, /workSlotItemPayload\(plan\.endTitle, plan\.endKey, plan\.endKey\)/);
+  assert.equal(/workSlotItemPayload\([^)]*plan\.startKey, plan\.endKey\)/.test(workSlotSubmitSource), false, "시작~종료 기간 일정을 만들지 않는다");
+  // 옛 연장 결정(종료 D-1) 알림은 더 이상 만들지 않는다.
+  assert.equal(workSlotSubmitSource.includes("decision"), false);
+  assert.equal(source.includes("연장 결정 (종료 D-1)"), false);
+  // 부분 실패 문구는 어느 날짜가 빠졌는지 그대로 알려 준다.
+  assert.match(workSlotSubmitSource, /failures\.push\("슬롯 시작\(" \+ plan\.startKey \+ "\): "/);
+  assert.match(workSlotSubmitSource, /failures\.push\("슬롯 종료\(" \+ plan\.endKey \+ "\): "/);
+});
+
+test("slot submit posts a start-day event and an end-day event, each one day long", async () => {
+  // 실제 submitWorkSlotSchedule 원문을 샌드박스에서 돌려 보낸 요청 본문을 값으로 확인한다.
+  const posts = [];
+  const statuses = [];
+  const fields = {
+    "[data-work-slot-site]": "프라다",
+    "[data-work-slot-vendor]": "거보 10슬롯",
+    "[data-work-slot-start]": "2026-10-02",
+    "[data-work-slot-days]": "30"
+  };
+  const context = {
+    root: { querySelector: () => null },
+    workNodeValue: (selector) => fields[selector],
+    workItemPayload: (value) => ({ ...value }),
+    workGoogleConnected: () => true,
+    WORK_SLOT_COLOR_ID: "5",
+    requestWorkItems: async (method, payload) => { posts.push({ method, payload: { ...payload } }); return {}; },
+    loadWorkItems: async () => {},
+    setWorkSlotStatus: (message, state) => statuses.push([message, state])
+  };
+  vm.createContext(context);
+  vm.runInContext(slotPageFunction("workSlotDateKey"), context);
+  vm.runInContext(slotPageFunction("workSlotPlan"), context);
+  vm.runInContext(workSlotPayloadSource, context);
+  vm.runInContext(workSlotSubmitSource, context);
+  await vm.runInContext("submitWorkSlotSchedule()", context);
+
+  assert.deepEqual(posts.map((entry) => entry.method), ["POST", "POST"]);
+  assert.deepEqual(posts.map((entry) => entry.payload), [
+    { title: "[프라다] 거보 10슬롯 슬롯 시작", startsAt: "2026-10-02", endsAt: "2026-10-02", isAllDay: true, colorId: "5" },
+    { title: "[프라다] 거보 10슬롯 슬롯 종료", startsAt: "2026-10-31", endsAt: "2026-10-31", isAllDay: true, colorId: "5" }
+  ]);
+  assert.deepEqual(statuses.at(-1), ["슬롯 일정을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok"]);
 });
 
 test("slot events are pinned to the dialog palette yellow (google event colour 5 · banana)", () => {
@@ -1252,47 +1294,30 @@ test("slot helper reports success, server messages and partial failure honestly"
   assert.match(source, /function setWorkSlotStatus\(message, state\)[\s\S]{0,420}classList\.toggle\("is-warn", Boolean\(message\) && state === "warn"\)/);
 });
 
-test("slot dates cover month end, leap day, year rollover and the D-1 clamp", () => {
+test("slot dates cover month end, leap day, year rollover and the one-day span", () => {
   const base = slotPlan("프라다", "거보 10슬롯", "2026-09-01", 30);
   assert.equal(base.ok, true);
+  assert.equal(base.startKey, "2026-09-01");
   assert.equal(base.endKey, "2026-09-30");
-  assert.equal(base.decisionKey, "2026-09-29");
-  assert.equal(base.slotTitle, "[프라다] 거보 10슬롯 슬롯");
-  assert.equal(base.decisionTitle, "[프라다] 거보 10슬롯 연장 결정 (종료 D-1)");
+  assert.equal(base.startTitle, "[프라다] 거보 10슬롯 슬롯 시작");
+  assert.equal(base.endTitle, "[프라다] 거보 10슬롯 슬롯 종료");
+  assert.equal(Object.hasOwn(base, "decisionKey"), false);
+  assert.equal(Object.hasOwn(base, "decisionTitle"), false);
 
-  // 월말 넘김: 1월 31일 + 30일 = 3월 1일(2026 년은 평년) → D-1 은 2월 28일.
-  const monthEnd = slotPlan("프라다", "거보 10슬롯", "2026-01-31", 30);
-  assert.equal(monthEnd.endKey, "2026-03-01");
-  assert.equal(monthEnd.decisionKey, "2026-02-28");
-
-  // 윤년: 2028 년 2 월은 29 일까지라 2월 1일 + 30일 = 3월 1일, D-1 은 윤일(2월 29일)이다.
-  const leap = slotPlan("프라다", "거보 10슬롯", "2028-02-01", 30);
-  assert.equal(leap.endKey, "2028-03-01");
-  assert.equal(leap.decisionKey, "2028-02-29");
-
-  // 윤일 시작 + 1일 → 같은 날 종료, D-1 은 시작일보다 앞서므로 시작일로 보정.
+  // 월말 넘김: 1월 31일 + 30일 = 3월 1일(2026 년은 평년).
+  assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-01-31", 30).endKey, "2026-03-01");
+  // 윤년: 2028 년 2 월은 29 일까지라 2월 1일 + 30일 = 3월 1일, 2월 28일 시작 2일이면 윤일에 끝난다.
+  assert.equal(slotPlan("프라다", "거보 10슬롯", "2028-02-01", 30).endKey, "2028-03-01");
+  assert.equal(slotPlan("프라다", "거보 10슬롯", "2028-02-28", 2).endKey, "2028-02-29");
+  // 윤일 시작 + 1일 → 같은 날 종료(시작·종료 두 건이 같은 날에 놓인다).
   const leapDay = slotPlan("프라다", "거보 10슬롯", "2028-02-29", 1);
+  assert.equal(leapDay.startKey, "2028-02-29");
   assert.equal(leapDay.endKey, "2028-02-29");
-  assert.equal(leapDay.decisionKey, "2028-02-29");
-
   // 연도 넘김.
-  const yearRoll = slotPlan("프라다", "거보 10슬롯", "2026-12-20", 30);
-  assert.equal(yearRoll.endKey, "2027-01-18");
-  assert.equal(yearRoll.decisionKey, "2027-01-17");
-  // 해가 바뀌는 지점에서도 보정은 시작일을 넘지 않는다(1월 1일 하루짜리).
-  assert.equal(slotPlan("프라다", "거보 10슬롯", "2027-01-01", 1).decisionKey, "2027-01-01");
-
+  assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-12-20", 30).endKey, "2027-01-18");
   // 상한 365 일.
-  const full = slotPlan("프라다", "거보 10슬롯", "2027-01-01", 365);
-  assert.equal(full.endKey, "2027-12-31");
-  assert.equal(full.decisionKey, "2027-12-30");
-
-  // D-1 보정 경계: 1일이면 종료일 하루 전이 시작일보다 앞서 시작일로 끌어올리고,
-  // 2일이면 마침 시작일과 같아지며, 3일부터 시작일 다음 날로 떨어진다.
-  assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 1).decisionKey, "2026-09-01");
-  assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 2).decisionKey, "2026-09-01");
-  assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 3).decisionKey, "2026-09-02");
-  // 종료일 자체는 보정과 무관하게 시작일 + 일수 - 1 이다.
+  assert.equal(slotPlan("프라다", "거보 10슬롯", "2027-01-01", 365).endKey, "2027-12-31");
+  // 종료일은 시작일 + 일수 - 1 이다.
   assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 1).endKey, "2026-09-01");
   assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 2).endKey, "2026-09-02");
   assert.equal(slotPlan("프라다", "거보 10슬롯", "2026-09-01", 3).endKey, "2026-09-03");

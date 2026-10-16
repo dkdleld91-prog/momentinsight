@@ -1,5 +1,96 @@
 # Decisions
 
+## 2026-10-16 · C 30일 순위(쿠팡)는 N30 과 닿지 않는 독립 모듈로 만든다 (대표 결정 D1~D8)
+
+- 범위: 로그인 없는 쿠팡 검색 1쪽에서 광고(`sourceType=srp_product_ads`)를 뺀 일반 순번 1~50을 계정 × 키워드 × 상품으로 KST 하루 칸에 기록한다. 상품번호로 판정하고 옵션은 기록만 한다(맞추기는 SQL 한 곳). KST 고정 칸을 쓰고 놓친 칸은 따라잡지 않는다. 기준 문서: 구현 명세 v3 최종본(`~/.config/momentinsight/c30/spec-final.md`, 저장소 밖).
+- 대표 결정(2026-10-16, 모두 승인)
+
+  | # | 결정 | 반영 |
+  |---|---|---|
+  | D1 | 잠긴 `index.mjs`·`session-gate.mjs`에 줄 추가 허용, 잠금 재생성, 두 해시 diff 보고 | 줄 추가만. 바뀌는 잠금 id 는 `shopping-local-worker-router`·`shopping-local-worker-session-boundary` 2개뿐. 재생성 전에 실패 목록이 정확히 이 2개인지 먼저 확인 |
+  | D2 | 쿠팡 전용 한도: 계정 기본 20, 전체 고유 키워드 150 | `default_account_limit=20`·`global_keyword_limit=150`, 트리거 `coupang_rank_tracker_limit_guard`. 총관리자 대표 코드는 계정별 100. **수집 대상인 활성 추적기만** 센다(연결 해제 광고주·해지 팀 코드 제외) |
+  | D3 | 하루 횟수는 맥 시험(10/19 12:00 종료) 뒤 설정값으로. 시작 속도 시간당 12, 08~23시. 48시간 차단·빈 쪽 0일 때만 대표 결정으로 상향 | `checks_per_day` 기본 2, `max_runs_per_hour` 기본 12, 수집 08~23시. 상향은 서버가 막는다(아래 '속도 상향 규칙') |
+  | D4 | 만료 광고주도 C 기록 읽기 허용 | `PLAN_EXPIRED_GET_PATHS`에 화면 경로. 수집은 삭제 전까지 계속(만료 유예 중 수집 여부는 2b 전 대표 판단으로 보류) |
+  | D5 | 50위 안 진입 = 상승, 이탈 = 하락. 50위 밖 자체는 확인 필요가 아님 | 추세 `enter`/`exit`. 상승 = up+enter, 하락 = down+exit. 51번째 이후도 '50위 밖'(`out`) |
+  | D6 | 윈도우는 Edge(msedge.exe). 키워드마다 새 임시 프로필, 끝나면 삭제 | 윈도우에서 chrome 종류 거절. 프로필 `runs\mi-coupang-run-<ms>-<hex8>` 생성·삭제, 남은 것은 다음 실행이 1시간 뒤 청소 |
+  | D7 | 수집기 파일은 운영 도메인 정적 파일 | `/coupang-collector/{bundle.json,install-windows.ps1,install-macos.sh}`. 수집 방식이 공개되는 것은 감수, 비밀값 0 |
+  | D8 | 1단계 대표만 → 운영팀(설정 스위치) → 1주 뒤 광고주 읽기 화면 | `team_access_enabled`·`client_view_enabled` 기본 false. 광고주 화면(2b)은 별도 배포 |
+
+- 새 전제 두 가지(2026-10-16): 약 2달 뒤 수집을 맥 미니로 옮긴다(윈도우·맥 모두 지원, 맥은 Edge 우선). 서버 고도화·안정화·속도 작업이 계속되므로 C 를 독립 모듈로 둔다(경계는 정적 테스트 `scripts/coupang-rank-wiring.test.mjs`·`scripts/coupang-rank-platform-static.test.mjs`가 강제, 완전 제거 절차는 `docs/RUNBOOK.md` 'C 30일 순위(쿠팡)').
+
+### 플랫폼 통합 계약(서버 고도화 때 지킬 5줄, 명세 §2.3 그대로)
+
+1. `/api/coupang-rank-trackers`는 일반 세션 경로입니다.
+   - CSRF·출처 검사를 받습니다.
+   - `TEAM_ACCOUNT_ONLY_RANK_PATHS`·`PLAN_EXPIRED_GET_PATHS`에 속합니다.
+   - 체험 계정은 `TRIAL_LOCKED`입니다.
+2. `/api/coupang-rank-worker`는 세션 없는 경로(`SESSION_FREE_PATHS`)입니다.
+   - 게이트가 머리글을 지우지 않으므로, 핸들러는 `authorization: Bearer mic1_…`과 `x-mi-coupang-collector`만 읽습니다.
+   - 본문 상한 64KB는 핸들러가 강제합니다.
+3. 두 경로 모두 캐치올 한 단계 경로입니다.
+   - 새 Vercel 함수 파일·크론을 만들지 않습니다(함수 10/12 유지).
+   - OPTIONS는 라우터가 먼저 204로 답합니다.
+4. C 장애는 `/ready`, N30 상태 집계, 만료 크론, 계정 해지 모듈에 영향을 주지 않습니다. 이들 어디에도 C 표 이름이 없습니다.
+5. DB에서 C는 `coupang_rank_*`만 소유합니다. `clients`·`operation_team_codes`의 다음 열 이름이 바뀌면 `coupang_rank_tracker_is_eligible`와 화면 API 범위 판정을 함께 고쳐야 합니다: `id`, `status`, `disconnected_at`, `team_code`, `owner_agency_code`, `team_name`, `name`, `agency_code`.
+
+### 속도 상향 규칙(서버 강제)
+
+- 속도를 올리는 변경 = `maxRunsPerHour` 증가, `maxRunsPerDay` 증가, `minGapSeconds` 감소, 수집 시간대 넓힘 중 하나라도.
+- 조건을 모두 만족해야 한다: ① 화면 확인 대화상자(`confirmRaise: true`, 없으면 400 `COUPANG_RAISE_CONFIRM_REQUIRED`) ② `coupang_rank_stats()`의 `blocked48h = 0`·`empty48h = 0`·`success48h ≥ 48` ③ 마지막 상향(`rate_changed_at`) 뒤 48시간 ④ `maxRunsPerHour`는 사다리 12 → 24 → 40 → 60 의 바로 다음 칸만(사다리 밖 값은 그보다 큰 가장 작은 칸: 6 → 12). 어긋나면 409 `COUPANG_RAISE_NOT_ALLOWED`(`reasons`: `blocked_or_empty_48h`·`too_few_success_48h`·`quiet_window_short`·`ladder_step`).
+- 통과하면 `rate_changed_at = now()`. 내리는 변경은 언제든 즉시 되고 `rate_changed_at`은 그대로다.
+- 이유: 쿠팡이 차단을 시작하는 요청량을 모른다 [미확인]. 맥 시험(1시간마다 약 30초 간격 3회 몰아치기) 12회 중 HTTP 403 1회(10/16 05:30Z)가 나왔다 [사실]. 보수적으로 시작하고 조용한 48시간을 확인한 뒤에만 한 칸씩 올린다.
+
+### 시작 속도(G8) — [결정 필요]
+
+- 권장: 켜기 전에 `maxRunsPerHour`를 **6**으로 내린다. 6이면 하루 최대 90회, 하루 2회 기준 키워드 약 45개(기본 12면 120회·60개).
+- SQL 기본값은 D3대로 12로 둔다. 기본값을 6으로 두면 대표가 12를 고를 때 상향 규칙(48시간 조용 + 성공 48회)에 막히기 때문이다. 내리기는 즉시 되므로 G8에서 대표가 정한 값으로 저장한다.
+- 켜기 조건: 맥 시험 결과에서 10/16 05:30Z 뒤 `httpStatus ∈ {403,429,503}` 또는 `status=blocked` 0회, 윈도우 0단계 시험 `blocked=0`, 무료 한도(DB 400MB 미만·egress 80% 미만). 하나라도 아니면 켜기를 보류하고 다시 논의한다.
+
+### 브라우저: Edge(맥 미니는 Edge 필수)
+
+- 윈도우는 Edge 만 쓴다. N30 크롬과 다른 브라우저라 N30 업데이터·훈련 도구·스케줄러(크롬·`naver-shopping-native-host` 문자열로 프로세스를 고름)와 서로 닿지 않는다. 종료 대상은 자기가 띄운 PID 트리, 명령줄에 `\MomentInsight\CoupangRank\runs\`가 든 브라우저, `state\browser.pid` 중 같은 규칙에 맞는 것뿐이다.
+- 맥은 Edge 를 우선한다. Edge 가 없을 때만 Chrome + N30 보호(`guard=n30-chrome`, `--browser-app` 필수)로 도는 예비 경로를 둔다.
+- **맥 미니로 옮길 때 Microsoft Edge for Mac(무료) 설치가 필수 조건**이다. 설치 결과가 `browser=edge guard=none`이 아니면 이전을 진행하지 않는다(G11). 나중에 N30 이 맥 미니에서 Chrome 을 써도 C 는 Edge 라 닿지 않는다.
+- 기본 창 방식은 `offscreen`이다(창 조작으로 생기는 거짓 차단을 줄이려고). 윈도우 0단계 시험(G7) 뒤 대표가 `normal`·`offscreen`·`minimized` 중 고른다.
+
+### 차단 판정 순서(서버가 최종 판정, 위에서부터 처음 맞는 행)
+
+| 순서 | 조건 | 회차 상태 | 효과 |
+|---|---|---|---|
+| 1 | `httpStatus ∈ {403, 429, 503}`(수집기가 보낸 page.status 와 무관) | `blocked` | 전역 쉬기(7일 횟수로 단계), `stop:true` |
+| 2 | `blockedText` 또는 `page.status = blocked` | `blocked` | 위와 같음 |
+| 3 | `finalHost = login.coupang.com`, 또는 쿠팡 주소인데 `finalPath`가 `/login`으로 시작 | `blocked` | 위와 같음 |
+| 4 | `page.status = timeout` | `timeout` | 키워드 재시도, 전역 연속 오류 +1 |
+| 5 | `page.status = error` | `error` | 위와 같음 |
+| 6 | `finalHost`가 비었거나 쿠팡이 아님 | `error`(`foreign_navigation`) | 키워드 재시도, 연속 오류 +1. 차단으로 세지 않음 |
+| 7 | `httpStatus ≥ 400`(1행 제외) | `error` | 키워드 재시도 |
+| 8 | 검색 결과 쪽(`www.coupang.com` + `/np/search`)이 아님 | `unsupported` | 그 키워드만 다음 날(3연속이면 7일), 전역 영향 없음 |
+| 9 | 일반 0개 + 결과 없음 문구 | `noresult` | 모든 대상 추적기에 `noresult` |
+| 10 | 일반 0개 | `empty` | 약한 차단 의심. 2연속이면 1시간, 24시간 안 두 번째 쉬기는 차단 단계, `stop:true` |
+| 11 | `stable ≠ true` | `partial` | 그 키워드만 재시도 |
+| 12 | 그 밖 | `ok` | 추적기마다 `found`(1~50) / `out`(일반 ≥ 50) / `short`(일반 < 50) |
+
+- 차단 신호(1~3행)를 맨 앞에 둔 이유: 수집기가 읽기에 실패해 error·timeout 으로 보내도 HTTP 상태·최종 주소가 차단이면 차단으로 세야 한다(맥 시험이 403을 '빈 쪽'으로 잘못 센 사례). 수집기는 실패해도 `httpStatus`와 최종 주소를 채워 보낸다.
+- 쉬기 단계: 차단급(`blocked`·`empty_escalated`·`error_escalated`)은 7일 안 1번째 6시간, 2번째 12시간, 3번째부터 24시간 + 대표 확인. 오류·시간 초과·임대 만료 3연속은 30분, 24시간 안 두 번째면 `error_escalated`. 성공은 연속 오류·빈 쪽 횟수만 0으로 되돌린다. 쉬는 중 해제는 7일 차단 횟수를 지우지 않는다. 자동 우회(프록시·UA 변경·로그인·캡차·재시도 폭주)는 없다.
+
+### 보관·백업
+
+| 표 | 보관 | 로컬 백업(`scripts/db-export.mjs`) |
+|---|---|---|
+| `coupang_rank_settings` | 영구(1행) | 함 |
+| `coupang_rank_account_limits` | 영구(고아 행은 화면에서 지움) | 함 |
+| `coupang_rank_trackers` | 삭제 시(광고주 삭제는 FK cascade) | 함 |
+| `coupang_rank_snapshots` | 60일 | 함(증분 — insert·보관 기간 delete 만, `run_id` 외래키 없음) |
+| `coupang_rank_days` | 60일 | 안 함(스냅숏으로 재생성) |
+| `coupang_rank_runs` | 14일 | 안 함(임시·증거) |
+| `coupang_rank_keywords` | 활성 추적기 없이 40일 | 안 함(일정 — 다음 claim 이 다시 만든다) |
+| `coupang_rank_collectors` | 영구 | 안 함(토큰 해시·마지막 claim 답) |
+| `coupang_rank_cooldowns` | 90일 | 안 함 |
+
+- 보관 기간 정리는 수집기 hello 가 6시간에 한 번 부르는 `coupang_rank_housekeeping()`이 표마다 500행씩 한다(새 크론 없음).
+- 백업 대상 네 표는 '선택 표'다. 대표 SQL 실행 전에는 표가 없으므로 404(PGRST205)·42P01 이면 실패가 아니라 `skipped: "table_missing"`으로 적고 종료 코드 0을 유지한다. 건너뜀은 영구 규칙이라 SQL 실행 뒤 표가 사라져도 백업이 성공으로 끝나므로, 끝에 `WARN 선택 표 n개 건너뜀: … — 대표 SQL 실행 뒤에도 보이면 표가 사라진 것` 한 줄을 남겨 드러낸다. 다른 표가 없으면 지금처럼 실패(exit 1)다.
+- 저장 예산: C 표 전체 크기 > `max_storage_mb`(기본 60MB) 또는 DB 크기 > `db_size_stop_mb`(기본 450MB)면 수집을 멈추고(`budget`) 대표 확인을 기다린다. 유료 플랜은 쓰지 않는다.
+
 ## 2026-10-16 · 검수 긴급 보안 3건을 막는다 (대표 승인 '1 네')
 
 - ① 접속 코드 와일드카드: 로그인 코드 허용 문자에서 `*` 를 뺀다. 광고주·운영팀 조회(`activeClientByCode`·`activeTeamByCode`)는 패턴 문자(`* % _ \`)가 섞이면 조회하지 않고, 나머지는 소문자 정확 값으로만 ilike 한다. 운영 코드 20개에 `*` 가 없음을 DB 로 확인했다.

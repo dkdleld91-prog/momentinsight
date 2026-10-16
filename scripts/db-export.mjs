@@ -13,9 +13,10 @@
 //   MI_DB_EXPORT_TABLES=clients,naver_rank_trackers,...   (선택 · 기본 목록을 바꿀 때만)
 // 결과:
 //   <out>/<YYYY-MM-DD_HHmm>/<table>.json.gz + manifest.json(표별 행 수·소요·오류·받은 바이트·방식). 오래된 폴더는 --keep 개만 남긴다.
-//   표 하나라도 실패하면 exit 1 (launchd 로그에서 바로 보이게).
+//   표 하나라도 실패하면 exit 1 (launchd 로그에서 바로 보이게). 단 선택 표(OPTIONAL_TABLES)가 아직 없으면
+//   실패가 아니라 '건너뜀'으로 적고, 끝에 WARN 한 줄을 남긴다(대표 SQL 실행 전 · C 30일 순위, 명세 v3 §10.1).
 // 증분(Supabase 전송량 절감, 2026-09-25):
-//   스냅숏 두 표(INCREMENTAL_TABLES)는 줄이 추가만 되고 고쳐지지 않는다(삭제는 추적기 삭제 때 함께 지워질 때뿐).
+//   스냅숏 표(INCREMENTAL_TABLES)는 줄이 추가만 되고 고쳐지지 않는다(삭제는 추적기 삭제·보관 기간 정리 때뿐).
 //   그래서 표마다 '마지막으로 성공한 백업 파일'을 기준으로 새 줄만 받아 합치고, 지워진 줄은 id 목록으로 빼고,
 //   서버 줄 수와 대조해 다르면 그 표만 통째로 다시 받는다. 결과 파일은 통째로 받은 것과 내용·순서가 같다(복원 방법 그대로).
 //   --full 을 주면 증분 없이 모든 표를 통째로 받는다.
@@ -51,13 +52,29 @@ export const DEFAULT_TABLES = [
   "dashboard_snapshots",
   "meta_ad_research_items",
   "audit_logs",
+  // C 30일 순위(쿠팡, 명세 v3 §10.1). 대표 SQL(20261017090000_coupang_rank_tracking) 실행 전에는 표가 없어 건너뛴다.
+  "coupang_rank_settings",
+  "coupang_rank_account_limits",
+  "coupang_rank_trackers",
+  "coupang_rank_snapshots",
 ];
+// 백업하지 않는 C 표(명세 v3 §4.2·§10.1). 목록에 넣지 않는 것으로 뺀다.
+//   coupang_rank_days        화면용 하루 칸 — 스냅숏으로 다시 만든다(docs/RUNBOOK.md 'C 30일 순위' 일별 칸 재생성)
+//   coupang_rank_runs        회차(14일 임시·증거)
+//   coupang_rank_keywords    검색 일정·임대
+//   coupang_rank_collectors  연결 코드 해시·마지막 claim 답
+//   coupang_rank_cooldowns   쉬기 기록(90일)
 // 감사 기록은 최근 90일만(오래된 것은 이전 백업에 있다).
 export const AUDIT_LOG_DAYS = 90;
 export const PAGE_SIZE = 1000;
 export const BACKUP_DIR_PATTERN = /^\d{4}-\d{2}-\d{2}_\d{4}$/;
-// 새 줄만 받는 표. 두 표 모두 id(무작위 uuid)·created_at(default now(), not null)이 있고, 서버 코드에 update 경로가 없다.
-export const INCREMENTAL_TABLES = ["naver_rank_snapshots", "naver_place_rank_snapshots"];
+// 새 줄만 받는 표. 모두 id(무작위 uuid)·created_at(default now(), not null)이 있고, 서버 코드에 update 경로가 없다.
+// coupang_rank_snapshots 는 SQL 함수가 insert 만 하고(on conflict do nothing) 보관 기간 정리 때 delete 만 한다 —
+// run_id 에 외래키를 두지 않은 이유(회차를 지울 때 이 표의 줄을 고치지 않게).
+export const INCREMENTAL_TABLES = ["naver_rank_snapshots", "naver_place_rank_snapshots", "coupang_rank_snapshots"];
+// 대표 SQL 실행 전에는 표가 없다. 이 표들은 404(PGRST205)·42P01 이면 실패가 아니라 '건너뜀'으로 적는다.
+// 건너뜀은 영구 규칙이라 SQL 실행 뒤 표가 사라져도 백업이 성공으로 끝난다 → 끝에 WARN 한 줄로 드러낸다(낮음 8).
+export const OPTIONAL_TABLES = new Set(["coupang_rank_settings", "coupang_rank_account_limits", "coupang_rank_trackers", "coupang_rank_snapshots"]);
 // 기준 파일의 created_at 최댓값보다 이만큼 앞부터 다시 받는다(늦게 커밋된 트랜잭션·시계 차이 여유).
 export const INCREMENTAL_OVERLAP_MS = 2 * 60 * 60 * 1000;
 // 증분은 전날 파일 위에 이어 쌓는다. 옛 줄의 내용이 바뀌는 길(비밀키 전용 관리자 API PATCH — 부르는 화면은 없음)이 하나 있어,
@@ -171,6 +188,11 @@ async function fetchAllPages(client, pathWithQuery, pageSize, { count = false } 
     offset += page.rows.length;
     if (page.rows.length < pageSize) return { rows, total };
   }
+}
+
+// 표가 없을 때 PostgREST 는 404 + PGRST205(스키마 캐시에 없음)를, 옛 판·직접 SQL 경로는 42P01 을 돌려준다.
+export function isMissingTableError(error) {
+  return Boolean(error) && (error.status === 404 || /PGRST205|42P01/.test(String(error.body || "")));
 }
 
 function isUndefinedColumnError(error) {
@@ -359,6 +381,7 @@ export async function runExport({
   log = console.log,
   full = false,
   incrementalTables = INCREMENTAL_TABLES,
+  optionalTables = OPTIONAL_TABLES,
   pageSize = PAGE_SIZE,
   timeoutMs = REQUEST_TIMEOUT_MS,
   retryDelaysMs = RETRY_DELAYS_MS,
@@ -370,6 +393,7 @@ export async function runExport({
   const projectRef = projectRefOf(baseUrl);
   const manifest = { startedAt: new Date(nowMs).toISOString(), baseUrl: projectRef, tables: {}, errors: [] };
   const client = createRestClient({ baseUrl, key, fetchImpl, timeoutMs, retryDelaysMs, sleep, log });
+  const skipped = [];
   for (const table of tables) {
     const started = Date.now();
     const before = { requests: client.requests, bytes: client.bytes };
@@ -418,6 +442,13 @@ export async function runExport({
       manifest.tables[table] = { rows: result.rows.length, reportedTotal: result.total, ms: Date.now() - started, method, ...used, ...detail };
       log(`${table}: ${result.rows.length} rows (${method}, ${formatMb(used.bytes)})`);
     } catch (error) {
+      // 선택 표가 아직 없으면(대표 SQL 실행 전) 실패로 세지 않는다. errors 에 넣지 않으므로 종료 코드는 0 그대로다.
+      if (optionalTables.has(table) && isMissingTableError(error)) {
+        manifest.tables[table] = { rows: null, skipped: "table_missing", ms: Date.now() - started, method, ...usage(), ...detail };
+        skipped.push(table);
+        log(`${table}: 표 없음 → 건너뜀(대표 SQL 실행 전)`);
+        continue;
+      }
       manifest.tables[table] = { rows: null, error: String(error && error.message || error), ms: Date.now() - started, method, ...usage(), ...detail };
       manifest.errors.push(`${table}: ${String(error && error.message || error)}`);
       log(`${table}: FAILED ${String(error && error.message || error)}`);
@@ -429,6 +460,7 @@ export async function runExport({
   manifest.pruned = pruneOldBackups(outDir, keep);
   fs.writeFileSync(path.join(folder, "manifest.json"), JSON.stringify(manifest, null, 2));
   log(`받은 양 ${formatMb(client.bytes)} · 요청 ${client.requests}회`);
+  if (skipped.length) log(`WARN 선택 표 ${skipped.length}개 건너뜀: ${skipped.join(", ")} — 대표 SQL 실행 뒤에도 보이면 표가 사라진 것`);
   return { folder, manifest };
 }
 

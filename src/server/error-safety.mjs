@@ -23,6 +23,25 @@ const SAFE_SHOPPING_PROVIDER_FAILURES = new Map([
   }],
 ]);
 
+// C 30일 순위(쿠팡) 계약 §3.4 의 핸들러 5xx. 코드·상태가 계약과 똑같고 사람이 읽을 문구가 있을 때만
+// 그대로 둔다(2026-10-16: 대표 SQL 전 503 COUPANG_SETUP_REQUIRED 가 500 SERVER_ERROR 로 바뀌어
+// 설치기가 auth=setup_required 대신 auth=error 를 냈다). 비밀 문자열이 있으면 아래에서 그대로 봉인한다.
+const COUPANG_RANK_HANDLER_FAILURES = new Map([
+  ["COUPANG_SETUP_REQUIRED", 503],
+  ["COUPANG_RANK_TRACKERS_FAILED", 500],
+  ["COUPANG_RANK_WORKER_FAILED", 500],
+]);
+
+function isCoupangRankHandlerFailure(response, payload) {
+  const code = typeof payload?.code === "string" ? payload.code : "";
+  const status = COUPANG_RANK_HANDLER_FAILURES.get(code);
+  return status !== undefined
+    && response.status === status
+    && payload?.ok === false
+    && typeof payload?.message === "string"
+    && payload.message.trim() !== "";
+}
+
 function nonNegativeInteger(value) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? value
@@ -112,7 +131,8 @@ export function safeErrorPayload(response, text) {
       || handlerCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE";
     expectedServerResponse = isExpectedConfigPending
       || code === "SERVER_NOT_READY"
-      || isHandlerAuthoredFailure;
+      || isHandlerAuthoredFailure
+      || isCoupangRankHandlerFailure(response, payload);
     if (SAFE_REQUEST_ID.test(String(payload?.requestId || ""))) requestId = String(payload.requestId);
     if (response.status === 502 && code === NAVER_RANK_CRON_ITEM_FAILURE) {
       safeRankCronFailure = safeNaverRankCronSummary(payload?.summary);

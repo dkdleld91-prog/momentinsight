@@ -251,16 +251,32 @@ if (( TRIAL_ONLY )); then
 fi
 
 # 6. 연결 코드(키체인). 값을 묻는 창에 두 번 붙여 넣으므로 명령줄에 원문이 남지 않는다. 다시 읽어 형식만 본다(출력 안 함).
-if (( RESET_TOKEN )) || ! /usr/bin/security find-generic-password -s "$SERVICE" -a "$ACCOUNT" >/dev/null 2>&1; then
-  info "관리자 화면에서 받은 연결 코드를 붙여 넣으세요(두 번 묻고, 화면에 보이지 않습니다)."
-  /usr/bin/security add-generic-password -U -s "$SERVICE" -a "$ACCOUNT" -T /usr/bin/security -w || fail keychain_write_failed
-fi
-CHECK_TOKEN="$(/usr/bin/security find-generic-password -s "$SERVICE" -a "$ACCOUNT" -w 2>/dev/null || true)"
-if [[ ! "$CHECK_TOKEN" =~ $TOKEN_RE ]]; then
+#    형식이 틀린 값은 키체인에 남기지 않는다: 이미 있던 값이 틀렸으면 지우고 다시 묻고, 새로 넣은 값이 틀렸으면 지운 뒤 끝낸다.
+#    그래서 잘못 붙여 넣어도 같은 줄을 다시 실행하면 다시 묻는다(--reset-token 없이).
+NEED_TOKEN="$RESET_TOKEN"
+if (( ! NEED_TOKEN )); then
+  CHECK_TOKEN="$(/usr/bin/security find-generic-password -s "$SERVICE" -a "$ACCOUNT" -w 2>/dev/null || true)"
+  if [[ -z "$CHECK_TOKEN" ]]; then
+    NEED_TOKEN=1
+  elif [[ ! "$CHECK_TOKEN" =~ $TOKEN_RE ]]; then
+    /usr/bin/security delete-generic-password -s "$SERVICE" -a "$ACCOUNT" >/dev/null 2>&1 || true
+    info "키체인에 남아 있던 연결 코드의 형식이 맞지 않아 지웠습니다. 다시 붙여 넣어 주세요."
+    NEED_TOKEN=1
+  fi
   CHECK_TOKEN=""
-  fail connection_code_invalid
 fi
-CHECK_TOKEN=""
+if (( NEED_TOKEN )); then
+  info "관리자 화면에서 받은 연결 코드를 붙여 넣으세요(두 번 묻고, 화면에 보이지 않습니다). 설치 줄이 아니라 mic1_ 로 시작하는 코드만 넣습니다."
+  /usr/bin/security add-generic-password -U -s "$SERVICE" -a "$ACCOUNT" -T /usr/bin/security -w || fail keychain_write_failed
+  CHECK_TOKEN="$(/usr/bin/security find-generic-password -s "$SERVICE" -a "$ACCOUNT" -w 2>/dev/null || true)"
+  if [[ ! "$CHECK_TOKEN" =~ $TOKEN_RE ]]; then
+    CHECK_TOKEN=""
+    /usr/bin/security delete-generic-password -s "$SERVICE" -a "$ACCOUNT" >/dev/null 2>&1 || true
+    info "연결 코드 형식이 맞지 않아 저장하지 않았습니다(mic1_ 로 시작, 앞뒤 공백 없이). 관리자 화면에서 코드만 복사해 같은 줄을 다시 실행하세요. 다시 묻습니다."
+    fail connection_code_invalid
+  fi
+  CHECK_TOKEN=""
+fi
 
 # 8. plist(템플릿 치환)
 /bin/mkdir -p "$HOME/Library/LaunchAgents"
@@ -281,6 +297,9 @@ HELLO_TOKEN=""
 AUTH="$(print -r -- "$HELLO_OUT" | /usr/bin/sed -n 's/.*auth=\([a-z_]*\).*/\1/p' | /usr/bin/tail -n 1)"
 if [[ "$AUTH" != "ok" ]]; then
   /bin/launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
+  if [[ "$AUTH" == "rejected" ]]; then
+    info "연결 코드가 거절됐습니다(틀렸거나 폐기됨). 관리자 화면에서 새 코드를 만든 뒤, 같은 설치 줄 끝에 --reset-token 을 붙여 다시 실행하세요."
+  fi
   fail "auth_${AUTH:-error}"
 fi
 SINCE="$(/bin/date -u '+%Y-%m-%dT%H:%M:%S')"

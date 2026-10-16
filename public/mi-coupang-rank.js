@@ -23,6 +23,9 @@
   var DEFAULT_GROUP = "기본 그룹";
   var RANK_TOP = 50;
   var OWNER_POLL_MS = 60000;
+  // 화면 열기(show)가 짧은 간격으로 두 번 오면(메뉴 클릭의 setScreen + hashchange, 운영팀 세션 동기화의
+  // scope-changed + auth-ready) 같은 범위 목록·수집기 상태를 다시 받지 않는 시간.
+  var LIST_REUSE_MS = 2000;
   var EXPORT_MAX_HEIGHT = 30000;
   var DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -671,9 +674,15 @@
         destroyed: false,
         scopeKey: "",
         payload: null,
+        // true 면 500개를 넘은 범위의 일부 목록(정리용): 일시중지·삭제만 허용한다.
+        partial: false,
         setupRequired: false,
         loading: false,
         listSeq: 0,
+        // 합치기용: 마지막 목록 요청의 범위 키, 받는 중인 요청 순번, 받아 쓴 시각.
+        listKey: "",
+        listFlight: 0,
+        listDoneAt: 0,
         listNote: { text: "", tone: "" },
         status: { text: "", tone: "" },
         selected: new Set(),
@@ -682,7 +691,7 @@
         runs: {},
         editingGroupId: "",
         busy: false,
-        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {} }
+        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 }
       };
     }
 
@@ -704,6 +713,15 @@
 
     function canWrite() {
       return deps.mode === "admin" && !(state.payload && state.payload.readOnly === true);
+    }
+
+    // 500개를 넘은 범위의 일부 목록을 정리용으로 그리는 중인지.
+    function cleanupMode() {
+      return state.partial === true && Boolean(state.payload);
+    }
+
+    function cleanupAllows(action) {
+      return action === "pause" || action === "delete";
     }
 
     function isHostVisible() {
@@ -805,78 +823,151 @@
       }
     }
 
+    function removeCache(scope) {
+      var store = storage();
+      if (!store || !scope) return;
+      try { store.removeItem(cacheKey(scope)); } catch (error) {}
+    }
+
     // ── 목록 받기 ──
 
     function stillCurrent(seq, scope) {
       return !state.destroyed && seq === state.listSeq && sameScope(scope);
     }
 
-    async function loadList() {
+    function recentlyDone(doneAt) {
+      if (!doneAt) return false;
+      var age = Date.now() - doneAt;
+      return age >= 0 && age < LIST_REUSE_MS;
+    }
+
+    // 같은 범위 목록을 받는 중이거나 방금(2초 안) 받아 썼으면 true. 실패한 요청은 합치지 않는다.
+    function listReusable(scope) {
+      if (!scope || state.listKey !== scope.key) return false;
+      if (state.listFlight && state.listFlight === state.listSeq) return true;
+      return recentlyDone(state.listDoneAt);
+    }
+
+    function ownerReusable(scope) {
+      var owner = state.owner;
+      if (!scope || owner.key !== scope.key) return false;
+      if (owner.flight && owner.flight === owner.seq) return true;
+      return recentlyDone(owner.doneAt);
+    }
+
+    // options.reuse: 화면 열기(show)에서만 true — 같은 범위 목록을 받는 중이거나 방금 받았으면 보내지 않는다.
+    // options.afterWrite: 추적기를 바꾼 직후 새로 받기(runBulk). 화면의 옛 목록이 낡았다는 뜻이다.
+    // 쓰기 뒤 새로 받기는 합치지 않는다(받는 중인 요청은 쓰기 전 목록일 수 있다).
+    async function loadList(options) {
+      var opts = options || {};
       var scope = currentScope();
       if (!scope) {
         renderAll();
         return;
       }
+      if (opts.reuse === true && listReusable(scope)) return;
       var seq = state.listSeq = ++seqCounter;
-      state.loading = true;
-      renderListNote();
-      var url = API_PATH + "?limit=" + LIST_LIMIT;
-      var options = { method: "GET", cache: "no-store", headers: requestHeaders(scope), timeoutMs: 30000 };
-      var response;
+      state.listKey = scope.key;
+      state.listFlight = seq;
+      state.listDoneAt = 0;
       try {
+        state.loading = true;
+        renderListNote();
+        var url = API_PATH + "?limit=" + LIST_LIMIT;
+        var requestOptions = { method: "GET", cache: "no-store", headers: requestHeaders(scope), timeoutMs: 30000 };
+        var response;
         try {
-          response = await deps.fetch(url, options);
-        } catch (firstError) {
-          // 일시적 연결 실패·시간 초과면 1.5초 뒤 한 번만 다시 시도한다(N30 목록 조회와 같은 규칙).
+          try {
+            response = await deps.fetch(url, requestOptions);
+          } catch (firstError) {
+            // 일시적 연결 실패·시간 초과면 1.5초 뒤 한 번만 다시 시도한다(N30 목록 조회와 같은 규칙).
+            if (!stillCurrent(seq, scope)) return;
+            await wait(1500);
+            if (!stillCurrent(seq, scope)) return;
+            response = await deps.fetch(url, requestOptions);
+          }
+        } catch (error) {
           if (!stillCurrent(seq, scope)) return;
-          await wait(1500);
-          if (!stillCurrent(seq, scope)) return;
-          response = await deps.fetch(url, options);
+          state.loading = false;
+          state.listNote = { text: "목록을 받지 못했습니다(" + (error && error.message || "연결 실패") + "). 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn" };
+          renderAll();
+          return;
         }
-      } catch (error) {
+        var payload = await readJson(response);
         if (!stillCurrent(seq, scope)) return;
         state.loading = false;
-        state.listNote = { text: "목록을 받지 못했습니다(" + (error && error.message || "연결 실패") + "). 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn" };
-        renderAll();
-        return;
+        if (applyListPayload(payload, scope, opts.afterWrite === true)) state.listDoneAt = Date.now();
+      } finally {
+        if (state.listFlight === seq) state.listFlight = 0;
       }
-      var payload = await readJson(response);
-      if (!stillCurrent(seq, scope)) return;
-      state.loading = false;
-      applyListPayload(payload, scope);
     }
 
-    function applyListPayload(payload, scope) {
+    function cleanupNoteText(payload) {
+      var total = isNum(payload.totalCount) ? payload.totalCount : "?";
+      var head = "추적이 " + LIST_LIMIT + "개를 넘어(전체 " + total + "개) " + payload.trackers.length + "개만 받았습니다.";
+      if (!canWrite()) return head + " 받은 목록만 보여 줍니다.";
+      return head + " 정리용 화면이라 일시중지·삭제만 됩니다(등록·다시 시작·그룹 변경은 막아 둡니다). " +
+        "일시중지한 추적도 " + LIST_LIMIT + "개에 세므로, 전체 목록을 다시 보려면 삭제로 " + LIST_LIMIT + "개 이하로 줄이세요.";
+    }
+
+    // 받은 응답을 화면 상태에 반영한다. 정상 응답(설정 필요·전체 목록·500개 초과 일부 목록)이면 true 를
+    // 돌려준다 — 그때만 2초 합치기 창을 연다.
+    function applyListPayload(payload, scope, afterWrite) {
       if (payload && payload.ok === true && payload.setupRequired === true) {
         state.setupRequired = true;
         state.payload = null;
+        state.partial = false;
         state.selected.clear();
         state.listNote = { text: "", tone: "" };
-        try { var store = storage(); if (store) store.removeItem(cacheKey(scope)); } catch (error) {}
+        removeCache(scope);
         renderAll();
-        return;
+        return true;
       }
       if (!payload || payload.ok !== true) {
         state.listNote = { text: errorText(payload) + " 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn" };
         renderAll();
-        return;
+        return false;
       }
       if (!scopedPayload(payload, scope, deps)) {
         state.listNote = { text: "받은 목록의 범위가 지금 대상과 달라 화면을 바꾸지 않았습니다. 대상 광고주를 확인한 뒤 다시 여세요.", tone: "is-warn" };
         renderAll();
-        return;
+        return false;
       }
       if (payload.complete !== true || payload.hasMore !== false) {
-        state.listNote = { text: "목록 일부만 받아 화면을 바꾸지 않았습니다(전체 " + (isNum(payload.totalCount) ? payload.totalCount : "?") + "개). 추적을 500개 이하로 줄여 주세요.", tone: "is-warn" };
+        var totalText = "목록 일부만 받아 화면을 바꾸지 않았습니다(전체 " + (isNum(payload.totalCount) ? payload.totalCount : "?") + "개). 추적을 500개 이하로 줄여 주세요.";
+        if (payload.hasMore !== true) {
+          // 행 수와 count 가 어긋난 일시적 불일치: 이전 목록을 그대로 둔다(§8.2).
+          state.listNote = { text: totalText, tone: "is-warn" };
+          renderAll();
+          return false;
+        }
+        // 범위 추적이 500개를 넘었다(활성+일시중지). 옛 캐시는 이제 맞지 않으므로 지운다.
+        removeCache(scope);
+        if (payload.trackers.length > 0 && (!state.payload || state.partial || afterWrite === true)) {
+          // 화면에 목록이 없거나(첫 진입·캐시 없음) 이미 정리용이거나 방금 지운 뒤라 옛 목록이 낡았으면,
+          // 빈 화면 대신 받은 목록을 정리용으로 그린다(일시중지·삭제만, 캐시하지 않음).
+          state.setupRequired = false;
+          state.payload = payload;
+          state.partial = true;
+          state.editingGroupId = "";
+          state.listNote = { text: cleanupNoteText(payload), tone: "is-warn" };
+          pruneSelection();
+          renderAll();
+          return true;
+        }
+        // 화면에 전체 목록이 있으면 그 목록을 그대로 둔다(§8.2). 그 목록에서도 일시중지·삭제할 수 있다.
+        state.listNote = { text: totalText + " 일시중지한 추적도 500개에 세므로 개수를 줄이려면 삭제하세요.", tone: "is-warn" };
         renderAll();
-        return;
+        return true;
       }
       state.setupRequired = false;
       state.payload = payload;
+      state.partial = false;
       state.listNote = { text: "", tone: "" };
       pruneSelection();
       writeCache(scope, payload);
       renderAll();
+      return true;
     }
 
     function pruneSelection() {
@@ -1040,16 +1131,20 @@
       var limit = state.payload ? state.payload.limit : null;
       shell.limit.textContent = limitText(limit);
       shell.limit.hidden = !limit;
-      var warning = capacityText(limit, checksPerDay());
+      var cleanup = cleanupMode();
+      // 정리용 화면에서는 등록을 막는다(행이 더 늘어나 500개 아래로 내려갈 수 없다).
+      var warning = cleanup
+        ? "추적이 " + LIST_LIMIT + "개를 넘어 정리하는 동안에는 등록할 수 없습니다. 삭제로 " + LIST_LIMIT + "개 이하로 줄이면 다시 등록할 수 있습니다."
+        : capacityText(limit, checksPerDay());
       shell.capacity.textContent = warning;
       shell.capacity.hidden = !warning;
       shell.groupList.replaceChildren();
       groupNames().forEach(function (name) { shell.groupList.appendChild(el("option", { value: name })); });
-      shell.createButton.disabled = state.busy || !state.payload;
+      shell.createButton.disabled = state.busy || !state.payload || cleanup;
     }
 
     async function submitCreate() {
-      if (!canWrite() || state.busy) return;
+      if (!canWrite() || state.busy || cleanupMode()) return;
       var keyword = String(shell.keyword.value || "").replace(/\s+/g, " ").trim();
       var productUrl = String(shell.productUrl.value || "").trim();
       var groupName = normalizeGroupInput(shell.groupInput.value);
@@ -1138,9 +1233,10 @@
       shell.bulkCount = el("strong", { text: "선택 0개" });
       shell.bulkHint = el("span", {});
       shell.bulkGroupInput = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), placeholder: "옮길 그룹 이름(기존 또는 새 그룹)", "aria-label": "선택 항목을 옮길 그룹 이름", "data-coupang-rank-bulk-group-input": true });
+      shell.bulkGroupWrap = el("span", { className: "mi-coupang-rank-bulk-group" }, [shell.bulkGroupInput, button("그룹 이동", "bulk-group", { "data-coupang-rank-write": true })]);
       var bulkActions = el("div", { className: "mi-coupang-rank-bulk-actions" }, [
         button("표시 항목 전체 선택", "select-visible"),
-        el("span", { className: "mi-coupang-rank-bulk-group" }, [shell.bulkGroupInput, button("그룹 이동", "bulk-group", { "data-coupang-rank-write": true })]),
+        shell.bulkGroupWrap,
         button("일시중지", "bulk-pause", { "data-coupang-rank-write": true }),
         button("다시 시작", "bulk-resume", { "data-coupang-rank-write": true }),
         button("삭제", "bulk-delete", { className: "mi-link-button mi-coupang-rank-danger", "data-coupang-rank-write": true }),
@@ -1182,7 +1278,9 @@
         node.classList.toggle("is-active", active);
         node.setAttribute("aria-pressed", active ? "true" : "false");
       });
-      shell.filterCount.textContent = visibleTrackers().length + "개 표시 · 전체 " + trackers().length + "개";
+      shell.filterCount.textContent = cleanupMode()
+        ? visibleTrackers().length + "개 표시 · 받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개)"
+        : visibleTrackers().length + "개 표시 · 전체 " + trackers().length + "개";
     }
 
     function renderBulkBar() {
@@ -1192,11 +1290,16 @@
       shell.bulkCount.textContent = "선택 " + state.selected.size + "개";
       shell.bulkHint.textContent = "표시 중 " + visibleTrackers().length + "개";
       var writable = canWrite();
+      var cleanup = cleanupMode();
       Array.prototype.forEach.call(shell.bulk.querySelectorAll("[data-coupang-rank-write]"), function (node) {
-        node.hidden = !writable;
+        // 정리용 화면에서는 일시중지·삭제만 보인다.
+        var action = String(node.getAttribute("data-coupang-rank-action") || "").replace(/^bulk-/, "");
+        node.hidden = !writable || (cleanup && !cleanupAllows(action));
         node.disabled = state.busy || state.selected.size === 0;
       });
-      shell.bulkGroupInput.hidden = !writable;
+      shell.bulkGroupInput.hidden = !writable || cleanup;
+      // 입력·버튼을 다 숨기면 빈 칸(240px)만 남으므로 묶음째 숨긴다.
+      shell.bulkGroupWrap.hidden = !writable || cleanup;
       Array.prototype.forEach.call(shell.bulk.querySelectorAll('[data-coupang-rank-action="clear-selection"], [data-coupang-rank-action="bulk-export"]'), function (node) {
         node.disabled = state.busy || state.selected.size === 0;
       });
@@ -1372,11 +1475,15 @@
     function renderCardActions(tracker) {
       var actions = el("div", { className: "mi-coupang-rank-card-actions" });
       var writable = canWrite();
+      var cleanup = cleanupMode();
       if (writable) {
-        actions.appendChild(tracker.status === "paused"
-          ? button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy })
-          : button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
-        actions.appendChild(button("그룹 변경", "group-edit", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        // 정리용 화면에서는 다시 시작·그룹 변경을 그리지 않는다(일시중지·삭제만).
+        if (tracker.status === "paused") {
+          if (!cleanup) actions.appendChild(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        } else {
+          actions.appendChild(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        }
+        if (!cleanup) actions.appendChild(button("그룹 변경", "group-edit", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
       }
       var runs = state.runs[tracker.id];
       actions.appendChild(button(runs && runs.open ? "측정 기록 닫기" : "측정 기록", "runs", { "data-coupang-rank-id": tracker.id, "aria-expanded": runs && runs.open ? "true" : "false" }));
@@ -1475,6 +1582,10 @@
 
     async function runBulk(action, ids, extra) {
       if (!canWrite() || state.busy || !ids.length) return;
+      if (cleanupMode() && !cleanupAllows(action)) {
+        setStatus("추적이 " + LIST_LIMIT + "개를 넘어 정리하는 동안에는 일시중지·삭제만 할 수 있습니다.", "is-warn");
+        return;
+      }
       state.busy = true;
       renderBulkBar();
       renderList();
@@ -1511,10 +1622,11 @@
       } else {
         setStatus(total + "개 " + labels[action] + ".", "is-ok");
       }
-      await loadList();
+      await loadList({ afterWrite: true });
     }
 
     function startGroupEdit(id) {
+      if (cleanupMode()) return;
       state.editingGroupId = state.editingGroupId === id ? "" : id;
       renderList();
       var input = shell.list.querySelector('[data-coupang-rank-group-edit-input]');
@@ -1811,6 +1923,9 @@
       var scope = currentScope();
       if (!scope) return;
       var seq = state.owner.seq = ++seqCounter;
+      state.owner.key = scope.key;
+      state.owner.flight = seq;
+      state.owner.doneAt = 0;
       state.owner.loading = true;
       if (!state.owner.data) renderOwnerBody();
       var payload;
@@ -1819,8 +1934,10 @@
       } catch (error) {
         payload = { ok: false, message: "수집기 상태를 받지 못했습니다(" + (error && error.message || "연결 실패") + ")." };
       }
+      if (state.owner.flight === seq) state.owner.flight = 0;
       if (state.destroyed || seq !== state.owner.seq) return;
       state.owner.loading = false;
+      if (payload.ok === true) state.owner.doneAt = Date.now();
       if (payload.ok === true && payload.setupRequired !== true && payload.settings) {
         state.owner.data = payload;
         state.owner.error = "";
@@ -2512,6 +2629,7 @@
         state.listSeq = ++seqCounter;
         state.scopeKey = "";
         state.payload = null;
+        state.partial = false;
         state.setupRequired = false;
         state.loading = false;
         state.selected.clear();
@@ -2522,6 +2640,7 @@
       if (scope.key !== state.scopeKey) {
         state.scopeKey = scope.key;
         state.payload = null;
+        state.partial = false;
         state.setupRequired = false;
         state.selected.clear();
         state.runs = {};
@@ -2538,8 +2657,10 @@
         }
       }
       renderAll();
-      loadList();
-      if (shell.owner.open && isOwnerSession()) loadOwner();
+      // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 운영팀 세션 동기화도 scope-changed 와
+      // auth-ready 로 두 번 부른다. 같은 범위를 받는 중이거나 2초 안에 받았으면 다시 보내지 않는다.
+      loadList({ reuse: true });
+      if (shell.owner.open && isOwnerSession() && !ownerReusable(scope)) loadOwner();
     }
 
     function scopeChanged() {

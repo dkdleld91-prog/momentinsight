@@ -15,7 +15,7 @@ import {
   TRACKER_LIST_FETCH_LIMIT,
   TRACKER_LIST_MAX,
 } from "../coupang-rank/contract.mjs";
-import { chunk, isSetupMissing, loadSettings, mapLimit, selectPages } from "../coupang-rank/db.mjs";
+import { chunk, inList, isSetupMissing, loadSettings, mapLimit, selectPages } from "../coupang-rank/db.mjs";
 import { generateCollectorToken } from "../coupang-rank/worker-token.mjs";
 import { accessView, canonicalAgencyCode, resolveCoupangAccess } from "../coupang-rank/access.mjs";
 import {
@@ -199,7 +199,7 @@ async function loadDayRows(ctx, trackerIds, oldestDay) {
 async function loadKeywordRows(ctx, keywordKeys) {
   if (!keywordKeys.length) return [];
   const groups = await mapLimit(chunk(keywordKeys, KEYWORD_BATCH_SIZE), READ_CONCURRENCY, async (keys) => rowsOf(
-    await ctx.supabaseAdmin.from(TABLES.keywords).select(KEYWORD_COLUMNS).in("keyword_key", keys),
+    await ctx.supabaseAdmin.from(TABLES.keywords).select(KEYWORD_COLUMNS).filter("keyword_key", "in", inList(keys)),
     "keywords",
   ));
   return groups.flat();
@@ -510,7 +510,7 @@ async function loadAccountLimits(ctx) {
   const teamNames = new Map();
   if (codes.length) {
     const clientGroups = await mapLimit(chunk(codes, 100), READ_CONCURRENCY, async (group) => rowsOf(
-      await ctx.supabaseAdmin.from("clients").select("agency_code, name").in("agency_code", group),
+      await ctx.supabaseAdmin.from("clients").select("agency_code, name").filter("agency_code", "in", inList(group)),
       "account_limit_clients",
     ));
     for (const client of clientGroups.flat()) {

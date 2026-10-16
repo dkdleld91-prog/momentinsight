@@ -123,22 +123,78 @@ test("틱 창: 스케줄러 달력 시각(맥 현지 08:50·14:50)도 피한다"
   assert.equal(new Date(ticks[2]).getDate(), 18);
 });
 
-test("워치독 동기화 중: 420초 안의 drift_detected files=N·restart_begin 줄이면 쉼(retryAfter = 줄 시각 + 420 − now)", () => {
+test("워치독 동기화 중: 420초 안의 동기화·재시작 줄이면 쉼(retryAfter = 줄 시각 + 420 − now)", () => {
   const { run } = chromeRun();
-  const drift = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 100000, "drift_detected files=3"]] });
-  assert.deepEqual(runGuard(macChromeConfig(), { now: NOW, run, readTail: drift }), { ok: false, mode: "n30-chrome", reason: "guard_n30_watchdog_busy", retryAfterSec: 320 });
-  const restart = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 400000, "restart_begin reason=stalled"]] });
+  // 줄 문구는 워치독 원문이 실제로 쓰는 모양이다(scripts/watchdog/mi-rank-watchdog.sh).
+  const synced = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 100000, "drift_sync_ok files=3"], [NOW - 100000, "sync_chrome_restart_begin"]] });
+  assert.deepEqual(runGuard(macChromeConfig(), { now: NOW, run, readTail: synced }), { ok: false, mode: "n30-chrome", reason: "guard_n30_watchdog_busy", retryAfterSec: 320 });
+  const restart = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 400000, "restart_begin stalled_seconds=1830"]] });
   assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: restart }).retryAfterSec, 20);
-  for (const text of ["sync_source_fast_forwarded from=a to=b", "drift_sync_ok files=3", "sync_chrome_restart_begin", "chrome_quit_failed", "chrome_profile_forwarded profile=P"]) {
-    const busy = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 10000, text]] });
+  for (const text of [
+    "sync_source_fast_forwarded from=ea84f33 to=feca1e3", "sync_cooldown_bypassed reason=runtime_version_drift source=1.1.29 copy=1.1.28",
+    "drift_sync_ok files=3", "drift_sync_failed status=timeout", "sync_chrome_restart_begin", "chrome_quit_failed status=1",
+    "chrome_quit_incomplete", "chrome_profile_forwarded profile=Profile 5",
+  ]) {
+    // 뒤에 평범한 줄을 하나 더 둬서 (가) 줄 규칙만 본다((나) 마지막 줄 규칙은 아래 따로).
+    const busy = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 10000, text], [NOW - 9000, "healthy stalled_minutes=1"]] });
     assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: busy }).reason, "guard_n30_watchdog_busy", text);
   }
-  // 동기화를 건너뛴 줄·420초가 지난 줄은 쉬지 않는다.
-  const skipped = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 100000, "drift_detected files=3 sync_skipped=repository_dirty"]] });
-  assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: skipped }).ok, true);
-  const stale = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 500000, "restart_begin"], [NOW - 230000, "healthy"]] });
+  // 쿨다운 중 릴리스 드리프트: sync_cooldown_bypassed 뒤 설치(최대 180초)가 이어진다 → 틱 창(+90초)이 지나도 줄 + 420초까지 쉰다.
+  const bypassed = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 100000, "sync_cooldown_bypassed reason=runtime_version_drift source=1.1.29 copy=1.1.28"]] });
+  assert.deepEqual(runGuard(macChromeConfig(), { now: NOW, run, readTail: bypassed }), { ok: false, mode: "n30-chrome", reason: "guard_n30_watchdog_busy", retryAfterSec: 320 });
+  // 동기화를 건너뛴 줄(drift_detected 는 늘 sync_skipped=…·sync_suppressed_cooldown 꼬리가 붙는다)·420초가 지난 줄은 쉬지 않는다.
+  for (const text of [
+    "drift_detected files=3 sync_skipped=repository_dirty", "drift_detected files=3 sync_skipped=collection_active",
+    "drift_detected files=4 sync_suppressed_cooldown seconds_left=9030",
+  ]) {
+    const skipped = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 230000, "healthy"], [NOW - 100000, text]] });
+    assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: skipped }).ok, true, text);
+  }
+  const stale = logs({ scheduler: [[NOW - 200000, "tick"]], watchdog: [[NOW - 500000, "restart_begin stalled_seconds=1830"], [NOW - 230000, "healthy"]] });
   assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: stale }).ok, true);
   assert.equal(isWaitableGuardReason("guard_n30_watchdog_busy"), true);
+});
+
+test("워치독 설치 구간(줄 없음): 앞 줄 없이 drift_sync_ok 가 나오는 실제 순서에서 설치 중에는 쉰다", () => {
+  const { run } = chromeRun();
+  // 2026-10-16 이 맥 로그 위상: 스케줄러 08:24:01, 워치독 08:18:31~32(runtime_in_sync·healthy), 다음 워치독 틱 S = 08:28:36.
+  // 2026-09-28T01:10:39Z 처럼 sync_source_… 줄 없이 fetch + 설치가 돌면 drift_sync_ok 전까지 워치독은 한 줄도 쓰지 않는다.
+  const S = NOW - 95000;
+  const previous = [[S - 605000, "runtime_in_sync files=14"], [S - 604000, "healthy stalled_minutes=47"]];
+  const scheduler = [[S - 275000, "tick"]];
+  for (const offset of [88, 90, 95, 100, 120, 200, 280]) {
+    const at = S + offset * 1000;
+    const result = runGuard(macChromeConfig(), { now: at, run, readTail: logs({ scheduler, watchdog: previous }) });
+    assert.equal(result.ok, false, `S+${offset}`);
+    assert.equal(result.reason, "guard_n30_watchdog_busy", `S+${offset}`);
+    assert.ok(result.retryAfterSec >= 1 && result.retryAfterSec <= 30, `S+${offset}: ${result.retryAfterSec}`);
+  }
+  // 설치가 끝나 drift_sync_ok·sync_chrome_restart_begin 이 같은 초에 찍히면 그 줄 + 420초까지 쉰다.
+  const done = logs({ scheduler, watchdog: [...previous, [S + 200000, "drift_sync_ok files=3"], [S + 200000, "sync_chrome_restart_begin"]] });
+  assert.equal(runGuard(macChromeConfig(), { now: S + 210000, run, readTail: done }).retryAfterSec, 410);
+  // 같은 틱이 평소처럼 바로 줄을 쓰면(동기화 없음) 틱 창이 끝난 뒤 통과한다(오탐 없음).
+  const normal = logs({ scheduler, watchdog: [...previous, [S + 2000, "runtime_in_sync files=14"], [S + 2000, "healthy stalled_minutes=57"]] });
+  assert.deepEqual(runGuard(macChromeConfig(), { now: S + 95000, run, readTail: normal }), { ok: true, mode: "n30-chrome" });
+  // 마지막 줄이 간격 + 300초보다 오래되면 2단계가 끝낸다(기다리지 않음).
+  assert.equal(runGuard(macChromeConfig(), { now: S - 604000 + 901000, run, readTail: logs({ scheduler: [[S + 290000, "tick"]], watchdog: previous }) }).reason, "guard_n30_tick_unknown");
+});
+
+test("워치독 설치 구간(줄 없음): 마지막 줄이 fetch 뒤 줄(sync_source_…)이면 결론 줄이 나올 때까지 쉰다", () => {
+  const { run } = chromeRun();
+  const S = NOW - 160000;
+  const previous = [[S - 605000, "runtime_in_sync files=14"], [S - 604000, "healthy stalled_minutes=47"]];
+  const scheduler = [[S - 200000, "tick"]];
+  for (const text of [
+    "sync_source_fetch_failed status=timeout", "sync_source_fast_forward_failed status=1 local=be574b5 origin=f2679dd",
+    "sync_source_behind action=none reason=diverged local=a origin=b", "sync_source_pull_skipped reason=not_on_main",
+  ]) {
+    // fetch 상한(60초) 뒤 줄 → 해시 대조 → 설치(줄 없음, 최대 180초). S+160 은 그 줄의 틱 창(+90초)이 지난 때다.
+    const pending = logs({ scheduler, watchdog: [...previous, [S + 60000, text]] });
+    assert.deepEqual(runGuard(macChromeConfig(), { now: NOW, run, readTail: pending }), { ok: false, mode: "n30-chrome", reason: "guard_n30_watchdog_busy", retryAfterSec: 30 }, text);
+    // 결론 줄(runtime_in_sync)이 뒤따르면 그 틱에는 설치가 없다 → 통과(매 틱 not_on_main 이어도 계속 쉬지 않음).
+    const concluded = logs({ scheduler, watchdog: [...previous, [S + 60000, text], [S + 60000, "runtime_in_sync files=14"], [S + 61000, "healthy stalled_minutes=57"]] });
+    assert.equal(runGuard(macChromeConfig(), { now: NOW, run, readTail: concluded }).ok, true, text);
+  }
 });
 
 test("readTail: 끝 4KB 만 읽기 전용으로 읽는다", () => {

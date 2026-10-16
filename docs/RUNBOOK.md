@@ -465,7 +465,7 @@
 - 무엇: 로그인 없는 쿠팡 검색 1쪽에서 광고(`sourceType=srp_product_ads`)를 뺀 일반 순번 1~50을 계정 × 키워드 × 상품으로 KST 하루 칸에 기록한다. 51번째 이후·1쪽에 없음은 '밖'.
 - 독립 모듈: N30 코드·`naver_*` 표·크론·`/ready`·만료 크론·해지 모듈과 닿지 않는다(통합 계약 5줄: `docs/DECISIONS.md` 2026-10-16). C 장애는 N30 경보·헬스에 나타나지 않는다 — 이 절의 띠·패널로 본다.
 - 화면: 관리자 메뉴 `C 30일 순위`(`#mi-admin-coupang-rank-tracking`). 총관리자에게만 수집기 패널(접힌 칸, `[data-coupang-rank-owner]`)이 보인다. API: 화면 `/api/coupang-rank-trackers`(세션), 수집기 `/api/coupang-rank-worker`(연결 코드 Bearer).
-- 대표용 설치 순서·기대 출력: `docs/COUPANG_RANK_COLLECTOR_SETUP.md`. 대표 SQL 원문: `supabase/migrations/20261017090000_coupang_rank_tracking.sql` = `docs/sql/c30-1-tables.sql`(바이트 같음, sha256 `1eec1bac4645a8a46662b4d35e47f26a8737ca13ef895d40f235f1793653b07e`). 바탕화면 준비: `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261017090000_coupang_rank_tracking.sql C30-1-테이블만들기.txt`.
+- 대표용 설치 순서·기대 출력: `docs/COUPANG_RANK_COLLECTOR_SETUP.md`. 대표 SQL 원문: `supabase/migrations/20261017090000_coupang_rank_tracking.sql` = `docs/sql/c30-1-tables.sql`(바이트 같음, sha256 `362b0fb5d111d5f339e5bc66be33d6760a0081647e49a95f34356458bf23a67c`). 바탕화면 준비: `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261017090000_coupang_rank_tracking.sql C30-1-테이블만들기.txt`.
 
 ### 켜기·끄기
 
@@ -525,7 +525,7 @@
   ```
   기대: `MI_COUPANG_INSTALL_OK … browser=edge|chrome/… guard=none|n30-chrome agent=loaded auth=ok first_run=…`. 맥 시험 에이전트가 떠 있으면 `trial_agent_loaded` 로 멈춘다.
 - 예약 작업 `\MomentInsight\CoupangRank`(10분마다, 로그온 시 2분 지연, BelowNormal), launchd `co.kr.momentinsight.coupang-rank-collector`(600초). 제거 뒤에는 **연결 코드도 폐기**한다.
-- `--hello-only`·설치 확인의 `auth=` 값: `ok` / `rejected`(코드 틀림·폐기 → 새 코드 + `-ResetToken`) / `update_required`(줄 다시 실행) / `setup_required`(대표 SQL 전) / `route_missing`(경로가 없음 — 다른 배포가 덮었는지 `/health` release 대조, 증상 ②).
+- `--hello-only`·설치 확인의 `auth=` 값: `ok` / `rejected`(코드 틀림·폐기 → 새 코드 + 윈도우 `-ResetToken` / 맥 `--reset-token`) / `update_required`(줄 다시 실행) / `setup_required`(대표 SQL 전) / `route_missing`(경로가 없음 — 다른 배포가 덮었는지 `/health` release 대조, 증상 ②).
 
 ### 맥 미니 이전(약 2달 뒤)
 

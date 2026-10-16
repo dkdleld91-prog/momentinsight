@@ -23,7 +23,7 @@
 1. 작업 담당이 바탕화면에 `C30-1-테이블만들기.txt`를 만들어 TextEdit로 열어 둡니다.
    - 만드는 줄(작업 담당, 맥 터미널): `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261017090000_coupang_rank_tracking.sql C30-1-테이블만들기.txt`
    - 기대 출력: `준비됨: ~/Desktop/C30-1-테이블만들기.txt (1251줄, begin/commit 2개) — Supabase SQL 편집기용`
-   - 같은 원문이 저장소 `docs/sql/c30-1-tables.sql`에도 있습니다(바이트 단위로 같음, sha256 `1eec1bac…3b07e`).
+   - 같은 원문이 저장소 `docs/sql/c30-1-tables.sql`에도 있습니다(바이트 단위로 같음, sha256 `362b0fb5…a67c`).
 2. TextEdit에서 전체 선택 → 복사 → Supabase SQL 편집기에 붙여 넣고 **Run**.
    - 기대: `Success`로 시작하는 문구(오류 빨간 글씨 없음). 정확한 문구는 화면에 나온 그대로 알려 주세요.
    - 다시 실행해도 안전합니다(이미 있는 표·함수는 그대로 둡니다).
@@ -104,9 +104,11 @@
    ```powershell
    iwr -UseBasicParsing https://insight.momentlabs.co.kr/coupang-collector/install-windows.ps1 -OutFile "$env:TEMP\mi-coupang-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\mi-coupang-install.ps1" -Release <7자리>
    ```
-2. `Paste connection code`가 나오면 2단계 코드를 붙여 넣고 `Enter`. 글자가 화면에 보이지 않는 것이 정상입니다.
+2. `Paste connection code`가 나오면 2단계 코드를 붙여 넣고 `Enter`. 글자 대신 `*`만 보이는 것이 정상입니다.
 3. 기대 출력 한 줄(받기·검사 뒤, 첫 실행 확인에 최대 약 2분 더 걸립니다):
    `MI_COUPANG_INSTALL_OK release=<7자리> version=1.0.0 node=<버전> browser=edge/<버전> task=Ready auth=ok first_run=<요약>`
+
+실패하면 `MI_COUPANG_INSTALL_FAIL code=…` 한 줄이 나옵니다. 그 줄의 `code=…`를 아래 표에서 찾습니다.
 
 | 나온 것 | 뜻 | 할 일 |
 |---|---|---|
@@ -114,10 +116,14 @@
 | `code=node_version_must_be_22_to_24` | Node.js 판이 맞지 않음 | Node.js 22 LTS를 설치한 뒤 다시 |
 | `code=edge_not_found` | Edge를 못 찾음 | Edge를 설치·업데이트한 뒤 다시 |
 | `code=release_mismatch` | 줄이 옛 배포 것 | 화면에서 줄을 **다시 복사**해 실행 |
-| `auth=rejected` | 코드가 틀렸거나 폐기됨 | 새 코드를 만든 뒤 설치 줄 끝에 ` -ResetToken`을 붙여 다시 실행 |
-| `auth=update_required` | 수집기 판이 낮음 | 화면에서 줄을 다시 복사해 실행(업데이트) |
-| `auth=setup_required` | 대표 SQL 전 | 시작 전 확인 ②부터 |
-| `auth=route_missing` | 서버 경로가 없음(다른 배포가 덮음) | 줄을 보내 주세요(작업 담당 확인) |
+| `code=connection_code_invalid` | 붙여 넣은 값이 연결 코드 형식이 아님(`mic1_`로 시작하지 않음, 설치 줄 전체 등) | 저장하지 않았습니다. 코드**만** 복사해 같은 줄을 다시 실행(처음 설치면 다시 묻습니다. 코드를 바꾸던 중이면 끝에 ` -ResetToken`을 붙입니다) |
+| `code=auth_rejected` | 코드가 틀렸거나 폐기됨 | 새 코드를 만든 뒤 설치 줄 끝에 ` -ResetToken`을 붙여 다시 실행 |
+| `code=auth_update_required` | 수집기 판이 낮음 | 화면에서 줄을 다시 복사해 실행(업데이트). 그래도 같으면 줄을 보내 주세요 |
+| `code=auth_setup_required` | 대표 SQL 전 | 시작 전 확인 ②부터 |
+| `code=auth_route_missing` | 서버 경로가 없음(다른 배포가 덮음) | 줄을 보내 주세요(작업 담당 확인) |
+| `code=auth_unreachable` | 서버에 닿지 못함(인터넷·방화벽) | 인터넷 연결과 방화벽을 확인하고 같은 줄을 다시 실행 |
+| `code=auth_error` | 서버 답을 알아보지 못함 | 줄 전체를 보내 주세요(작업 담당 확인) |
+| 그 밖의 `code=…` | 표에 없는 실패 | 줄 전체를 보내 주세요 |
 
 - 업데이트도 같은 한 줄입니다. 업데이트 때는 코드를 다시 묻지 않습니다.
 
@@ -174,11 +180,25 @@ Get-ScheduledTaskInfo -TaskName CoupangRank -TaskPath '\MomentInsight\' | Select
   ```bash
   curl -fsSL https://insight.momentlabs.co.kr/coupang-collector/install-macos.sh -o /tmp/mi-coupang-install.sh && /bin/zsh /tmp/mi-coupang-install.sh --release <7자리>
   ```
-  - 코드를 **두 번** 묻습니다. 두 번 모두 붙여 넣고 `Enter`(글자는 보이지 않음).
+  - 코드를 **두 번** 묻습니다. 두 번 모두 붙여 넣고 `Enter`(글자는 보이지 않음). 설치 줄을 복사한 직후라 클립보드에 설치 줄이 들어 있으니, 관리자 화면에서 **코드를 다시 복사한 뒤** 붙여 넣습니다.
   - 기대 출력: `MI_COUPANG_INSTALL_OK release=<7자리> version=1.0.0 node=<버전> browser=edge/<버전> guard=none agent=loaded auth=ok first_run=<요약>`
   - **`browser=edge guard=none`이 아니면 이전을 멈춥니다**(Edge 설치부터).
-  - `code=trial_agent_loaded`: 맥 시험이 아직 켜져 있음 → 2단계의 `launchctl bootout …` 줄을 먼저 실행.
-  - `code=browser_app_required`: Edge가 없음 → Edge 설치 뒤 다시.
+  - 실패하면 `MI_COUPANG_INSTALL_FAIL code=…` 한 줄이 나옵니다. 맥에서 코드를 다시 넣는 옵션은 ` --reset-token`입니다(윈도우의 ` -ResetToken`을 붙이면 `code=unknown_option`).
+
+  | 나온 것 | 뜻 | 할 일 |
+  |---|---|---|
+  | `code=trial_agent_loaded` | 맥 시험이 아직 켜져 있음 | 2단계의 `launchctl bootout …` 줄을 먼저 실행 |
+  | `code=browser_app_required` | Edge가 없음 | Edge 설치 뒤 다시 |
+  | `code=node_version_must_be_22_to_24` | Node.js 판이 맞지 않음 | Node.js 22 LTS를 설치한 뒤 다시 |
+  | `code=release_mismatch` | 줄이 옛 배포 것 | 화면에서 줄을 **다시 복사**해 실행 |
+  | `code=connection_code_invalid` | 붙여 넣은 값이 연결 코드 형식이 아님(설치 줄 전체, 앞뒤 공백 등) | 키체인에 남기지 않고 끝났습니다. 코드**만** 복사해 같은 줄을 다시 실행(다시 묻습니다). ` --reset-token`으로 코드를 바꾸던 중이었다면 옛 코드도 이미 바뀐 상태라 수집이 멈춰 있으니, 바로 다시 실행합니다 |
+  | `code=auth_rejected` | 코드가 틀렸거나 폐기됨 | 새 코드를 만든 뒤 설치 줄 끝에 ` --reset-token`을 붙여 다시 실행 |
+  | `code=auth_update_required` | 수집기 판이 낮음 | 화면에서 줄을 다시 복사해 실행(업데이트). 그래도 같으면 줄을 보내 주세요 |
+  | `code=auth_setup_required` | 대표 SQL 전 | 시작 전 확인 ②부터 |
+  | `code=auth_route_missing` | 서버 경로가 없음(다른 배포가 덮음) | 줄을 보내 주세요(작업 담당 확인) |
+  | `code=auth_unreachable` | 서버에 닿지 못함(인터넷·방화벽) | 인터넷 연결을 확인하고 같은 줄을 다시 실행 |
+  | `code=auth_error` | 서버 답을 알아보지 못함 | 줄 전체를 보내 주세요(작업 담당 확인) |
+  | 그 밖의 `code=…` | 표에 없는 실패 | 줄 전체를 보내 주세요 |
 - **확인 — 맥 터미널용**: 화면의 `맥 확인` 복사 줄
   ```bash
   launchctl print gui/$(id -u)/co.kr.momentinsight.coupang-rank-collector | grep -E 'state|last exit code'; tail -n 10 "$HOME/Library/Application Support/MomentInsight/CoupangRank/logs/worker.log"

@@ -51,8 +51,11 @@ const migrationDirectory = path.join(root, "supabase", "migrations");
 const MIGRATION_NAME = "20261017090000_coupang_rank_tracking.sql";
 const sql = fs.readFileSync(path.join(migrationDirectory, MIGRATION_NAME), "utf8");
 
-// 명세 v3 머리말·§4.5 가 고정한 원문 해시(1,251줄, 64,719바이트). 원문을 바꾸려면 명세부터 고친다.
-const SPEC_SHA256 = "1eec1bac4645a8a46662b4d35e47f26a8737ca13ef895d40f235f1793653b07e";
+// 원문 해시(1,261줄, 65,809바이트). 명세 v3 머리말·§4.5 의 해시(1eec1bac…3b07e, 1,251줄, 64,719바이트)에
+// 통합 검토 2026-10-16 고침 2건(claim 의 지금 하루 횟수에 없는 칸 재계획, after_activate 잠금 순서)을 더한 것이다.
+// 그래서 명세 사본(~/.config/momentinsight/c30/v3/)과는 이제 다르다. 원문을 바꾸면 이 값과 docs/sql 사본을 함께 고친다.
+const SPEC_SHA256 = "362b0fb5d111d5f339e5bc66be33d6760a0081647e49a95f34356458bf23a67c";
+const DOCS_COPY = path.join(root, "docs", "sql", "c30-1-tables.sql");
 
 // 명세 §4.3 함수 18개(§10.5 제거 SQL 의 서명과 같다).
 const EXPECTED_FUNCTIONS = [
@@ -257,8 +260,10 @@ const minuteOfSlot = (slotIndex) => (slotIndex === 0 ? 0 : 720);
 
 // ───────────────────────── 글자 검사(원문·금지 문자열·리터럴 감사) ─────────────────────────
 
-test("원문 고정: 명세 §4.5 해시와 같고, 전체가 begin … commit 한 묶음이다", () => {
+test("원문 고정: 고정 해시와 같고, docs/sql 대표용 사본과 바이트가 같고, 전체가 begin … commit 한 묶음이다", () => {
   assert.equal(crypto.createHash("sha256").update(sql).digest("hex"), SPEC_SHA256);
+  assert.ok(fs.readFileSync(DOCS_COPY).equals(fs.readFileSync(path.join(migrationDirectory, MIGRATION_NAME))),
+    "docs/sql/c30-1-tables.sql 이 마이그레이션과 바이트 단위로 다르다");
   const lines = sql.split("\n");
   assert.equal(lines.filter((line) => line === "begin;").length, 1);
   assert.equal(lines.filter((line) => line === "commit;").length, 1);
@@ -907,5 +912,187 @@ test("18. 하루 3회(0~24시) 칸 시작 분 = 0·480·960, housekeeping 이 �
     assert.equal(settings.budget_blocked, false);
     assert.ok(settings.last_housekeeping_at instanceof Date);
     assert.equal(Number((await b.one("select count(*) as n from public.coupang_rank_runs where id = $1", [job.runId])).n), 1); // 임대 중 회차는 남김
+  });
+});
+
+// ───────────────────────── 통합 검토 회귀(2026-10-16) ─────────────────────────
+
+// 임대 중에 하루 횟수를 내리면 replan_all 이 그 키워드를 건너뛴다(임대 중). 그 회차가 실패·만료·차단으로 끝나면
+// 지금 설정에 없는 칸 번호가 남는다. 고치기 전에는 다음 claim 의 slot_minute 가 0~1439 를 넘어
+// 23514(coupang_rank_runs_slot_minute_check)로 claim 전체가 되돌려지고 모든 수집이 멈췄다(0~24시 3→1 → 2880,
+// 2→1 → 1440, 08~23시 3→1 → 2280). 범위 안이어도 없는 칸의 시작 분이 기록됐다(08~23시 2→1 → 1380).
+async function leasedThenLowered(db, { from, to, slotIndex, hours = [0, 24] }) {
+  const b = await base(db);
+  const keywordKey = "아이폰 필름";
+  await db.query("update public.coupang_rank_settings set checks_per_day = $1, active_from_hour = $2, active_to_hour = $3",
+    [from, hours[0], hours[1]]);
+  const trackerId = await b.addTracker(PRIMARY_AGENCY_CODE, keywordKey, "8533720933");
+  // 실행 시각과 무관하게 임대가 slotIndex 번 칸에 서도록 키워드 행을 미리 둔다(칸 끝은 3시간 뒤).
+  await db.query(
+    `insert into public.coupang_rank_keywords (keyword_key, search_text, next_due_at, slot_day, slot_index, slot_ends_at)
+     values ($1, $1, now() - interval '1 minute', (now() at time zone 'Asia/Seoul')::date, $2, now() + interval '3 hours')`,
+    [keywordKey, slotIndex],
+  );
+  const job = await b.claim();
+  assert.equal(job.state, "job", JSON.stringify(job));
+  assert.equal(job.slotIndex, slotIndex);
+  // settings-update 가 하는 그대로: 설정 저장 → replan_all. 임대 중이라 0건이고 칸 번호가 그대로 남는다.
+  await db.query("update public.coupang_rank_settings set checks_per_day = $1", [to]);
+  assert.equal((await b.one("select public.coupang_rank_replan_all() as n")).n, 0);
+  assert.equal((await b.one("select slot_index from public.coupang_rank_keywords")).slot_index, slotIndex);
+  return { b, job, keywordKey, trackerId };
+}
+
+// 수집 시간대 [fromHour, toHour) 에서 하루 n회일 때 칸 i 의 시작 분(claim 과 같은 식).
+const minuteOf = (index, perDay, [fromHour, toHour] = [0, 24]) =>
+  fromHour * 60 + Math.floor(((toHour - fromHour) * 60 * index) / perDay);
+
+async function claimNoThrow(b) {
+  try {
+    return await b.claim();
+  } catch (error) {
+    assert.fail(`claim 이 ${error.code || ""} 로 실패했다: ${error.message}`);
+  }
+}
+
+async function assertFreshSlot(b, keywordKey, perDay, hours = [0, 24]) {
+  const keyword = await b.one("select slot_index from public.coupang_rank_keywords where keyword_key = $1", [keywordKey]);
+  assert.ok(keyword.slot_index < perDay, `칸 번호 ${keyword.slot_index} 가 하루 ${perDay}회에 없다`);
+  await b.due(keywordKey);
+  const job = await claimNoThrow(b);
+  assert.equal(job.state, "job", JSON.stringify(job));
+  const run = await b.one("select slot_index, slot_minute from public.coupang_rank_runs where id = $1", [job.runId]);
+  assert.ok(run.slot_index < perDay);
+  assert.equal(run.slot_minute, minuteOf(run.slot_index, perDay, hours));
+  return job;
+}
+
+test("19. 임대 중 하루 횟수 3→1 뒤 시간 초과 → 20분 뒤 claim 이 23514 없이 지금 설정의 칸으로 다시 계획한다(검토 high, 원래 순서)", async () => {
+  await withDb(async (db) => {
+    const { b, job, keywordKey, trackerId } = await leasedThenLowered(db, { from: 3, to: 1, slotIndex: 2 });
+    const timeout = await b.record(job, "timeout", { errorCode: "page_timeout", finalHost: "www.coupang.com" });
+    assert.equal(timeout.accepted, true);
+    // 20분 재시도 갈래: 칸 번호 2·옛 칸 끝이 남는다. 20분이 지난 것으로 둔다.
+    await db.query("update public.coupang_rank_keywords set next_due_at = now() - interval '1 minute'");
+    const reply = await claimNoThrow(b);
+    if (reply.state === "job") {
+      const run = await b.one("select slot_index, slot_minute from public.coupang_rank_runs where id = $1", [reply.runId]);
+      assert.deepEqual([run.slot_index, run.slot_minute], [0, 0]);
+    }
+    const next = await assertFreshSlot(b, keywordKey, 1);
+    const recorded = await b.record(next, "ok", okBody(organicList(9)));
+    assert.equal(recorded.matched, 1);
+    const day = await b.one(`select slot_index, slot_minute, rank from public.coupang_rank_days
+      where tracker_id = $1 and success_count > 0`, [trackerId]);
+    assert.deepEqual([day.slot_index, day.slot_minute, day.rank], [0, 0, 9]);
+  });
+});
+
+test("19-2. 같은 상태가 임대 만료·차단으로 끝나도 claim 이 멈추지 않고, 만료 뒤 20분 미룸은 지킨다(H6)", async () => {
+  await withDb(async (db) => {
+    const { b, job, keywordKey } = await leasedThenLowered(db, { from: 3, to: 1, slotIndex: 2 });
+    await b.expire(job.runId);
+    const cleanup = await claimNoThrow(b); // 만료 정리(20분 재시도 갈래)와 같은 claim 안에서 칸을 다시 계획한다
+    assert.deepEqual([cleanup.state, cleanup.reason], ["wait", "idle"]);
+    const keyword = await b.one(`select slot_index, next_due_at > now() + interval '19 minutes' as later
+      from public.coupang_rank_keywords`);
+    assert.deepEqual([keyword.slot_index, keyword.later], [0, true]);
+    await db.query("update public.coupang_rank_keywords set next_due_at = now() - interval '1 minute'");
+    await claimNoThrow(b);
+    await assertFreshSlot(b, keywordKey, 1);
+  });
+  await withDb(async (db) => {
+    const { b, job, keywordKey } = await leasedThenLowered(db, { from: 3, to: 1, slotIndex: 2 });
+    const blocked = await b.record(job, "blocked", { httpStatus: 403 });
+    assert.equal(blocked.stop, true);
+    await db.exec("update public.coupang_rank_settings set cooldown_until = null");
+    await claimNoThrow(b); // 쉬기가 끝난 뒤
+    await assertFreshSlot(b, keywordKey, 1);
+  });
+});
+
+test("19-3. 임대 중 하루 횟수 2→1 뒤 실패 → 지금 설정에 없는 칸의 시작 분을 남기지 않는다(범위 안이어도)", async () => {
+  // 지금 KST 시각을 품는 2시간 시간대. 옛 칸 1번을 하루 1회 식으로 세면 시간대 끝(to×60)이 나온다:
+  // to < 24 면 범위 안의 틀린 값(08~23시 2→1 의 1380 과 같은 꼴), to = 24 면 1440 → 23514.
+  // 자정 경계 대기를 먼저 해서, 시각을 읽은 뒤 날짜가 넘어가 시간대 밖이 되지 않게 한다(시나리오 중 시는 최대 1 오른다).
+  await awayFromSlotBoundary();
+  const hour = Number((await withDb(async (db) => (await helpers(db).one(
+    "select extract(hour from now() at time zone 'Asia/Seoul')::int as h")).h)));
+  const hours = [Math.min(hour, 22), Math.min(hour, 22) + 2];
+  await withDb(async (db) => {
+    const { b, job, keywordKey } = await leasedThenLowered(db, { from: 2, to: 1, slotIndex: 1, hours });
+    assert.equal((await b.one("select slot_minute from public.coupang_rank_runs where id = $1", [job.runId])).slot_minute,
+      minuteOf(1, 2, hours));
+    await b.record(job, "error", { errorCode: "cdp_error" });
+    await db.query("update public.coupang_rank_keywords set next_due_at = now() - interval '1 minute'");
+    const reply = await claimNoThrow(b);
+    if (reply.state === "job") {
+      const run = await b.one("select slot_minute from public.coupang_rank_runs where id = $1", [reply.runId]);
+      assert.equal(run.slot_minute, hours[0] * 60);
+    }
+    await assertFreshSlot(b, keywordKey, 1, hours);
+    const minutes = await b.all("select distinct slot_minute from public.coupang_rank_runs where id <> $1", [job.runId]);
+    assert.deepEqual(minutes.map((row) => row.slot_minute), [hours[0] * 60]);
+  });
+});
+
+// after_activate 는 키워드 → 추적기, record·claim 은 추적기 → 키워드 순서로 잠가 교착(40P01)이 날 수 있었다(검토 low).
+// PGlite 는 연결이 하나라 동시 실행 대신, 추적기를 잡는 두 함수(apply_success·mark_failed)에 들어가는 순간
+// 같은 트랜잭션이 그 키워드 행을 이미 잠갔는지(xmax = 지금 트랜잭션)를 기록해 순서를 확인한다.
+test("20. 잠금 순서: after_activate·record·claim 모두 추적기를 키워드보다 먼저 잡는다(교착 없음)", async () => {
+  await withDb(async (db) => {
+    const b = await base(db);
+    await db.exec(`
+      create table public.lock_probe (seq serial primary key, fn text not null, keyword_locked boolean not null);
+      alter function public.coupang_rank_apply_success(uuid, uuid, jsonb, jsonb) rename to probe_inner_apply_success;
+      alter function public.coupang_rank_mark_failed(uuid, text) rename to probe_inner_mark_failed;
+      create function public.coupang_rank_apply_success(p_run_id uuid, p_tracker_id uuid, p_page_organic jsonb, p_page_ads jsonb)
+      returns boolean language plpgsql as $$
+      begin
+        insert into public.lock_probe (fn, keyword_locked)
+        select 'apply_success', exists (
+          select 1 from public.coupang_rank_keywords k join public.coupang_rank_runs r on r.keyword_key = k.keyword_key
+           where r.id = p_run_id and k.xmax::text = txid_current()::text);
+        return public.probe_inner_apply_success(p_run_id, p_tracker_id, p_page_organic, p_page_ads);
+      end $$;
+      create function public.coupang_rank_mark_failed(p_run_id uuid, p_result text)
+      returns integer language plpgsql as $$
+      begin
+        insert into public.lock_probe (fn, keyword_locked)
+        select 'mark_failed', exists (
+          select 1 from public.coupang_rank_keywords k join public.coupang_rank_runs r on r.keyword_key = k.keyword_key
+           where r.id = p_run_id and k.xmax::text = txid_current()::text);
+        return public.probe_inner_mark_failed(p_run_id, p_result);
+      end $$;`);
+    const probes = async () => (await b.all("select fn, keyword_locked from public.lock_probe order by seq"))
+      .map((row) => `${row.fn}:${row.keyword_locked ? "키워드 먼저" : "추적기 먼저"}`);
+
+    const first = await b.addTracker(PRIMARY_AGENCY_CODE, "k", "8533720933");
+    const job = await b.claim();
+    assert.equal((await b.record(job, "ok", okBody(organicList(5)))).matched, 1); // record 성공 경로
+    await b.due("k");
+    const failing = await b.claim();
+    await b.record(failing, "error", { errorCode: "cdp_error" }); // record 실패 경로
+    await b.due("k");
+    const expiring = await b.claim();
+    await b.expire(expiring.runId);
+    await b.claim(); // claim 만료 정리 경로
+    assert.deepEqual(await probes(), ["apply_success:추적기 먼저", "mark_failed:추적기 먼저", "mark_failed:추적기 먼저"]);
+
+    // 오늘 성공 회차가 있는 키워드에 추적기를 더 붙이면 after_activate 가 그 회차를 바로 적용한다(추적기 잠금).
+    await db.exec("delete from public.lock_probe");
+    await db.query("update public.coupang_rank_trackers set status = 'paused', paused_at = now() where id = $1", [first]);
+    const second = await b.addTracker(PRIMARY_AGENCY_CODE, "k", "9000003");
+    await db.exec("begin");
+    const activated = (await b.one("select public.coupang_rank_after_activate($1) as j", [second])).j;
+    const held = await b.one(`select
+        (select xmax::text = txid_current()::text from public.coupang_rank_keywords where keyword_key = 'k') as keyword,
+        (select xmin::text = txid_current()::text from public.coupang_rank_trackers where id = $1) as tracker`, [second]);
+    await db.exec("commit");
+    assert.equal(activated.firstCheck, "recorded");
+    assert.deepEqual([held.keyword, held.tracker], [true, true]); // 둘 다 여전히 잡는다(키워드는 마지막)
+    assert.deepEqual(await probes(), ["apply_success:추적기 먼저"]);
+    const tracker = await b.one("select current_result, current_rank from public.coupang_rank_trackers where id = $1", [second]);
+    assert.deepEqual([tracker.current_result, tracker.current_rank], ["found", 4]); // organicList 의 4번째 = 9000003
   });
 });

@@ -56,6 +56,17 @@ export async function selectPages(makeQuery, { pageSize = 1000, maxPages = 64 } 
   return { data: rows, error: null, complete: false };
 }
 
+// PostgREST in 목록 값 "(…)" 을 만든다. 사람이 쓴 글자(키워드 등)는 .in() 대신 .filter(열, "in", inList(값들)) 로 넘긴다.
+// postgrest-js .in() 은 , ( ) 가 있을 때 "…" 로 감싸기만 하고 안의 " \ 는 이스케이프하지 않는다(2.108.2 실측). 그러면
+// PostgREST 가 값을 잘못 나누고 ')' 뒤를 오류 없이 버린다(2026-10-16 통합 검수: 인치 표시 " 가 든 키워드).
+// 그래서 모든 값을 늘 따옴표로 감싸고 \ → \\, " → \" 로 바꾼다(PostgREST 따옴표 값: 따옴표 안의 \x 는 x).
+// 빈 목록은 받지 않는다(부르는 쪽이 먼저 건너뛴다).
+export function inList(values) {
+  const items = [...new Set(Array.from(values || [], (value) => String(value)))];
+  if (!items.length) throw new RangeError("inList needs at least one value");
+  return `(${items.map((value) => `"${value.replace(/[\\"]/g, (char) => `\\${char}`)}"`).join(",")})`;
+}
+
 // 배열을 size 개씩 자른다. 빈 배열은 [] 를 돌려준다.
 export function chunk(list, size) {
   const step = positiveInteger(size, "size");

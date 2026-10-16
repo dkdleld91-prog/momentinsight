@@ -9,6 +9,7 @@ import {
 } from "./coupang-rank-worker.mjs";
 import workerApp from "./coupang-rank-worker.mjs";
 import { collectorTokenHash } from "../coupang-rank/worker-token.mjs";
+import { executeRequest } from "../runtime.mjs";
 import {
   CLAIM_MIN_REMAINING_SECONDS,
   MIN_BROWSER_GAP_SECONDS,
@@ -783,6 +784,37 @@ test("503: 표·함수가 없으면 COUPANG_SETUP_REQUIRED", async () => {
       assert.equal(result.body.code, "COUPANG_SETUP_REQUIRED");
     }
   }
+});
+
+// 2026-10-16 통합 검수: 운영 경로(index.mjs → executeRequest → 공용 5xx 봉인)가 503 COUPANG_SETUP_REQUIRED·
+// 500 COUPANG_RANK_WORKER_FAILED 를 500 SERVER_ERROR 로 바꿔, 설치기 hello 가 auth=setup_required 대신 auth=error 를 냈다.
+test("운영 경로(executeRequest)를 지나도 503 COUPANG_SETUP_REQUIRED·500 COUPANG_RANK_WORKER_FAILED 가 그대로 간다", async () => {
+  const throughRuntime = async (db, body) => {
+    const request = workerRequest(body);
+    const response = await executeRequest(request, () => handleCoupangRankWorkerRequest(request, db.ctx));
+    return { status: response.status, body: await response.json(), headers: response.headers };
+  };
+
+  for (const [db, body] of [
+    [fakeDb({ errors: { "select:coupang_rank_collectors": { code: "PGRST205", message: "schema cache" } } }), HELLO],
+    [fakeDb({ errors: { "select:coupang_rank_settings": { code: "42P01", message: "relation does not exist" } } }), HELLO],
+    [fakeDb({ rpc: { coupang_rank_claim: { data: null, error: { code: "PGRST202", message: "function missing" } } } }), { action: "claim" }],
+  ]) {
+    // eslint-disable-next-line no-await-in-loop
+    const result = await throughRuntime(db, body);
+    assert.equal(result.status, 503);
+    assert.equal(result.body.code, "COUPANG_SETUP_REQUIRED");
+    assert.equal(result.body.message, "쿠팡 순위 저장소가 아직 준비되지 않았습니다.");
+    assert.ok(result.headers.get("x-request-id"));
+  }
+
+  const broken = fakeDb({ errors: { "select:coupang_rank_collectors": { code: "57014", message: "SECRET relation detail" } } });
+  const { result, logs } = await quietly(() => throughRuntime(broken, { action: "claim" }));
+  assert.equal(result.status, 500);
+  assert.equal(result.body.code, "COUPANG_RANK_WORKER_FAILED");
+  assert.equal(result.body.message, "수집기 요청을 처리하지 못했습니다.");
+  assert.doesNotMatch(JSON.stringify(result.body), /SECRET|relation|57014/);
+  assert.equal(logs.length, 1);
 });
 
 test("500: 그 밖의 DB 오류는 문구를 숨기고 한 줄 기록", async () => {

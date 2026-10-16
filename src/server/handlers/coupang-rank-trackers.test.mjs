@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { handleCoupangRankTrackersRequest } from "./coupang-rank-trackers.mjs";
 import { COLLECTOR_TOKEN_PATTERN } from "../coupang-rank/contract.mjs";
+import { inList } from "../coupang-rank/db.mjs";
+import { executeRequest } from "../runtime.mjs";
 
 const PRIMARY = "mml93-a01";
 const NOW = "2026-10-17T03:00:00.000Z"; // KST 12:00(수집 시간대 안)
@@ -14,6 +16,65 @@ const HANDLER_SOURCE = readFileSync(new URL("./coupang-rank-trackers.mjs", impor
 
 function uuid(n) {
   return `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+}
+
+// ── in 목록을 실제 전송 모양 그대로 흉내 낸다(2026-10-16 통합 검수: 큰따옴표 키워드가 목록 조회를 깨뜨림).
+//    C 테스트는 @supabase/postgrest-js 를 import 하지 못하므로(연결 검사 §2.1) 두 쪽을 그대로 옮겨 적었다.
+//    - postgrestJsInValue: postgrest-js 2.108.2 dist/index.mjs in() — , ( ) 가 있을 때만 "…" 로 감싸고 안의 " \ 는 그대로 둔다.
+//    - parsePostgrestInList: PostgREST QueryParams.hs pListVal — lexeme '(' · pListElement sepBy1 ',' · lexeme ')'.
+//      pListElement = try (pQuotedValue <* notFollowedBy (noneOf ",)")) <|> many (noneOf ",)"), 따옴표 안의 \x 는 x.
+//      parseFlt 는 eof 를 요구하지 않아 ')' 뒤 꼬리는 오류 없이 버려진다.
+function postgrestJsInValue(values) {
+  return `(${Array.from(new Set(values)).map((value) => (typeof value === "string" && /[,()]/.test(value) ? `"${value}"` : `${value}`)).join(",")})`;
+}
+
+function parsePostgrestInList(text) {
+  const source = String(text);
+  let index = 0;
+  const spaces = () => { while (source[index] === " " || source[index] === "\t") index += 1; };
+  const quoted = () => {
+    if (source[index] !== '"') return null;
+    let cursor = index + 1;
+    let value = "";
+    while (cursor < source.length) {
+      const char = source[cursor];
+      if (char === "\\") {
+        if (cursor + 1 >= source.length) return null;
+        value += source[cursor + 1];
+        cursor += 2;
+        continue;
+      }
+      if (char === '"') {
+        const next = source[cursor + 1];
+        return next === undefined || next === "," || next === ")" ? { value, end: cursor + 1 } : null;
+      }
+      value += char;
+      cursor += 1;
+    }
+    return null;
+  };
+  const element = () => {
+    const hit = quoted();
+    if (hit) {
+      index = hit.end;
+      return hit.value;
+    }
+    const start = index;
+    while (index < source.length && source[index] !== "," && source[index] !== ")") index += 1;
+    return source.slice(start, index);
+  };
+  spaces();
+  if (source[index] !== "(") return { error: "expected (" };
+  index += 1;
+  spaces();
+  const values = [element()];
+  while (source[index] === ",") {
+    index += 1;
+    values.push(element());
+  }
+  spaces();
+  if (source[index] !== ")") return { error: `unexpected ${JSON.stringify(source[index] ?? "end")}` };
+  return { values };
 }
 
 // ── MockQuery: N30 naver-rank-trackers.test.mjs 의 MockQuery 를 복사해 C 에 필요한 것(is·range·delete·upsert·count·
@@ -78,9 +139,26 @@ class MockQuery {
     return this.addFilter("lte", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] <= value);
   }
 
+  // in·filter(col, "in", …) 둘 다 실제 전송 문자열을 PostgREST 문법으로 다시 읽은 값으로 거른다(위 설명).
+  wireIn(column, wire) {
+    const parsed = parsePostgrestInList(wire);
+    if (parsed.error) {
+      this.wireError = { code: "PGRST100", message: `failed to parse filter (${parsed.error})` };
+      return this.addFilter("in", column, [], () => false);
+    }
+    const allowed = new Set(parsed.values);
+    this.log.push({ op: "in", column, value: parsed.values, wire });
+    this.filters.push((row) => row[column] !== null && row[column] !== undefined && allowed.has(String(row[column])));
+    return this;
+  }
+
   in(column, values) {
-    const allowed = new Set(values);
-    return this.addFilter("in", column, [...values], (row) => allowed.has(row[column]));
+    return this.wireIn(column, postgrestJsInValue(values));
+  }
+
+  filter(column, operator, value) {
+    if (operator !== "in") throw new Error(`MockQuery.filter: ${operator} 는 흉내 내지 않음`);
+    return this.wireIn(column, String(value));
   }
 
   is(column, value) {
@@ -140,6 +218,7 @@ class MockQuery {
   async execute(mode) {
     const state = this.state;
     state.queries.push({ table: this.table, operation: this.operation, filters: this.log, values: this.values, options: this.options });
+    if (this.wireError) return { data: null, error: this.wireError, count: null };
     const injected = state.errors.find((entry) => entry.table === this.table
       && (!entry.operation || entry.operation === this.operation)
       && (!entry.when || entry.when(this)));
@@ -803,6 +882,53 @@ test("GET 목록: nextCheckState 4갈래와 수집기 상태(delayed 는 활성 
   assert.ok((await list(state, ownerHeaders())).body.trackers.slice(1).every((item) => item.nextCheckState === "replan"));
 });
 
+test("inList: 모든 값을 따옴표로 감싸고 \\·\" 를 이스케이프해 PostgREST 가 그대로 읽는다", () => {
+  const values = ['모니터 27" (ips)', 'tv 55", 4k', '"나이키"', "a\\b, c", 'x",남의 키워드,"y', "끝\\", "  앞뒤 공백 ", "보통 키워드", "보통 키워드"];
+  const unique = [...new Set(values)];
+  assert.deepEqual(parsePostgrestInList(inList(values)).values, unique);
+  assert.equal(inList(["a", 'b"c']), '("a","b\\"c")');
+  assert.equal(inList(["a\\b"]), '("a\\\\b")');
+  assert.throws(() => inList([]), RangeError);
+  // 대조: postgrest-js .in() 이 만드는 값은 PostgREST 가 다르게 읽는다(고치기 전 동작)
+  assert.notDeepEqual(parsePostgrestInList(postgrestJsInValue(unique)).values, unique);
+});
+
+// 2026-10-16 통합 검수: 키워드 열쇠를 .in() 으로 넘기면 postgrest-js 가 안의 " \ 를 이스케이프하지 않아
+// PostgREST 가 값을 잘못 나누고 ')' 뒤를 버린다. 그 키워드와 같은 묶음 뒤쪽 키워드 행까지 못 찾아 replan·건강 0 으로 보였다.
+test("GET 목록: 큰따옴표·쉼표·괄호·역슬래시가 든 키워드도 키워드 행을 정확히 찾는다(필터 주입 없음)", async () => {
+  const state = createState({ settings: { enabled: true } });
+  state.tables.coupang_rank_collectors.push({ id: uuid(500), revoked_at: null, last_seen_at: "2026-10-17T02:58:00.000Z", last_version: "1.0.0" });
+  const keys = [
+    '모니터 27" (ips)',
+    'tv 55", 4k',
+    '"나이키"',
+    "a\\b, c",
+    'x",남의 키워드,"y',
+    "끝에 역슬래시\\",
+    "노트북 거치대",
+    "무선 이어폰",
+  ];
+  keys.forEach((key, index) => {
+    state.tables.coupang_rank_trackers.push(trackerRow({ keyword: key, keyword_key: key, product_id: String(2000 + index), sort_order: index }));
+    state.tables.coupang_rank_keywords.push(keywordRow(key, { consecutive_failures: index, last_status: index % 2 ? "blocked" : "ok" }));
+  });
+  // 주입으로 끼어들면 안 되는 남의 행
+  state.tables.coupang_rank_keywords.push(keywordRow("남의 키워드", { consecutive_failures: 99 }));
+
+  const { status, body } = await list(state, ownerHeaders());
+  assert.equal(status, 200);
+  assert.deepEqual(
+    body.trackers.map((item) => [item.keywordKey, item.nextCheckState, item.nextCheckAt, item.keywordHealth.consecutiveFailures, item.keywordHealth.lastStatus]),
+    keys.map((key, index) => [key, "scheduled", "2026-10-17T07:41:00.000Z", index, index % 2 ? "blocked" : "ok"]),
+  );
+  const keywordFilters = state.queries
+    .filter((query) => query.table === "coupang_rank_keywords")
+    .map((query) => query.filters.find((filter) => filter.op === "in" && filter.column === "keyword_key"));
+  assert.equal(keywordFilters.length, 1);
+  // PostgREST 가 읽는 값 = 보낸 열쇠 그대로(빠짐·쪼개짐·끼어듦 없음)
+  assert.deepEqual([...keywordFilters[0].value].sort(), [...keys].sort());
+});
+
 test("GET 목록: 500개 상한 — 501행이면 hasMore·complete:false, returnedCount 500", async () => {
   const state = createState();
   for (let index = 0; index < 501; index += 1) {
@@ -880,6 +1006,46 @@ test("setupRequired: 설정 행은 있는데 함수가 없으면(PGRST202) GET �
   const posted = await post(state, ownerHeaders(), { action: "create", keyword: "필름", productUrl: "8533720933" });
   assert.equal(posted.status, 503);
   assert.equal(posted.body.code, "COUPANG_SETUP_REQUIRED");
+});
+
+// 2026-10-16 통합 검수: 운영 경로(index.mjs → executeRequest → 공용 5xx 봉인)가 화면 POST 의 503 COUPANG_SETUP_REQUIRED 와
+// 500 COUPANG_RANK_TRACKERS_FAILED 를 500 SERVER_ERROR 로 바꿔 '대표 SQL 실행 전' 문구가 뜨지 않았다.
+test("운영 경로(executeRequest)를 지나도 화면 API 의 503 COUPANG_SETUP_REQUIRED·500 COUPANG_RANK_TRACKERS_FAILED 가 그대로 간다", async () => {
+  const throughRuntime = async (state, method, options) => {
+    const request = makeRequest(method, options);
+    const response = await executeRequest(request, () => handleCoupangRankTrackersRequest(request, makeCtx(state), { now: NOW }));
+    return { status: response.status, body: await response.json(), headers: response.headers };
+  };
+  const createBody = { action: "create", keyword: "필름", productUrl: "8533720933" };
+
+  const noTables = createState();
+  delete noTables.tables.coupang_rank_settings;
+  const noFunction = createState();
+  delete noFunction.rpc.coupang_rank_limit_status;
+  for (const state of [noTables, noFunction]) {
+    // eslint-disable-next-line no-await-in-loop
+    const posted = await throughRuntime(state, "POST", { headers: ownerHeaders(), body: createBody });
+    assert.equal(posted.status, 503);
+    assert.equal(posted.body.code, "COUPANG_SETUP_REQUIRED");
+    assert.equal(posted.body.message, "쿠팡 순위 저장소가 아직 준비되지 않았습니다(대표 SQL 실행 전).");
+    assert.ok(posted.headers.get("x-request-id"));
+  }
+
+  const broken = createState();
+  broken.tables.coupang_rank_trackers.push(trackerRow());
+  broken.errors.push({ table: "coupang_rank_days", error: { code: "57014", message: "secret db detail: canceling statement" } });
+  const original = console.error;
+  console.error = () => {};
+  let failed;
+  try {
+    failed = await throughRuntime(broken, "GET", { query: "?limit=500", headers: ownerHeaders() });
+  } finally {
+    console.error = original;
+  }
+  assert.equal(failed.status, 500);
+  assert.equal(failed.body.code, "COUPANG_RANK_TRACKERS_FAILED");
+  assert.equal(failed.body.message, "쿠팡 순위 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
+  assert.doesNotMatch(JSON.stringify(failed.body), /secret|57014/);
 });
 
 test("메서드: GET·POST 외에는 405, 핸들러에 사전 요청 분기가 없다", async () => {

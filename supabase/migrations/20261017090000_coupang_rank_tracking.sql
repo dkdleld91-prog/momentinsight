@@ -720,6 +720,7 @@ $$;
 
 -- 4.11 등록·다시 시작 뒤(B5·B8·H6): 오늘(KST) 성공 회차가 있으면 바로 적용.
 -- 한 번도 잰 적 없는 키워드(last_run_at 없음)만 지금 칸으로 당긴다 — 실패 뒤 미룸(20분·다음 날·7일)을 건너뛰지 않는다.
+-- 잠금 순서는 record·claim 과 같은 추적기 → 키워드다: 추적기를 잡는 apply_success 를 키워드 행보다 먼저 부른다(교착 없음).
 create or replace function public.coupang_rank_after_activate(p_tracker_id uuid)
 returns jsonb
 language plpgsql
@@ -737,10 +738,6 @@ begin
   if not found or t.status <> 'active' then
     return jsonb_build_object('firstCheck', 'none', 'nextDueAt', null);
   end if;
-  insert into public.coupang_rank_keywords (keyword_key, search_text, next_due_at)
-  values (t.keyword_key, t.keyword, now())
-  on conflict (keyword_key) do nothing;
-  select * into k from public.coupang_rank_keywords where keyword_key = t.keyword_key for update;
   select r.id into v_run from public.coupang_rank_runs r
    where r.keyword_key = t.keyword_key and r.status in ('ok', 'noresult')
      and (r.claimed_at at time zone 'Asia/Seoul')::date = (now() at time zone 'Asia/Seoul')::date
@@ -749,6 +746,10 @@ begin
   if v_run is not null then
     v_applied := public.coupang_rank_apply_success(v_run, t.id, null, null);
   end if;
+  insert into public.coupang_rank_keywords (keyword_key, search_text, next_due_at)
+  values (t.keyword_key, t.keyword, now())
+  on conflict (keyword_key) do nothing;
+  select * into k from public.coupang_rank_keywords where keyword_key = t.keyword_key for update;
   if k.last_run_at is null and k.lease_run_id is null then
     select * into p from public.coupang_rank_plan_next(k.keyword_key, now(), true);
     update public.coupang_rank_keywords
@@ -786,8 +787,9 @@ begin
 end;
 $$;
 
--- 4.13 임대(서버가 속도를 강제한다). 잠금 순서: 수집기 행 → 설정 행 → 회차 → 키워드.
+-- 4.13 임대(서버가 속도를 강제한다). 잠금 순서: 수집기 행 → 설정 행 → 회차 → 추적기 → 키워드.
 -- record·release 도 설정 행을 회차·키워드보다 먼저 잠근다(교착 없음). 수집기 행은 claim 만 잠근다.
+-- 추적기(apply_success 의 for update, mark_failed 의 외래키 확인)는 늘 키워드보다 먼저다. after_activate 도 같다.
 create or replace function public.coupang_rank_claim(p_collector_id uuid)
 returns jsonb
 language plpgsql
@@ -849,7 +851,10 @@ begin
     end loop;
     select * into s from public.coupang_rank_settings where id = 1;
 
-    -- (2) 키워드 행 보충과 지난 칸 재계획(활성 추적기가 있는 키워드만)
+    -- (2) 키워드 행 보충과 재계획(활성 추적기가 있는 키워드만): 지난 칸, 그리고 지금 하루 횟수에 없는 칸 번호.
+    -- replan_all 은 임대 중 키워드를 건너뛰므로, 하루 횟수를 내린 뒤 그 임대가 실패·만료·차단으로 끝나면
+    -- 옛 칸 번호가 남는다(그대로 쓰면 slot_minute 가 0~1439 를 넘는다). 칸이 아직 열린 채 번호만 틀린 키워드는
+    -- replan_all 과 같이 실패로 미룬 시각 뒤에서 계획한다(H6).
     insert into public.coupang_rank_keywords (keyword_key, search_text, next_due_at)
     select distinct on (t.keyword_key) t.keyword_key, t.keyword, v_now
       from public.coupang_rank_trackers t
@@ -860,9 +865,13 @@ begin
     update public.coupang_rank_keywords kk
        set (next_due_at, slot_day, slot_index, slot_ends_at, slot_attempts) =
            (select p.due_at, p.slot_day, p.slot_index, p.slot_ends_at, 0::smallint
-              from public.coupang_rank_plan_next(kk.keyword_key, v_now, kk.last_run_at is null) p)
+              from public.coupang_rank_plan_next(
+                kk.keyword_key,
+                case when kk.slot_ends_at > v_now and (kk.consecutive_failures > 0 or kk.consecutive_unsupported > 0)
+                     then greatest(v_now, kk.next_due_at) else v_now end,
+                kk.last_run_at is null) p)
      where kk.lease_run_id is null
-       and (kk.slot_ends_at is null or kk.slot_ends_at <= v_now)
+       and (kk.slot_ends_at is null or kk.slot_ends_at <= v_now or kk.slot_index >= s.checks_per_day)
        and exists (select 1 from public.coupang_rank_trackers t
                     where t.keyword_key = kk.keyword_key and t.status = 'active');
 
@@ -914,13 +923,14 @@ begin
       exit gate;
     end if;
 
-    -- (4) 키워드 하나 고르기: 예정 시각이 지났고, 임대가 없고, 칸이 열려 있고, 대상 추적기가 있는 것.
-    -- 여러 개면 가장 오래 못 잰 것부터(H1: 용량이 모자랄 때 같은 키워드만 매일 빠지지 않게).
+    -- (4) 키워드 하나 고르기: 예정 시각이 지났고, 임대가 없고, 칸이 열려 있고(지금 하루 횟수에 있는 칸),
+    -- 대상 추적기가 있는 것. 여러 개면 가장 오래 못 잰 것부터(H1: 용량이 모자랄 때 같은 키워드만 매일 빠지지 않게).
     select kk.* into k
       from public.coupang_rank_keywords kk
      where kk.next_due_at <= v_now
        and kk.lease_run_id is null
        and kk.slot_ends_at is not null and kk.slot_ends_at > v_now
+       and coalesce(kk.slot_index, 0) < s.checks_per_day
        and exists (select 1 from public.coupang_rank_trackers t
                     where t.keyword_key = kk.keyword_key and t.status = 'active'
                       and public.coupang_rank_tracker_is_eligible(t.client_id, t.agency_code))

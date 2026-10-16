@@ -9,7 +9,20 @@ import { BROWSER_HARD_CAP_SECONDS } from "./contract.mjs";
 export const TAIL_BYTES = 4096;
 export const TICK_STALE_EXTRA_SECONDS = 300;
 export const TICK_LOOKAHEAD = 3;
-export const WATCHDOG_BUSY_PATTERN = / (sync_source_fast_forwarded|drift_detected files=\d+\s*$|drift_sync_|sync_chrome_restart_begin|restart_begin|chrome_quit|chrome_profile_forward)/;
+// 워치독 줄은 N30 워치독 원문이 실제로 쓰는 것만 맞춘다(2026-10-16 원문·이 맥 로그 확인, 읽기만 함).
+// 동기화 틱의 순서: fetch(최대 60초) → [sync_source_… 줄, 있을 때만] → 해시 대조 → [sync_cooldown_bypassed, 쿨다운 중
+// 릴리스 드리프트일 때만] → 설치(최대 180초, 이 동안 줄 없음) → drift_sync_ok|drift_sync_failed → sync_chrome_restart_begin
+// → quit → 8초 → chrome_… 줄. 드리프트 검사는 결론 줄 하나(runtime_in_sync, drift_detected … sync_skipped=…·
+// sync_suppressed_cooldown …, sync_check_failed …, drift_sync_…)로 끝난다. drift_detected 는 건너뛸 때만 쓰이므로 쉼 신호가 아니다.
+// (가) 아래 줄이 420초 안에 있으면 쉰다.
+export const WATCHDOG_BUSY_PATTERN = / (sync_source_fast_forwarded|sync_cooldown_bypassed|drift_sync_|sync_chrome_restart_begin|restart_begin|chrome_quit|chrome_profile_forward)/;
+// (나) 워치독의 마지막 줄이 fetch 뒤 줄(sync_source_…)·sync_cooldown_bypassed 이면 드리프트 검사가 아직 결론을 쓰지 않은
+//     것이라 설치가 돌고 있을 수 있다. 다음 줄이 나올 때까지 쉰다.
+export const WATCHDOG_PENDING_PATTERN = / (sync_source_|sync_cooldown_bypassed)/;
+// (다) 다음 틱의 줄이 예상 틱 창(마지막 줄 + 간격 + margin + drift)이 지나도록 없으면 설치가 조용히 돌고 있을 수 있다
+//     (앞 줄 없이 drift_sync_ok 가 바로 나오는 경로, 2026-09-28T01:10:39Z 실측). 다음 줄이 나올 때까지 쉰다.
+// (나)·(다)는 끝을 알 수 없으므로 짧게 다시 본다. 마지막 줄이 간격 + 300초보다 오래되면 2단계가 guard_n30_tick_unknown 으로 끝낸다.
+export const WATCHDOG_RECHECK_SECONDS = 30;
 const TICK_LINE_PATTERN = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z) /;
 const WAITABLE = new Set(["guard_n30_tick_window", "guard_n30_watchdog_busy"]);
 
@@ -113,15 +126,23 @@ export function runGuard(config, { now = Date.now(), run = defaultRun, readTail:
   const lastTicks = [lastTick(schedulerText), lastTick(watchdogText)];
   if (lastTicks.some((at) => at === null || now - at > staleMs)) return { ok: false, mode, reason: "guard_n30_tick_unknown" };
 
-  // 3. 워치독 동기화 중(M5): 420초 안의 동기화·재시작 줄
+  // 3. 워치독 동기화 중(M5)
+  // (가) 420초 안의 동기화·재시작 줄
   const busyMs = guard.watchdogBusySeconds * 1000;
+  const watchdogLines = tickLines(watchdogText);
   let busyUntil = null;
-  for (const entry of tickLines(watchdogText)) {
+  for (const entry of watchdogLines) {
     if (now - entry.at < 0 || now - entry.at > busyMs) continue;
     if (!WATCHDOG_BUSY_PATTERN.test(entry.line)) continue;
     busyUntil = Math.max(busyUntil ?? 0, entry.at + busyMs);
   }
   if (busyUntil !== null) return wait(mode, "guard_n30_watchdog_busy", busyUntil, now);
+  // (나) 마지막 줄이 결론 전 줄, (다) 다음 틱 줄이 늦음 → 다음 줄이 나올 때까지(짧게 다시 본다)
+  const watchdogLast = watchdogLines[watchdogLines.length - 1];
+  const overdueMs = (guard.intervalSeconds + guard.marginSeconds + guard.driftSeconds) * 1000;
+  if (WATCHDOG_PENDING_PATTERN.test(watchdogLast.line) || now - watchdogLast.at > overdueMs) {
+    return wait(mode, "guard_n30_watchdog_busy", Math.min(now + WATCHDOG_RECHECK_SECONDS * 1000, watchdogLast.at + staleMs + 1000), now);
+  }
 
   // 4. 틱 창 회피: 브라우저가 떠 있을 [now, now+120초] 이 [S−60초, S+60초+30초] 와 겹치면 쉰다.
   const ticks = [];

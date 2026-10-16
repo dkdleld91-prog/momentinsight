@@ -568,7 +568,14 @@ function dispatch(target, type) {
   return event;
 }
 
-function loadModule({ confirm = () => true, storage = makeStorage(), MutationObserver } = {}) {
+// clock 을 넘기면 모듈 안의 Date.now() 가 clock.now 를 돌려준다(2초 합치기 창 시험용).
+function clockDate(clock) {
+  return class ClockDate extends Date {
+    static now() { return clock.now; }
+  };
+}
+
+function loadModule({ confirm = () => true, storage = makeStorage(), MutationObserver, clock } = {}) {
   const document = makeDocument();
   const confirmCalls = [];
   const window = {
@@ -593,6 +600,7 @@ function loadModule({ confirm = () => true, storage = makeStorage(), MutationObs
     clearTimeout() {},
     setInterval: (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; },
     clearInterval() {},
+    ...(clock ? { Date: clockDate(clock) } : {}),
   });
   vm.runInContext(moduleSource, context, { filename: "mi-coupang-rank.js" });
   return { window, document, storage, api: window.MomentCoupangRank, intervals, confirmCalls };
@@ -1246,9 +1254,12 @@ test("루트에 is-locked 가 붙으면 스스로 reset 하고 캐시를 지운�
 });
 
 test("scopeChanged 는 화면이 보일 때만 다시 받는다", async () => {
-  const screen = mountWith();
+  const clock = { now: Date.now() };
+  const screen = mountWith({ clock });
   screen.controller.show();
   await flush();
+  // 방금(2초 안) 받은 같은 범위 목록은 다시 받지 않으므로, 합치기 창이 지난 뒤를 본다.
+  clock.now += 3000;
   const count = screen.calls.length;
   screen.view.classList.remove("is-active");
   screen.controller.scopeChanged();
@@ -1258,6 +1269,219 @@ test("scopeChanged 는 화면이 보일 때만 다시 받는다", async () => {
   screen.controller.scopeChanged();
   await flush();
   assert.equal(screen.calls.length, count + 1);
+});
+
+// ── 통합 검토 결함: 같은 목록 두 번 받기·500개 초과 막다른 화면 ─────────────
+
+const LIST_URL = `${COUPANG_TRACKERS_PATH}?limit=500`;
+const countCalls = (screen, match) => screen.calls.filter((call) => (typeof match === "string" ? String(call.url).includes(match) : match(call))).length;
+
+test("메뉴 한 번(setScreen + hashchange 로 show 두 번)에 목록 GET 은 한 번만 나가고, 2초 안의 scopeChanged·show 도 다시 받지 않는다", async () => {
+  const clock = { now: Date.now() };
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const screen = mountWith({
+    clock,
+    fetch: async () => {
+      await gate;
+      return response(listPayload());
+    },
+  });
+  const listCalls = () => countCalls(screen, (call) => call.url === LIST_URL);
+  screen.controller.show(); // ① 메뉴 클릭 → setScreen → mountCoupangRank → show
+  screen.controller.show(); // ② hashchange → setScreen → mountCoupangRank → show(첫 요청이 아직 받는 중)
+  await flush();
+  assert.equal(listCalls(), 1, "받는 중인 같은 범위 목록은 다시 보내지 않는다");
+  release();
+  await flush();
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 2, "합친 요청의 응답으로 그린다");
+  // 운영팀 세션 동기화: mi:rank-scope-changed → scopeChanged, mi:rank-auth-ready → view=access → show
+  clock.now += 1500;
+  screen.controller.scopeChanged();
+  screen.controller.show();
+  await flush();
+  assert.equal(listCalls(), 1, "2초 안에 받은 같은 범위 목록은 다시 받지 않는다");
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 2, "다시 받지 않아도 화면은 그대로 그린다");
+  // 2초가 지나면 다시 받는다.
+  clock.now += 1000;
+  screen.controller.show();
+  await flush();
+  assert.equal(listCalls(), 2);
+  // 범위가 바뀌면 2초 안이어도 새 범위 목록을 받는다.
+  screen.setScope({ key: "owner:other-a01", role: "owner", agencyCode: "other-a01", clientId: "" });
+  screen.controller.show();
+  await flush();
+  assert.equal(listCalls(), 3);
+});
+
+test("총관리자 패널이 열린 채로 메뉴를 다시 열면(show 두 번) view=collector 도 한 번만 나간다", async () => {
+  const clock = { now: Date.now() };
+  const screen = mountWith({ clock });
+  screen.controller.show();
+  await flush();
+  const details = screen.host.querySelector("[data-coupang-rank-owner]");
+  details.open = true;
+  dispatch(details, "toggle");
+  await flush();
+  assert.equal(countCalls(screen, "view=collector"), 1);
+  clock.now += 3000; // 다른 화면에 갔다가 3초 뒤 메뉴로 돌아온다.
+  screen.controller.show();
+  screen.controller.show();
+  await flush();
+  assert.equal(countCalls(screen, (call) => call.url === LIST_URL), 2, "목록은 한 번만 더 받는다");
+  assert.equal(countCalls(screen, "view=collector"), 2, "수집기 상태도 한 번만 더 받는다");
+  screen.controller.destroy();
+});
+
+test("합치기는 화면 열기에만 쓴다: 실패한 목록은 다시 열면 다시 받고, 쓰기 뒤에는 2초 안이어도 다시 받는다", async () => {
+  const clock = { now: Date.now() };
+  let fail = true;
+  const screen = mountWith({
+    clock,
+    fetch: async (url, init) => {
+      if (init.method === "POST") return response({ ok: true, updated: 1 });
+      if (fail) return response({ ok: false, code: "COUPANG_RANK_TRACKERS_FAILED" }, 500);
+      return response(listPayload());
+    },
+  });
+  const listCalls = () => countCalls(screen, (call) => call.url === LIST_URL);
+  screen.controller.show();
+  await flush();
+  assert.equal(listCalls(), 1);
+  fail = false;
+  screen.controller.show();
+  await flush();
+  assert.equal(listCalls(), 2, "실패한 목록은 합치지 않는다");
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 2);
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="pause"]'), "click");
+  await flush();
+  assert.equal(countCalls(screen, (call) => call.init.method === "POST"), 1);
+  assert.equal(listCalls(), 3, "일시중지 뒤 새로 받기는 합치지 않는다");
+});
+
+function manyTrackers(count, activeCount) {
+  return Array.from({ length: count }, (_, index) => {
+    const paused = index >= activeCount;
+    const productId = String(9000000000 + index);
+    return trackerFixture({
+      id: `6c1f0000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      keyword: `키워드 ${index + 1}`,
+      keywordKey: `키워드 ${index + 1}`,
+      productId,
+      productUrl: `https://www.coupang.com/vp/products/${productId}`,
+      status: paused ? "paused" : "active",
+      pausedAt: paused ? "2026-10-16T05:00:00.000Z" : null,
+      pausedDay: paused ? "2026-10-16" : null,
+      current: null,
+      days: [],
+      summary: { trend: "new", attention: false, attentionReasons: [] },
+    });
+  });
+}
+
+test("한 범위 추적이 500개를 넘으면(hasMore) 받은 500개를 경고와 함께 정리용으로 그리고 일시중지·삭제만 허용한다", async () => {
+  const storage = makeStorage();
+  const received = manyTrackers(500, 80); // 활성 80 + 일시중지 420(전체 501개 중 500개)
+  const posts = [];
+  let cleaned = false;
+  const screen = mountWith({
+    storage,
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        posts.push(body);
+        if (body.action === "delete") cleaned = true;
+        return response({ ok: true, deleted: body.ids ? body.ids.length : 0, updated: 0 });
+      }
+      if (cleaned) return response(listPayload({ trackers: received.slice(2, 100) }));
+      return response(listPayload({ trackers: received, totalCount: 501, hasMore: true, complete: false }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const host = screen.host;
+  assert.equal(host.querySelectorAll("[data-coupang-rank-card]").length, 500, "빈 화면 대신 받은 500개를 그린다");
+  const note = host.querySelector("[data-coupang-rank-list-note]");
+  assert.equal(note.hidden, false);
+  assert.ok(note.classList.contains("is-warn"));
+  assert.match(note.textContent, /500개를 넘어\(전체 501개\) 500개만 받았습니다/);
+  assert.match(note.textContent, /정리용 화면이라 일시중지·삭제만 됩니다/);
+  assert.match(note.textContent, /일시중지한 추적도 500개에 세므로/);
+  // 선택 도구: 일시중지·삭제만 보인다.
+  const bulk = host.querySelector("[data-coupang-rank-bulk]");
+  assert.equal(bulk.hidden, false, "선택 도구를 숨기지 않는다");
+  const bulkButton = (action) => bulk.querySelector(`[data-coupang-rank-action="${action}"]`);
+  assert.equal(bulkButton("bulk-pause").hidden, false);
+  assert.equal(bulkButton("bulk-delete").hidden, false);
+  assert.equal(bulkButton("bulk-resume").hidden, true);
+  assert.equal(bulkButton("bulk-group").hidden, true);
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-group-input]").hidden, true);
+  assert.equal(bulk.querySelector(".mi-coupang-rank-bulk-group").hidden, true, "빈 그룹 이동 칸을 남기지 않는다");
+  // 카드: 활성은 일시중지·삭제, 일시중지는 삭제만(다시 시작·그룹 변경 없음).
+  assert.equal(host.querySelectorAll('[data-coupang-rank-action="pause"]').length, 80);
+  assert.equal(host.querySelectorAll('[data-coupang-rank-action="delete"]').length, 500);
+  assert.equal(host.querySelectorAll('[data-coupang-rank-action="resume"]').length, 0);
+  assert.equal(host.querySelectorAll('[data-coupang-rank-action="group-edit"]').length, 0);
+  // 등록은 막는다(행이 더 늘어난다). 이유는 등록 칸 아래에 적는다.
+  assert.equal(host.querySelector("[data-coupang-rank-create]").disabled, true);
+  const capacity = host.querySelector("[data-coupang-rank-capacity]");
+  assert.equal(capacity.hidden, false);
+  assert.match(capacity.textContent, /등록할 수 없습니다/);
+  assert.match(host.querySelector("[data-coupang-rank-filter-count]").textContent, /500개 표시 · 받은 500개\(전체 501개\)/);
+  // 일부 목록은 캐시하지 않는다.
+  assert.equal(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), null);
+  // 막힌 동작은 숨긴 버튼·제출 경로로 들어와도 보내지 않는다.
+  const firstCheck = host.querySelector(`[data-coupang-rank-select="${received[100].id}"]`);
+  firstCheck.checked = true;
+  dispatch(firstCheck, "change");
+  dispatch(bulkButton("bulk-resume"), "click");
+  await flush();
+  host.querySelector("[data-coupang-rank-keyword]").value = "새 키워드";
+  host.querySelector("[data-coupang-rank-product-url]").value = "https://www.coupang.com/vp/products/123456";
+  dispatch(host.querySelector("[data-coupang-rank-create-form]"), "submit");
+  await flush();
+  assert.deepEqual(posts, [], "정리용 화면에서는 다시 시작·등록을 보내지 않는다");
+  firstCheck.checked = false;
+  dispatch(firstCheck, "change");
+  // 두 개를 지우면 POST 뒤 다시 받고, 전체 목록(complete)이면 정상 화면으로 돌아온다.
+  for (const tracker of received.slice(0, 2)) {
+    const check = host.querySelector(`[data-coupang-rank-select="${tracker.id}"]`);
+    check.checked = true;
+    dispatch(check, "change");
+  }
+  dispatch(bulkButton("bulk-delete"), "click");
+  await flush();
+  assert.deepEqual(posts, [{ action: "delete", ids: [received[0].id, received[1].id] }]);
+  assert.equal(host.querySelectorAll("[data-coupang-rank-card]").length, 98);
+  assert.equal(host.querySelector("[data-coupang-rank-list-note]").hidden, true);
+  assert.equal(host.querySelector("[data-coupang-rank-create]").disabled, false);
+  assert.equal(host.querySelectorAll('[data-coupang-rank-action="resume"]').length, 20, "정상 화면에서는 다시 시작이 돌아온다");
+  assert.equal(bulkButton("bulk-resume").hidden, false);
+  assert.equal(bulk.querySelector(".mi-coupang-rank-bulk-group").hidden, false);
+  assert.ok(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), "전체 목록은 다시 캐시한다");
+});
+
+test("이전 전체 목록이 있으면 500개 초과 응답에도 그 목록을 두고(옛 캐시는 지움), 지운 뒤 받은 일부 목록은 정리용으로 바꿔 그린다", async () => {
+  const storage = makeStorage({
+    "miCoupangRank:v1:owner:mml93-a01": JSON.stringify({ savedAt: Date.now(), payload: listPayload() }),
+  });
+  const received = manyTrackers(500, 500);
+  const screen = mountWith({
+    storage,
+    fetch: async (url, init) => {
+      if (init.method === "POST") return response({ ok: true, deleted: 1 });
+      return response(listPayload({ trackers: received, totalCount: 520, hasMore: true, complete: false }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 2, "화면에 있던 목록을 유지한다(§8.2)");
+  assert.match(screen.host.querySelector("[data-coupang-rank-list-note]").textContent, /목록 일부만 받아 화면을 바꾸지 않았습니다\(전체 520개\)/);
+  assert.equal(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), null, "500개를 넘은 범위의 옛 캐시는 지운다");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="delete"]'), "click");
+  await flush();
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 500, "지운 뒤에는 옛 목록 대신 지금 받은 500개를 그린다");
+  assert.match(screen.host.querySelector("[data-coupang-rank-list-note]").textContent, /정리용 화면/);
 });
 
 // ── 선택 이미지 저장(§8.5) ───────────────────────────────────────

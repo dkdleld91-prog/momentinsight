@@ -459,6 +459,12 @@
     return "전회 데이터 대기";
   }
 
+  // '7일 평균' 문구. 카드 운영줄과 공유 이미지가 같은 글을 쓴다(서버 avg7: 최근 7일 가운데 50위 안에 든 날만 평균).
+  function avg7Text(summary) {
+    var value = summary || {};
+    return "7일 평균 " + (isNum(value.avg7) ? value.avg7 + "위(50위 안 " + (isNum(value.foundDays7) ? value.foundDays7 : 0) + "일)" : "-");
+  }
+
   // 마지막 성공 측정이 최근 30일 창(서버 days30, 오늘부터 거꾸로) 밖인지. days30 이 없으면 판단하지 않는다(false).
   function currentIsStale(current, days30) {
     if (!current || !current.checkedAt || !Array.isArray(days30) || !days30.length) return false;
@@ -467,18 +473,36 @@
     return Boolean(oldest && checkedDay && checkedDay < oldest);
   }
 
-  // 판정 자리 알약(N30 rankTrackerInsight 자리). 서버 확인 사유가 있으면 그것만, 없으면 N30 과 같은 규칙.
-  // 측정 전·50위 밖처럼 지금 순위가 없으면 판정을 단정하지 않는다(알약 없음).
+  // 지금 일반 50위 안에 없는지('50위 밖' 필터와 같은 기준: 50위 밖 · 일반 N개 중 없음).
+  function outOfTop(tracker) {
+    var current = tracker && tracker.current;
+    return Boolean(current && (current.result === "out" || current.result === "short"));
+  }
+
+  // '확인 필요' 기준. 판정 알약·요약칸 '확인 필요' 개수·'확인 필요' 필터가 모두 이 함수를 쓴다.
+  // 서버 확인 사유가 있거나, 지금 일반 50위 안에 없으면 확인 필요다. 뒤쪽은 N30 이 현재 순위가 없는
+  // 추적(300위 밖)을 '점검 필요'로 보이고 확인 필요로 세는 규칙(admin.html rankTrackerNeedsAttention 의
+  // !rankTrackerLatestRank, rankTrackerOpsSummary 의 errors)을 C30 의 50위 밖에 옮긴 것이다.
+  // N30 처럼 일시중지한 추적도 센다.
+  function needsAttention(tracker) {
+    var summary = tracker && tracker.summary || {};
+    return summary.attention === true || outOfTop(tracker);
+  }
+
+  // 판정 자리 알약(N30 rankTrackerInsight 자리). 서버 확인 사유가 있으면 그것을, 지금 50위 밖이면
+  // N30 300위 밖과 같은 '점검 필요'(빨강)를 보인다. 서버 '50위 밖으로 이탈' 사유는 50위 안 → 밖으로
+  // 바뀐 회차에만 붙으므로, 50위 밖이 이어지는 카드는 '점검 필요'로 남는다(이탈 알약이 있으면 겹쳐 쓰지 않는다).
+  // 둘 다 없으면 N30 과 같은 규칙. 측정 전처럼 지금 순위가 없으면 판정을 단정하지 않는다(알약 없음).
   // 일시중지한 추적이나 마지막 측정이 30일 창 밖이면(days30 을 받았을 때) 옛 값으로 흐름을 단정하지 않는다.
-  // 서버 확인 사유는 '확인 필요' 필터·개수와 같은 기준이라 그대로 보인다.
+  // 확인 필요 알약은 '확인 필요' 필터·개수와 같은 기준(needsAttention)이라 일시중지여도 그대로 보인다.
   function verdictPills(tracker, days30) {
     var summary = tracker && tracker.summary || {};
     var reasons = Array.isArray(summary.attentionReasons) ? summary.attentionReasons : [];
-    if (reasons.length) {
-      return reasons.map(function (reason) {
-        return { text: ATTENTION_TEXT[reason] || String(reason), tone: reason === "drop10" ? "is-warn" : "is-error" };
-      });
-    }
+    var flagged = reasons.map(function (reason) {
+      return { text: ATTENTION_TEXT[reason] || String(reason), tone: reason === "drop10" ? "is-warn" : "is-error" };
+    });
+    if (outOfTop(tracker) && reasons.indexOf("exit") < 0) flagged.push({ text: "점검 필요", tone: "is-error" });
+    if (flagged.length) return flagged;
     var current = tracker && tracker.current;
     if (!current || current.result !== "found" || !isNum(current.rank)) return [];
     if (tracker.status === "paused" || currentIsStale(current, days30)) return [];
@@ -523,10 +547,10 @@
     }
     var summary = tracker.summary || {};
     var trend = summary.trend;
-    if (status === "attention") return summary.attention === true;
+    if (status === "attention") return needsAttention(tracker);
     if (status === "up") return trend === "up" || trend === "enter";
     if (status === "down") return trend === "down" || trend === "exit";
-    if (status === "out") return Boolean(tracker.current && (tracker.current.result === "out" || tracker.current.result === "short"));
+    if (status === "out") return outOfTop(tracker);
     if (status === "paused") return tracker.status === "paused";
     return true;
   }
@@ -594,7 +618,8 @@
     var readonly = opts.mode === "readonly";
     var active = items.filter(function (tracker) { return tracker.status !== "paused"; });
     var due = active.filter(function (tracker) { return tracker.nextCheckState === "due"; }).length;
-    var attention = items.filter(function (tracker) { return tracker.summary && tracker.summary.attention === true; }).length;
+    // 확인 필요 개수는 카드 판정 알약·'확인 필요' 필터와 같은 기준(needsAttention)으로 센다.
+    var attention = items.filter(function (tracker) { return needsAttention(tracker); }).length;
     var stateName = info ? (STRIP_TONE[info.state] ? info.state : "not_connected") : "";
     var pill;
     if (!info) pill = ["확인 중", "is-warn"];
@@ -1740,7 +1765,7 @@
       });
       if (current && current.sameOption === false) ops.push(pill("다른 옵션으로 노출", "mi-rank-insight-pill is-warn", { title: "같은 상품의 다른 옵션이 검색 결과에 나왔습니다(순위는 인정)" }));
       ops.push(pill(changeText(summary), null, { title: "같은 시간대 회차끼리 비교" }));
-      ops.push(pill("7일 평균 " + (isNum(summary.avg7) ? summary.avg7 + "위(50위 안 " + (isNum(summary.foundDays7) ? summary.foundDays7 : 0) + "일)" : "-"), null, { title: "최근 7일 가운데 50위 안에 든 날만 평균" }));
+      ops.push(pill(avg7Text(summary), null, { title: "최근 7일 가운데 50위 안에 든 날만 평균" }));
       ops.push(pill("광고 " + (current && isNum(current.adOrder) ? current.adOrder + "번째" : "-"), null, { title: "광고 순번은 참고용입니다(순위는 광고를 뺀 일반 상품 순서)" }));
       ops.push(pill("그룹 " + groupDisplayName(tracker.groupName)));
       if (writable && !cleanup) ops.push(button("그룹 변경", "group-edit", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
@@ -1999,7 +2024,10 @@
 
     // ── 선택 이미지 저장(§8.5) ──
     // 시트는 화면 카드를 복제하지 않고 따로 만든다(공용 mi-rank-* 클래스 + var(--mi-*) 인라인 style 만).
-    // 문구·날짜 범위는 화면 카드와 같다: '현재'·'최고'·'전회 대비', 등록한 날부터 오늘까지, '오늘' 표시 없음.
+    // 광고주에게 보내는 이미지라 운영줄의 내부용 알약(상태·판정·광고·그룹·측정 기록·최근·다음)은 넣지 않는다
+    // (대표 결정 2026-10-17, N30 이미지와 같은 항목). 남기는 것은 '현재'·'최고'·'전회 대비'·'7일 평균'과 날짜 줄이다.
+    // 알약 순서는 C30 화면 카드 운영줄·N30 이미지와 같게 '전회 대비' 다음 '7일 평균'.
+    // 문구·날짜 범위는 화면 카드와 같다(등록한 날부터 오늘까지, 측정 없는 날은 '-', '오늘' 표시 없음).
 
     function inlineCell(cell, d, createdDay) {
       var tone = cellTone(cell, d, createdDay);
@@ -2055,7 +2083,8 @@
             el("div", { style: "display:flex;gap:6px;flex:0 0 auto;align-items:center;" }, [
               el("span", { style: "border:1px solid var(--mi-line);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:900;color:var(--mi-navy);background:var(--mi-gold-soft);white-space:nowrap;", text: "현재 " + currentText(tracker) }),
               exportPill("최고 " + (isNum(summary.best30) ? summary.best30 + "위" : "-")),
-              exportPill(changeText(summary))
+              exportPill(changeText(summary)),
+              exportPill(avg7Text(summary))
             ])
           ]),
           board
@@ -3096,6 +3125,8 @@
       currentBadge: currentBadge,
       currentText: currentText,
       changeText: changeText,
+      avg7Text: avg7Text,
+      needsAttention: needsAttention,
       verdictPills: verdictPills,
       emptyBoardText: emptyBoardText,
       nextCheckText: nextCheckText,

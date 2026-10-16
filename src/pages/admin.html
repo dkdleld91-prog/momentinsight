@@ -8301,6 +8301,40 @@
         overflow-wrap: anywhere;
       }
 
+      /* 운영줄의 긴 알약(예: '권고 300위 이내 없음 · 상품명/카테고리 확인')이 320~390px 폭에서 한 줄을 고집해
+         카드 밖으로 밀려 잘렸다(대표 결정 2026-10-17). 폭이 모자랄 때만 알약 안에서 줄을 바꾼다(넉넉하면 모양 그대로).
+         메시지 알약은 예전처럼 한 줄 말줄임. N 플레이스는 가로로 숨겨 밀던 운영줄을 줄바꿈으로 바꾼다.
+         C 30일 카드는 mi-coupang-rank.css 가 맡는다. */
+      #mi-admin [data-rank-card] .mi-rank-ops-row span:not(.mi-rank-ops-message),
+      #mi-admin [data-place-rank-card] .mi-rank-ops-row span:not(.mi-rank-ops-message) {
+        max-width: 100%;
+        white-space: normal;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+      }
+
+      #mi-admin [data-place-rank-card] .mi-place-ops-row {
+        flex-wrap: wrap;
+        overflow-x: visible;
+      }
+
+      #mi-admin [data-place-rank-card] .mi-place-ops-primary,
+      #mi-admin [data-place-rank-card] .mi-place-ops-meta,
+      #mi-admin [data-place-rank-card] .mi-place-ops-message {
+        flex: 0 1 auto;
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+
+      /* N 플레이스 카드 머리의 현재·최고·갱신·삭제 줄은 데스크톱 규칙(min-width 166px·줄바꿈 없음·오른쪽 정렬)이 남아
+         320px 폭에서 카드보다 넓어졌고, '현재' 알약 왼쪽과 '삭제' 테두리가 카드 밖으로 잘렸다(대표 결정 2026-10-17).
+         폭이 모자랄 때만 다음 줄로 넘긴다(넉넉하면 한 줄 그대로). */
+      #mi-admin [data-place-rank-card] .mi-place-rank-item .mi-rank-row-actions {
+        min-width: 0;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+
     }
 
     @media (max-width: 720px) {
@@ -24002,10 +24036,13 @@
         return compact;
       }
 
-      function compactRankTrackersForCache(trackers, snapshotLimit) {
+      // markTruncated(N 30일 캐시만): 측정 개수를 줄여 저장했으면 snapshotsTruncated 를 남긴다. N 30일 날짜 줄이 잘려 나간
+      // 앞쪽 날을 순위 없는 날('-')처럼 그리지 않게 한다(rankTrackerSnapshotsMaybeTruncated). N 플레이스 캐시는 예전 그대로.
+      function compactRankTrackersForCache(trackers, snapshotLimit, markTruncated) {
         return trackers.map(function (tracker) {
           var compact = Object.assign({}, tracker);
           compact.snapshots = (tracker.snapshots || []).slice(0, snapshotLimit).map(compactRankSnapshotForCache);
+          if (markTruncated && (tracker.snapshots || []).length > snapshotLimit) compact.snapshotsTruncated = true;
           return compact;
         });
       }
@@ -24029,7 +24066,7 @@
           window.sessionStorage.setItem(cacheKey, JSON.stringify({
             savedAt: Date.now(),
             scopeKey: scope.key,
-            trackers: compactRankTrackersForCache(trackers, 62)
+            trackers: compactRankTrackersForCache(trackers, 62, feature === "product")
           }));
           return true;
         } catch (error) {
@@ -24037,7 +24074,7 @@
             window.sessionStorage.setItem(cacheKey, JSON.stringify({
               savedAt: Date.now(),
               scopeKey: scope.key,
-              trackers: compactRankTrackersForCache(trackers, 30)
+              trackers: compactRankTrackersForCache(trackers, 30, feature === "product")
             }));
             return true;
           } catch (fallbackError) {
@@ -24796,16 +24833,47 @@
         return '<a class="mi-rank-product-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(titleText) + '">' + escapeHtml(titleText) + '</a>';
       }
 
+      // N 30일 날짜 줄·7일 평균은 한국 시간(KST) 날짜로 센다(대표 결정 2026-10-17). 브라우저 시간대와 상관없이 같은 칸이
+      // 나오게 한다(한국 시간 기기에서는 예전과 같은 칸). N 플레이스 기록판(rankDateKey·기기 시각)은 그대로 둔다.
+      function rankKstParts(ms) {
+        var time = Number(ms);
+        if (!Number.isFinite(time)) return null;
+        var kst = new Date(time + 9 * 60 * 60 * 1000);
+        return {
+          key: kst.getUTCFullYear() + "-" + String(kst.getUTCMonth() + 1).padStart(2, "0") + "-" + String(kst.getUTCDate()).padStart(2, "0"),
+          hour: kst.getUTCHours()
+        };
+      }
+
+      function rankKstDayKey(ms) {
+        var parts = rankKstParts(ms);
+        return parts ? parts.key : "";
+      }
+
+      // KST 날짜(YYYY-MM-DD)에서 days 일 앞뒤 날짜. KST 는 서머타임이 없어 하루를 24시간으로 센다.
+      function rankKstDayShift(key, days) {
+        var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key || ""));
+        if (!match) return "";
+        return rankKstDayKey(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) - 9 * 60 * 60 * 1000 + Number(days || 0) * 24 * 60 * 60 * 1000);
+      }
+
+      // KST 날짜를 같은 달력 날짜의 기기 시각 Date(정오)로 바꿔 rankDayLabel·rankDayClass 를 그대로 쓴다.
+      function rankKstDayDate(key) {
+        var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(key || ""));
+        return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) : new Date(NaN);
+      }
+
       function groupRankSnapshotsByDay(snapshots) {
         var grouped = {};
         (snapshots || []).forEach(function (snapshot) {
           if (!snapshot || !snapshot.checkedAt) return;
-          var date = new Date(snapshot.checkedAt);
-          if (Number.isNaN(date.getTime())) return;
-          var key = rankDateKey(date);
-          var slot = date.getHours() < 12 ? "am" : "pm";
-          if (!grouped[key]) grouped[key] = { date: date, am: null, pm: null };
-          if (!grouped[key][slot] || new Date(grouped[key][slot].checkedAt).getTime() < date.getTime()) {
+          var time = new Date(snapshot.checkedAt).getTime();
+          var parts = rankKstParts(time);
+          if (!parts) return;
+          var key = parts.key;
+          var slot = parts.hour < 12 ? "am" : "pm";
+          if (!grouped[key]) grouped[key] = { date: rankKstDayDate(key), am: null, pm: null };
+          if (!grouped[key][slot] || new Date(grouped[key][slot].checkedAt).getTime() < time) {
             grouped[key][slot] = snapshot;
           }
         });
@@ -24829,17 +24897,46 @@
         return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + '</small><b>' + escapeHtml(rank) + '</b></span>';
       }
 
+      // 받은 N 30일 측정 목록이 잘렸을 수 있는지: 마지막 정상 순위 캐시가 개수를 줄여 저장했거나(snapshotsTruncated),
+      // 서버가 상한(120개, src/server/handlers/naver-rank-trackers.mjs PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)만큼 꽉 채워
+      // 보냈을 때. 잘렸으면 가장 오래된 측정 날보다 앞의 날은 실제로 순위가 있었는지 화면이 알 수 없다.
+      function rankTrackerSnapshotsMaybeTruncated(tracker) {
+        return Boolean(tracker && (tracker.snapshotsTruncated === true || (tracker.snapshots || []).length >= 120));
+      }
+
+      // 날짜 줄 칸 범위(대표 결정 2026-10-17): 오늘(KST)부터 거꾸로 최대 30일, 등록한 날(createdAt 의 KST 날짜)보다
+      // 앞의 날은 만들지 않는다. 측정이 없는 날도 칸을 만든다(값은 순위 없는 날과 같은 '-'). 등록일을 모르면 가장 오래된
+      // 측정 날을 하한으로 둔다. 기기 시계가 늦어 마지막 측정 날이 '오늘'보다 뒤면 그 날을 끝으로 잡아 측정 칸을 잃지 않는다.
+      // 측정 목록이 잘렸을 수 있으면 가장 오래된 측정 날까지만 칸을 만든다(실제로 순위가 있던 날을 '-'로 그리지 않게).
+      function rankTrackerBoardDayKeys(tracker, grouped) {
+        var measured = Object.keys(grouped || {}).sort().reverse();
+        var todayKey = rankKstDayKey(Date.now());
+        var endKey = measured[0] && (!todayKey || measured[0] > todayKey) ? measured[0] : todayKey;
+        var oldestKey = rankKstDayShift(endKey, -29);
+        var createdKey = rankKstDayKey(Date.parse((tracker && tracker.createdAt) || ""));
+        var floorKey = createdKey || measured[measured.length - 1] || endKey;
+        if (floorKey < oldestKey) floorKey = oldestKey;
+        var oldestMeasured = measured[measured.length - 1];
+        if (oldestMeasured && oldestMeasured > floorKey && rankTrackerSnapshotsMaybeTruncated(tracker)) floorKey = oldestMeasured;
+        var keys = [];
+        for (var key = endKey; key && key >= floorKey && keys.length < 30; key = rankKstDayShift(key, -1)) keys.push(key);
+        // 등록일보다 앞선 측정이 있으면(정상 경로에서는 없음) 지우지 않고 그 날 칸만 남긴다.
+        measured.forEach(function (day) {
+          if (day < floorKey && day >= oldestKey) keys.push(day);
+        });
+        return keys;
+      }
+
       function renderTrackerDailyBoard(tracker) {
         var grouped = groupRankSnapshotsByDay(tracker.snapshots || []);
-        var keys = Object.keys(grouped).sort(function (a, b) {
-          return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
-        }).slice(0, 30);
-        if (!keys.length) {
+        if (!Object.keys(grouped).length) {
           return '<div class="mi-rank-state">첫 오가닉 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
         }
+        var keys = rankTrackerBoardDayKeys(tracker, grouped);
         return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
-          var day = grouped[key];
-          return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
+          var day = grouped[key] || null;
+          var date = day ? day.date : rankKstDayDate(key);
+          return '<div class="mi-rank-day-card' + rankDayClass(date) + '"><strong>' + escapeHtml(rankDayLabel(date)) +
             '</strong><div class="mi-rank-day-slots">' + renderRankSlot(latestRankSnapshotForDay(day)) + '</div></div>';
         }).join("") + '</div>';
       }
@@ -25065,6 +25162,22 @@
 
       function rankTrackerAverageRank(tracker, limit) {
         var ranks = rankTrackerRecentRanks(tracker, limit || 14);
+        if (!ranks.length) return 0;
+        var total = ranks.reduce(function (sum, rank) { return sum + rank; }, 0);
+        return Math.round(total / ranks.length);
+      }
+
+      // N 30일 카드 '7일 평균'(대표 결정 2026-10-17): 오늘 포함 최근 7일(KST 날짜) 안에서 순위가 있는 측정을 모두 모아
+      // 반올림 평균한다(날짜 칸 대표값이 아니라 측정 하나하나). 7일 안에 순위가 하나도 없으면 0 → 화면 '-'.
+      // N 플레이스 카드는 예전 rankTrackerAverageRank(최근 측정 7개)를 그대로 쓴다.
+      function rankTrackerSevenDayAverageRank(tracker) {
+        var startKey = rankKstDayShift(rankKstDayKey(Date.now()), -6);
+        var ranks = ((tracker && tracker.snapshots) || []).filter(function (snapshot) {
+          var key = snapshot && snapshot.checkedAt ? rankKstDayKey(new Date(snapshot.checkedAt).getTime()) : "";
+          return Boolean(key && startKey && key >= startKey);
+        }).map(function (snapshot) {
+          return rankTrackerRankValue(snapshot.rank);
+        }).filter(Boolean);
         if (!ranks.length) return 0;
         var total = ranks.reduce(function (sum, rank) { return sum + rank; }, 0);
         return Math.round(total / ranks.length);
@@ -25336,7 +25449,7 @@
         var mallName = rankTrackerMallName(tracker);
         var titleText = title + (mallName ? " (" + mallName + ")" : "");
         var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
-        var avgRank = rankTrackerAverageRank(tracker, 14);
+        var avgRank = rankTrackerSevenDayAverageRank(tracker);
         var insight = rankTrackerInsight(tracker);
         var catalogHint = rankTrackerCatalogHint(tracker);
         var actionNote = rankTrackerActionNote(tracker);
@@ -25349,19 +25462,19 @@
           escapeHtml(rankText(tracker.currentRank) + (currentSource ? " · " + currentSource : "")) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
-          escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
-          rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
+          escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span data-rank-export-omit class="' +
+          rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span data-rank-export-omit class="mi-rank-insight-pill ' +
           escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span>' +
-          (catalogHint ? '<span class="mi-rank-insight-pill ' + escapeHtml(catalogHint.className) + '">' + escapeHtml(catalogHint.label) + '</span>' : '') + '<span>' +
+          (catalogHint ? '<span data-rank-export-omit class="mi-rank-insight-pill ' + escapeHtml(catalogHint.className) + '">' + escapeHtml(catalogHint.label) + '</span>' : '') + '<span>' +
           escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
-          escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>그룹 ' +
+          escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span data-rank-export-omit>그룹 ' +
           escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
-          escapeHtml(tracker.id) + '">그룹 변경</button><span>최근 ' +
-          escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
-          escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
-          escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span class="mi-rank-ops-message" title="' +
+          escapeHtml(tracker.id) + '">그룹 변경</button><span data-rank-export-omit>최근 ' +
+          escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span data-rank-export-omit>다음 ' +
+          escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span data-rank-export-omit class="mi-rank-action-note ' +
+          escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span data-rank-export-omit class="mi-rank-ops-message" title="' +
           escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
-          (catalogHint ? '<div class="mi-rank-catalog-hint" data-rank-catalog-hint>' + escapeHtml(catalogHint.note) + '</div>' : '') +
+          (catalogHint ? '<div class="mi-rank-catalog-hint" data-rank-catalog-hint data-rank-export-omit>' + escapeHtml(catalogHint.note) + '</div>' : '') +
           renderTrackerDailyBoard(tracker) + '</section>';
       }
 
@@ -25408,10 +25521,24 @@
         return clone;
       }
 
+      // N 30일 '선택 이미지 저장' 전용 복제(대표 결정 2026-10-17): 광고주에게 보내는 이미지에는 운영줄 내부 알약
+      // (상태·판정·원부 확인 필요와 그 안내문·그룹·최근·다음·권고·메시지, renderRankTrackerCard 의 data-rank-export-omit)을
+      // 넣지 않는다. 현재·최고·전회 대비·7일 평균·날짜 줄은 남는다. 화면 카드는 그대로이고, N 플레이스 이미지는
+      // cloneRankCardForExport 를 그대로 써서 바뀌지 않는다.
+      function cloneRankTrackerCardForShare(source) {
+        var clone = cloneRankCardForExport(source);
+        clone.querySelectorAll("[data-rank-export-omit]").forEach(function (node) {
+          node.remove();
+        });
+        return clone;
+      }
+
       function renderRankExportSheet(card, trackers) {
         var stage = ensureRankExportStage(card);
         var sheet = document.createElement("section");
+        // 이미지 머리 시각도 날짜 칸과 같은 한국 시간으로 적는다(한국 밖 시간대 기기에서 머리 날짜와 첫 칸이 어긋나지 않게).
         var nowLabel = new Date().toLocaleString("ko-KR", {
+          timeZone: "Asia/Seoul",
           month: "2-digit",
           day: "2-digit",
           hour: "2-digit",
@@ -25424,7 +25551,7 @@
         list.className = "mi-rank-export-list";
         trackers.forEach(function (tracker) {
           var source = card.querySelector('.mi-rank-tracker-card[data-rank-tracker-id="' + rankExportCssEscape(tracker.id) + '"]');
-          if (source) list.appendChild(cloneRankCardForExport(source));
+          if (source) list.appendChild(cloneRankTrackerCardForShare(source));
         });
         sheet.appendChild(list);
         stage.replaceChildren(sheet);
@@ -26798,7 +26925,10 @@
             return;
           }
 
-          var groupFilter = event.target.closest("[data-rank-filter-group]");
+          // 카드(article) 자신도 data-rank-filter-group 속성에 필터 값을 들고 있어, closest 가 select 가 아닌 카드를 잡으면
+          // 그룹명 입력칸·검색칸의 change(포커스가 빠질 때)가 필터를 ""로 풀고 목록을 다시 그려 '그룹 생성/적용' 첫 클릭이
+          // 사라졌다(2026-10-17). 그룹 필터 select 에서 온 change 만 처리한다.
+          var groupFilter = event.target.closest("select[data-rank-filter-group]");
           if (!groupFilter) return;
           card.setAttribute("data-rank-filter-group", groupFilter.value || "");
           renderRankHistory(rankHistory, rankTrackers);

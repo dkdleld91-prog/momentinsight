@@ -968,6 +968,24 @@
     min-height: 36px;
     border-bottom: 1px solid var(--mi-line);
   }
+
+  /* 긴 알약(확인 필요 사유 · 긴 그룹 이름 · 7일 평균 등)이 휴대폰 폭(320~390px)에서 카드 밖으로 밀려
+     잘리지 않게 알약 안에서 줄을 바꾼다(대표 결정 2026-10-17). 공용 규칙(admin.html)은 운영줄 알약과
+     현재·최고 알약을 한 줄(white-space: nowrap)로 두고 카드는 overflow-x: hidden 이라 넘친 부분이 잘렸다.
+     한 줄에 들어가는 알약은 모양이 그대로이고(줄 높이는 공용 값 그대로), 줄보다 긴 알약만 카드 폭 안에서 감긴다. */
+  #mi-admin .mi-coupang-rank-card .mi-rank-ops-row > span,
+  #mi-admin .mi-coupang-rank-card .mi-rank-ops-row > button,
+  #mi-admin .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill,
+  #mi-clean .mi-coupang-rank-card .mi-rank-ops-row > span,
+  #mi-clean .mi-coupang-rank-card .mi-rank-ops-row > button,
+  #mi-clean .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill {
+    max-width: 100%;
+    min-width: 0;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
 }
 
 /* ── 휴대폰: 총관리자 패널·안내 문구 ── */

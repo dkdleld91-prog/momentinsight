@@ -439,8 +439,9 @@ const checks = {
     "function compactRankSnapshotForCache",
     "function compactRankTrackersForCache",
     "function pruneOtherRankTrackerCaches",
-    "compactRankTrackersForCache(trackers, 62)",
-    "compactRankTrackersForCache(trackers, 30)",
+    // 세 번째 인자: N 30일 캐시만 잘라 저장했다는 표시(snapshotsTruncated)를 남긴다(2026-10-17, N 플레이스 캐시는 그대로).
+    'compactRankTrackersForCache(trackers, 62, feature === "product")',
+    'compactRankTrackersForCache(trackers, 30, feature === "product")',
     "pruneOtherRankTrackerCaches(scope)",
     "return false",
   ])),

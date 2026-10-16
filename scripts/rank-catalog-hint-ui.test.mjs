@@ -98,6 +98,7 @@ const CARD_STUBS = `
   function rankTrackerTitle(tracker) { return tracker.title || "상품"; }
   function rankTrackerMallName() { return ""; }
   function rankTrackerAverageRank() { return 0; }
+  function rankTrackerSevenDayAverageRank() { return 0; }
   function rankTrackerActionNote() { return { label: "확인", className: "is-ok" }; }
   function rankTrackerCurrentSourceLabel() { return ""; }
   function renderRankKeywordName(keyword) { return "<span>" + escapeHtml(keyword) + "</span>"; }

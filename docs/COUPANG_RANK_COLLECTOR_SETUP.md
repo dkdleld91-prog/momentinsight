@@ -22,7 +22,7 @@
 **② 대표 SQL — Supabase SQL 편집기용**
 1. 작업 담당이 바탕화면에 `C30-1-테이블만들기.txt`를 만들어 TextEdit로 열어 둡니다.
    - 만드는 줄(작업 담당, 맥 터미널): `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261017090000_coupang_rank_tracking.sql C30-1-테이블만들기.txt`
-   - 기대 출력: `준비됨: ~/Desktop/C30-1-테이블만들기.txt (1251줄, begin/commit 2개) — Supabase SQL 편집기용`
+   - 기대 출력: `준비됨: ~/Desktop/C30-1-테이블만들기.txt (1261줄, begin/commit 2개) — Supabase SQL 편집기용`
    - 같은 원문이 저장소 `docs/sql/c30-1-tables.sql`에도 있습니다(바이트 단위로 같음, sha256 `362b0fb5…a67c`).
 2. TextEdit에서 전체 선택 → 복사 → Supabase SQL 편집기에 붙여 넣고 **Run**.
    - 기대: `Success`로 시작하는 문구(오류 빨간 글씨 없음). 정확한 문구는 화면에 나온 그대로 알려 주세요.

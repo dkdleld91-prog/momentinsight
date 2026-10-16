@@ -21,7 +21,10 @@
   var KEYWORD_MAX = 50;
   var GROUP_MAX = 30;
   var DEFAULT_GROUP = "기본 그룹";
+  // 화면에만 쓰는 기본 그룹 이름(N30 RANK_UNGROUPED_LABEL 과 같은 말). 서버에는 '기본 그룹' 그대로 보낸다.
+  var UNGROUPED_LABEL = "미분류";
   var RANK_TOP = 50;
+  var COUPANG_SEARCH_URL = "https://www.coupang.com/np/search?q=";
   var OWNER_POLL_MS = 60000;
   // 화면 열기(show)가 짧은 간격으로 두 번 오면(메뉴 클릭의 setScreen + hashchange, 운영팀 세션 동기화의
   // scope-changed + auth-ready) 같은 범위 목록·수집기 상태를 다시 받지 않는 시간.
@@ -68,6 +71,32 @@
     setup_required: "is-muted"
   };
   var STRIP_SUB = "수집기 PC가 켜져 있을 때만 수집합니다";
+
+  // 수집이 멈춘 상태(다음 회차가 오지 않는다). 카드 '다음'은 '정지', 요약칸 '다음 갱신'도 '정지'.
+  // 읽기 전용(광고주) 화면은 내부 상태 대신 STRIP_READONLY 문구('일시 중단' 등)를 쓴다.
+  var STOPPED_STATES = { disabled: true, review: true, budget: true, outdated: true, not_connected: true, setup_required: true };
+  // 카드 '다음'의 남은 시간(N분)을 다시 계산하는 간격. N30 은 60초 건강 신호마다 순위판을 다시 그린다.
+  var NEXT_TICK_MS = 60000;
+  // 요약칸 상태 알약(관리자). 위에서부터 처음 맞는 것을 쓴다(N30 자동추적 칸과 같은 자리·같은 색 규칙).
+  var AUTO_STATUS_ADMIN = {
+    disabled: ["수집 꺼짐", "is-error"],
+    review: ["수집 꺼짐", "is-error"],
+    budget: ["수집 꺼짐", "is-error"],
+    outdated: ["수집 꺼짐", "is-error"],
+    not_connected: ["연결 안 됨", "is-error"],
+    offline: ["응답 없음", "is-error"],
+    setup_required: ["설정 필요", "is-warn"],
+    cooldown: ["쉬는 중", "is-warn"],
+    delayed: ["갱신 대기", "is-warn"]
+  };
+  // 수집기가 정상으로 도는 상태. 이때만 요약칸 작은 글에 'N개 운영 · N개 대기 · N개 확인'을 쓴다.
+  var NORMAL_STATES = { ok: true, idle_hours: true };
+
+  var STATUS_DEFAULT = "키워드와 쿠팡 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.";
+  var FIRST_BOARD_TEXT = "첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.";
+  var NO_RECENT_BOARD_TEXT = "최근 30일 측정 기록이 없습니다.";
+  var LOADED_TEXT = "등록된 쿠팡 순위 추적을 불러왔습니다.";
+  var TITLE_PENDING_HINT = "상품명은 검색 1쪽에서 이 상품을 찾은 뒤 채워집니다";
 
   var ATTENTION_TEXT = {
     drop10: "10위 이상 하락",
@@ -250,6 +279,30 @@
     return day && day !== todayKst ? day.slice(5) + " " + clock : clock;
   }
 
+  // 카드·요약칸의 '최근'·'다음 갱신' 시각. N30 formatRankShortAt 과 같은 모양이고 KST 로 고정한다.
+  function shortAt(iso) {
+    var time = Date.parse(iso);
+    if (!iso || !isFinite(time)) return "-";
+    try {
+      return new Date(time).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
+    } catch (error) {
+      return "-";
+    }
+  }
+
+  // 남은 시간. N30 formatRankRemain 과 같은 계산(올림, 분→시간→일).
+  function remainText(iso, now) {
+    var time = Date.parse(iso);
+    if (!iso || !isFinite(time)) return "-";
+    var diff = time - (isNum(now) ? now : Date.now());
+    if (diff <= 0) return "대기";
+    var minutes = Math.ceil(diff / 60000);
+    if (minutes < 60) return minutes + "분";
+    var hours = Math.ceil(minutes / 60);
+    if (hours < 24) return hours + "시간";
+    return Math.ceil(hours / 24) + "일";
+  }
+
   function dayLabel(d) {
     var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ""));
     if (!match) return String(d || "");
@@ -298,18 +351,55 @@
     return payload.scopeMode !== "team-account" && normalize(payload.scopeClientId) === scope.clientId;
   }
 
-  // 30일 판 칸 글자(§8.3 표).
+  // 30일 판 칸 글자(§8.3 표). 칸 모양은 N30 하루 칸(작은 글 + 굵은 값)과 같다.
   function cellText(cell, d, createdDay) {
     if (!cell) return createdDay && d && String(d) < String(createdDay) ? "" : "-";
     switch (cell.s) {
-      case "found": return isNum(cell.r) ? String(cell.r) : "-";
-      case "out": return "밖";
+      case "found": return isNum(cell.r) ? cell.r + "위" : "-";
+      case "out": return RANK_TOP + "위 밖";
       case "short": return "없음";
-      case "noresult": return "결과없음";
+      case "noresult": return "결과 없음";
       case "failed": return "실패";
       case "unsupported": return "이동";
       default: return "-";
     }
+  }
+
+  // 칸의 작은 글. 실패·이동은 측정 자체의 결과라 '측정', 결과 없음은 '검색', 그 밖은 N30 처럼 '순위'.
+  function cellLabel(cell) {
+    var status = cell && cell.s;
+    if (status === "failed" || status === "unsupported") return "측정";
+    if (status === "noresult") return "검색";
+    return "순위";
+  }
+
+  // 순위가 없는 칸(N30 의 연회색 '-' 칸과 같은 취급).
+  function cellIsEmpty(cell) {
+    var status = cell && cell.s;
+    return !cell || status === "out" || status === "short" || status === "noresult" || (status === "found" && !isNum(cell.r));
+  }
+
+  // 날짜 줄 범위: 서버 days30(오늘부터 거꾸로) 가운데 등록일 이후만. 등록일을 모르면 30칸 모두.
+  function boardDays(tracker, days30) {
+    var byDay = {};
+    (tracker && Array.isArray(tracker.days) ? tracker.days : []).forEach(function (cell) {
+      if (cell && cell.d && !byDay[cell.d]) byDay[cell.d] = cell;
+    });
+    var created = String(tracker && tracker.createdDay || "");
+    var dates = Array.isArray(days30) && days30.length ? days30.slice() : Object.keys(byDay).sort().reverse();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(created)) dates = dates.filter(function (d) { return String(d) >= created; });
+    return { dates: dates, byDay: byDay };
+  }
+
+  // 날짜 줄 대신 띄울 안내. 한 번도 성공 측정이 없으면(현재 값·마지막 발견 시각도 없음) N30 과 같은 '첫 순위 확인 후…'.
+  // 예전에는 쟀지만 최근 30일 창 안 기록이 없으면(30일 넘게 일시중지·수집 정지) 안내 대신 범위 칸을 '-'로 보인다.
+  // 빈 문자열이면 날짜 줄을 그린다.
+  function emptyBoardText(tracker, days30) {
+    var days = tracker && Array.isArray(tracker.days) ? tracker.days : [];
+    if (days.length) return "";
+    var summary = tracker && tracker.summary || {};
+    if (!(tracker && tracker.current) && !summary.lastFoundAt) return FIRST_BOARD_TEXT;
+    return boardDays(tracker, days30).dates.length ? "" : NO_RECENT_BOARD_TEXT;
   }
 
   function cellTooltip(cell, d, createdDay) {
@@ -351,30 +441,71 @@
     return { text: "측정 전", tone: "is-pending" };
   }
 
-  function trendText(summary) {
+  // 카드 '현재' 값. 측정 전이면 N30 처럼 '-'.
+  function currentText(tracker) {
+    var badge = currentBadge(tracker);
+    return badge.tone === "is-pending" ? "-" : badge.text;
+  }
+
+  // 전회 대비 문구(N30 rankTrackerChangeLabel 과 같은 말). 서버 trend 는 같은 시간대 회차끼리 비교한 값이다.
+  function changeText(summary) {
     var trend = summary && summary.trend;
     var delta = summary && summary.trendDelta;
-    if (trend === "up" && isNum(delta)) return "▲" + Math.abs(delta);
-    if (trend === "down" && isNum(delta)) return "▼" + Math.abs(delta);
-    if (trend === "enter") return "진입";
-    if (trend === "exit") return "이탈";
-    return "-";
+    if (trend === "up") return isNum(delta) ? "전회 대비 " + Math.abs(delta) + "위 상승" : "전회 대비 상승";
+    if (trend === "down") return isNum(delta) ? "전회 대비 " + Math.abs(delta) + "위 하락" : "전회 대비 하락";
+    if (trend === "same") return "전회 대비 변동 없음";
+    if (trend === "enter") return "전회 대비 " + RANK_TOP + "위 안 진입";
+    if (trend === "exit") return "전회 대비 " + RANK_TOP + "위 밖 이탈";
+    return "전회 데이터 대기";
   }
 
-  function trendTone(summary) {
-    var trend = summary && summary.trend;
-    if (trend === "up" || trend === "enter") return "is-up";
-    if (trend === "down" || trend === "exit") return "is-down";
-    return "is-flat";
+  // 마지막 성공 측정이 최근 30일 창(서버 days30, 오늘부터 거꾸로) 밖인지. days30 이 없으면 판단하지 않는다(false).
+  function currentIsStale(current, days30) {
+    if (!current || !current.checkedAt || !Array.isArray(days30) || !days30.length) return false;
+    var oldest = String(days30[days30.length - 1] || "");
+    var checkedDay = kstDate(current.checkedAt);
+    return Boolean(oldest && checkedDay && checkedDay < oldest);
   }
 
-  function nextCheckText(tracker, todayKst) {
+  // 판정 자리 알약(N30 rankTrackerInsight 자리). 서버 확인 사유가 있으면 그것만, 없으면 N30 과 같은 규칙.
+  // 측정 전·50위 밖처럼 지금 순위가 없으면 판정을 단정하지 않는다(알약 없음).
+  // 일시중지한 추적이나 마지막 측정이 30일 창 밖이면(days30 을 받았을 때) 옛 값으로 흐름을 단정하지 않는다.
+  // 서버 확인 사유는 '확인 필요' 필터·개수와 같은 기준이라 그대로 보인다.
+  function verdictPills(tracker, days30) {
+    var summary = tracker && tracker.summary || {};
+    var reasons = Array.isArray(summary.attentionReasons) ? summary.attentionReasons : [];
+    if (reasons.length) {
+      return reasons.map(function (reason) {
+        return { text: ATTENTION_TEXT[reason] || String(reason), tone: reason === "drop10" ? "is-warn" : "is-error" };
+      });
+    }
+    var current = tracker && tracker.current;
+    if (!current || current.result !== "found" || !isNum(current.rank)) return [];
+    if (tracker.status === "paused" || currentIsStale(current, days30)) return [];
+    if (summary.trend === "up" || summary.trend === "enter") return [{ text: "상승 흐름", tone: "is-ok" }];
+    if (summary.trend === "down") return [{ text: "하락 확인", tone: "is-warn" }];
+    if (current.rank <= 10) return [{ text: "상위권 유지", tone: "is-ok" }];
+    return [{ text: "정상 추적", tone: "is-ok" }];
+  }
+
+  // 카드 '다음'. 일시중지가 먼저, 그다음 수집기가 멈췄거나 쉬는 중이면 그 사실을 쓴다
+  // (요약칸은 '수집 꺼짐'인데 카드는 '대기'로 엇갈리지 않게). 수집기 응답이 없을 때(offline) 예정 시각이
+  // 지난 항목은 '대기' 대신 '응답 대기'(요약칸 '응답 없음'과 같은 뜻)로 쓴다. 남은 시간이 있으면 그대로 보인다
+  // (수집기 PC가 돌아오면 그 시각에 잰다). mode 가 'readonly'(광고주)면 내부 상태 대신 광고주 문구를 쓴다.
+  function nextCheckText(tracker, collectorState, now, mode) {
+    var readonly = mode === "readonly";
     var stateName = tracker && tracker.nextCheckState;
-    if (stateName === "paused") return "";
+    if (stateName === "paused" || (tracker && tracker.status === "paused")) return "-";
+    if (STOPPED_STATES[collectorState] || collectorState === "cooldown") {
+      if (readonly) return STRIP_READONLY[collectorState];
+      return collectorState === "cooldown" ? "쉬는 중" : "정지";
+    }
     if (stateName === "replan") return "다음 수집 때 정함";
-    if (stateName === "due") return "대기 중";
-    if (stateName === "scheduled") return kstStamp(tracker.nextCheckAt, todayKst) || "다음 수집 때 정함";
-    return "";
+    var text = "-";
+    if (stateName === "due") text = "대기";
+    else if (stateName === "scheduled") text = remainText(tracker.nextCheckAt, now);
+    if (text === "대기" && collectorState === "offline") return readonly ? STRIP_READONLY.offline : "응답 대기";
+    return text;
   }
 
   function filterMatches(tracker, filter) {
@@ -384,7 +515,8 @@
     if (options.group && String(tracker.groupName || DEFAULT_GROUP) !== options.group) return false;
     var query = String(options.query || "").trim().toLowerCase();
     if (query) {
-      var haystack = [tracker.keyword, tracker.productId, tracker.productTitle, tracker.groupName].map(function (value) {
+      // 그룹은 화면에 보이는 이름으로 찾는다(기본 그룹은 '미분류'). 서버 값 '기본 그룹'으로는 걸리지 않는다.
+      var haystack = [tracker.keyword, tracker.productId, tracker.productTitle, groupDisplayName(tracker.groupName)].map(function (value) {
         return String(value || "").toLowerCase();
       }).join("\n");
       if (haystack.indexOf(query) < 0) return false;
@@ -451,6 +583,58 @@
       text = STRIP_ADMIN[stateName];
     }
     return { state: stateName, text: text, tone: STRIP_TONE[stateName], sub: STRIP_SUB };
+  }
+
+  // 목록 맨 위 '자동추적' 요약칸(N30 rankTrackerOpsSummary 의 .mi-rank-auto-center 와 같은 칸·같은 순서).
+  // 내용은 쿠팡 수집기 PC 상태(collector.state)와 받은 추적 목록에서만 센다. 화면은 계산하지 않고 센다.
+  function autoSummary(collector, list, options) {
+    var opts = options || {};
+    var info = collector || null;
+    var items = (Array.isArray(list) ? list : []).filter(Boolean);
+    var readonly = opts.mode === "readonly";
+    var active = items.filter(function (tracker) { return tracker.status !== "paused"; });
+    var due = active.filter(function (tracker) { return tracker.nextCheckState === "due"; }).length;
+    var attention = items.filter(function (tracker) { return tracker.summary && tracker.summary.attention === true; }).length;
+    var stateName = info ? (STRIP_TONE[info.state] ? info.state : "not_connected") : "";
+    var pill;
+    if (!info) pill = ["확인 중", "is-warn"];
+    else if (readonly) pill = [STRIP_READONLY[stateName], stateName === "ok" ? "" : "is-warn"];
+    else if (AUTO_STATUS_ADMIN[stateName]) pill = AUTO_STATUS_ADMIN[stateName];
+    else if (attention) pill = ["확인 필요", "is-error"];
+    else if (due) pill = ["갱신 대기", "is-warn"];
+    else if (stateName === "idle_hours") pill = ["수집 시간 아님", ""];
+    else if (active.length) pill = ["정상 운영", ""];
+    else pill = ["대기", ""];
+    var small;
+    if (!info) small = opts.loading ? "수집 상태 확인 중 · " + STRIP_SUB : "수집 상태를 아직 받지 못했습니다 · " + STRIP_SUB;
+    else if (NORMAL_STATES[stateName]) small = active.length + "개 운영 · " + due + "개 대기 · " + attention + "개 확인";
+    else small = readonly ? STRIP_SUB : stripText(info, "admin").text + " · " + STRIP_SUB;
+    var nextAt = 0;
+    active.forEach(function (tracker) {
+      if (tracker.nextCheckState !== "scheduled" && tracker.nextCheckState !== "due") return;
+      var time = Date.parse(tracker.nextCheckAt);
+      if (isFinite(time) && (!nextAt || time < nextAt)) nextAt = time;
+    });
+    var next;
+    if (!info) next = { value: "-", tone: "" };
+    // 광고주 화면은 알약과 같은 광고주 문구('일시 중단'·'설정 필요')로, 내부 상태(정지·쉬는 중 ~시각)를 보이지 않는다.
+    else if (readonly && (STOPPED_STATES[stateName] || stateName === "cooldown")) next = { value: STRIP_READONLY[stateName], tone: "is-warn" };
+    else if (STOPPED_STATES[stateName]) next = { value: "정지", tone: "is-error" };
+    else if (stateName === "cooldown") next = { value: info.cooldownUntil ? "쉬는 중 ~" + shortAt(info.cooldownUntil) : "쉬는 중", tone: "is-warn" };
+    else next = { value: nextAt ? shortAt(new Date(nextAt).toISOString()) : "대기", tone: stateName === "offline" || stateName === "delayed" || due ? "is-warn" : "is-ok" };
+    var perDay = info && isNum(info.checksPerDay) ? info.checksPerDay : "n";
+    var hours = info ? hoursText(info.activeFromHour, info.activeToHour) : "";
+    return {
+      state: stateName,
+      pill: { text: pill[0], tone: pill[1] },
+      small: small,
+      metrics: [
+        { label: "최근 갱신", value: info ? shortAt(info.lastSuccessAt) : "-", note: "수집기 PC", tone: "" },
+        { label: "다음 갱신", value: next.value, note: "하루 " + perDay + "회 자동 갱신 · " + (hours || "08~23시"), tone: next.tone },
+        { label: "확인 필요", value: attention + "개", note: "확인 필요 필터와 같은 기준", tone: attention ? "is-error" : "is-ok" }
+      ],
+      counts: { active: active.length, due: due, attention: attention }
+    };
   }
 
   function raiseReasonText(reasons) {
@@ -571,8 +755,23 @@
     return String(snapshot.result || "");
   }
 
+  // 화면에서 '미분류'라고 적으면 기본 그룹(빈 값)으로 본다. '미분류'라는 이름의 그룹이 따로 생기지 않게 한다.
   function normalizeGroupInput(value) {
-    return String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
+    var name = String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
+    return name === UNGROUPED_LABEL ? "" : name;
+  }
+
+  function isDefaultGroup(name) {
+    return !String(name || "").trim() || String(name) === DEFAULT_GROUP;
+  }
+
+  function groupDisplayName(name) {
+    return isDefaultGroup(name) ? UNGROUPED_LABEL : String(name);
+  }
+
+  function keywordSearchUrl(keyword) {
+    var text = String(keyword || "").trim();
+    return text ? COUPANG_SEARCH_URL + encodeURIComponent(text) : "";
   }
 
   // ── DOM 도우미(createElement + textContent 만) ───────────────
@@ -666,6 +865,8 @@
     var observedRoot = host.closest ? host.closest("#mi-admin, #mi-clean") : null;
     var wasLocked = Boolean(observedRoot && observedRoot.classList.contains("is-locked"));
     var searchTimer = 0;
+    // 카드 '다음'(남은 시간)을 다시 계산하는 타이머. 요청은 보내지 않고 글자만 바꾼다.
+    var nextTimer = 0;
     // 요청 순번은 reset 뒤에도 계속 커진다(옛 응답이 새 화면에 끼어들지 않게).
     var seqCounter = 0;
 
@@ -713,6 +914,11 @@
 
     function canWrite() {
       return deps.mode === "admin" && !(state.payload && state.payload.readOnly === true);
+    }
+
+    // 읽기 전용 문구(광고주 문구)를 쓰는 화면인지. 요약칸 알약·'다음 갱신'과 카드 '다음'이 같은 기준을 쓴다.
+    function readonlyView() {
+      return deps.mode === "readonly" || Boolean(state.payload && state.payload.readOnly === true);
     }
 
     // 500개를 넘은 범위의 일부 목록을 정리용으로 그리는 중인지.
@@ -896,7 +1102,7 @@
         var payload = await readJson(response);
         if (!stillCurrent(seq, scope)) return;
         state.loading = false;
-        if (applyListPayload(payload, scope, opts.afterWrite === true)) state.listDoneAt = Date.now();
+        if (applyListPayload(payload, scope, opts.afterWrite === true, opts.announce === true)) state.listDoneAt = Date.now();
       } finally {
         if (state.listFlight === seq) state.listFlight = 0;
       }
@@ -911,8 +1117,8 @@
     }
 
     // 받은 응답을 화면 상태에 반영한다. 정상 응답(설정 필요·전체 목록·500개 초과 일부 목록)이면 true 를
-    // 돌려준다 — 그때만 2초 합치기 창을 연다.
-    function applyListPayload(payload, scope, afterWrite) {
+    // 돌려준다 — 그때만 2초 합치기 창을 연다. announce(화면 열기)면 N30 처럼 상태줄에 불러온 결과를 알린다.
+    function applyListPayload(payload, scope, afterWrite, announce) {
       if (payload && payload.ok === true && payload.setupRequired === true) {
         state.setupRequired = true;
         state.payload = null;
@@ -966,6 +1172,8 @@
       state.listNote = { text: "", tone: "" };
       pruneSelection();
       writeCache(scope, payload);
+      // N30 목록 조회와 같은 알림: 추적이 있으면 '불러왔습니다'(초록), 없으면 기본 안내문. 등록 줄이 있는 화면에서만.
+      if (announce && canWrite()) state.status = payload.trackers.length ? { text: LOADED_TEXT, tone: "is-ok" } : { text: "", tone: "" };
       renderAll();
       return true;
     }
@@ -991,13 +1199,20 @@
       return trackers().filter(function (tracker) { return filterMatches(tracker, state.filter); });
     }
 
+    // 고를 수 있는 그룹 이름: 기본 그룹을 뺀 이름을 가나다순으로(N30 rankGroupNamesForCard 와 같은 규칙).
     function groupNames() {
       var names = [];
       trackers().forEach(function (tracker) {
         var name = String(tracker.groupName || DEFAULT_GROUP);
-        if (names.indexOf(name) < 0) names.push(name);
+        if (!isDefaultGroup(name) && names.indexOf(name) < 0) names.push(name);
       });
-      return names;
+      return names.sort(function (left, right) { return left.localeCompare(right, "ko"); });
+    }
+
+    function collectorStateName() {
+      if (state.setupRequired) return "setup_required";
+      var info = collectorInfo();
+      return info && info.state ? String(info.state) : "";
     }
 
     function collectorInfo() {
@@ -1013,25 +1228,40 @@
 
     // ── 뼈대 ──
 
+    // N30 화면(admin.html 네이버 30일 순위의 상품 카드)과 같은 틀: 큰 카드 하나 안에 카드 머리 → 등록 줄 → 상태줄 →
+    // 목록 제목 → 필터 줄 → 도움말 → 요약칸 → 선택 항목 정리 → 그룹. 보조 구역(사용 방법·안내 문구·
+    // 총관리자 수집기 관리)은 큰 카드 아래에 둔다. data-coupang-rank-* 훅 이름은 그대로다.
     function ensureShell() {
-      if (shell && host.contains(shell.strip)) return shell;
+      if (shell && host.contains(shell.main)) return shell;
       host.classList.add("mi-coupang-rank-root");
       host.replaceChildren();
       shell = {};
-      shell.strip = el("div", { className: "mi-coupang-rank-strip", "data-coupang-rank-strip": true, role: "status" });
+      shell.main = el("article", { className: "mi-card mi-card-pad mi-rank-card mi-coupang-rank-main" });
+      shell.limit = el("span", { className: "mi-coupang-rank-limit", "data-coupang-rank-limit": true, hidden: true });
+      shell.main.appendChild(el("div", { className: "mi-card-head mi-coupang-rank-head" }, [
+        el("div", {}, [
+          el("span", { className: "mi-kicker", text: "쿠팡 일반 순위" }),
+          el("h2", { text: "30일 순위 추적을 시작합니다." }),
+          el("p", { text: "쿠팡 검색 1쪽에서 광고를 뺀 일반 상품 순위와 광고 순번을 함께 관리합니다." }),
+          el("p", { className: "mi-code-status mi-coupang-rank-rule", text: "비로그인 검색 1쪽 · 광고 제외 일반 순위 · 같은 상품이면 옵션이 달라도 인정합니다." })
+        ]),
+        shell.limit
+      ]));
+      shell.form = el("div", { className: "mi-coupang-rank-form", "data-coupang-rank-form": true, hidden: true });
       shell.status = el("p", { className: "mi-code-status mi-coupang-rank-status", "data-coupang-rank-status": true, "aria-live": "polite", hidden: true });
-      shell.owner = el("details", { className: "mi-card mi-coupang-rank-owner", "data-coupang-rank-owner": true, hidden: true });
-      shell.form = el("section", { className: "mi-card mi-card-pad mi-coupang-rank-form-card", "data-coupang-rank-form": true, hidden: true });
-      shell.board = el("section", { className: "mi-card mi-card-pad mi-coupang-rank-board", "data-coupang-rank-board": true });
+      shell.capacity = el("p", { className: "mi-coupang-rank-capacity", "data-coupang-rank-capacity": true, hidden: true });
+      shell.board = el("div", { className: "mi-rank-panel mi-rank-history mi-coupang-rank-board", "data-coupang-rank-board": true });
+      shell.main.appendChild(shell.form);
+      shell.main.appendChild(shell.status);
+      shell.main.appendChild(shell.capacity);
+      shell.main.appendChild(el("div", { className: "mi-rank-grid mi-coupang-rank-grid" }, [shell.board]));
       shell.guide = el("details", { className: "mi-card mi-coupang-rank-guide", "data-coupang-rank-guide": true });
       shell.template = el("section", { className: "mi-card mi-card-pad mi-coupang-rank-template", "data-coupang-rank-template": true, hidden: true });
-      host.appendChild(shell.strip);
-      host.appendChild(shell.status);
-      host.appendChild(shell.owner);
-      host.appendChild(shell.form);
-      host.appendChild(shell.board);
+      shell.owner = el("details", { className: "mi-card mi-coupang-rank-owner", "data-coupang-rank-owner": true, hidden: true });
+      host.appendChild(shell.main);
       host.appendChild(shell.guide);
       host.appendChild(shell.template);
+      host.appendChild(shell.owner);
       buildForm();
       buildBoard();
       buildOwnerFrame();
@@ -1044,21 +1274,24 @@
       renderStatus();
     }
 
+    // 상태줄은 N30 처럼 등록 줄 바로 아래에 늘 보인다(등록 줄이 보일 때). 결과 문구가 없으면 기본 안내문으로 돌아간다.
+    // 등록 줄이 없는 화면(읽기 전용·설정 전·대상 없음)에서는 결과 문구가 있을 때만 보인다.
     function renderStatus() {
       if (!shell) return;
-      shell.status.textContent = state.status.text;
-      shell.status.hidden = !state.status.text;
+      var text = state.status.text || (shell.form.hidden ? "" : STATUS_DEFAULT);
+      shell.status.textContent = text;
+      shell.status.hidden = !text;
       shell.status.classList.remove("is-ok", "is-warn");
-      if (state.status.tone) shell.status.classList.add(state.status.tone);
+      if (state.status.text && state.status.tone) shell.status.classList.add(state.status.tone);
     }
 
     function renderAll() {
       if (state.destroyed) return;
       ensureShell();
-      renderStrip();
-      renderStatus();
-      renderOwnerVisibility();
       renderForm();
+      renderStatus();
+      renderStrip();
+      renderOwnerVisibility();
       renderFilterBar();
       renderBulkBar();
       renderListNote();
@@ -1067,7 +1300,7 @@
       renderTemplate();
     }
 
-    // ── 1. 수집 상태 띠 ──
+    // ── 1. 자동추적 요약칸(N30 .mi-rank-auto-center 와 같은 칸, 목록 맨 위) ──
 
     function renderStrip() {
       var scope = currentScope();
@@ -1077,57 +1310,52 @@
         return;
       }
       var collector = state.setupRequired ? { state: "setup_required" } : collectorInfo();
-      if (!collector) {
-        shell.strip.hidden = false;
-        shell.strip.className = "mi-coupang-rank-strip is-muted";
-        shell.strip.appendChild(el("span", { className: "mi-coupang-rank-strip-dot", "aria-hidden": "true" }));
-        shell.strip.appendChild(el("strong", { text: state.loading ? "수집 상태 확인 중" : "수집 상태를 아직 받지 못했습니다" }));
-        shell.strip.appendChild(el("small", { text: STRIP_SUB }));
-        return;
-      }
-      var strip = stripText(collector, deps.mode === "readonly" || (state.payload && state.payload.readOnly === true) ? "readonly" : "admin");
+      var summary = autoSummary(collector, state.setupRequired ? [] : trackers(), { mode: readonlyView() ? "readonly" : "admin", loading: state.loading });
       shell.strip.hidden = false;
-      shell.strip.className = "mi-coupang-rank-strip " + strip.tone;
-      shell.strip.setAttribute("data-coupang-rank-strip", strip.state);
-      shell.strip.appendChild(el("span", { className: "mi-coupang-rank-strip-dot", "aria-hidden": "true" }));
-      shell.strip.appendChild(el("strong", { text: strip.text }));
-      shell.strip.appendChild(el("small", { text: strip.sub }));
+      shell.strip.setAttribute("data-coupang-rank-strip", summary.state || "unknown");
+      shell.strip.appendChild(el("div", { className: "mi-rank-auto-head" }, [
+        el("span", { className: "mi-rank-auto-status" + (summary.pill.tone ? " " + summary.pill.tone : ""), "data-coupang-rank-strip-status": true, text: summary.pill.text }),
+        el("strong", { text: "자동추적" }),
+        el("small", { text: summary.small })
+      ]));
+      shell.strip.appendChild(el("div", { className: "mi-rank-auto-metrics" }, summary.metrics.map(function (metric) {
+        return el("div", { className: "mi-rank-auto-metric" + (metric.tone ? " " + metric.tone : "") }, [
+          el("span", { text: metric.label }),
+          el("strong", { text: metric.value }),
+          el("small", { text: metric.note })
+        ]);
+      })));
     }
 
-    // ── 2. 등록 폼 ──
+    // ── 2. 등록 줄(N30 .mi-rank-form 과 같은 5칸: 키워드·URL·그룹·고정 범위·버튼) ──
 
     function buildForm() {
-      var form = el("form", { className: "mi-coupang-rank-create", "data-coupang-rank-create-form": true, novalidate: true });
+      var form = el("form", { className: "mi-rank-form mi-coupang-rank-create", "data-coupang-rank-create-form": true, novalidate: true });
       var groupListId = "mi-coupang-rank-groups-" + Math.random().toString(36).slice(2, 10);
       shell.groupListId = groupListId;
-      shell.keyword = el("input", { className: "mi-input", type: "text", name: "keyword", maxlength: String(KEYWORD_MAX), autocomplete: "off", placeholder: "쿠팡 검색 키워드", "aria-label": "쿠팡 검색 키워드", "data-coupang-rank-keyword": true });
-      shell.productUrl = el("input", { className: "mi-input", type: "text", name: "productUrl", autocomplete: "off", placeholder: "https://www.coupang.com/vp/products/…", "aria-label": "쿠팡 상품 주소", "data-coupang-rank-product-url": true });
-      shell.groupInput = el("input", { className: "mi-input", type: "text", name: "groupName", maxlength: String(GROUP_MAX), autocomplete: "off", placeholder: "그룹(비우면 " + DEFAULT_GROUP + ")", "aria-label": "그룹 선택 또는 새 그룹 이름", list: groupListId, "data-coupang-rank-group-input": true });
+      shell.keyword = el("input", { className: "mi-input", type: "text", name: "keyword", maxlength: String(KEYWORD_MAX), autocomplete: "off", placeholder: "키워드", "aria-label": "쿠팡 검색 키워드", "data-coupang-rank-keyword": true });
+      shell.productUrl = el("input", { className: "mi-input", type: "text", name: "productUrl", autocomplete: "off", placeholder: "쿠팡 상품 URL 붙여넣기", "aria-label": "쿠팡 상품 URL", "data-coupang-rank-product-url": true });
+      shell.groupInput = el("input", { className: "mi-input", type: "text", name: "groupName", maxlength: String(GROUP_MAX), autocomplete: "off", placeholder: "그룹(비우면 " + UNGROUPED_LABEL + ")", "aria-label": "그룹 선택 또는 새 그룹 이름", list: groupListId, "data-coupang-rank-group-input": true });
       shell.groupList = el("datalist", { id: groupListId });
-      shell.createButton = el("button", { className: "mi-button", type: "submit", text: "추적 등록", "data-coupang-rank-create": true });
+      shell.createButton = el("button", { className: "mi-button", type: "submit", text: "순위 추적", "data-coupang-rank-create": true });
       form.appendChild(shell.keyword);
       form.appendChild(shell.productUrl);
       form.appendChild(shell.groupInput);
       form.appendChild(shell.groupList);
-      form.appendChild(el("span", { className: "mi-rank-fixed-range mi-coupang-rank-range", "aria-label": "조회 범위 일반 50위 이내", text: "일반 50위 이내" }));
+      form.appendChild(el("span", { className: "mi-rank-fixed-range", "aria-label": "조회 범위 일반 50위 이내", text: "일반 50위 이내" }));
       form.appendChild(shell.createButton);
-      shell.limit = el("p", { className: "mi-coupang-rank-limit", "data-coupang-rank-limit": true });
-      shell.capacity = el("p", { className: "mi-coupang-rank-capacity", "data-coupang-rank-capacity": true, hidden: true });
-      var head = el("div", { className: "mi-coupang-rank-form-head" }, [
-        el("h3", { text: "추적 등록" }),
-        shell.limit
-      ]);
-      shell.form.appendChild(head);
       shell.form.appendChild(form);
-      shell.form.appendChild(el("p", { className: "mi-coupang-rank-help", text: "비로그인 검색 1쪽 · 광고 제외 일반 순위 · 같은 상품이면 옵션이 달라도 인정" }));
-      shell.form.appendChild(shell.capacity);
     }
 
     function renderForm() {
       var scope = currentScope();
       var visible = Boolean(scope) && canWrite() && !state.setupRequired;
       shell.form.hidden = !visible;
-      if (!visible) return;
+      if (!visible) {
+        shell.limit.hidden = true;
+        shell.capacity.hidden = true;
+        return;
+      }
       var limit = state.payload ? state.payload.limit : null;
       shell.limit.textContent = limitText(limit);
       shell.limit.hidden = !limit;
@@ -1148,13 +1376,14 @@
       var keyword = String(shell.keyword.value || "").replace(/\s+/g, " ").trim();
       var productUrl = String(shell.productUrl.value || "").trim();
       var groupName = normalizeGroupInput(shell.groupInput.value);
+      // 빈 칸 안내는 N30 등록 줄과 같은 말투로 쓴다. 서버 응답 문구(ERROR_TEXT)는 그대로 둔다.
       if (!keyword) {
-        setStatus(ERROR_TEXT.COUPANG_KEYWORD_REQUIRED, "is-warn");
+        setStatus("키워드를 입력해주세요.", "is-warn");
         shell.keyword.focus();
         return;
       }
       if (!productUrl) {
-        setStatus(ERROR_TEXT.COUPANG_PRODUCT_URL_REQUIRED, "is-warn");
+        setStatus("쿠팡 상품 URL을 입력해주세요.", "is-warn");
         shell.productUrl.focus();
         return;
       }
@@ -1212,11 +1441,11 @@
       });
     }
 
-    // ── 3·4. 필터 띠와 선택 도구 ──
+    // ── 3·4. 필터 줄과 선택 항목 정리(N30 과 같은 문구·같은 순서) ──
 
     function buildBoard() {
       shell.filterBar = el("div", { className: "mi-rank-filterbar mi-coupang-rank-filterbar", "data-coupang-rank-filter": true });
-      shell.search = el("input", { className: "mi-input", type: "search", placeholder: "키워드, 상품번호, 상품명, 그룹 검색", "aria-label": "쿠팡 순위 추적 검색", "data-coupang-rank-filter-search": true });
+      shell.search = el("input", { className: "mi-input", type: "search", placeholder: "키워드, 상품명, 상품번호 검색", "aria-label": "쿠팡 순위 추적 검색", "data-coupang-rank-filter-search": true });
       shell.groupFilter = el("select", { className: "mi-input", "aria-label": "쿠팡 순위 추적 그룹 필터", "data-coupang-rank-filter-group": true });
       shell.groupFilterWrap = el("label", { className: "mi-rank-group-filter" }, [el("span", { text: "그룹" }), shell.groupFilter]);
       shell.statusButtons = el("div", { className: "mi-rank-filter-actions", role: "group", "aria-label": "쿠팡 순위 추적 상태 필터" });
@@ -1229,42 +1458,53 @@
       shell.filterBar.appendChild(shell.statusButtons);
       shell.filterBar.appendChild(shell.filterCount);
 
+      shell.filterHelp = el("p", { className: "mi-rank-filter-help", text: "전체 그룹은 모든 추적을 보여주고, 그룹을 선택하면 해당 그룹만 정리해서 볼 수 있습니다. 하루 칸에 마우스를 올리면 그날 기록이 보입니다." });
+
+      // 선택 항목 정리: N30 renderRankBulkBar 와 같은 제목·문구·공통 버튼 순서
+      // [그룹명 입력][그룹 생성/적용][그룹 해제][선택 해제] 뒤에 C30 전용(일시중지·다시 시작·삭제·표시 항목 전체 선택),
+      // 마지막에 [선택 이미지 저장]. '전체 순위 갱신'은 쿠팡 차단을 막으려고 두지 않는다.
+      // 동작 칸은 N30 .mi-rank-bulk-actions(6칸 grid) 대신 C30 칸(flex wrap)을 쓴다.
       shell.bulk = el("div", { className: "mi-rank-bulk-bar mi-coupang-rank-bulk", "data-coupang-rank-bulk": true });
-      shell.bulkCount = el("strong", { text: "선택 0개" });
-      shell.bulkHint = el("span", {});
-      shell.bulkGroupInput = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), placeholder: "옮길 그룹 이름(기존 또는 새 그룹)", "aria-label": "선택 항목을 옮길 그룹 이름", "data-coupang-rank-bulk-group-input": true });
-      shell.bulkGroupWrap = el("span", { className: "mi-coupang-rank-bulk-group" }, [shell.bulkGroupInput, button("그룹 이동", "bulk-group", { "data-coupang-rank-write": true })]);
+      shell.bulkCount = el("span", { "data-coupang-rank-selected-count": true, text: "항목 선택 후 적용" });
+      shell.bulkHint = el("small", { text: "" });
+      shell.bulkGroupInput = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), autocomplete: "off", list: shell.groupListId, placeholder: "그룹명 선택 또는 입력", "aria-label": "선택 항목 이동 그룹", "data-coupang-rank-bulk-group-input": true });
+      shell.bulkGroupWrap = el("span", { className: "mi-coupang-rank-bulk-group" }, [
+        shell.bulkGroupInput,
+        button("그룹 생성/적용", "bulk-group", { className: "mi-button", "data-coupang-rank-write": true }),
+        button("그룹 해제", "bulk-ungroup", { className: "mi-button subtle", "data-coupang-rank-write": true })
+      ]);
       var bulkActions = el("div", { className: "mi-coupang-rank-bulk-actions" }, [
-        button("표시 항목 전체 선택", "select-visible"),
         shell.bulkGroupWrap,
-        button("일시중지", "bulk-pause", { "data-coupang-rank-write": true }),
-        button("다시 시작", "bulk-resume", { "data-coupang-rank-write": true }),
-        button("삭제", "bulk-delete", { className: "mi-link-button mi-coupang-rank-danger", "data-coupang-rank-write": true }),
-        button("선택 해제", "clear-selection"),
-        button("선택 이미지 저장", "bulk-export")
+        button("선택 해제", "clear-selection", { className: "mi-button subtle" }),
+        button("일시중지", "bulk-pause", { className: "mi-button subtle", "data-coupang-rank-write": true }),
+        button("다시 시작", "bulk-resume", { className: "mi-button subtle", "data-coupang-rank-write": true }),
+        button("삭제", "bulk-delete", { className: "mi-button subtle mi-coupang-rank-danger", "data-coupang-rank-write": true }),
+        button("표시 항목 전체 선택", "select-visible", { className: "mi-button subtle" }),
+        button("선택 이미지 저장", "bulk-export", { className: "mi-rank-share-image" })
       ]);
       shell.bulk.appendChild(el("div", { className: "mi-rank-bulk-title" }, [
+        el("strong", { text: "선택 항목 정리" }),
         shell.bulkCount,
-        shell.bulkHint,
-        el("small", { text: "체크한 항목에 아래 동작을 한 번에 적용합니다. 드래그 정렬은 없습니다." })
+        shell.bulkHint
       ]));
       shell.bulk.appendChild(bulkActions);
 
       shell.listNote = el("p", { className: "mi-coupang-rank-list-note", "data-coupang-rank-list-note": true, "aria-live": "polite", hidden: true });
+      shell.strip = el("div", { className: "mi-rank-auto-center mi-coupang-rank-auto", "data-coupang-rank-strip": true, role: "status", hidden: true });
       shell.list = el("div", { className: "mi-coupang-rank-list", "data-coupang-rank-list": true });
-      shell.board.appendChild(el("div", { className: "mi-coupang-rank-board-head" }, [
-        el("h3", { text: "키워드별 30일 순위" }),
-        el("p", { text: "하루 칸은 그날 마지막 측정의 일반 순위입니다. 칸에 마우스를 올리면 그날 기록이 보입니다." })
-      ]));
+      shell.board.appendChild(el("h3", { text: "상품별 일별 순위" }));
       shell.board.appendChild(shell.filterBar);
-      shell.board.appendChild(shell.bulk);
+      shell.board.appendChild(shell.filterHelp);
       shell.board.appendChild(shell.listNote);
+      shell.board.appendChild(shell.strip);
+      shell.board.appendChild(shell.bulk);
       shell.board.appendChild(shell.list);
     }
 
     function renderFilterBar() {
       var hasData = Boolean(state.payload) && !state.setupRequired;
       shell.filterBar.hidden = !hasData;
+      shell.filterHelp.hidden = !hasData;
       if (!hasData) return;
       var names = groupNames();
       if (state.filter.group && names.indexOf(state.filter.group) < 0) state.filter.group = "";
@@ -1279,29 +1519,34 @@
         node.setAttribute("aria-pressed", active ? "true" : "false");
       });
       shell.filterCount.textContent = cleanupMode()
-        ? visibleTrackers().length + "개 표시 · 받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개)"
-        : visibleTrackers().length + "개 표시 · 전체 " + trackers().length + "개";
+        ? visibleTrackers().length + "개 표시 / 받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개)"
+        : visibleTrackers().length + "개 표시 / 전체 " + trackers().length + "개";
     }
 
     function renderBulkBar() {
       var hasData = Boolean(state.payload) && !state.setupRequired && trackers().length > 0;
       shell.bulk.hidden = !hasData;
       if (!hasData) return;
-      shell.bulkCount.textContent = "선택 " + state.selected.size + "개";
-      shell.bulkHint.textContent = "표시 중 " + visibleTrackers().length + "개";
+      var count = state.selected.size;
       var writable = canWrite();
       var cleanup = cleanupMode();
+      shell.bulkCount.textContent = count ? count + "개 선택" : "항목 선택 후 적용";
+      shell.bulkHint.textContent = !writable
+        ? "체크한 항목을 한 장의 이미지로 저장할 수 있습니다."
+        : (cleanup
+          ? "정리용 화면이라 선택 항목의 일시중지·삭제만 됩니다."
+          : "그룹명을 입력하거나 목록에서 선택하면 새 그룹 생성과 이동을 한 번에 처리합니다.");
       Array.prototype.forEach.call(shell.bulk.querySelectorAll("[data-coupang-rank-write]"), function (node) {
         // 정리용 화면에서는 일시중지·삭제만 보인다.
         var action = String(node.getAttribute("data-coupang-rank-action") || "").replace(/^bulk-/, "");
         node.hidden = !writable || (cleanup && !cleanupAllows(action));
-        node.disabled = state.busy || state.selected.size === 0;
+        node.disabled = state.busy || count === 0;
       });
       shell.bulkGroupInput.hidden = !writable || cleanup;
-      // 입력·버튼을 다 숨기면 빈 칸(240px)만 남으므로 묶음째 숨긴다.
+      // 입력·버튼을 다 숨기면 빈 칸만 남으므로 묶음째 숨긴다.
       shell.bulkGroupWrap.hidden = !writable || cleanup;
       Array.prototype.forEach.call(shell.bulk.querySelectorAll('[data-coupang-rank-action="clear-selection"], [data-coupang-rank-action="bulk-export"]'), function (node) {
-        node.disabled = state.busy || state.selected.size === 0;
+        node.disabled = state.busy || count === 0;
       });
     }
 
@@ -1338,14 +1583,12 @@
       }
       var all = trackers();
       if (!all.length) {
-        shell.list.appendChild(stateBox(canWrite()
-          ? "등록된 추적이 없습니다. 위에 키워드와 쿠팡 상품 주소를 넣고 '추적 등록'을 누르세요."
-          : "등록된 쿠팡 순위 추적이 없습니다."));
+        shell.list.appendChild(stateBox("추적 등록 후 상품별 일별 순위판이 생성됩니다."));
         return;
       }
       var visible = visibleTrackers();
       if (!visible.length) {
-        shell.list.appendChild(stateBox("조건에 맞는 항목이 없습니다. 검색어·그룹·상태 필터를 바꿔 보세요."));
+        shell.list.appendChild(stateBox("조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요."));
         return;
       }
       var groups = [];
@@ -1358,141 +1601,188 @@
         }
         byName[name].push(tracker);
       });
+      var groupList = el("div", { className: "mi-rank-group-list" });
       groups.forEach(function (name) {
-        shell.list.appendChild(renderGroup(name, byName[name]));
+        groupList.appendChild(renderGroup(name, byName[name]));
       });
+      shell.list.appendChild(groupList);
     }
 
+    function groupSelectText(items) {
+      var picked = items.filter(function (tracker) { return state.selected.has(tracker.id); }).length;
+      return picked && picked < items.length ? "전체 선택 (" + picked + "/" + items.length + ")" : "전체 선택";
+    }
+
+    // 그룹 머리: N30 renderRankHistory 와 같은 글('전체 선택 (n/m)' · '미분류' · 'N개 추적 · 현재 최고 N위').
+    // 서버 값과 data 속성은 '기본 그룹' 그대로 두고 보이는 이름만 '미분류'로 쓴다.
     function renderGroup(name, items) {
       var collapsed = state.collapsed.has(name);
       var allSelected = items.every(function (tracker) { return state.selected.has(tracker.id); });
       var someSelected = items.some(function (tracker) { return state.selected.has(tracker.id); });
-      var groupCheck = el("input", { type: "checkbox", "data-coupang-rank-group-select": name, "aria-label": name + " 그룹 전체 선택" });
+      var shown = groupDisplayName(name);
+      var groupCheck = el("input", { type: "checkbox", "data-coupang-rank-group-select": name, "aria-label": shown + " 그룹 전체 선택" });
       groupCheck.checked = allSelected;
       groupCheck.indeterminate = !allSelected && someSelected;
+      var best = 0;
+      items.forEach(function (tracker) {
+        var current = tracker.current;
+        if (current && current.result === "found" && isNum(current.rank) && (!best || current.rank < best)) best = current.rank;
+      });
       var section = el("section", { className: "mi-rank-group-section mi-coupang-rank-group" + (collapsed ? " is-collapsed" : ""), "data-coupang-rank-group": name });
       var head = el("div", { className: "mi-rank-group-head-row" }, [
-        el("label", { className: "mi-rank-group-select" }, [groupCheck, el("span", { text: "그룹 선택" })]),
+        el("label", { className: "mi-rank-group-select", title: "이 그룹의 추적 항목을 한 번에 선택하거나 해제합니다" }, [
+          groupCheck,
+          el("span", { "data-coupang-rank-group-select-text": true, text: groupSelectText(items) })
+        ]),
         el("button", { className: "mi-rank-group-head", type: "button", "data-coupang-rank-action": "group-toggle", "data-coupang-rank-group-name": name, "aria-expanded": collapsed ? "false" : "true" }, [
-          el("span", { className: "mi-rank-group-title" }, [el("strong", { text: name }), el("span", { className: "mi-rank-group-meta", text: items.length + "개" })]),
+          el("span", {}, [
+            el("span", { className: "mi-rank-group-title" }, [
+              shown,
+              el("span", { className: "mi-rank-group-meta", text: items.length + "개 추적" + (best ? " · 현재 최고 " + best + "위" : "") })
+            ])
+          ]),
           el("span", { className: "mi-rank-group-toggle", text: collapsed ? "펼치기" : "접기" })
         ])
       ]);
-      var body = el("div", { className: "mi-rank-group-items" });
+      var body = el("div", { className: "mi-rank-group-items mi-rank-daily-list" });
       if (!collapsed) items.forEach(function (tracker) { body.appendChild(renderCard(tracker)); });
       section.appendChild(head);
       section.appendChild(body);
       return section;
     }
 
-    function metric(label, valueNode, extraClass) {
-      return el("div", { className: "mi-coupang-rank-metric" + (extraClass ? " " + extraClass : "") }, [
-        el("span", { className: "mi-coupang-rank-metric-label", text: label }),
-        valueNode
-      ]);
+    function pill(text, className, extra) {
+      return el("span", Object.assign({ className: className || null, text: text }, extra || {}));
     }
 
+    // 상품명 자리. 상품명은 첫 성공 측정에서 상품이 1쪽에 있을 때만 채워진다(migration: coalesce).
+    // 아직 없으면 같은 글(상품번호·키워드)을 두 번 쓰지 않고 '상품 페이지 열기'를 둔다.
+    function productTitleNode(tracker) {
+      var title = String(tracker.productTitle || "").trim();
+      var url = String(tracker.productUrl || "").trim();
+      if (!/^https:\/\//i.test(url)) url = "";
+      if (!url) return el("span", { className: "mi-rank-product-title", title: title || TITLE_PENDING_HINT, text: title || "상품명 확인 전" });
+      return el("a", {
+        className: "mi-rank-product-title",
+        href: url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        title: title || TITLE_PENDING_HINT,
+        text: title || "상품 페이지 열기"
+      });
+    }
+
+    function keywordNode(tracker) {
+      var label = String(tracker.keyword || "").trim() || "-";
+      var url = keywordSearchUrl(tracker.keyword);
+      if (!url) return el("strong", { className: "mi-rank-keyword-name", title: label, text: label });
+      return el("a", {
+        className: "mi-rank-keyword-name",
+        href: url,
+        target: "_blank",
+        rel: "noopener noreferrer",
+        title: label + " 쿠팡 검색으로 열기(로그인 상태면 순서가 다를 수 있음)",
+        text: label
+      });
+    }
+
+    // 카드: N30 renderRankTrackerCard 와 같은 뼈대·클래스(admin.html 인라인 CSS 가 그대로 적용된다).
+    // 1행 [선택][키워드][상품정보 · 번호][상품명] | [현재][최고][일시중지/다시 시작][삭제]
+    // 2행 운영줄 알약: 상태 · 판정 · (다른 옵션) · 전회 대비 · 7일 평균 · 광고 · 그룹 · [그룹 변경] · [측정 기록] · 최근 · 다음
+    // 3행 날짜 줄(N30 하루 칸). 끌기 손잡이·검색량·갱신 버튼은 없다(쿠팡은 정해진 간격으로만 잰다).
     function renderCard(tracker) {
-      var payload = state.payload || {};
-      var todayKst = payload.todayKst || "";
       var summary = tracker.summary || {};
       var current = tracker.current || null;
-      var badge = currentBadge(tracker);
+      var paused = tracker.status === "paused";
+      var writable = canWrite();
+      var cleanup = cleanupMode();
+      var collectorState = collectorStateName();
       var check = el("input", { type: "checkbox", "data-coupang-rank-select": tracker.id, "aria-label": String(tracker.keyword || "") + " 선택" });
       check.checked = state.selected.has(tracker.id);
-      var productLink = tracker.productUrl
-        ? el("a", { href: tracker.productUrl, target: "_blank", rel: "noopener noreferrer", text: "상품번호 " + (tracker.productId || "") })
-        : el("span", { text: "상품번호 " + (tracker.productId || "") });
-      var title = String(tracker.productTitle || "").trim() || "상품번호 " + (tracker.productId || "");
-      var paused = tracker.status === "paused";
-      var stateLabel = paused ? "일시중지" + (tracker.pausedDay ? " · " + String(tracker.pausedDay).slice(5) + "부터" : "") : "추적 중";
-      var head = el("div", { className: "mi-coupang-rank-card-head" }, [
-        el("label", { className: "mi-coupang-rank-select" }, [check]),
-        el("div", { className: "mi-coupang-rank-title" }, [
-          el("strong", { className: "mi-coupang-rank-keyword", text: tracker.keyword || "" }),
-          el("div", { className: "mi-coupang-rank-product" }, [
-            productLink,
-            el("span", { className: "mi-coupang-rank-product-title", title: title, text: title }),
-            current && current.sameOption === false ? el("span", { className: "mi-coupang-rank-option-note", text: "다른 옵션으로 노출" }) : null
+
+      var actions = [
+        pill("현재 " + currentText(tracker), "mi-rank-pill"),
+        pill("최고 " + (isNum(summary.best30) ? summary.best30 + "위" : "-"), "mi-rank-pill", { title: "최근 30일 하루 칸 가운데 가장 높은 순위" })
+      ];
+      if (writable) {
+        // 정리용 화면에서는 다시 시작을 그리지 않는다(일시중지·삭제만). N30 '갱신' 자리에 일시중지를 둔다.
+        if (paused) {
+          if (!cleanup) actions.push(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        } else {
+          actions.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        }
+        actions.push(button("삭제", "delete", { className: "mi-link-button is-danger", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+      }
+
+      var head = el("div", { className: "mi-rank-track-row-head" }, [
+        el("div", { className: "mi-rank-track-main" }, [
+          el("div", { className: "mi-rank-track-primary" }, [
+            el("div", { className: "mi-rank-track-controls" }, [
+              el("label", { className: "mi-rank-select" }, [check, el("span", { text: "선택" })])
+            ]),
+            keywordNode(tracker),
+            el("span", { className: "mi-rank-product-info", text: "상품정보 · " + (tracker.productId || "-") }),
+            productTitleNode(tracker)
           ])
         ]),
-        el("span", { className: "mi-coupang-rank-state-badge" + (paused ? " is-paused" : " is-active"), text: stateLabel })
+        el("div", { className: "mi-rank-row-actions" }, actions)
       ]);
 
-      var avg = isNum(summary.avg7) ? summary.avg7 + "위(50위 안 " + (isNum(summary.foundDays7) ? summary.foundDays7 : 0) + "일)" : "-";
-      var nextText = nextCheckText(tracker, todayKst);
-      var metrics = el("div", { className: "mi-coupang-rank-metrics" }, [
-        metric("현재", el("strong", { className: "mi-coupang-rank-badge " + badge.tone, text: badge.text }), "is-current"),
-        metric("30일 최고", el("strong", { text: isNum(summary.best30) ? summary.best30 + "위" : "-" })),
-        metric("최근 7일 평균", el("strong", { text: avg })),
-        metric("전 측정 대비", el("strong", { className: "mi-coupang-rank-trend " + trendTone(summary), title: "같은 시간대 회차끼리 비교", text: trendText(summary) })),
-        metric("광고 순번", el("strong", { text: current && isNum(current.adOrder) ? "광고 " + current.adOrder + "번째" : "-" })),
-        metric("최근 확인", el("strong", { text: current && current.checkedAt ? kstStamp(current.checkedAt, todayKst) : "-" })),
-        nextText ? metric("다음 예정", el("strong", { text: nextText })) : null
-      ]);
+      var days30 = state.payload && state.payload.days30;
+      var nextText = nextCheckText(tracker, collectorState, Date.now(), readonlyView() ? "readonly" : "admin");
+      var statusText = paused
+        ? "상태 중지" + (tracker.pausedDay ? " · " + String(tracker.pausedDay).slice(5) + "부터" : "")
+        : "상태 운영중";
+      // N30 rankTrackerStatusClass 처럼 '다음'이 '대기'일 때만 파란 대기색(수집기가 멈췄거나 응답이 없으면 '대기'가 아니다).
+      var ops = [pill(statusText, nextText === "대기" ? "is-wait" : null, { "data-coupang-rank-state-pill": true })];
+      verdictPills(tracker, days30).forEach(function (verdict) {
+        ops.push(pill(verdict.text, "mi-rank-insight-pill " + verdict.tone));
+      });
+      if (current && current.sameOption === false) ops.push(pill("다른 옵션으로 노출", "mi-rank-insight-pill is-warn", { title: "같은 상품의 다른 옵션이 검색 결과에 나왔습니다(순위는 인정)" }));
+      ops.push(pill(changeText(summary), null, { title: "같은 시간대 회차끼리 비교" }));
+      ops.push(pill("7일 평균 " + (isNum(summary.avg7) ? summary.avg7 + "위(50위 안 " + (isNum(summary.foundDays7) ? summary.foundDays7 : 0) + "일)" : "-"), null, { title: "최근 7일 가운데 50위 안에 든 날만 평균" }));
+      ops.push(pill("광고 " + (current && isNum(current.adOrder) ? current.adOrder + "번째" : "-"), null, { title: "광고 순번은 참고용입니다(순위는 광고를 뺀 일반 상품 순서)" }));
+      ops.push(pill("그룹 " + groupDisplayName(tracker.groupName)));
+      if (writable && !cleanup) ops.push(button("그룹 변경", "group-edit", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+      var runs = state.runs[tracker.id];
+      ops.push(button(runs && runs.open ? "측정 기록 닫기" : "측정 기록", "runs", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, "aria-expanded": runs && runs.open ? "true" : "false" }));
+      ops.push(pill("최근 " + (current && current.checkedAt ? shortAt(current.checkedAt) : "-")));
+      ops.push(pill("다음 " + nextText, null, { "data-coupang-rank-next": true }));
 
-      var reasons = Array.isArray(summary.attentionReasons) ? summary.attentionReasons : [];
-      var attention = summary.attention === true && reasons.length
-        ? el("div", { className: "mi-coupang-rank-attention" }, [el("strong", { text: "확인 필요" })].concat(reasons.map(function (reason) {
-          return el("span", { className: "mi-rank-pill", text: ATTENTION_TEXT[reason] || String(reason) });
-        })))
-        : null;
-
-      var article = el("article", { className: "mi-card mi-card-pad mi-rank-card mi-coupang-rank-card" + (paused ? " is-paused" : ""), "data-coupang-rank-card": true, "data-coupang-rank-id": tracker.id });
-      article.appendChild(head);
-      article.appendChild(metrics);
-      if (attention) article.appendChild(attention);
-      article.appendChild(renderDays(tracker, payload.days30, todayKst));
-      article.appendChild(renderCardActions(tracker));
-      if (state.editingGroupId === tracker.id) article.appendChild(renderGroupEditor(tracker));
-      if (state.runs[tracker.id] && state.runs[tracker.id].open) article.appendChild(renderRuns(tracker));
-      return article;
+      var card = el("section", { className: "mi-rank-tracker-card mi-coupang-rank-card" + (paused ? " is-paused" : ""), "data-coupang-rank-card": true, "data-coupang-rank-id": tracker.id });
+      card.appendChild(head);
+      card.appendChild(el("div", { className: "mi-rank-ops-row" }, ops));
+      card.appendChild(renderDays(tracker, days30));
+      if (state.editingGroupId === tracker.id) card.appendChild(renderGroupEditor(tracker));
+      if (runs && runs.open) card.appendChild(renderRuns(tracker));
+      return card;
     }
 
-    function renderDays(tracker, days30, todayKst) {
-      var byDay = {};
-      (Array.isArray(tracker.days) ? tracker.days : []).forEach(function (cell) {
-        if (cell && cell.d && !byDay[cell.d]) byDay[cell.d] = cell;
-      });
-      var dates = Array.isArray(days30) && days30.length ? days30 : Object.keys(byDay).sort().reverse();
-      var grid = el("div", { className: "mi-rank-day-grid mi-coupang-rank-days", role: "list", "aria-label": "30일 일별 순위" });
-      dates.forEach(function (d) {
-        var cell = byDay[d] || null;
-        var tooltip = cellTooltip(cell, d, tracker.createdDay);
-        var classes = ["mi-rank-day-card", "mi-coupang-rank-day", cellTone(cell, d, tracker.createdDay)];
+    // 날짜 줄: N30 renderTrackerDailyBoard 와 같은 칸(MM-DD(요) + 작은 글 '순위' + 굵은 값). 등록한 날부터 오늘까지
+    // 이어서 보여 준다(서버 days30 덕분에 '측정 없음(-)'과 '50위 밖'을 나눠 쓸 수 있다). 기록이 하나도 없으면 N30 과 같은 안내 상자.
+    function renderDays(tracker, days30) {
+      var empty = emptyBoardText(tracker, days30);
+      if (empty) return el("div", { className: "mi-rank-state mi-coupang-rank-board-empty", text: empty });
+      var range = boardDays(tracker, days30);
+      var grid = el("div", { className: "mi-rank-day-grid", role: "list", "aria-label": "일별 순위" });
+      range.dates.forEach(function (d) {
+        var cell = range.byDay[d] || null;
         var weekend = dayClass(d);
-        if (weekend) classes.push(weekend);
-        if (d === todayKst) classes.push("is-today");
-        var label = el("strong", { text: dayLabel(d) }, d === todayKst ? [el("span", { className: "mi-coupang-rank-today", text: "오늘" })] : null);
-        grid.appendChild(el("div", { className: classes.join(" "), role: "listitem", title: tooltip || null }, [
-          label,
-          el("span", { className: "mi-coupang-rank-cell", text: cellText(cell, d, tracker.createdDay) })
+        var warn = cell && (cell.s === "failed" || cell.s === "unsupported");
+        var slotClass = cellIsEmpty(cell) ? "is-empty" : (warn ? "mi-coupang-rank-slot-warn" : null);
+        grid.appendChild(el("div", { className: "mi-rank-day-card" + (weekend ? " " + weekend : ""), role: "listitem", title: cellTooltip(cell, d, tracker.createdDay) || null }, [
+          el("strong", { text: dayLabel(d) }),
+          el("div", { className: "mi-rank-day-slots" }, [
+            el("span", { className: slotClass }, [el("small", { text: cellLabel(cell) }), el("b", { text: cellText(cell, d, tracker.createdDay) })])
+          ])
         ]));
       });
       return grid;
     }
 
-    function renderCardActions(tracker) {
-      var actions = el("div", { className: "mi-coupang-rank-card-actions" });
-      var writable = canWrite();
-      var cleanup = cleanupMode();
-      if (writable) {
-        // 정리용 화면에서는 다시 시작·그룹 변경을 그리지 않는다(일시중지·삭제만).
-        if (tracker.status === "paused") {
-          if (!cleanup) actions.appendChild(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
-        } else {
-          actions.appendChild(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
-        }
-        if (!cleanup) actions.appendChild(button("그룹 변경", "group-edit", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
-      }
-      var runs = state.runs[tracker.id];
-      actions.appendChild(button(runs && runs.open ? "측정 기록 닫기" : "측정 기록", "runs", { "data-coupang-rank-id": tracker.id, "aria-expanded": runs && runs.open ? "true" : "false" }));
-      if (writable) actions.appendChild(button("삭제", "delete", { className: "mi-link-button mi-coupang-rank-danger", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
-      return actions;
-    }
-
     function renderGroupEditor(tracker) {
-      var input = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), list: shell.groupListId, value: tracker.groupName || DEFAULT_GROUP, "aria-label": "새 그룹 이름", "data-coupang-rank-group-edit-input": tracker.id });
+      var current = isDefaultGroup(tracker.groupName) ? "" : String(tracker.groupName);
+      var input = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), autocomplete: "off", list: shell.groupListId, value: current, placeholder: "비우면 " + UNGROUPED_LABEL, "aria-label": "새 그룹 이름", "data-coupang-rank-group-edit-input": tracker.id });
       return el("div", { className: "mi-coupang-rank-group-editor" }, [
         el("span", { text: "그룹 변경" }),
         input,
@@ -1580,7 +1870,9 @@
       return trackers().filter(function (tracker) { return state.selected.has(tracker.id); }).map(function (tracker) { return tracker.id; });
     }
 
-    async function runBulk(action, ids, extra) {
+    // options.okText(total): 성공 문구(없으면 동작별 기본 문구). options.after(total): 모두 성공했을 때 목록을 다시 받기 전에 부른다.
+    async function runBulk(action, ids, extra, options) {
+      var opts = options || {};
       if (!canWrite() || state.busy || !ids.length) return;
       if (cleanupMode() && !cleanupAllows(action)) {
         setStatus("추적이 " + LIST_LIMIT + "개를 넘어 정리하는 동안에는 일시중지·삭제만 할 수 있습니다.", "is-warn");
@@ -1620,7 +1912,8 @@
         var stopText = stopped.code ? errorText({ code: stopped.code, limit: stopped.limit, count: stopped.count }) : "한도에 걸렸습니다.";
         setStatus(total + "개를 다시 시작했고, '" + name + "'에서 멈췄습니다. " + stopText, "is-warn");
       } else {
-        setStatus(total + "개 " + labels[action] + ".", "is-ok");
+        if (typeof opts.after === "function") opts.after(total);
+        setStatus(typeof opts.okText === "function" ? opts.okText(total) : total + "개 " + labels[action] + ".", total ? "is-ok" : "is-warn");
       }
       await loadList({ afterWrite: true });
     }
@@ -1633,32 +1926,69 @@
       if (input) input.focus();
     }
 
+    // 비우거나 '미분류'로 적으면 기본 그룹(서버가 빈 이름을 '기본 그룹'으로 저장한다: inputs.mjs normalizeCoupangGroupName).
     function saveGroupEdit(id) {
       var input = shell.list.querySelector('[data-coupang-rank-group-edit-input]');
       var name = normalizeGroupInput(input ? input.value : "");
-      if (!name) name = DEFAULT_GROUP;
       if (Array.from(name).length > GROUP_MAX) {
         setStatus(ERROR_TEXT.COUPANG_GROUP_INVALID, "is-warn");
         return;
       }
       state.editingGroupId = "";
-      runBulk("group", [id], { groupName: name });
+      runBulk("group", [id], { groupName: name }, {
+        okText: function (total) {
+          if (!total) return "그룹을 바꾸지 못했습니다. 목록을 다시 받아 확인해주세요.";
+          return name ? "그룹을 " + name + "(으)로 바꿨습니다." : "그룹을 해제했습니다(" + UNGROUPED_LABEL + ").";
+        }
+      });
     }
 
+    // N30 '그룹 생성/적용'과 같은 흐름: 적용 뒤 선택·그룹 필터·입력을 비우고 전체 그룹으로 돌아온다.
     function bulkGroup() {
-      var name = normalizeGroupInput(shell.bulkGroupInput.value);
-      if (!name) {
-        setStatus("옮길 그룹 이름을 입력하세요.", "is-warn");
+      var raw = String(shell.bulkGroupInput.value || "").trim();
+      var name = normalizeGroupInput(raw);
+      var ids = selectedIdsInOrder();
+      if (!raw) {
+        setStatus("만들거나 이동할 그룹명을 입력해주세요.", "is-warn");
         shell.bulkGroupInput.focus();
+        return;
+      }
+      if (!ids.length) {
+        setStatus("그룹에 넣을 추적 항목을 먼저 체크해주세요.", "is-warn");
+        return;
+      }
+      if (!name) {
+        // '미분류'라고 적었다: 그룹 해제와 같다.
+        bulkUngroup();
         return;
       }
       if (Array.from(name).length > GROUP_MAX) {
         setStatus(ERROR_TEXT.COUPANG_GROUP_INVALID, "is-warn");
         return;
       }
+      runBulk("group", ids, { groupName: name }, {
+        after: resetAfterGroupMove,
+        okText: function (total) { return total + "개 추적 항목을 " + name + " 그룹으로 넣고 전체 그룹으로 돌아왔습니다."; }
+      });
+    }
+
+    // N30 '그룹 해제'. 새 API 없이 기존 group 동작에 빈 그룹 이름을 보낸다(서버가 '기본 그룹'으로 저장).
+    function bulkUngroup() {
       var ids = selectedIdsInOrder();
+      if (!ids.length) {
+        setStatus("그룹 해제할 추적 항목을 먼저 체크해주세요.", "is-warn");
+        return;
+      }
+      runBulk("group", ids, { groupName: "" }, {
+        after: resetAfterGroupMove,
+        okText: function (total) { return total + "개 추적 항목을 그룹에서 해제했습니다."; }
+      });
+    }
+
+    function resetAfterGroupMove() {
+      state.selected.clear();
+      state.filter.group = "";
       shell.bulkGroupInput.value = "";
-      runBulk("group", ids, { groupName: name });
     }
 
     function deleteIds(ids) {
@@ -1668,6 +1998,8 @@
     }
 
     // ── 선택 이미지 저장(§8.5) ──
+    // 시트는 화면 카드를 복제하지 않고 따로 만든다(공용 mi-rank-* 클래스 + var(--mi-*) 인라인 style 만).
+    // 문구·날짜 범위는 화면 카드와 같다: '현재'·'최고'·'전회 대비', 등록한 날부터 오늘까지, '오늘' 표시 없음.
 
     function inlineCell(cell, d, createdDay) {
       var tone = cellTone(cell, d, createdDay);
@@ -1675,10 +2007,13 @@
       return el("span", { style: "display:block;font-size:15px;font-weight:900;color:" + color + ";", text: cellText(cell, d, createdDay) });
     }
 
+    function exportPill(text) {
+      return el("span", { style: "border:1px solid var(--mi-line);border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800;color:var(--mi-navy);background:var(--mi-grey-50);white-space:nowrap;", text: text });
+    }
+
     function renderCoupangExportSheet(selectedTrackers) {
       var stage = deps.exportTools.ensureStage(host);
       var payload = state.payload || {};
-      var todayKst = payload.todayKst || "";
       var nowLabel = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
       var sheet = document.createElement("section");
       sheet.className = "mi-rank-export-sheet";
@@ -1693,31 +2028,37 @@
       var list = el("div", { className: "mi-rank-export-list" });
       selectedTrackers.forEach(function (tracker) {
         var summary = tracker.summary || {};
-        var badge = currentBadge(tracker);
-        var byDay = {};
-        (tracker.days || []).forEach(function (cell) { if (cell && cell.d && !byDay[cell.d]) byDay[cell.d] = cell; });
-        var grid = el("div", { className: "mi-rank-day-grid" });
-        (payload.days30 || []).forEach(function (d) {
-          var weekend = dayClass(d);
-          var cell = byDay[d] || null;
-          grid.appendChild(el("div", { className: "mi-rank-day-card" + (weekend ? " " + weekend : ""), style: "background:var(--mi-panel);" }, [
-            el("strong", { style: "font-size:11px;", text: dayLabel(d) + (d === todayKst ? " 오늘" : "") }),
-            inlineCell(cell, d, tracker.createdDay)
-          ]));
-        });
-        var title = String(tracker.productTitle || "").trim() || "상품번호 " + (tracker.productId || "");
+        var board;
+        var emptyText = emptyBoardText(tracker, payload.days30);
+        if (emptyText) {
+          board = el("div", { style: "border:1px dashed var(--mi-line);border-radius:8px;padding:18px;color:var(--mi-muted);background:var(--mi-grey-50);font-size:12px;font-weight:800;text-align:center;", text: emptyText });
+        } else {
+          var range = boardDays(tracker, payload.days30);
+          board = el("div", { className: "mi-rank-day-grid" });
+          range.dates.forEach(function (d) {
+            var weekend = dayClass(d);
+            var cell = range.byDay[d] || null;
+            board.appendChild(el("div", { className: "mi-rank-day-card" + (weekend ? " " + weekend : ""), style: "background:var(--mi-panel);" }, [
+              el("strong", { style: "font-size:11px;", text: dayLabel(d) }),
+              el("small", { style: "display:block;font-size:10px;font-weight:700;color:var(--mi-muted);", text: cellLabel(cell) }),
+              inlineCell(cell, d, tracker.createdDay)
+            ]));
+          });
+        }
+        var title = String(tracker.productTitle || "").trim();
         var card = el("article", { className: "mi-rank-tracker-card", style: "padding:14px 16px;background:var(--mi-panel);border:1px solid var(--mi-line);" }, [
           el("div", { style: "display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:10px;" }, [
             el("div", { style: "min-width:0;" }, [
               el("strong", { style: "display:block;font-size:17px;font-weight:900;color:var(--mi-navy);", text: tracker.keyword || "" }),
-              el("span", { style: "display:block;margin-top:4px;font-size:12px;font-weight:700;color:var(--mi-muted);", text: "상품번호 " + (tracker.productId || "") + " · " + title })
+              el("span", { style: "display:block;margin-top:4px;font-size:12px;font-weight:700;color:var(--mi-muted);", text: "상품정보 · " + (tracker.productId || "-") + (title ? " · " + title : "") })
             ]),
-            el("div", { style: "display:flex;gap:8px;flex:0 0 auto;align-items:center;" }, [
-              el("span", { style: "border:1px solid var(--mi-line);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:900;color:var(--mi-navy);background:var(--mi-gold-soft);", text: "현재 " + badge.text }),
-              el("span", { style: "font-size:12px;font-weight:800;color:var(--mi-muted);", text: "30일 최고 " + (isNum(summary.best30) ? summary.best30 + "위" : "-") + " · 전 측정 대비 " + trendText(summary) })
+            el("div", { style: "display:flex;gap:6px;flex:0 0 auto;align-items:center;" }, [
+              el("span", { style: "border:1px solid var(--mi-line);border-radius:999px;padding:6px 12px;font-size:14px;font-weight:900;color:var(--mi-navy);background:var(--mi-gold-soft);white-space:nowrap;", text: "현재 " + currentText(tracker) }),
+              exportPill("최고 " + (isNum(summary.best30) ? summary.best30 + "위" : "-")),
+              exportPill(changeText(summary))
             ])
           ]),
-          grid
+          board
         ]);
         list.appendChild(card);
       });
@@ -1748,7 +2089,8 @@
         var exported = await tools.toBlob(rendered, svg, width, height);
         var link = tools.showReady(host, exported.blob, exportFileName(selectedTrackers, exported.ext), selectedTrackers.length);
         if (link) link.click();
-        setStatus(selectedTrackers.length + "개 순위 이미지(" + String(exported.ext).toUpperCase() + ")가 준비되었습니다.", "is-ok");
+        // N30 과 같은 안내 문구(admin.html 이미지 저장: 'N개 순위 항목의 공유 이미지(PNG)가 준비되었습니다.').
+        setStatus(selectedTrackers.length + "개 순위 항목의 공유 이미지(" + String(exported.ext).toUpperCase() + ")가 준비되었습니다.", "is-ok");
       } catch (error) {
         var fallback = tools.showReady(host, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), exportFileName(selectedTrackers, "svg"), selectedTrackers.length);
         if (fallback) fallback.click();
@@ -1784,12 +2126,12 @@
       var items = [
         "등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다.",
         "첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다.",
-        "읽는 법: 숫자 = 일반 순위, 밖 = 50위 밖(51위 이후 포함), 없음 = 일반 상품이 50개보다 적고 그 안에 없음, 결과없음 = 검색 결과 없음, 실패 = 그날 측정이 모두 실패, 이동 = 쿠팡이 검색 결과가 아닌 쪽으로 보냄, - = 측정 없음. 하루 칸은 그날 마지막 회차의 성공값입니다.",
+        "읽는 법: N위 = 일반 순위, 50위 밖 = 1쪽 일반 상품 1~50위 안에 없음(51위 이후 포함), 없음 = 일반 상품이 50개보다 적고 그 안에 없음, 결과 없음 = 검색 결과 없음, 실패 = 그날 측정이 모두 실패, 이동 = 쿠팡이 검색 결과가 아닌 쪽으로 보냄, - = 측정 없음. 하루 칸은 그날 마지막 회차의 성공값이고, 등록한 날부터 칸이 생깁니다.",
         "멈추기·다시 시작은 기록을 보존하고, 삭제는 30일 기록도 함께 지웁니다.",
         "수집 시간: 수집기 PC가 켜져 있을 때, 하루 " + (isNum(n) ? n : "n") + "회, " + hours + "에 잽니다.",
         "즉시 갱신 버튼은 없습니다. 쿠팡 차단을 막으려고 정해진 간격으로만 잽니다.",
         "광고 순번은 참고용입니다. 순위는 광고를 뺀 일반 상품 순서입니다.",
-        "상승·하락은 같은 시간대 회차끼리 비교합니다(하루 횟수를 바꾼 날은 비교할 짝이 없어 '-'로 보일 수 있습니다)."
+        "상승·하락(전회 대비)은 같은 시간대 회차끼리 비교합니다(하루 횟수를 바꾼 날은 비교할 짝이 없어 '전회 데이터 대기'로 보일 수 있습니다)."
       ];
       shell.guide.appendChild(el("ol", { className: "mi-coupang-rank-guide-list" }, items.map(function (text) { return el("li", { text: text }); })));
       shell.guide.open = wasOpen;
@@ -2490,6 +2832,9 @@
         case "bulk-group":
           bulkGroup();
           return;
+        case "bulk-ungroup":
+          bulkUngroup();
+          return;
         case "bulk-export":
           exportSelection();
           return;
@@ -2571,6 +2916,8 @@
         var some = items.some(function (tracker) { return state.selected.has(tracker.id); });
         check.checked = all;
         check.indeterminate = !all && some;
+        var label = check.parentNode && check.parentNode.querySelector ? check.parentNode.querySelector("[data-coupang-rank-group-select-text]") : null;
+        if (label) label.textContent = groupSelectText(items);
       });
     }
 
@@ -2619,6 +2966,47 @@
       observer.observe(observedRoot, { attributes: true, attributeFilter: ["class"] });
     }
 
+    // ── 카드 '다음' 남은 시간 다시 계산(N30 은 60초 건강 신호마다 순위판을 다시 그린다) ──
+    // 목록을 다시 받지 않고, 그려 둔 카드의 '다음' 글자와 상태 알약의 대기색만 바꾼다(입력 중인 칸·열린 측정 기록을 건드리지 않게).
+    // 탭이 숨었거나 화면이 안 보이면 건너뛴다.
+
+    function refreshNextPills() {
+      if (!shell || !state.payload) return;
+      var collectorState = collectorStateName();
+      var mode = readonlyView() ? "readonly" : "admin";
+      var now = Date.now();
+      Array.prototype.forEach.call(shell.list.querySelectorAll("[data-coupang-rank-card]"), function (card) {
+        var tracker = findTracker(card.getAttribute("data-coupang-rank-id"));
+        if (!tracker) return;
+        var text = nextCheckText(tracker, collectorState, now, mode);
+        var nextNode = card.querySelector("[data-coupang-rank-next]");
+        if (nextNode && nextNode.textContent !== "다음 " + text) nextNode.textContent = "다음 " + text;
+        var stateNode = card.querySelector("[data-coupang-rank-state-pill]");
+        if (stateNode) stateNode.classList.toggle("is-wait", text === "대기");
+      });
+    }
+
+    function stopNextTicker() {
+      if (nextTimer) {
+        clearInterval(nextTimer);
+        nextTimer = 0;
+      }
+    }
+
+    function startNextTicker() {
+      if (nextTimer || state.destroyed) return;
+      nextTimer = setInterval(function () {
+        if (state.destroyed || !shell) {
+          stopNextTicker();
+          return;
+        }
+        if ((typeof document !== "undefined" && document.hidden) || !isHostVisible()) return;
+        refreshNextPills();
+      }, NEXT_TICK_MS);
+      // 노드(시험)에서는 이 타이머 때문에 프로세스가 끝나지 않는 일이 없게 한다. 브라우저 숫자 id 에는 없다.
+      if (nextTimer && typeof nextTimer.unref === "function") nextTimer.unref();
+    }
+
     // ── 공개 동작 ──
 
     function show() {
@@ -2659,7 +3047,8 @@
       renderAll();
       // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 운영팀 세션 동기화도 scope-changed 와
       // auth-ready 로 두 번 부른다. 같은 범위를 받는 중이거나 2초 안에 받았으면 다시 보내지 않는다.
-      loadList({ reuse: true });
+      loadList({ reuse: true, announce: true });
+      startNextTicker();
       if (shell.owner.open && isOwnerSession() && !ownerReusable(scope)) loadOwner();
     }
 
@@ -2672,6 +3061,7 @@
       state.listSeq = ++seqCounter;
       state.owner.seq = ++seqCounter;
       stopOwnerPoll();
+      stopNextTicker();
       clearTimeout(searchTimer);
       var destroyed = state.destroyed;
       state = freshState();
@@ -2704,8 +3094,17 @@
       cellText: cellText,
       cellTooltip: cellTooltip,
       currentBadge: currentBadge,
-      trendText: trendText,
+      currentText: currentText,
+      changeText: changeText,
+      verdictPills: verdictPills,
+      emptyBoardText: emptyBoardText,
       nextCheckText: nextCheckText,
+      shortAt: shortAt,
+      remainText: remainText,
+      cellLabel: cellLabel,
+      boardDays: boardDays,
+      autoSummary: autoSummary,
+      normalizeGroupInput: normalizeGroupInput,
       filterMatches: filterMatches,
       capacityText: capacityText,
       cacheKey: cacheKey,

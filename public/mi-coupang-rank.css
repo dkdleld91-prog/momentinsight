@@ -1,7 +1,9 @@
 /*!
- * 모먼트 인사이트 · C 30일 순위(쿠팡) 화면 CSS — 명세 v3 §8.6
+ * 모먼트 인사이트 · C 30일 순위(쿠팡) 화면 CSS — 명세 v3 §8.6, N30 틀 맞춤(2026-10-16)
  * 범위는 #mi-admin .mi-coupang-rank-… 와 #mi-clean .mi-coupang-rank-…(2b용) 두 곳뿐이다.
- * 기존 클래스(mi-card · mi-rank-filterbar · mi-rank-day-grid 등)는 그대로 쓰고, 조정은 .mi-coupang-rank-* 아래에서만 한다.
+ * 카드·요약칸·선택 항목 정리·그룹·날짜 칸은 N30 클래스(mi-rank-tracker-card · mi-rank-auto-center ·
+ * mi-rank-bulk-bar · mi-rank-group-section · mi-rank-day-card 등)를 그대로 써서 admin.html 인라인 CSS 가
+ * 똑같이 적용되게 한다. 여기서는 쿠팡에만 있는 칸·버튼과 칸 수 차이만 조정한다.
  * 색은 var(--mi-*) 토큰만 쓴다(16진 색 0). 이 파일은 인라인 <style> 보다 먼저 읽히므로, 공용 클래스를 덮을 때는
  * .mi-coupang-rank-* 를 하나 더 붙여 특이도를 올린다.
  */
@@ -18,154 +20,46 @@
   display: none !important;
 }
 
-/* ── 1. 수집 상태 띠 ── */
-#mi-admin .mi-coupang-rank-strip,
-#mi-clean .mi-coupang-rank-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
+/* ── 큰 카드(N30 상품 카드와 같은 article.mi-card.mi-rank-card) ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-main,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-main {
   min-width: 0;
-  border: 1px solid var(--mi-line);
-  border-radius: var(--mi-radius);
-  padding: 12px 14px;
-  color: var(--mi-navy);
-  background: var(--mi-panel);
-  box-shadow: var(--mi-shadow);
+  margin: 0;
 }
 
-#mi-admin .mi-coupang-rank-strip strong,
-#mi-clean .mi-coupang-rank-strip strong {
-  font-size: var(--mi-font-body-lg);
-  font-weight: var(--mi-weight-black);
+#mi-admin .mi-coupang-rank-head h2,
+#mi-clean .mi-coupang-rank-head h2 {
   overflow-wrap: anywhere;
 }
 
-#mi-admin .mi-coupang-rank-strip small,
-#mi-clean .mi-coupang-rank-strip small {
-  color: var(--mi-muted);
-  font-size: var(--mi-font-label);
-  font-weight: var(--mi-weight-bold);
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-rule,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-rule {
+  margin-top: 6px;
 }
 
-#mi-admin .mi-coupang-rank-strip-dot,
-#mi-clean .mi-coupang-rank-strip-dot {
-  flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--mi-radius-pill);
-  background: var(--mi-muted);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-ok,
-#mi-clean .mi-coupang-rank-strip.is-ok {
-  border-color: var(--mi-green);
-  background: var(--mi-green-bg);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-ok .mi-coupang-rank-strip-dot,
-#mi-clean .mi-coupang-rank-strip.is-ok .mi-coupang-rank-strip-dot {
-  background: var(--mi-green);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-ok strong,
-#mi-clean .mi-coupang-rank-strip.is-ok strong {
-  color: var(--mi-green);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-info .mi-coupang-rank-strip-dot,
-#mi-clean .mi-coupang-rank-strip.is-info .mi-coupang-rank-strip-dot {
-  background: var(--mi-navy-2);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-warn,
-#mi-clean .mi-coupang-rank-strip.is-warn {
-  border-color: var(--mi-warn);
-  background: var(--mi-warn-bg);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-warn .mi-coupang-rank-strip-dot,
-#mi-clean .mi-coupang-rank-strip.is-warn .mi-coupang-rank-strip-dot {
-  background: var(--mi-warn);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-warn strong,
-#mi-clean .mi-coupang-rank-strip.is-warn strong {
-  color: var(--mi-warn);
-}
-
-#mi-admin .mi-coupang-rank-strip.is-muted,
-#mi-clean .mi-coupang-rank-strip.is-muted {
-  background: var(--mi-grey-50);
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-status,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-status {
-  margin: 0;
-  min-height: 0;
-}
-
-/* ── 2. 등록 폼 ── */
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-form-card,
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-board,
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-form-card,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-board,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding: 18px;
-}
-
-#mi-admin .mi-coupang-rank-form-head,
-#mi-admin .mi-coupang-rank-board-head,
-#mi-clean .mi-coupang-rank-form-head,
-#mi-clean .mi-coupang-rank-board-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px 12px;
-}
-
-#mi-admin .mi-coupang-rank-form-head h3,
-#mi-admin .mi-coupang-rank-board-head h3,
-#mi-clean .mi-coupang-rank-form-head h3,
-#mi-clean .mi-coupang-rank-board-head h3 {
-  margin: 0;
-  color: var(--mi-navy);
-  font-size: var(--mi-font-h4);
-  font-weight: var(--mi-weight-black);
-}
-
-#mi-admin .mi-coupang-rank-board-head p,
-#mi-clean .mi-coupang-rank-board-head p {
-  margin: 0;
-  color: var(--mi-muted);
-  font-size: var(--mi-font-body);
-  font-weight: var(--mi-weight-bold);
-}
-
+/* 카드 머리 오른쪽(N30 의 '관리자 확인용' 배지 자리): 한도 알약 */
 #mi-admin .mi-coupang-rank-limit,
 #mi-clean .mi-coupang-rank-limit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 30px;
   margin: 0;
   border: 1px solid var(--mi-line);
   border-radius: var(--mi-radius-pill);
-  padding: 4px 10px;
+  padding: 0 11px;
   color: var(--mi-navy);
   background: var(--mi-grey-50);
   font-size: var(--mi-font-label);
   font-weight: var(--mi-weight-black);
+  white-space: nowrap;
 }
 
-#mi-admin .mi-coupang-rank-create,
-#mi-clean .mi-coupang-rank-create {
-  display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.6fr) minmax(130px, 0.8fr) auto auto;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
+/* 등록 줄: N30 .mi-rank-form(키워드·URL·그룹·고정 범위 104px·버튼, 높이 44px)을 그대로 쓴다.
+   칸 비율은 N30 과 같고, 사이드바가 있는 좁은 너비(901~1070px)에서 줄을 넘지 않게 최소 너비만 0 으로 둔다. */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-create,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-create {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.5fr) minmax(0, 0.8fr) 104px auto;
 }
 
 #mi-admin .mi-coupang-rank-create .mi-input,
@@ -174,9 +68,9 @@
   width: 100%;
 }
 
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-range,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-range {
-  padding: 0 12px;
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-status,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-status {
+  margin: 10px 0 0;
 }
 
 #mi-admin .mi-coupang-rank-help,
@@ -199,7 +93,7 @@
 
 #mi-admin .mi-coupang-rank-capacity,
 #mi-clean .mi-coupang-rank-capacity {
-  margin: 0;
+  margin: 10px 0 0;
   border: 1px solid var(--mi-warn);
   border-radius: var(--mi-radius);
   padding: 9px 11px;
@@ -209,14 +103,20 @@
   line-height: 1.5;
 }
 
-/* ── 3·4. 필터 띠와 선택 도구 ── */
+/* ── 목록 패널(N30 .mi-rank-panel.mi-rank-history) ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-board,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-board {
+  min-width: 0;
+}
+
+/* 필터 줄: N30 .mi-rank-filterbar 와 같은 칸·순서지만, 상태 버튼이 6개(N30 4개)라 칸 최소 너비 합이 패널보다 커지는
+   너비(사이드바가 있는 901~1290px)에서 줄을 넘지 않게 감는다. 1440px 에서는 N30 과 같은 한 줄이다. */
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-filterbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0;
 }
 
 #mi-admin .mi-coupang-rank-filterbar > .mi-input,
@@ -227,97 +127,23 @@
 
 #mi-admin .mi-coupang-rank-filterbar > .mi-rank-group-filter,
 #mi-clean .mi-coupang-rank-filterbar > .mi-rank-group-filter {
-  flex: 0 1 240px;
+  flex: 0 1 250px;
   min-width: 0;
 }
 
-#mi-admin .mi-coupang-rank-filterbar .mi-rank-filter-actions,
-#mi-clean .mi-coupang-rank-filterbar .mi-rank-filter-actions {
+#mi-admin .mi-coupang-rank-filterbar > .mi-rank-filter-actions,
+#mi-clean .mi-coupang-rank-filterbar > .mi-rank-filter-actions {
   flex: 1 1 auto;
-  justify-content: flex-start;
 }
 
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-bulk {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 14px;
-  margin: 0;
-}
-
-#mi-admin .mi-coupang-rank-bulk .mi-rank-bulk-title,
-#mi-clean .mi-coupang-rank-bulk .mi-rank-bulk-title {
-  flex: 1 1 200px;
-  min-width: 0;
-}
-
-#mi-admin .mi-coupang-rank-bulk-actions,
-#mi-clean .mi-coupang-rank-bulk-actions {
-  display: flex;
-  flex: 2 1 420px;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: 0;
-}
-
-#mi-admin .mi-coupang-rank-bulk-group,
-#mi-clean .mi-coupang-rank-bulk-group {
-  display: inline-flex;
-  flex: 1 1 240px;
-  gap: 6px;
-  min-width: 0;
-}
-
-#mi-admin .mi-coupang-rank-bulk-group .mi-input,
-#mi-clean .mi-coupang-rank-bulk-group .mi-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 34px;
-  font-size: var(--mi-font-label);
-}
-
-#mi-admin .mi-coupang-rank-bulk-actions .mi-link-button,
-#mi-admin .mi-coupang-rank-card-actions .mi-link-button,
-#mi-admin .mi-coupang-rank-owner-actions .mi-link-button,
-#mi-admin .mi-coupang-rank-row-actions .mi-link-button,
-#mi-admin .mi-coupang-rank-line-head .mi-link-button,
-#mi-admin .mi-coupang-rank-collector .mi-link-button,
-#mi-admin .mi-coupang-rank-group-editor .mi-link-button,
-#mi-clean .mi-coupang-rank-bulk-actions .mi-link-button,
-#mi-clean .mi-coupang-rank-card-actions .mi-link-button,
-#mi-clean .mi-coupang-rank-owner-actions .mi-link-button,
-#mi-clean .mi-coupang-rank-row-actions .mi-link-button,
-#mi-clean .mi-coupang-rank-line-head .mi-link-button,
-#mi-clean .mi-coupang-rank-collector .mi-link-button,
-#mi-clean .mi-coupang-rank-group-editor .mi-link-button {
-  cursor: pointer;
-  background: var(--mi-panel);
-  font-family: inherit;
-  white-space: nowrap;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-link-button:disabled,
-#mi-admin .mi-coupang-rank-root .mi-button:disabled,
-#mi-clean .mi-coupang-rank-root .mi-link-button:disabled,
-#mi-clean .mi-coupang-rank-root .mi-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  transform: none;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-danger,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-danger {
-  border-color: var(--mi-danger);
-  color: var(--mi-danger);
+#mi-admin .mi-coupang-rank-filterbar > .mi-rank-filter-count,
+#mi-clean .mi-coupang-rank-filterbar > .mi-rank-filter-count {
+  flex: 0 0 auto;
 }
 
 #mi-admin .mi-coupang-rank-list-note,
 #mi-clean .mi-coupang-rank-list-note {
-  margin: 0;
+  margin: 0 0 10px;
   border: 1px solid var(--mi-line);
   border-radius: var(--mi-radius);
   padding: 8px 11px;
@@ -336,310 +162,143 @@
 
 #mi-admin .mi-coupang-rank-list,
 #mi-clean .mi-coupang-rank-list {
-  display: grid;
-  gap: 12px;
   min-width: 0;
 }
 
-/* ── 5. 그룹 구역 + 카드 ── */
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-group .mi-rank-group-items,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-group .mi-rank-group-items {
-  gap: 10px;
-  padding: 12px;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  margin: 0;
-  padding: 16px;
-  background: var(--mi-panel);
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card.is-paused,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card.is-paused {
-  background: var(--mi-grey-50);
-}
-
-#mi-admin .mi-coupang-rank-card-head,
-#mi-clean .mi-coupang-rank-card-head {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-  min-width: 0;
-}
-
-#mi-admin .mi-coupang-rank-select input,
-#mi-admin .mi-coupang-rank-root .mi-rank-group-select input,
-#mi-clean .mi-coupang-rank-select input,
-#mi-clean .mi-coupang-rank-root .mi-rank-group-select input {
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
-  accent-color: var(--mi-navy);
-  cursor: pointer;
-}
-
-#mi-admin .mi-coupang-rank-title,
-#mi-clean .mi-coupang-rank-title {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-#mi-admin .mi-coupang-rank-keyword,
-#mi-clean .mi-coupang-rank-keyword {
-  color: var(--mi-navy);
-  font-size: var(--mi-font-h4);
-  font-weight: var(--mi-weight-black);
-  overflow-wrap: anywhere;
-}
-
-#mi-admin .mi-coupang-rank-product,
-#mi-clean .mi-coupang-rank-product {
+/* ── 선택 항목 정리: 제목은 N30 .mi-rank-bulk-bar 그대로, 동작 칸만 C30 칸(flex wrap) ── */
+#mi-admin .mi-coupang-rank-bulk-actions,
+#mi-clean .mi-coupang-rank-bulk-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-  min-width: 0;
-  color: var(--mi-muted);
-  font-size: var(--mi-font-body);
-  font-weight: var(--mi-weight-bold);
-}
-
-#mi-admin .mi-coupang-rank-product a,
-#mi-clean .mi-coupang-rank-product a {
-  color: var(--mi-blue);
-  font-weight: var(--mi-weight-black);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-#mi-admin .mi-coupang-rank-product a:hover,
-#mi-clean .mi-coupang-rank-product a:hover {
-  text-decoration: underline;
-}
-
-#mi-admin .mi-coupang-rank-product-title,
-#mi-clean .mi-coupang-rank-product-title {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-#mi-admin .mi-coupang-rank-option-note,
-#mi-admin .mi-coupang-rank-state-badge,
-#mi-clean .mi-coupang-rank-option-note,
-#mi-clean .mi-coupang-rank-state-badge {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--mi-line);
-  border-radius: var(--mi-radius-pill);
-  padding: 3px 9px;
-  font-size: var(--mi-font-label);
-  font-weight: var(--mi-weight-black);
-  white-space: nowrap;
-}
-
-#mi-admin .mi-coupang-rank-option-note,
-#mi-clean .mi-coupang-rank-option-note {
-  border-color: var(--mi-warn);
-  color: var(--mi-warn);
-  background: var(--mi-warn-bg);
-}
-
-#mi-admin .mi-coupang-rank-state-badge.is-active,
-#mi-clean .mi-coupang-rank-state-badge.is-active {
-  border-color: var(--mi-green);
-  color: var(--mi-green);
-  background: var(--mi-green-bg);
-}
-
-#mi-admin .mi-coupang-rank-state-badge.is-paused,
-#mi-clean .mi-coupang-rank-state-badge.is-paused {
-  color: var(--mi-muted);
-  background: var(--mi-grey-50);
-}
-
-#mi-admin .mi-coupang-rank-metrics,
-#mi-clean .mi-coupang-rank-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  justify-content: flex-end;
   gap: 8px;
   min-width: 0;
 }
 
-#mi-admin .mi-coupang-rank-metric,
-#mi-clean .mi-coupang-rank-metric {
-  display: grid;
-  gap: 3px;
+/* 그룹 입력·그룹 생성/적용·그룹 해제를 한 묶음으로 숨기되, 줄 배치는 다른 버튼과 같은 줄에 놓는다. */
+#mi-admin .mi-coupang-rank-bulk-group,
+#mi-clean .mi-coupang-rank-bulk-group {
+  display: contents;
+}
+
+#mi-admin .mi-coupang-rank-bulk-group .mi-input,
+#mi-clean .mi-coupang-rank-bulk-group .mi-input {
+  flex: 1 1 150px;
   min-width: 0;
+  min-height: 36px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+#mi-admin .mi-coupang-rank-bulk-actions .mi-button,
+#mi-admin .mi-coupang-rank-bulk-actions .mi-rank-share-image,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-button,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-rank-share-image {
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 11px;
+  font-size: 10.5px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+/* '선택 이미지 저장'은 N30 선택 항목 정리 줄과 같은 8px 사각 버튼(위 규칙)이다. 알약 모양으로 되살리지 않는다. */
+
+/* N30 '그룹 해제'·'선택 해제' 버튼과 같은 흰 버튼(글자는 회청색 토큰, 누르면 남색) */
+#mi-admin .mi-coupang-rank-bulk-actions .mi-button.subtle,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-button.subtle {
   border: 1px solid var(--mi-line);
-  border-radius: var(--mi-radius);
-  padding: 8px 10px;
-  background: var(--mi-grey-50);
-}
-
-#mi-admin .mi-coupang-rank-metric-label,
-#mi-clean .mi-coupang-rank-metric-label {
   color: var(--mi-muted);
-  font-size: var(--mi-font-label);
-  font-weight: var(--mi-weight-bold);
-}
-
-#mi-admin .mi-coupang-rank-metric strong,
-#mi-clean .mi-coupang-rank-metric strong {
-  color: var(--mi-navy);
-  font-size: var(--mi-font-body-lg);
-  font-weight: var(--mi-weight-black);
-  overflow-wrap: anywhere;
-}
-
-#mi-admin .mi-coupang-rank-metric.is-current,
-#mi-clean .mi-coupang-rank-metric.is-current {
-  border-color: var(--mi-navy);
   background: var(--mi-panel);
 }
 
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge {
-  font-size: var(--mi-font-h3);
+#mi-admin .mi-coupang-rank-bulk-actions .mi-button.subtle:hover,
+#mi-admin .mi-coupang-rank-bulk-actions .mi-button.subtle:focus-visible,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-button.subtle:hover,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-button.subtle:focus-visible {
+  color: var(--mi-navy-2);
+  background: var(--mi-grey-50);
+  box-shadow: none;
 }
 
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge.is-out,
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge.is-pending,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge.is-out,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge.is-pending {
-  color: var(--mi-muted);
-  font-size: var(--mi-font-body-lg);
-}
-
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-up,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-up {
-  color: var(--mi-green);
-}
-
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-down,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-down {
+#mi-admin .mi-coupang-rank-bulk-actions .mi-button.mi-coupang-rank-danger,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-button.mi-coupang-rank-danger {
+  border-color: var(--mi-danger);
   color: var(--mi-danger);
 }
 
-#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-flat,
-#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-flat {
-  color: var(--mi-muted);
+#mi-admin .mi-coupang-rank-root .mi-link-button:disabled,
+#mi-admin .mi-coupang-rank-root .mi-button:disabled,
+#mi-admin .mi-coupang-rank-root .mi-rank-share-image:disabled,
+#mi-admin .mi-coupang-rank-root .mi-rank-group-edit:disabled,
+#mi-clean .mi-coupang-rank-root .mi-link-button:disabled,
+#mi-clean .mi-coupang-rank-root .mi-button:disabled,
+#mi-clean .mi-coupang-rank-root .mi-rank-share-image:disabled,
+#mi-clean .mi-coupang-rank-root .mi-rank-group-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
 }
 
-#mi-admin .mi-coupang-rank-attention,
-#mi-clean .mi-coupang-rank-attention {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--mi-warn);
-  border-radius: var(--mi-radius);
-  padding: 7px 10px;
-  background: var(--mi-warn-bg);
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-danger,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-danger {
+  border-color: var(--mi-danger);
+  color: var(--mi-danger);
 }
 
-#mi-admin .mi-coupang-rank-attention strong,
-#mi-clean .mi-coupang-rank-attention strong {
-  color: var(--mi-warn);
-  font-size: var(--mi-font-body);
-  font-weight: var(--mi-weight-black);
-}
-
-#mi-admin .mi-coupang-rank-attention .mi-rank-pill,
-#mi-clean .mi-coupang-rank-attention .mi-rank-pill {
-  border-color: var(--mi-warn);
-  color: var(--mi-warn);
+#mi-admin .mi-coupang-rank-owner-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-row-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-line-head .mi-link-button,
+#mi-admin .mi-coupang-rank-collector .mi-link-button,
+#mi-admin .mi-coupang-rank-group-editor .mi-link-button,
+#mi-clean .mi-coupang-rank-owner-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-row-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-line-head .mi-link-button,
+#mi-clean .mi-coupang-rank-collector .mi-link-button,
+#mi-clean .mi-coupang-rank-group-editor .mi-link-button {
+  cursor: pointer;
   background: var(--mi-panel);
-}
-
-/* 30일 판: 공용 .mi-rank-day-grid(가로 스크롤) 그대로, 칸만 좁힌다. */
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-days,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-days {
-  min-width: 0;
-  border: 1px solid var(--mi-line);
-  border-radius: var(--mi-radius);
-  background: var(--mi-panel);
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day {
-  flex: 0 0 74px;
-  min-height: 60px;
-  padding: 8px 6px;
-  background: var(--mi-panel);
-  text-align: center;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day strong,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day strong {
-  display: block;
-  margin: 0 0 6px;
-  font-size: var(--mi-font-label);
-  font-weight: var(--mi-weight-bold);
+  font-family: inherit;
   white-space: nowrap;
 }
 
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day.is-today,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day.is-today {
-  background: var(--mi-gold-soft);
+/* ── 카드(N30 .mi-rank-tracker-card) ── */
+/* N30 1행은 [≡+선택][키워드][검색량][상품정보][상품명] 5칸. 쿠팡은 끌기·검색량이 없어 4칸이다.
+   첫 칸은 N30 처럼 줄어들지 않는 폭(글자 폭 그대로)이라 '선택'이 두 줄로 꺾여 키워드와 겹치지 않는다. */
+#mi-admin .mi-coupang-rank-card .mi-rank-track-primary,
+#mi-clean .mi-coupang-rank-card .mi-rank-track-primary {
+  grid-template-columns: max-content minmax(68px, 0.62fr) minmax(110px, 0.5fr) minmax(84px, 1fr);
 }
 
-#mi-admin .mi-coupang-rank-today,
-#mi-clean .mi-coupang-rank-today {
-  display: block;
-  margin-top: 2px;
-  color: var(--mi-navy-2);
-  font-size: 10px;
-  font-weight: var(--mi-weight-black);
-}
-
-#mi-admin .mi-coupang-rank-cell,
-#mi-clean .mi-coupang-rank-cell {
-  display: block;
-  color: var(--mi-muted);
-  font-size: var(--mi-font-body-lg);
-  font-weight: var(--mi-weight-black);
+#mi-admin .mi-coupang-rank-card .mi-rank-select span,
+#mi-clean .mi-coupang-rank-card .mi-rank-select span {
   white-space: nowrap;
 }
 
-#mi-admin .mi-coupang-rank-day.is-found .mi-coupang-rank-cell,
-#mi-clean .mi-coupang-rank-day.is-found .mi-coupang-rank-cell {
-  color: var(--mi-navy);
-  font-size: var(--mi-font-h4);
-}
-
-#mi-admin .mi-coupang-rank-day.is-failed .mi-coupang-rank-cell,
-#mi-admin .mi-coupang-rank-day.is-unsupported .mi-coupang-rank-cell,
-#mi-clean .mi-coupang-rank-day.is-failed .mi-coupang-rank-cell,
-#mi-clean .mi-coupang-rank-day.is-unsupported .mi-coupang-rank-cell {
-  color: var(--mi-warn);
-}
-
-#mi-admin .mi-coupang-rank-day.is-noresult .mi-coupang-rank-cell,
-#mi-clean .mi-coupang-rank-day.is-noresult .mi-coupang-rank-cell {
-  font-size: var(--mi-font-label);
-}
-
-#mi-admin .mi-coupang-rank-day.is-before,
-#mi-clean .mi-coupang-rank-day.is-before {
+#mi-admin .mi-coupang-rank-card.is-paused .mi-rank-track-row-head,
+#mi-admin .mi-coupang-rank-card.is-paused .mi-rank-day-card,
+#mi-clean .mi-coupang-rank-card.is-paused .mi-rank-track-row-head,
+#mi-clean .mi-coupang-rank-card.is-paused .mi-rank-day-card {
   background: var(--mi-grey-50);
 }
 
-#mi-admin .mi-coupang-rank-card-actions,
-#mi-admin .mi-coupang-rank-owner-actions,
+/* 실패·이동 칸은 측정이 안 된 날이라 경고색으로(N30 에는 없는 결과) */
+#mi-admin .mi-coupang-rank-card .mi-rank-day-slots .mi-coupang-rank-slot-warn b,
+#mi-clean .mi-coupang-rank-card .mi-rank-day-slots .mi-coupang-rank-slot-warn b {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-card .mi-rank-day-slots .mi-coupang-rank-slot-warn small,
+#mi-clean .mi-coupang-rank-card .mi-rank-day-slots .mi-coupang-rank-slot-warn small {
+  color: var(--mi-warn);
+}
+
 #mi-admin .mi-coupang-rank-group-editor,
+#mi-admin .mi-coupang-rank-owner-actions,
 #mi-admin .mi-coupang-rank-row-actions,
-#mi-clean .mi-coupang-rank-card-actions,
-#mi-clean .mi-coupang-rank-owner-actions,
 #mi-clean .mi-coupang-rank-group-editor,
+#mi-clean .mi-coupang-rank-owner-actions,
 #mi-clean .mi-coupang-rank-row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -651,7 +310,7 @@
 #mi-admin .mi-coupang-rank-group-editor,
 #mi-clean .mi-coupang-rank-group-editor {
   border-top: 1px dashed var(--mi-line);
-  padding-top: 10px;
+  padding: 10px 12px;
 }
 
 #mi-admin .mi-coupang-rank-group-editor span,
@@ -679,7 +338,7 @@
   gap: 6px;
   min-width: 0;
   border-top: 1px dashed var(--mi-line);
-  padding-top: 10px;
+  padding: 10px 12px 12px;
 }
 
 #mi-admin .mi-coupang-rank-runs h4,
@@ -715,7 +374,32 @@
   overflow-y: auto;
 }
 
-/* ── 6. 사용 방법 · 7. 복붙 템플릿 ── */
+/* ── 큰 카드 아래 보조 구역: 사용 방법 · 광고주 안내 문구 · 총관리자 수집기 관리 ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+}
+
+#mi-admin .mi-coupang-rank-form-head,
+#mi-clean .mi-coupang-rank-form-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+#mi-admin .mi-coupang-rank-form-head h3,
+#mi-clean .mi-coupang-rank-form-head h3 {
+  margin: 0;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-h4);
+  font-weight: var(--mi-weight-black);
+}
+
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-guide,
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-guide,
@@ -883,6 +567,7 @@
 #mi-clean .mi-coupang-rank-settings {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  align-items: start;
   gap: 10px;
   min-width: 0;
 }
@@ -929,11 +614,6 @@
   height: 18px;
   margin: 0;
   accent-color: var(--mi-navy);
-}
-
-#mi-admin .mi-coupang-rank-settings,
-#mi-clean .mi-coupang-rank-settings {
-  align-items: start;
 }
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner-actions .mi-button,
@@ -1137,42 +817,14 @@
   user-select: all;
 }
 
-/* ── 모바일: 카드·폼·패널을 1열로(375px 에서 가로 넘침 0) ── */
-@media (max-width: 720px) {
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-form-card,
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-board,
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-form-card,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-board,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
-    padding: 14px;
-  }
-
-  #mi-admin .mi-coupang-rank-create,
-  #mi-clean .mi-coupang-rank-create {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar,
+/* ── 사이드바가 있는 좁은 화면(901~1360px): N30 같은 너비 규칙(admin.html, N30 상품 카드 범위)과 같은 모양 ──
+   카드 1행은 칸을 고정하지 않고 줄을 바꿔 흐르게 해서 상품번호가 잘리지 않고, 상품명은 남는 폭(모자라면 다음 줄)을 쓴다.
+   선택 항목 정리는 제목 아래에 동작 줄을 둔다. 1361px 이상은 위 데스크톱 규칙 그대로다. */
+@media (min-width: 901px) and (max-width: 1360px) {
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-filterbar,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-bulk {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  #mi-admin .mi-coupang-rank-filterbar > .mi-input,
-  #mi-admin .mi-coupang-rank-filterbar > .mi-rank-group-filter,
-  #mi-admin .mi-coupang-rank-bulk .mi-rank-bulk-title,
-  #mi-admin .mi-coupang-rank-bulk-actions,
-  #mi-admin .mi-coupang-rank-bulk-group,
-  #mi-clean .mi-coupang-rank-filterbar > .mi-input,
-  #mi-clean .mi-coupang-rank-filterbar > .mi-rank-group-filter,
-  #mi-clean .mi-coupang-rank-bulk .mi-rank-bulk-title,
-  #mi-clean .mi-coupang-rank-bulk-actions,
-  #mi-clean .mi-coupang-rank-bulk-group {
-    flex: 1 1 auto;
-    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
   }
 
   #mi-admin .mi-coupang-rank-bulk-actions,
@@ -1180,30 +832,149 @@
     justify-content: flex-start;
   }
 
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card {
-    padding: 12px;
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 10px;
   }
 
-  #mi-admin .mi-coupang-rank-card-head,
-  #mi-clean .mi-coupang-rank-card-head {
-    grid-template-columns: auto minmax(0, 1fr);
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-track-controls,
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-info,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-track-controls,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-info {
+    flex: 0 0 auto;
   }
 
-  #mi-admin .mi-coupang-rank-state-badge,
-  #mi-clean .mi-coupang-rank-state-badge {
-    grid-column: 2;
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-keyword-name,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-keyword-name {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-title,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-title {
+    flex: 1 1 160px;
+  }
+}
+
+/* 901~1180px: 카드가 좁아 현재·최고·일시중지·삭제를 1행 아래 줄로 내린다(N30 같은 너비 규칙과 같음). */
+@media (min-width: 901px) and (max-width: 1180px) {
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-row-head,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-row-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #mi-admin .mi-coupang-rank-card .mi-rank-row-actions,
+  #mi-clean .mi-coupang-rank-card .mi-rank-row-actions {
+    justify-self: start;
+    justify-content: flex-start;
+    min-width: 0;
+    flex-wrap: wrap;
+    padding-left: 0;
+  }
+}
+
+/* ── 휴대폰·좁은 화면: N30 휴대폰 규칙(admin.html 900px, N30 상품 카드 범위)과 같은 모양·같은 너비 기준 ──
+   등록 줄·필터 줄·선택 항목 정리·요약칸은 N30 공용 900px 규칙(1칸)이 그대로 적용된다. */
+@media (max-width: 900px) {
+  #mi-admin .mi-coupang-rank-head .mi-coupang-rank-limit,
+  #mi-clean .mi-coupang-rank-head .mi-coupang-rank-limit {
     justify-self: start;
   }
 
-  #mi-admin .mi-coupang-rank-metrics,
-  #mi-clean .mi-coupang-rank-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-create,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-create {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  #mi-admin .mi-coupang-rank-product-title,
-  #mi-clean .mi-coupang-rank-product-title {
-    white-space: normal;
+  /* 필터 줄은 N30 휴대폰처럼 한 칸씩(검색 · 그룹 · 상태 버튼 · 개수) */
+  #mi-admin .mi-coupang-rank-filterbar > .mi-input,
+  #mi-admin .mi-coupang-rank-filterbar > .mi-rank-group-filter,
+  #mi-admin .mi-coupang-rank-filterbar > .mi-rank-filter-actions,
+  #mi-admin .mi-coupang-rank-filterbar > .mi-rank-filter-count,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-input,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-rank-group-filter,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-rank-filter-actions,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-rank-filter-count {
+    flex: 1 1 100%;
+  }
+
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-row-head,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-row-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 1줄 [선택][키워드], 2줄 상품정보 · 번호, 3줄 상품명(N30 휴대폰 3줄과 같은 모양. 쿠팡은 검색량 칸이 없어
+     상품정보를 한 줄 전체로 두고 키워드 칸을 넓힌다) */
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 5px 8px;
+  }
+
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-info,
+  #mi-admin .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-title,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-info,
+  #mi-clean .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-product-title {
+    grid-column: 1 / -1;
+  }
+
+  #mi-admin .mi-coupang-rank-card .mi-rank-row-actions,
+  #mi-clean .mi-coupang-rank-card .mi-rank-row-actions {
+    justify-self: start;
+    justify-content: flex-start;
+    min-width: 0;
+    flex-wrap: wrap;
+    padding-left: 0;
+  }
+
+  #mi-admin .mi-coupang-rank-bulk-actions,
+  #mi-clean .mi-coupang-rank-bulk-actions {
+    justify-content: flex-start;
+  }
+
+  /* 동작 버튼 2열, 그룹 입력·이미지 저장은 한 줄 전체 */
+  #mi-admin .mi-coupang-rank-bulk-actions > .mi-button,
+  #mi-admin .mi-coupang-rank-bulk-group > .mi-button,
+  #mi-clean .mi-coupang-rank-bulk-actions > .mi-button,
+  #mi-clean .mi-coupang-rank-bulk-group > .mi-button {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  #mi-admin .mi-coupang-rank-bulk-group .mi-input,
+  #mi-admin .mi-coupang-rank-bulk-actions > .mi-rank-share-image,
+  #mi-clean .mi-coupang-rank-bulk-group .mi-input,
+  #mi-clean .mi-coupang-rank-bulk-actions > .mi-rank-share-image {
+    flex: 1 1 100%;
+  }
+
+  /* 휴대폰 입력칸은 16px(누르면 화면이 확대되지 않게, admin.html 900px 규칙과 같다) */
+  #mi-admin .mi-coupang-rank-bulk-group .mi-input,
+  #mi-clean .mi-coupang-rank-bulk-group .mi-input {
+    font-size: 16px;
+  }
+
+  #mi-admin .mi-coupang-rank-group .mi-rank-group-head-row,
+  #mi-clean .mi-coupang-rank-group .mi-rank-group-head-row {
+    flex-wrap: wrap;
+  }
+
+  #mi-admin .mi-coupang-rank-group .mi-rank-group-select,
+  #mi-clean .mi-coupang-rank-group .mi-rank-group-select {
+    flex: 1 1 100%;
+    min-height: 36px;
+    border-bottom: 1px solid var(--mi-line);
+  }
+}
+
+/* ── 휴대폰: 총관리자 패널·안내 문구 ── */
+@media (max-width: 720px) {
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
+    padding: 14px;
   }
 
   #mi-admin .mi-coupang-rank-settings,

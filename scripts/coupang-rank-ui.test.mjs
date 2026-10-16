@@ -33,8 +33,8 @@ const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?!
 const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위</a>';
 const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>';
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
-const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v1" />';
-const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v1"></script>';
+const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v2" />';
+const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v2"></script>';
 const GLUE_START = "      var coupangRankController = null;";
 const GLUE_END = "      var personalCalendarController = null;";
 
@@ -121,7 +121,8 @@ test("구역은 플레이스 구역 뒤·meta-ads 앞에 있고 data-coupang-ran
   assert.ok(adminSource.includes(`        </section>\n\n        ${SECTION_OPEN}`));
   assert.equal((adminSource.match(/<div data-coupang-rank-root><\/div>/g) || []).length, 1);
   assert.equal((adminSource.match(/data-coupang-rank-root/g) || []).length, 2, "마크업 1 + 연결 코드 셀렉터 1");
-  assert.ok(sectionSource.includes("<h1>쿠팡 30일 순위</h1>"));
+  // 화면 머리는 N30 과 같은 문장형(kicker · h1 · 배지)이다.
+  assert.ok(sectionSource.includes("<h1>쿠팡 검색 일반 순위를 30일 기록합니다.</h1>"));
   assert.ok(sectionSource.includes('<span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span>'));
   assert.ok(sectionSource.includes("쿠팡 검색 1쪽에서 광고를 뺀 일반 상품 순위를 하루 단위로 기록합니다."));
 });
@@ -780,21 +781,23 @@ test("수집 상태 띠: 11가지 상태 모두 관리자·광고주 문구가 �
   assert.equal(internals.stripText({ ...base, state: "cooldown" }, "admin").text, "쉬는 중 ~10-17 18:30(쿠팡 차단 또는 연속 오류 감지)");
 });
 
-test("30일 판 칸 글자·툴팁 표 전부(§8.3)", () => {
+test("30일 판 칸 글자·작은 글·툴팁 표 전부(§8.3, N30 하루 칸 모양)", () => {
   const created = "2026-10-10";
   const rows = [
-    [{ d: "2026-10-17", s: "found", r: 28, n: 50, a: 8, t: "11:11", c: 1, f: 0, b: 28 }, "28", "11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위"],
-    [{ d: "2026-10-16", s: "found", r: 31, n: 50, a: null, t: "19:02", c: 2, f: 1, b: 25 }, "31", "19:02 일반 31위 · 하루 2회(실패 1) · 그날 최고 25위"],
-    [{ d: "2026-10-15", s: "out", n: 50 }, "밖", "50위 밖 · 일반 50개 중 1~50위에 없음"],
-    [{ d: "2026-10-14", s: "short", n: 23 }, "없음", "일반 23개 중 없음"],
-    [{ d: "2026-10-13", s: "noresult" }, "결과없음", "검색 결과 없음"],
-    [{ d: "2026-10-12", s: "failed", f: 3 }, "실패", "3회 모두 실패"],
-    [{ d: "2026-10-11", s: "unsupported" }, "이동", "쿠팡이 검색 결과가 아닌 쪽으로 보냈습니다"],
+    [{ d: "2026-10-17", s: "found", r: 28, n: 50, a: 8, t: "11:11", c: 1, f: 0, b: 28 }, "28위", "순위", "11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위"],
+    [{ d: "2026-10-16", s: "found", r: 31, n: 50, a: null, t: "19:02", c: 2, f: 1, b: 25 }, "31위", "순위", "19:02 일반 31위 · 하루 2회(실패 1) · 그날 최고 25위"],
+    [{ d: "2026-10-15", s: "out", n: 50 }, "50위 밖", "순위", "50위 밖 · 일반 50개 중 1~50위에 없음"],
+    [{ d: "2026-10-14", s: "short", n: 23 }, "없음", "순위", "일반 23개 중 없음"],
+    [{ d: "2026-10-13", s: "noresult" }, "결과 없음", "검색", "검색 결과 없음"],
+    [{ d: "2026-10-12", s: "failed", f: 3 }, "실패", "측정", "3회 모두 실패"],
+    [{ d: "2026-10-11", s: "unsupported" }, "이동", "측정", "쿠팡이 검색 결과가 아닌 쪽으로 보냈습니다"],
   ];
-  for (const [cell, text, tooltip] of rows) {
+  for (const [cell, text, label, tooltip] of rows) {
     assert.equal(internals.cellText(cell, cell.d, created), text, cell.s);
+    assert.equal(internals.cellLabel(cell), label, cell.s);
     assert.equal(internals.cellTooltip(cell, cell.d, created), tooltip, cell.s);
   }
+  assert.equal(internals.cellLabel(null), "순위");
   // 행 없음 / 등록 전
   assert.equal(internals.cellText(null, "2026-10-12", created), "-");
   assert.equal(internals.cellTooltip(null, "2026-10-12", created), "측정 없음(수집기 꺼짐·시간대 밖·일시중지·쉬는 중)");
@@ -807,28 +810,132 @@ test("30일 판 칸 글자·툴팁 표 전부(§8.3)", () => {
   assert.equal(internals.dayLabel("2026-10-18"), "10-18(일)");
 });
 
-test("현재 배지·추세 문구·다음 예정 4갈래", () => {
+test("현재 값·전회 대비·판정·다음 갱신 문구(N30 카드와 같은 말)", () => {
   const badge = (current) => internals.currentBadge({ current }).text;
   assert.equal(badge({ result: "found", rank: 28 }), "28위");
   assert.equal(badge({ result: "out", organicCount: 50 }), "50위 밖");
   assert.equal(badge({ result: "short", organicCount: 23 }), "일반 23개 중 없음");
   assert.equal(badge({ result: "noresult" }), "결과 없음");
   assert.equal(badge(null), "측정 전");
+  // 카드 '현재' 알약: 측정 전이면 N30 처럼 '-'.
+  const current = (value) => internals.currentText({ current: value });
+  assert.equal(current({ result: "found", rank: 28 }), "28위");
+  assert.equal(current({ result: "out", organicCount: 50 }), "50위 밖");
+  assert.equal(current({ result: "short", organicCount: 23 }), "일반 23개 중 없음");
+  assert.equal(current({ result: "noresult" }), "결과 없음");
+  assert.equal(current(null), "-");
 
-  assert.equal(internals.trendText({ trend: "up", trendDelta: 3 }), "▲3");
-  assert.equal(internals.trendText({ trend: "down", trendDelta: -5 }), "▼5");
-  assert.equal(internals.trendText({ trend: "enter", trendDelta: null }), "진입");
-  assert.equal(internals.trendText({ trend: "exit", trendDelta: null }), "이탈");
-  assert.equal(internals.trendText({ trend: "same", trendDelta: 0 }), "-");
-  assert.equal(internals.trendText({ trend: "new", trendDelta: null }), "-");
-  assert.equal(internals.trendText(null), "-");
+  // 전회 대비: 서버 trendDelta = 이전 순위 - 지금 순위(양수 = 상승).
+  assert.equal(internals.changeText({ trend: "up", trendDelta: 3 }), "전회 대비 3위 상승");
+  assert.equal(internals.changeText({ trend: "down", trendDelta: -5 }), "전회 대비 5위 하락");
+  assert.equal(internals.changeText({ trend: "same", trendDelta: 0 }), "전회 대비 변동 없음");
+  assert.equal(internals.changeText({ trend: "enter", trendDelta: null }), "전회 대비 50위 안 진입");
+  assert.equal(internals.changeText({ trend: "exit", trendDelta: null }), "전회 대비 50위 밖 이탈");
+  assert.equal(internals.changeText({ trend: "new", trendDelta: null }), "전회 데이터 대기");
+  assert.equal(internals.changeText(null), "전회 데이터 대기");
 
-  const next = (tracker) => internals.nextCheckText(tracker, "2026-10-17");
-  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T07:41:00.000Z" }), "16:41");
-  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T23:05:00.000Z" }), "10-18 08:05");
-  assert.equal(next({ nextCheckState: "due", nextCheckAt: "2026-10-17T01:00:00.000Z" }), "대기 중");
+  // 판정 알약: 서버 확인 사유가 먼저, 없으면 N30 규칙. 지금 순위가 없으면 단정하지 않는다.
+  const verdict = (tracker) => JSON.parse(JSON.stringify(internals.verdictPills(tracker)));
+  assert.deepEqual(verdict({ current: { result: "out" }, summary: { attentionReasons: ["drop10", "keyword_failing"] } }),
+    [{ text: "10위 이상 하락", tone: "is-warn" }, { text: "이 키워드 측정이 연속 실패", tone: "is-error" }]);
+  assert.deepEqual(verdict({ current: { result: "out" }, summary: { attentionReasons: ["exit"] } }), [{ text: "50위 밖으로 이탈", tone: "is-error" }]);
+  const found = (rank, trend) => verdict({ current: { result: "found", rank }, summary: { trend, attentionReasons: [] } });
+  assert.deepEqual(found(28, "up"), [{ text: "상승 흐름", tone: "is-ok" }]);
+  assert.deepEqual(found(28, "enter"), [{ text: "상승 흐름", tone: "is-ok" }]);
+  assert.deepEqual(found(8, "down"), [{ text: "하락 확인", tone: "is-warn" }]);
+  assert.deepEqual(found(7, "same"), [{ text: "상위권 유지", tone: "is-ok" }]);
+  assert.deepEqual(found(28, "new"), [{ text: "정상 추적", tone: "is-ok" }]);
+  assert.deepEqual(verdict({ current: null, summary: { trend: "new", attentionReasons: [] } }), []);
+  assert.deepEqual(verdict({ current: { result: "out" }, summary: { trend: "same", attentionReasons: [] } }), []);
+
+  // 다음: 남은 시간(N30 formatRankRemain 계산). 수집기가 멈췄거나 쉬는 중이면 그 사실을 쓴다.
+  const now = Date.parse("2026-10-17T07:00:00.000Z");
+  const next = (tracker, state = "ok") => internals.nextCheckText(tracker, state, now);
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T07:41:00.000Z" }), "41분");
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T23:05:00.000Z" }), "17시간");
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-19T08:00:00.000Z" }), "3일");
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T06:59:00.000Z" }), "대기");
+  assert.equal(next({ nextCheckState: "due", nextCheckAt: "2026-10-17T01:00:00.000Z" }), "대기");
   assert.equal(next({ nextCheckState: "replan", nextCheckAt: null }), "다음 수집 때 정함");
-  assert.equal(next({ nextCheckState: "paused", nextCheckAt: null }), "");
+  assert.equal(next({ nextCheckState: "paused", nextCheckAt: null }), "-");
+  for (const state of ["disabled", "review", "budget", "outdated", "not_connected", "setup_required"]) {
+    assert.equal(next({ nextCheckState: "due", nextCheckAt: "2026-10-17T01:00:00.000Z" }, state), "정지", state);
+  }
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T07:41:00.000Z" }, "cooldown"), "쉬는 중");
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T07:41:00.000Z" }, "offline"), "41분");
+  assert.equal(next({ status: "paused", nextCheckState: "paused", nextCheckAt: null }, "disabled"), "-", "일시중지가 먼저");
+  // 최근·다음 갱신 시각은 N30 formatRankShortAt 과 같은 모양(KST 고정).
+  assert.match(internals.shortAt("2026-10-17T02:11:05.000Z"), /^10\.\s?17\.\s?오전\s?11:11$/);
+  assert.equal(internals.shortAt(null), "-");
+});
+
+test("날짜 줄 범위: 등록한 날부터 오늘까지만(등록 전 빈칸 없음)", () => {
+  const range = (createdDay, days) => internals.boardDays({ createdDay, days: days || [] }, days30()).dates;
+  assert.deepEqual(range("2026-10-16"), ["2026-10-17", "2026-10-16"]);
+  assert.equal(range("2026-09-01").length, 30, "30일보다 오래된 추적은 30칸");
+  assert.equal(range("").length, 30, "등록일을 모르면 30칸");
+  const cells = [{ d: "2026-10-16", s: "out" }, { d: "2026-10-16", s: "found", r: 3 }];
+  const byDay = internals.boardDays({ createdDay: "2026-10-16", days: cells }, days30()).byDay;
+  assert.equal(byDay["2026-10-16"].s, "out", "같은 날 칸은 서버가 보낸 첫 칸");
+});
+
+test("그룹 입력: '미분류'는 기본 그룹(빈 값)으로 본다", () => {
+  assert.equal(internals.normalizeGroupInput("미분류"), "");
+  assert.equal(internals.normalizeGroupInput("  미분류 "), "");
+  assert.equal(internals.normalizeGroupInput("A  업체"), "A 업체");
+  assert.equal(internals.normalizeGroupInput("기본 그룹"), "기본 그룹");
+});
+
+test("자동추적 요약칸: 수집기 상태 → 확인 필요 → 대기 → 정상 순서로 알약을 정한다(N30 자리·색 규칙)", () => {
+  const now = Date.now();
+  const soon = new Date(now + 3600e3).toISOString();
+  const later = new Date(now + 7200e3).toISOString();
+  const base = { lastSuccessAt: "2026-10-17T02:11:05.000Z", checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: "2026-10-17T09:30:00.000Z" };
+  const list = [
+    { status: "active", nextCheckState: "scheduled", nextCheckAt: later, summary: { attention: false } },
+    { status: "active", nextCheckState: "scheduled", nextCheckAt: soon, summary: { attention: false } },
+    { status: "paused", nextCheckState: "paused", nextCheckAt: null, summary: { attention: false } },
+  ];
+  const summary = (state, items = list, mode = "admin") => JSON.parse(JSON.stringify(internals.autoSummary({ ...base, state }, items, { mode })));
+  const ok = summary("ok");
+  assert.deepEqual(ok.pill, { text: "정상 운영", tone: "" });
+  assert.equal(ok.small, "2개 운영 · 0개 대기 · 0개 확인");
+  assert.deepEqual(ok.metrics.map((metric) => metric.label), ["최근 갱신", "다음 갱신", "확인 필요"]);
+  assert.match(ok.metrics[0].value, /^10\.\s?17\.\s?오전\s?11:11$/);
+  assert.equal(ok.metrics[0].note, "수집기 PC");
+  assert.equal(ok.metrics[1].value, internals.shortAt(soon), "가장 이른 다음 예정");
+  assert.equal(ok.metrics[1].note, "하루 2회 자동 갱신 · 08~23시");
+  assert.equal(ok.metrics[1].tone, "is-ok");
+  assert.deepEqual([ok.metrics[2].value, ok.metrics[2].tone], ["0개", "is-ok"]);
+  // 수집기 상태가 먼저다.
+  assert.deepEqual(summary("disabled").pill, { text: "수집 꺼짐", tone: "is-error" });
+  assert.equal(summary("disabled").small, "수집 꺼짐 · 수집기 PC가 켜져 있을 때만 수집합니다");
+  assert.deepEqual([summary("disabled").metrics[1].value, summary("disabled").metrics[1].tone], ["정지", "is-error"]);
+  assert.deepEqual(summary("not_connected").pill, { text: "연결 안 됨", tone: "is-error" });
+  assert.deepEqual(summary("offline").pill, { text: "응답 없음", tone: "is-error" });
+  assert.deepEqual(summary("setup_required").pill, { text: "설정 필요", tone: "is-warn" });
+  assert.deepEqual(summary("cooldown").pill, { text: "쉬는 중", tone: "is-warn" });
+  assert.match(summary("cooldown").metrics[1].value, /^쉬는 중 ~10\.\s?17\.\s?오후\s?06:30$/);
+  assert.deepEqual(summary("delayed").pill, { text: "갱신 대기", tone: "is-warn" });
+  assert.deepEqual(summary("idle_hours").pill, { text: "수집 시간 아님", tone: "" });
+  // 그다음 확인 필요 → 대기.
+  const attention = [{ status: "active", nextCheckState: "due", nextCheckAt: soon, summary: { attention: true } }, ...list];
+  const flagged = summary("ok", attention);
+  assert.deepEqual(flagged.pill, { text: "확인 필요", tone: "is-error" });
+  assert.equal(flagged.small, "3개 운영 · 1개 대기 · 1개 확인");
+  assert.deepEqual([flagged.metrics[2].value, flagged.metrics[2].tone], ["1개", "is-error"]);
+  const due = summary("ok", [{ status: "active", nextCheckState: "due", nextCheckAt: soon, summary: { attention: false } }]);
+  assert.deepEqual(due.pill, { text: "갱신 대기", tone: "is-warn" });
+  assert.equal(due.metrics[1].tone, "is-warn");
+  assert.deepEqual(summary("ok", []).pill, { text: "대기", tone: "" }, "추적이 0개여도 요약칸은 보인다");
+  // 광고주(읽기 전용)는 광고주용 문구만.
+  assert.deepEqual(summary("ok", list, "readonly").pill, { text: "정상", tone: "" });
+  assert.deepEqual(summary("disabled", list, "readonly").pill, { text: "일시 중단", tone: "is-warn" });
+  assert.equal(summary("disabled", list, "readonly").small, "수집기 PC가 켜져 있을 때만 수집합니다");
+  // 수집 상태를 아직 못 받았으면 '확인 중'.
+  const none = JSON.parse(JSON.stringify(internals.autoSummary(null, [], { mode: "admin", loading: true })));
+  assert.deepEqual(none.pill, { text: "확인 중", tone: "is-warn" });
+  assert.equal(none.small, "수집 상태 확인 중 · 수집기 PC가 켜져 있을 때만 수집합니다");
 });
 
 test("필터: 검색(키워드·상품번호·상품명·그룹)·그룹·상태 버튼", () => {
@@ -837,7 +944,10 @@ test("필터: 검색(키워드·상품번호·상품명·그룹)·그룹·상태
   assert.equal(match(base, { query: "18프로" }), true);
   assert.equal(match(base, { query: "8533720933" }), true);
   assert.equal(match(base, { query: "아이쉘" }), true);
-  assert.equal(match(base, { query: "기본" }), true);
+  // 그룹 검색은 화면에 보이는 이름으로: 기본 그룹은 '미분류'로 걸리고, 화면에 없는 서버 값 '기본 그룹'으로는 걸리지 않는다.
+  assert.equal(match(base, { query: "미분류" }), true);
+  assert.equal(match(base, { query: "기본" }), false);
+  assert.equal(match(trackerFixture({ groupName: "필름" }), { query: "필름" }), true);
   assert.equal(match(base, { query: "없는말" }), false);
   assert.equal(match(base, { group: "필름" }), false);
   assert.equal(match(base, { group: "기본 그룹" }), true);
@@ -958,7 +1068,7 @@ test("대상이 없으면 '대상 광고주를 먼저 고르세요'만 보이고
   assert.equal(screen.calls.length, 0);
 });
 
-test("목록: 총관리자 머리글·카드·30일 칸·사용 방법·템플릿이 그려지고 캐시가 저장된다", async () => {
+test("목록: N30 틀(큰 카드·요약칸·선택 항목 정리·그룹·카드·날짜 칸)·사용 방법·템플릿이 그려지고 캐시가 저장된다", async () => {
   const storage = makeStorage({ "miCoupangRank:v1:owner:other": "{}", "miRankTrackerLastGood:v1:x": "keep" });
   const screen = mountWith({ storage });
   screen.controller.show();
@@ -968,28 +1078,94 @@ test("목록: 총관리자 머리글·카드·30일 칸·사용 방법·템플�
   assert.equal(screen.calls[0].init.method, "GET");
   assert.equal(screen.calls[0].init.timeoutMs, 30000);
   assert.equal(screen.calls[0].init.headers["x-mi-agency-code"], "mml93-a01");
+  // 뼈대: N30 처럼 큰 카드 하나(등록 줄·상태줄·목록) 아래에 사용 방법 → 안내 문구 → 총관리자 수집기 관리.
+  const sections = screen.host.children;
+  assert.deepEqual(sections.map((node) => node.tagName), ["ARTICLE", "DETAILS", "SECTION", "DETAILS"]);
+  const main = sections[0];
+  assert.ok(main.classList.contains("mi-card") && main.classList.contains("mi-card-pad") && main.classList.contains("mi-rank-card"));
+  assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-form]")));
+  assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-status]")));
+  assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-board]")));
+  assert.ok(sections[1].hasAttribute("data-coupang-rank-guide") && sections[2].hasAttribute("data-coupang-rank-template") && sections[3].hasAttribute("data-coupang-rank-owner"));
+  const board = screen.host.querySelector("[data-coupang-rank-board]");
+  assert.deepEqual(board.children.map((node) => node.tagName === "H3" ? node.textContent : node.getAttribute("class").split(" ")[0]),
+    ["상품별 일별 순위", "mi-rank-filterbar", "mi-rank-filter-help", "mi-coupang-rank-list-note", "mi-rank-auto-center", "mi-rank-bulk-bar", "mi-coupang-rank-list"]);
+  // 등록 줄·상태줄(N30 문구)
+  assert.equal(screen.host.querySelector("[data-coupang-rank-keyword]").getAttribute("placeholder"), "키워드");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-product-url]").getAttribute("placeholder"), "쿠팡 상품 URL 붙여넣기");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-group-input]").getAttribute("placeholder"), "그룹(비우면 미분류)");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-create]").textContent, "순위 추적");
+  assert.ok(screen.host.querySelector("[data-coupang-rank-create-form]").classList.contains("mi-rank-form"));
+  const status = screen.host.querySelector("[data-coupang-rank-status]");
+  assert.equal(status.hidden, false, "상태줄은 늘 보인다");
+  // 화면을 열어 목록을 받으면 N30 처럼 '불러왔습니다'(초록)를 알린다.
+  assert.equal(status.textContent, "등록된 쿠팡 순위 추적을 불러왔습니다.");
+  assert.ok(status.classList.contains("is-ok"));
+  // 필터 줄: N30 문구, 그룹 목록은 '전체 그룹' + 기본 그룹을 뺀 이름
+  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-search]").getAttribute("placeholder"), "키워드, 상품명, 상품번호 검색");
+  assert.deepEqual(screen.host.querySelector("[data-coupang-rank-filter-group]").children.map((option) => option.textContent), ["전체 그룹", "필름"]);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-count]").textContent, "2개 표시 / 전체 2개");
+  // 선택 항목 정리(N30 제목·문구)
+  const bulkText = screen.host.querySelector("[data-coupang-rank-bulk]").textContent;
+  assert.ok(bulkText.startsWith("선택 항목 정리항목 선택 후 적용그룹명을 입력하거나 목록에서 선택하면"), bulkText);
+  assert.deepEqual(screen.host.querySelector("[data-coupang-rank-bulk]").querySelectorAll("button").map((node) => node.textContent),
+    ["그룹 생성/적용", "그룹 해제", "선택 해제", "일시중지", "다시 시작", "삭제", "표시 항목 전체 선택", "선택 이미지 저장"]);
+  // 그룹 머리(N30 문구: 전체 선택 · 미분류 · N개 추적 · 현재 최고 N위)
+  const groupHeads = screen.host.querySelectorAll("[data-coupang-rank-group]");
+  assert.equal(groupHeads[0].getAttribute("data-coupang-rank-group"), "기본 그룹", "data 값은 서버 값 그대로");
+  assert.equal(groupHeads[0].querySelector(".mi-rank-group-head").textContent, "미분류1개 추적 · 현재 최고 28위접기");
+  assert.equal(groupHeads[0].querySelector(".mi-rank-group-select").textContent, "전체 선택");
+  assert.equal(groupHeads[1].querySelector(".mi-rank-group-head").textContent, "필름1개 추적접기");
+  assert.ok(groupHeads[0].querySelector(".mi-rank-group-items").classList.contains("mi-rank-daily-list"));
+
   const cards = screen.host.querySelectorAll("[data-coupang-rank-card]");
   assert.equal(cards.length, 2);
   const card = cards[0];
-  assert.ok(card.classList.contains("mi-card") && card.classList.contains("mi-card-pad") && card.classList.contains("mi-rank-card") && card.classList.contains("mi-coupang-rank-card"));
-  assert.equal(card.tagName, "ARTICLE");
+  assert.ok(card.classList.contains("mi-rank-tracker-card") && card.classList.contains("mi-coupang-rank-card"));
+  assert.equal(card.tagName, "SECTION");
+  assert.ok(!card.hasAttribute("draggable"), "끌어서 순서 바꾸기는 없다");
   const text = card.textContent;
-  for (const expected of ["아이폰 18프로 사생활 보호 필름", "상품번호 8533720933", "28위", "30일 최고", "25위", "27.5위(50위 안 2일)", "▲3", "광고 8번째", "16:41", "추적 중"]) {
+  for (const expected of ["선택", "아이폰 18프로 사생활 보호 필름", "상품정보 · 8533720933", "아이쉘 360도 액정보호 풀커버 강화유리 사생활보호 필름, 2개",
+    "현재 28위", "최고 25위", "일시중지", "삭제", "상태 운영중", "상승 흐름", "전회 대비 3위 상승", "7일 평균 27.5위(50위 안 2일)", "광고 8번째", "그룹 미분류", "그룹 변경", "측정 기록",
+    `최근 ${internals.shortAt("2026-10-17T02:11:05.000Z")}`]) {
     assert.ok(text.includes(expected), expected);
   }
-  const link = card.querySelector("a");
-  assert.equal(link.getAttribute("target"), "_blank");
-  assert.equal(link.getAttribute("rel"), "noopener noreferrer");
+  assert.match(text, /다음 (?:\d+분|\d+시간|\d+일|대기)/);
+  assert.equal(text.split("8533720933").length - 1, 1, "상품번호는 '상품정보 · 번호' 한 곳에만");
+  for (const old of ["30일 최고", "▲3", "추적 중", "상품번호 "]) assert.ok(!text.includes(old), old);
+  const keywordLink = card.querySelector("a");
+  assert.ok(keywordLink.classList.contains("mi-rank-keyword-name"));
+  assert.equal(keywordLink.getAttribute("href"), `https://www.coupang.com/np/search?q=${encodeURIComponent("아이폰 18프로 사생활 보호 필름")}`);
+  assert.equal(keywordLink.getAttribute("target"), "_blank");
+  assert.equal(keywordLink.getAttribute("rel"), "noopener noreferrer");
+  const titleLink = card.querySelector("a.mi-rank-product-title");
+  assert.equal(titleLink.getAttribute("href"), "https://www.coupang.com/vp/products/8533720933");
+  assert.equal(titleLink.getAttribute("rel"), "noopener noreferrer");
+  // 1행 오른쪽: 현재·최고 알약 + 일시중지 + 삭제(N30 '갱신' 자리에 일시중지)
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "일시중지", "삭제"]);
+  // 날짜 줄: N30 칸 모양, 등록한 날(10-16)부터 오늘(10-17)까지만, '오늘' 표시 없음
   const dayCells = card.querySelectorAll(".mi-rank-day-card");
-  assert.equal(dayCells.length, 30);
-  assert.ok(dayCells[0].classList.contains("is-today") && dayCells[0].textContent.includes("오늘"));
+  assert.equal(dayCells.length, 2, "등록 전 빈칸을 그리지 않는다");
   assert.ok(dayCells[0].classList.contains("is-sat"));
+  assert.ok(!dayCells[0].classList.contains("is-today") && !dayCells[0].textContent.includes("오늘"));
+  assert.equal(dayCells[0].querySelector("strong").textContent, "10-17(토)");
+  assert.equal(dayCells[0].querySelector("small").textContent, "순위");
+  assert.equal(dayCells[0].querySelector("b").textContent, "28위");
+  assert.equal(dayCells[1].querySelector("b").textContent, "31위");
   assert.equal(dayCells[0].getAttribute("title"), "11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위");
-  assert.equal(dayCells[2].querySelector(".mi-coupang-rank-cell").textContent, "", "등록 전 칸은 비운다");
-  // 측정 전 카드
-  assert.ok(cards[1].textContent.includes("측정 전"));
-  // 띠·한도·사용 방법·템플릿·그룹 구역
-  assert.equal(screen.host.querySelector("[data-coupang-rank-strip]").textContent.includes("정상 · 마지막 수집 11:11 · 하루 2회(08~23시)"), true);
+  // 측정 전 카드: 날짜 줄 대신 N30 과 같은 안내 상자
+  const pending = cards[1];
+  assert.equal(pending.querySelectorAll(".mi-rank-day-card").length, 0);
+  assert.equal(pending.querySelector(".mi-rank-state").textContent, "첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.");
+  for (const expected of ["현재 -", "최고 -", "전회 데이터 대기", "7일 평균 -", "광고 -", "그룹 필름", "최근 -"]) assert.ok(pending.textContent.includes(expected), expected);
+  assert.ok(!pending.textContent.includes("측정 전"));
+  assert.equal(pending.querySelectorAll(".mi-rank-insight-pill").length, 0, "지금 순위가 없으면 판정 알약을 두지 않는다");
+  // 자동추적 요약칸·한도·규칙·사용 방법·템플릿
+  const strip = screen.host.querySelector("[data-coupang-rank-strip]");
+  assert.ok(strip.classList.contains("mi-rank-auto-center"));
+  assert.equal(strip.querySelector("[data-coupang-rank-strip-status]").textContent, "정상 운영");
+  assert.ok(strip.textContent.includes("자동추적2개 운영 · 0개 대기 · 0개 확인"));
+  assert.ok(strip.textContent.includes("최근 갱신") && strip.textContent.includes("다음 갱신") && strip.textContent.includes("하루 2회 자동 갱신 · 08~23시"));
   assert.ok(screen.host.textContent.includes("사용 3 / 100 · 전체 41 / 150"));
   assert.ok(screen.host.textContent.includes("비로그인 검색 1쪽 · 광고 제외 일반 순위 · 같은 상품이면 옵션이 달라도 인정"));
   assert.ok(screen.host.textContent.includes("일반 50위 이내"));
@@ -1094,7 +1270,17 @@ test("readonly 모드는 쓰기 버튼·등록 폼·총관리자 패널이 없�
   assert.equal(screen.host.querySelector("[data-coupang-rank-owner]").hidden, true);
   assert.equal(screen.host.querySelectorAll('[data-coupang-rank-action="delete"]').length, 0);
   assert.equal(screen.host.querySelectorAll('[data-coupang-rank-action="pause"]').length, 0);
-  assert.equal(screen.host.querySelector("[data-coupang-rank-strip]").textContent.startsWith("정상수집기"), true);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-strip-status]").textContent, "정상", "요약칸 알약은 광고주용 문구");
+  // 읽기 전용은 등록 줄과 한도 알약만 숨긴다. 상태줄은 결과 문구가 있을 때만 보인다.
+  assert.equal(screen.host.querySelector("[data-coupang-rank-limit]").hidden, true);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").hidden, true);
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위"]);
+  assert.equal(card.querySelectorAll('[data-coupang-rank-action="group-edit"]').length, 0);
+  assert.equal(card.querySelectorAll('[data-coupang-rank-action="runs"]').length, 1, "측정 기록은 읽기 전용에서도 본다");
+  const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
+  assert.deepEqual(bulk.querySelectorAll("button").filter((node) => !node.hidden && !(node.parentNode && node.parentNode.hidden)).map((node) => node.textContent),
+    ["선택 해제", "표시 항목 전체 선택", "선택 이미지 저장"]);
 });
 
 test("삭제는 'n개와 30일 기록이 지워집니다' 확인을 거치고, 취소하면 요청하지 않는다", async () => {
@@ -1158,13 +1344,15 @@ test("총관리자 패널: 열면 view=collector 를 받고 60초마다 다시 �
   });
   screen.controller.show();
   await flush();
+  // 화면 열기에서는 카드 '다음' 글자만 다시 계산하는 60초 타이머 하나가 걸린다(요청 없음).
+  const intervalsBefore = screen.intervals.length;
   const details = screen.host.querySelector("[data-coupang-rank-owner]");
   details.open = true;
   dispatch(details, "toggle");
   await flush();
   assert.ok(screen.calls.some((call) => call.url === `${COUPANG_TRACKERS_PATH}?view=collector` && call.init.headers["x-mi-agency-code"] === "mml93-a01"));
-  assert.equal(screen.intervals.length, 1);
-  assert.equal(screen.intervals[0].ms, 60000);
+  assert.equal(screen.intervals.length, intervalsBefore + 1, "패널을 열면 60초 다시 받기 타이머가 하나 더 걸린다");
+  assert.equal(screen.intervals.at(-1).ms, 60000);
   const panelText = details.textContent;
   for (const expected of ["수집 꺼짐", "하루 최대 측정 120회 → 하루 2번이면 키워드 약 60개 · 지금 활성 41개", "연결 해제·해지된 범위의 활성 추적기 2개(수집·한도에서 제외, 다시 연결되면 자동 재개)",
     "윈도우 데스크탑", "끝 4자리 x9Qa", "연결 없음", "제거 뒤 연결 코드도 폐기하세요", "전체 한도를 60으로 맞추기", "윈도우 설치·업데이트(관리자 PowerShell)", "맥 제거(터미널)"]) {
@@ -1269,6 +1457,339 @@ test("scopeChanged 는 화면이 보일 때만 다시 받는다", async () => {
   screen.controller.scopeChanged();
   await flush();
   assert.equal(screen.calls.length, count + 1);
+});
+
+// ── N30 틀 맞춤(2026-10-16): 상품번호 한 번·다음 정지·그룹 해제·미분류 ─────────────
+
+const TITLELESS_ID = "6c1f0000-0000-4000-8000-000000000001";
+
+test("상품명이 아직 없으면 상품번호는 '상품정보 · 번호' 한 번만, 상품명 자리는 '상품 페이지 열기'(카드·이미지 시트)", async () => {
+  layout.sheetHeight = 900;
+  const record = { sheets: [] };
+  let screen;
+  const tools = {
+    ensureStage() { return record.stage || (record.stage = screen.document.createElement("div")); },
+    serialize(sheet) { record.sheets.push(sheet); return "<div xmlns=\"http://www.w3.org/1999/xhtml\"></div>"; },
+    toBlob: async () => ({ blob: new Blob(["x"]), ext: "png" }),
+    showReady() { return screen.document.createElement("a"); },
+  };
+  screen = mountWith({ exportTools: tools, payload: listPayload({ trackers: [trackerFixture({ productTitle: null })] }) });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.equal(card.textContent.split("8533720933").length - 1, 1);
+  const title = card.querySelector("a.mi-rank-product-title");
+  assert.equal(title.textContent, "상품 페이지 열기");
+  assert.equal(title.getAttribute("href"), "https://www.coupang.com/vp/products/8533720933");
+  assert.equal(title.getAttribute("title"), "상품명은 검색 1쪽에서 이 상품을 찾은 뒤 채워집니다");
+  const check = screen.host.querySelector(`[data-coupang-rank-select="${TITLELESS_ID}"]`);
+  check.checked = true;
+  dispatch(check, "change");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-export"]'), "click");
+  await flush();
+  const sheetText = record.sheets[0].textContent;
+  assert.equal(sheetText.split("8533720933").length - 1, 1, "시트에도 상품번호는 한 번만");
+  assert.ok(sheetText.includes("상품정보 · 8533720933"));
+});
+
+test("수집이 꺼져 있으면 카드 '다음'은 '정지', 요약칸은 '수집 꺼짐'(엇갈림 없음)", async () => {
+  const payload = listPayload({ collector: { state: "disabled", lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null } });
+  payload.trackers.forEach((tracker) => { tracker.nextCheckState = "due"; tracker.nextCheckAt = "2026-10-17T01:00:00.000Z"; });
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  for (const card of screen.host.querySelectorAll("[data-coupang-rank-card]")) {
+    assert.ok(card.textContent.includes("다음 정지"), card.textContent);
+    assert.ok(!card.textContent.includes("다음 대기"));
+    // 수집이 멈췄으면 '대기'(파랑) 표시를 하지 않는다.
+    assert.equal(card.querySelectorAll(".is-wait").length, 0);
+  }
+  const strip = screen.host.querySelector("[data-coupang-rank-strip]");
+  assert.equal(strip.querySelector("[data-coupang-rank-strip-status]").textContent, "수집 꺼짐");
+  assert.ok(strip.textContent.includes("다음 갱신정지"));
+});
+
+test("수집이 돌고 대기 중인 카드는 상태 알약이 '대기'(is-wait) 색이다(N30 규칙)", async () => {
+  const payload = listPayload();
+  payload.trackers[0].nextCheckState = "due";
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.equal(card.querySelector(".is-wait").textContent, "상태 운영중");
+  assert.ok(card.textContent.includes("다음 대기"));
+});
+
+test("일시중지 카드: '상태 중지 · MM-DD부터', '다시 시작' 버튼, 다음 '-'", async () => {
+  const payload = listPayload({ trackers: [trackerFixture({ status: "paused", pausedAt: "2026-10-16T05:00:00.000Z", pausedDay: "2026-10-16", nextCheckState: "paused", nextCheckAt: null })] });
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.ok(card.classList.contains("is-paused"));
+  assert.ok(card.textContent.includes("상태 중지 · 10-16부터"));
+  assert.ok(card.textContent.includes("다음 -"));
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "다시 시작", "삭제"]);
+});
+
+test("'다음'은 응답 없음·광고주 화면에서 요약칸과 같은 말을 쓴다", () => {
+  const now = Date.parse("2026-10-17T07:00:00.000Z");
+  const due = { nextCheckState: "due", nextCheckAt: "2026-10-17T01:00:00.000Z" };
+  const soon = { nextCheckState: "scheduled", nextCheckAt: "2026-10-17T07:41:00.000Z" };
+  const next = (tracker, state, mode) => internals.nextCheckText(tracker, state, now, mode);
+  // 관리자: 수집기 응답이 없으면 예정이 지난 항목은 '응답 대기'(요약칸 '응답 없음'), 남은 시간은 그대로.
+  assert.equal(next(due, "offline"), "응답 대기");
+  assert.equal(next({ nextCheckState: "scheduled", nextCheckAt: "2026-10-17T06:00:00.000Z" }, "offline"), "응답 대기");
+  assert.equal(next(soon, "offline"), "41분");
+  assert.equal(next(due, "delayed"), "대기");
+  // 광고주(읽기 전용): 내부 상태 대신 광고주 문구.
+  for (const state of ["disabled", "review", "budget", "outdated", "not_connected", "cooldown"]) {
+    assert.equal(next(due, state, "readonly"), "일시 중단", state);
+  }
+  assert.equal(next(due, "setup_required", "readonly"), "설정 필요");
+  assert.equal(next(due, "offline", "readonly"), "갱신 대기");
+  assert.equal(next(soon, "ok", "readonly"), "41분");
+  assert.equal(next({ status: "paused", nextCheckState: "paused" }, "review", "readonly"), "-");
+  // 요약칸 '다음 갱신'도 광고주 화면에서는 같은 문구(내부 '정지'·'쉬는 중 ~시각'을 보이지 않음).
+  const base = { lastSuccessAt: "2026-10-17T02:11:05.000Z", checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: "2026-10-17T09:30:00.000Z" };
+  const metric = (state, mode) => internals.autoSummary({ ...base, state }, [soon], { mode }).metrics[1];
+  assert.deepEqual([metric("review", "readonly").value, metric("review", "readonly").tone], ["일시 중단", "is-warn"]);
+  assert.deepEqual([metric("cooldown", "readonly").value, metric("cooldown", "readonly").tone], ["일시 중단", "is-warn"]);
+  assert.deepEqual([metric("setup_required", "readonly").value, metric("setup_required", "readonly").tone], ["설정 필요", "is-warn"]);
+  assert.deepEqual([metric("review", "admin").value, metric("review", "admin").tone], ["정지", "is-error"]);
+  assert.match(metric("cooldown", "admin").value, /^쉬는 중 ~/);
+});
+
+test("응답 없음(offline)이면 예정이 지난 카드는 '다음 응답 대기'이고 대기(is-wait) 파랑을 쓰지 않는다", async () => {
+  const payload = listPayload({ collector: { state: "offline", lastSuccessAt: "2026-10-17T02:11:05.000Z", checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null } });
+  payload.trackers[0].nextCheckState = "due";
+  payload.trackers[0].nextCheckAt = "2026-10-17T01:00:00.000Z";
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.ok(card.textContent.includes("다음 응답 대기"), card.textContent);
+  assert.equal(card.querySelectorAll(".is-wait").length, 0);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-strip-status]").textContent, "응답 없음");
+});
+
+test("카드 '다음' 남은 시간은 60초마다 다시 계산한다(목록 요청 없음, 숨은 탭은 건너뜀)", async () => {
+  const clock = { now: Date.parse("2026-10-17T07:00:00.000Z") };
+  const screen = mountWith({ clock, payload: listPayload({ trackers: [trackerFixture()] }) });
+  screen.controller.show();
+  await flush();
+  const nextText = () => screen.host.querySelector("[data-coupang-rank-next]").textContent;
+  const statePill = () => screen.host.querySelector("[data-coupang-rank-state-pill]");
+  assert.equal(nextText(), "다음 41분");
+  assert.equal(statePill().classList.contains("is-wait"), false);
+  const ticker = screen.intervals.find((entry) => entry.ms === 60000);
+  assert.ok(ticker, "화면 열기에서 60초 타이머가 걸린다");
+  const gets = screen.calls.length;
+  clock.now = Date.parse("2026-10-17T07:20:30.000Z");
+  ticker.fn();
+  assert.equal(nextText(), "다음 21분");
+  // 숨은 탭에서는 바꾸지 않는다.
+  screen.document.hidden = true;
+  clock.now = Date.parse("2026-10-17T09:30:00.000Z");
+  ticker.fn();
+  assert.equal(nextText(), "다음 21분");
+  screen.document.hidden = false;
+  ticker.fn();
+  assert.equal(nextText(), "다음 대기");
+  assert.equal(statePill().classList.contains("is-wait"), true, "예정 시각이 지나면 N30 처럼 대기 파랑");
+  assert.equal(screen.calls.length, gets, "다시 계산은 요청을 보내지 않는다");
+  // 다시 열어도 타이머는 하나다.
+  screen.controller.show();
+  await flush();
+  assert.equal(screen.intervals.filter((entry) => entry.ms === 60000).length, 1);
+});
+
+test("30일 넘게 기록이 없는 옛 추적: '첫 순위 확인' 안내 대신 '-' 칸, 옛 값으로 판정하지 않는다", async () => {
+  const old = trackerFixture({
+    status: "paused", pausedAt: "2026-08-20T05:00:00.000Z", pausedDay: "2026-08-20", createdAt: "2026-07-01T03:00:00.000Z", createdDay: "2026-07-01",
+    nextCheckState: "paused", nextCheckAt: null,
+    current: { result: "found", rank: 5, organicCount: 50, adOrder: null, sameOption: true, checkedAt: "2026-08-19T02:00:00.000Z" },
+    summary: { best30: null, avg7: null, foundDays7: 0, measuredDays7: 0, trend: "new", trendDelta: null, attention: false, attentionReasons: [], lastFoundAt: "2026-08-19T02:00:00.000Z" },
+    days: [],
+  });
+  // 판정·안내 규칙(순수 함수)
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.verdictPills(old, days30()))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.verdictPills({ ...old, status: "active" }, days30()))), [], "마지막 측정이 30일 창 밖");
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.verdictPills({ ...old, status: "active", current: { ...old.current, checkedAt: "2026-10-17T02:00:00.000Z" } }, days30()))),
+    [{ text: "상위권 유지", tone: "is-ok" }], "창 안이면 N30 규칙 그대로");
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.verdictPills({ ...old, summary: { ...old.summary, attention: true, attentionReasons: ["keyword_failing"] } }, days30()))),
+    [{ text: "이 키워드 측정이 연속 실패", tone: "is-error" }], "서버 확인 사유는 일시중지여도 보인다(확인 필요 개수와 같은 기준)");
+  assert.equal(internals.emptyBoardText(old, days30()), "");
+  assert.equal(internals.emptyBoardText({ ...old, current: null, summary: { trend: "new", attentionReasons: [] } }, days30()), "첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.");
+  assert.equal(internals.emptyBoardText({ ...old, createdDay: "" }, []), "최근 30일 측정 기록이 없습니다.");
+  // 화면
+  const screen = mountWith({ payload: listPayload({ trackers: [old] }) });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  assert.ok(!card.textContent.includes("첫 순위 확인 후"), card.textContent);
+  const cells = card.querySelectorAll(".mi-rank-day-card");
+  assert.equal(cells.length, 30, "등록이 30일보다 오래됐으면 30칸 모두 '-'");
+  assert.ok(cells.every((cell) => cell.querySelector("b").textContent === "-"));
+  assert.equal(card.querySelectorAll(".mi-rank-insight-pill").length, 0, "판정 알약 없음");
+});
+
+test("확인 필요 사유는 판정 자리 알약으로(따로 있던 경고 상자 없음)", async () => {
+  const payload = listPayload({ trackers: [trackerFixture({ current: { result: "out", organicCount: 50, adOrder: null, sameOption: null, checkedAt: "2026-10-17T02:11:05.000Z" },
+    summary: { best30: 25, avg7: null, foundDays7: 0, measuredDays7: 2, trend: "exit", trendDelta: null, attention: true, attentionReasons: ["exit"], lastFoundAt: null } })] });
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  const card = screen.host.querySelector("[data-coupang-rank-card]");
+  const pills = card.querySelectorAll(".mi-rank-insight-pill");
+  assert.deepEqual(pills.map((node) => [node.textContent, node.classList.contains("is-error")]), [["50위 밖으로 이탈", true]]);
+  assert.ok(card.textContent.includes("현재 50위 밖") && card.textContent.includes("전회 대비 50위 밖 이탈"));
+  assert.equal(card.querySelectorAll(".mi-coupang-rank-attention").length, 0);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-strip-status]").textContent, "확인 필요");
+});
+
+test("'그룹 해제'는 group 동작에 빈 그룹 이름을 보내고, 적용 뒤 선택·그룹 필터를 비운다", async () => {
+  const posts = [];
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        posts.push(JSON.parse(init.body));
+        return response({ ok: true, updated: JSON.parse(init.body).ids.length });
+      }
+      return response(listPayload());
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const host = screen.host;
+  // 그룹 필터로 '필름'만 본 상태에서 하나를 골라 해제한다.
+  const groupFilter = host.querySelector("[data-coupang-rank-filter-group]");
+  groupFilter.value = "필름";
+  dispatch(groupFilter, "change");
+  assert.equal(host.querySelectorAll("[data-coupang-rank-card]").length, 1);
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-ungroup"]'), "click");
+  await flush();
+  assert.deepEqual(posts, [], "선택이 없으면 보내지 않는다(버튼도 꺼져 있다)");
+  const check = host.querySelector('[data-coupang-rank-select="6c1f0000-0000-4000-8000-000000000002"]');
+  check.checked = true;
+  dispatch(check, "change");
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-ungroup"]'), "click");
+  await flush();
+  assert.deepEqual(posts, [{ action: "group", ids: ["6c1f0000-0000-4000-8000-000000000002"], groupName: "" }]);
+  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "1개 추적 항목을 그룹에서 해제했습니다.");
+  assert.equal(host.querySelector("[data-coupang-rank-selected-count]").textContent, "항목 선택 후 적용");
+  assert.equal(host.querySelectorAll("[data-coupang-rank-card]").length, 2, "전체 그룹으로 돌아온다");
+});
+
+test("'그룹 생성/적용': N30 과 같은 안내, '미분류'라고 적으면 그룹 해제와 같다", async () => {
+  const posts = [];
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        posts.push(JSON.parse(init.body));
+        return response({ ok: true, updated: JSON.parse(init.body).ids.length });
+      }
+      return response(listPayload());
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const host = screen.host;
+  const pick = () => {
+    const check = host.querySelector(`[data-coupang-rank-select="${TITLELESS_ID}"]`);
+    check.checked = true;
+    dispatch(check, "change");
+  };
+  pick();
+  const input = host.querySelector("[data-coupang-rank-bulk-group-input]");
+  assert.equal(input.getAttribute("placeholder"), "그룹명 선택 또는 입력");
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
+  await flush();
+  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "만들거나 이동할 그룹명을 입력해주세요.");
+  input.value = "A 업체";
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
+  await flush();
+  assert.deepEqual(posts.at(-1), { action: "group", ids: [TITLELESS_ID], groupName: "A 업체" });
+  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "1개 추적 항목을 A 업체 그룹으로 넣고 전체 그룹으로 돌아왔습니다.");
+  assert.equal(input.value, "", "적용 뒤 입력을 비운다");
+  pick();
+  input.value = "미분류";
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
+  await flush();
+  assert.deepEqual(posts.at(-1), { action: "group", ids: [TITLELESS_ID], groupName: "" }, "'미분류'라는 그룹을 따로 만들지 않는다");
+});
+
+test("등록·그룹 변경 칸에 '미분류'를 적으면 기본 그룹으로 보낸다", async () => {
+  const posts = [];
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        posts.push(body);
+        return response(body.action === "create" ? { ok: true, firstCheck: "queued", tracker: trackerFixture({ id: "6c1f0000-0000-4000-8000-000000000009", keyword: "새 키워드" }) } : { ok: true, updated: 1 });
+      }
+      return response(listPayload());
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const host = screen.host;
+  host.querySelector("[data-coupang-rank-keyword]").value = "새 키워드";
+  host.querySelector("[data-coupang-rank-product-url]").value = "https://www.coupang.com/vp/products/123456";
+  host.querySelector("[data-coupang-rank-group-input]").value = "미분류";
+  dispatch(host.querySelector("[data-coupang-rank-create-form]"), "submit");
+  await flush();
+  assert.deepEqual(posts.at(-1), { action: "create", keyword: "새 키워드", productUrl: "https://www.coupang.com/vp/products/123456" });
+  // 그룹 변경: 기본 그룹이면 입력칸이 비어 있고 placeholder 는 '비우면 미분류'.
+  dispatch(host.querySelector(`[data-coupang-rank-action="group-edit"][data-coupang-rank-id="${TITLELESS_ID}"]`), "click");
+  const editor = host.querySelector("[data-coupang-rank-group-edit-input]");
+  assert.equal(editor.value, "");
+  assert.equal(editor.getAttribute("placeholder"), "비우면 미분류");
+  editor.value = "미분류";
+  dispatch(host.querySelector('[data-coupang-rank-action="group-save"]'), "click");
+  await flush();
+  assert.deepEqual(posts.at(-1), { action: "group", ids: [TITLELESS_ID], groupName: "" });
+});
+
+test("빈 칸 등록은 N30 과 같은 안내를 띄우고 보내지 않는다", async () => {
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  const before = screen.calls.length;
+  dispatch(screen.host.querySelector("[data-coupang-rank-create-form]"), "submit");
+  await flush();
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "키워드를 입력해주세요.");
+  screen.host.querySelector("[data-coupang-rank-keyword]").value = "필름";
+  dispatch(screen.host.querySelector("[data-coupang-rank-create-form]"), "submit");
+  await flush();
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "쿠팡 상품 URL을 입력해주세요.");
+  assert.ok(screen.host.querySelector("[data-coupang-rank-status]").classList.contains("is-warn"));
+  assert.equal(screen.calls.length, before);
+});
+
+test("그룹 안 일부만 고르면 그룹 머리가 '전체 선택 (n/m)'으로 바뀐다", async () => {
+  const payload = listPayload({ trackers: [trackerFixture(), trackerFixture({ id: "6c1f0000-0000-4000-8000-000000000002", keyword: "강화유리 필름" })] });
+  const screen = mountWith({ payload });
+  screen.controller.show();
+  await flush();
+  const check = screen.host.querySelector(`[data-coupang-rank-select="${TITLELESS_ID}"]`);
+  check.checked = true;
+  dispatch(check, "change");
+  assert.equal(screen.host.querySelector(".mi-rank-group-select").textContent, "전체 선택 (1/2)");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-selected-count]").textContent, "1개 선택");
+});
+
+test("빈 목록·필터 0개 문구는 N30 과 같다", async () => {
+  const empty = mountWith({ payload: listPayload({ trackers: [] }) });
+  empty.controller.show();
+  await flush();
+  assert.equal(empty.host.querySelector("[data-coupang-rank-list]").textContent, "추적 등록 후 상품별 일별 순위판이 생성됩니다.");
+  assert.equal(empty.host.querySelector("[data-coupang-rank-strip]").hidden, false, "추적이 0개여도 수집기 상태는 보인다");
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="paused"]'), "click");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-list]").textContent, "조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.");
 });
 
 // ── 통합 검토 결함: 같은 목록 두 번 받기·500개 초과 막다른 화면 ─────────────
@@ -1415,6 +1936,7 @@ test("한 범위 추적이 500개를 넘으면(hasMore) 받은 500개를 경고�
   assert.equal(bulkButton("bulk-delete").hidden, false);
   assert.equal(bulkButton("bulk-resume").hidden, true);
   assert.equal(bulkButton("bulk-group").hidden, true);
+  assert.equal(bulkButton("bulk-ungroup").hidden, true);
   assert.equal(host.querySelector("[data-coupang-rank-bulk-group-input]").hidden, true);
   assert.equal(bulk.querySelector(".mi-coupang-rank-bulk-group").hidden, true, "빈 그룹 이동 칸을 남기지 않는다");
   // 카드: 활성은 일시중지·삭제, 일시중지는 삭제만(다시 시작·그룹 변경 없음).
@@ -1427,7 +1949,7 @@ test("한 범위 추적이 500개를 넘으면(hasMore) 받은 500개를 경고�
   const capacity = host.querySelector("[data-coupang-rank-capacity]");
   assert.equal(capacity.hidden, false);
   assert.match(capacity.textContent, /등록할 수 없습니다/);
-  assert.match(host.querySelector("[data-coupang-rank-filter-count]").textContent, /500개 표시 · 받은 500개\(전체 501개\)/);
+  assert.match(host.querySelector("[data-coupang-rank-filter-count]").textContent, /500개 표시 \/ 받은 500개\(전체 501개\)/);
   // 일부 목록은 캐시하지 않는다.
   assert.equal(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), null);
   // 막힌 동작은 숨긴 버튼·제출 경로로 들어와도 보내지 않는다.
@@ -1555,10 +2077,14 @@ test("내보내기: toBlob 이 {blob, ext} 를 주면 확장자가 ext 로 바�
   assert.equal(record.links[0].clicks, 1);
   assert.equal(record.stageFills, 1);
   assert.equal(record.stageClears, 1);
-  assert.ok(screen.host.textContent.includes("1개 순위 이미지(JPG)가 준비되었습니다."));
+  assert.ok(screen.host.textContent.includes("1개 순위 항목의 공유 이미지(JPG)가 준비되었습니다."));
   // 내보내기 시트는 공용 mi-rank-* 클래스와 인라인 style 만 쓴다.
   const sheet = record.serialize[0].sheet;
-  assert.equal(sheet.querySelectorAll(".mi-rank-day-card").length, 30);
+  // 날짜 범위·문구는 화면 카드와 같다(등록한 10-16 부터 오늘 10-17 까지, '오늘' 표시 없음).
+  assert.equal(sheet.querySelectorAll(".mi-rank-day-card").length, 2);
+  const sheetText = sheet.textContent;
+  for (const expected of ["상품정보 · 8533720933 · 아이쉘 360도", "현재 28위", "최고 25위", "전회 대비 3위 상승", "10-17(토)순위28위"]) assert.ok(sheetText.includes(expected), expected);
+  for (const old of ["오늘", "상품번호", "30일 최고", "▲"]) assert.ok(!sheetText.includes(old), old);
   assert.ok(sheet.querySelectorAll("[style]").length > 0);
   assert.equal(sheet.querySelectorAll("[class]").filter((node) => node.className.includes("mi-coupang-rank")).length, 0);
 });

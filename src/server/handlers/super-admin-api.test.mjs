@@ -1456,3 +1456,13 @@ test("open-trial with unlimited opens the client without an expiry date", async 
   assert.equal(payload.client.plan.state, "none");
   assert.match(payload.message, /무기한/);
 });
+
+// ── 검수 2026-10-03 긴급 ① 반박 검토(2026-10-16): 계정 만들 때도 로그인과 같은 규칙으로 '*' 를 받지 않는다 ──
+test("새 코드 발급과 기존 계정 선택 규칙은 '*' 를 받지 않는다(로그인 규칙과 일치)", () => {
+  for (const code of ["brand*01", "abc*12", "******"]) {
+    assert.equal(normalizeAgencyCode(code), "", code);
+    assert.equal(existingAccountCode(code), "", code);
+  }
+  assert.equal(normalizeAgencyCode("brand-01"), "brand-01");
+  assert.equal(existingAccountCode("ofyou"), "ofyou");
+});

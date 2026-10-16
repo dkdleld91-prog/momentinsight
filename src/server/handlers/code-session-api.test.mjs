@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  activeClientByCode,
   activeTeamByCode,
   consumeRateLimit,
   loginRateConfiguration,
@@ -231,4 +232,40 @@ test("trial sessions stay active only while their trial login identity row exist
 
   const missingSub = await sessionStillActive(contextWithRows([]), { role: "client", agencyCode: "trial-x", trial: 1, gsub: "" });
   assert.equal(missingSub, null);
+});
+
+// ── 검수 2026-10-03 긴급 ①: '*' 가 PostgREST ilike 에서 '아무 글자'로 해석돼 코드 일부만으로 로그인되던 결함 ──
+test("접속 코드는 '*' 를 받지 않는다(광고주 5자·운영팀 6자 모두)", () => {
+  for (const [code, mode] of [["alst*", "client"], ["*****", "client"], ["******", "operator"], ["a*b*c*", "admin"], ["alstj4492*", "client"]]) {
+    assert.equal(normalizeRequestedLoginCode(code, mode), "", `${code} (${mode}) 는 거절해야 한다`);
+  }
+  assert.equal(normalizeLoginCode("abc*123"), "");
+  // 기존 허용 문자는 그대로다.
+  assert.equal(normalizeRequestedLoginCode("alstj4492", "client"), "alstj4492");
+  assert.equal(normalizeLoginCode("mml93-a01"), "mml93-a01");
+});
+
+test("패턴 문자(* % _ \\)가 섞인 코드는 조회 자체를 하지 않고, 정상 코드는 소문자 정확 값으로만 ilike 한다", async () => {
+  const patterns = [];
+  const ctx = {
+    supabaseAdmin: {
+      from() {
+        const query = {
+          select() { return query; },
+          ilike(_column, value) { patterns.push(value); return query; },
+          eq() { return query; },
+          maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+        };
+        return query;
+      },
+    },
+  };
+  for (const code of ["alst*", "a%", "ab_c1", "a\\b"]) {
+    assert.deepEqual(await activeClientByCode(ctx, code), { data: null, error: null });
+    assert.deepEqual(await activeTeamByCode(ctx, code), { data: null, error: null });
+  }
+  assert.deepEqual(patterns, [], "패턴 문자가 있으면 DB 조회를 하지 않는다");
+  await activeClientByCode(ctx, "  ALSTJ4492 ");
+  await activeTeamByCode(ctx, "Team-01");
+  assert.deepEqual(patterns, ["alstj4492", "team-01"]);
 });

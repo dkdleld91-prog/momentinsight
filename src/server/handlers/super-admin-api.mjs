@@ -56,7 +56,8 @@ function json(request, body, status = 200) {
 
 export function normalizeAgencyCode(value) {
   const code = String(value || "").trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{5,127}$/.test(code) ? code : "";
+  // '*' 는 받지 않는다 — 로그인 규칙과 같게 맞춘다(검수 2026-10-03 긴급 ①, 반박 검토 2026-10-16).
+  return /^[a-z0-9][a-z0-9.~!@#$^&+=:-]{5,127}$/.test(code) ? code : "";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1191,7 +1192,7 @@ function planExpiryText(iso) {
 // normalizeAgencyCode)은 그대로다. 2026-09-07 대표 보고: ofyou 계정에서 "광고주 코드를 입력해주세요" 가 떴다.
 export function existingAccountCode(value) {
   const code = String(value || "").trim().toLowerCase();
-  return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{4,127}$/.test(code) ? code : "";
+  return /^[a-z0-9][a-z0-9.~!@#$^&+=:-]{4,127}$/.test(code) ? code : "";
 }
 
 async function setPlan(request, ctx, body) {

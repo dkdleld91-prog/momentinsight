@@ -76,10 +76,12 @@ async function readJson(request) {
   }
 }
 
+// '*' 는 받지 않는다. 조회가 PostgREST ilike 라 '*' 가 '아무 글자'로 해석돼 코드 일부만으로
+// 남의 계정에 로그인되던 결함(검수 2026-10-03 긴급 ①)을 막는다. 운영 코드 20개에는 '*' 가 없다.
 function normalizeLoginCodeWithMinimum(value, minimumLength) {
   const code = String(value || "").trim();
   if (code.length < minimumLength || code.length > 128) return "";
-  if (!/^[A-Za-z0-9.~!@#$^&*+=:-]+$/.test(code)) return "";
+  if (!/^[A-Za-z0-9.~!@#$^&+=:-]+$/.test(code)) return "";
   return code;
 }
 
@@ -98,6 +100,14 @@ export function normalizeRequestedLoginCode(value, mode) {
 
 function normalizedIdentity(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+// ilike 는 대소문자만 무시하는 '정확히 같음' 으로만 쓴다. 패턴 문자(* % _ \\)가 섞인 값은
+// 어떤 행과도 맞지 않게 빈 값으로 돌려 조회 자체를 하지 않는다(세션 복원 경로 포함).
+function exactIdentityPattern(value) {
+  const identity = normalizedIdentity(value);
+  if (!identity || /[*%_\\]/.test(identity)) return "";
+  return identity;
 }
 
 function safeEqual(left, right) {
@@ -204,11 +214,12 @@ async function clearRateLimit(ctx, key) {
 }
 
 export async function activeClientByCode(ctx, code) {
+  if (!exactIdentityPattern(code)) return { data: null, error: null };
   // 플랜·이용 기간 열(2026-09-07)까지 읽는다. 열이 없으면(마이그레이션 전) 한 단 아래 열로 폴백한다.
   const planQuery = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, disconnected_at, plan_name, plan_days, plan_started_at, plan_expires_at, plan_note")
-    .ilike("agency_code", normalizedIdentity(code))
+    .ilike("agency_code", exactIdentityPattern(code))
     .eq("status", "active")
     .maybeSingle();
   if (!planQuery.error) {
@@ -219,14 +230,14 @@ export async function activeClientByCode(ctx, code) {
   let query = ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, disconnected_at")
-    .ilike("agency_code", normalizedIdentity(code))
+    .ilike("agency_code", exactIdentityPattern(code))
     .eq("status", "active");
   const result = await query.maybeSingle();
   if (result.error && /disconnected_at|schema cache/i.test(result.error.message || "")) {
     return ctx.supabaseAdmin
       .from("clients")
       .select("id, name, business_name, agency_code, status")
-      .ilike("agency_code", normalizedIdentity(code))
+      .ilike("agency_code", exactIdentityPattern(code))
       .eq("status", "active")
       .maybeSingle();
   }
@@ -235,17 +246,18 @@ export async function activeClientByCode(ctx, code) {
 }
 
 export async function activeTeamByCode(ctx, code) {
+  if (!exactIdentityPattern(code)) return { data: null, error: null };
   let result = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, team_name, team_code, status, client_id, revoked_at")
-    .ilike("team_code", normalizedIdentity(code))
+    .ilike("team_code", exactIdentityPattern(code))
     .eq("status", "active")
     .maybeSingle();
   if (result.error && /revoked_at|schema cache/i.test(result.error.message || "")) {
     result = await ctx.supabaseAdmin
       .from("operation_team_codes")
       .select("id, team_name, team_code, status, client_id")
-      .ilike("team_code", normalizedIdentity(code))
+      .ilike("team_code", exactIdentityPattern(code))
       .eq("status", "active")
       .maybeSingle();
   }

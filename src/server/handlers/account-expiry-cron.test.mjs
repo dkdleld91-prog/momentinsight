@@ -4,6 +4,7 @@ import handler, {
   RANK_TRACKER_TABLES,
   deleteExpiredClient,
   expireUnlinkedClients,
+  googleLinkTransitionClosed,
   revokeUnlinkedTeams,
   runAccountExpiry,
   selectDeleteDueClients,
@@ -352,4 +353,87 @@ test("기한 + 유예가 지나면 구글 미연동 활성 운영팀만 revoked 
   assert.equal(calls.some((call) => call.table === "clients"), false, "광고주 행은 건드리지 않는다");
   const audit = calls.find((call) => call.table === "audit_logs");
   assert.equal(audit.ops[0][1].action, "operation_team.revoked_unlinked");
+});
+
+// ── 검수 2026-10-03 긴급 ③: 구글 연동 전환은 기한 시점에 있던 계정에, 전환 기간 안에서 한 번만 적용한다 ──
+test("전환 기간 안에서도 기한 뒤 새로 만든 미연동 광고주와 기한 뒤 이용 기간을 손댄 광고주는 만료 처리하지 않는다", async () => {
+  const deadlineMs = Date.parse(googleLinkDeadlineIso());
+  const nowMs = deadlineMs + 1 * DAY;
+  const { ctx, calls } = fakeCtx({
+    clients: [
+      { id: "c-old", agency_code: "old001", status: "active", plan_expires_at: null, created_at: "2026-09-01T00:00:00.000Z" },
+      { id: "c-new", agency_code: "new001", status: "active", plan_expires_at: null, created_at: new Date(deadlineMs + 12 * 60 * 60 * 1000).toISOString() },
+      { id: "c-ext", agency_code: "ext001", status: "active", plan_expires_at: "2026-11-30T14:59:59.999Z", plan_updated_at: new Date(deadlineMs + 6 * 60 * 60 * 1000).toISOString(), created_at: "2026-08-01T00:00:00.000Z" },
+    ],
+    login_identities: [],
+  });
+  const result = await expireUnlinkedClients(ctx, { nowMs, env: ENV });
+  assert.deepEqual(result.marked.map((row) => row.agencyCode), ["old001"]);
+  const updated = calls.filter((call) => call.table === "clients" && call.ops.some(([op]) => op === "update"))
+    .map((call) => call.ops.find(([op, column]) => op === "eq" && column === "id")[2]);
+  assert.deepEqual(updated, ["c-old"]);
+  const select = calls.find((call) => call.table === "clients").ops.find(([op]) => op === "select")[1];
+  assert.match(select, /created_at/);
+  assert.match(select, /plan_updated_at/);
+});
+
+test("전환 기간 안에서 기한 뒤 만든 광고주가 구글을 연결해도 고정 만료일을 찍지 않는다", async () => {
+  const deadlineMs = Date.parse(googleLinkDeadlineIso());
+  const nowMs = deadlineMs + 1 * DAY;
+  const { ctx, calls } = fakeCtx({
+    clients: [
+      { id: "c-new", agency_code: "new002", status: "active", plan_expires_at: null, plan_updated_at: null, created_at: new Date(deadlineMs + 12 * 60 * 60 * 1000).toISOString() },
+      { id: "c-old", agency_code: "old002", status: "active", plan_expires_at: null, plan_updated_at: null, created_at: new Date(deadlineMs - 30 * DAY).toISOString() },
+    ],
+    login_identities: [{ code: "new002" }, { code: "old002" }],
+  });
+  const result = await startLinkedClientPlans(ctx, { nowMs, env: ENV });
+  assert.deepEqual(result.started.map((row) => row.agencyCode), ["old002"]);
+  assert.equal(calls.filter((call) => call.table === "clients" && call.ops.some(([op]) => op === "update")).length, 1);
+});
+
+test("전환 기간 안에서 기한 뒤 만든 운영팀 코드는 미연동이어도 해제하지 않는다", async () => {
+  const deadlineMs = Date.parse(googleLinkDeadlineIso());
+  const nowMs = deadlineMs + GOOGLE_LINK_GRACE_DAYS * DAY + 60 * 60 * 1000;
+  const { ctx } = fakeCtx({
+    operation_team_codes: [
+      { id: "t-old", team_code: "teamold", status: "active", created_at: "2026-08-01T00:00:00.000Z" },
+      { id: "t-new", team_code: "teamnew", status: "active", created_at: new Date(deadlineMs + DAY).toISOString() },
+    ],
+    login_identities: [],
+  });
+  const result = await revokeUnlinkedTeams(ctx, { nowMs, env: ENV });
+  assert.deepEqual(result.revoked.map((row) => row.teamCode), ["teamold"]);
+});
+
+test("전환 기간(기한+유예 3일+2일)이 지나면 세 단계 모두 DB 를 읽지도 않는다 — 다시 켠 광고주·연결 해제 광고주·다시 켠 운영팀 보호", async () => {
+  const deadlineMs = Date.parse(googleLinkDeadlineIso());
+  const closeMs = deadlineMs + (GOOGLE_LINK_GRACE_DAYS + 2) * DAY;
+  assert.equal(googleLinkTransitionClosed(closeMs - 1, deadlineMs), false);
+  assert.equal(googleLinkTransitionClosed(closeMs, deadlineMs), true);
+  const rows = {
+    clients: [
+      // 기한 전부터 일시중지였다가 기한 뒤 다시 켠 광고주(만료일 없음)
+      { id: "c-re", agency_code: "react01", status: "active", plan_expires_at: null, created_at: "2026-07-01T00:00:00.000Z" },
+      // 기한 때 연동돼 30일이 시작됐다가 기한 뒤 구글 연결을 해제한 광고주
+      { id: "c-un", agency_code: "unlink1", status: "active", plan_expires_at: googleLinkPlanExpiryIso(), plan_updated_at: new Date(deadlineMs + 3600000).toISOString(), created_at: "2026-07-01T00:00:00.000Z" },
+    ],
+    // 10/11 에 크론이 해제했다가 총관리자가 다시 켠 운영팀
+    operation_team_codes: [{ id: "t-re", team_code: "teamre1", status: "active", created_at: "2026-07-01T00:00:00.000Z" }],
+    login_identities: [],
+  };
+  for (const nowMs of [closeMs, Date.parse("2026-10-17T18:30:00Z"), Date.parse("2026-12-01T18:30:00Z")]) {
+    const { ctx, calls } = fakeCtx(rows);
+    const expired = await expireUnlinkedClients(ctx, { nowMs, env: ENV });
+    const started = await startLinkedClientPlans(ctx, { nowMs, env: ENV });
+    const revoked = await revokeUnlinkedTeams(ctx, { nowMs, env: ENV });
+    assert.equal(expired.active, false);
+    assert.equal(expired.closed, true);
+    assert.deepEqual(expired.marked, []);
+    assert.equal(started.active, false);
+    assert.deepEqual(started.started, []);
+    assert.equal(revoked.active, false);
+    assert.deepEqual(revoked.revoked, []);
+    assert.equal(calls.length, 0, "전환이 끝난 뒤에는 표를 읽지도 쓰지도 않는다");
+  }
 });

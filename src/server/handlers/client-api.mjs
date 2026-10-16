@@ -800,13 +800,24 @@ async function keywordNotesFetch(request) {
   return module.default.fetch(request);
 }
 
+// 홈 피드·키워드 조사·조사 노트도 public-state 처럼 코드 세션 머리글만 믿는다. 외부 자격
+// 머리글이 실린 요청은 세션 게이트를 거치지 않은 요청이므로 여기서도 한 번 더 거절한다.
+function sessionOnlyRejected(request) {
+  if (!carriesExternalSupabaseCredential(request)) return null;
+  return json({
+    ok: false,
+    code: "SESSION_REQUIRED",
+    message: "접속 세션에서만 사용할 수 있습니다."
+  }, 401);
+}
+
 export default {
   fetch(request) {
     const { resource } = routeParts(request, "/api/client");
     if (resource === "public-state") return sessionScopedFetch(request);
-    if (resource === "home-feed") return homeFeedFetch(request);
-    if (resource === "keyword-research") return keywordResearchFetch(request);
-    if (resource === "keyword-notes") return keywordNotesFetch(request);
+    if (resource === "home-feed") return sessionOnlyRejected(request) || homeFeedFetch(request);
+    if (resource === "keyword-research") return sessionOnlyRejected(request) || keywordResearchFetch(request);
+    if (resource === "keyword-notes") return sessionOnlyRejected(request) || keywordNotesFetch(request);
     return userScopedFetch(request);
   }
 };

@@ -133,13 +133,35 @@ export async function deleteExpiredClient(ctx, client) {
 // 구글 연동 기한(GOOGLE_LINK_DEADLINE, 대표 지시 2026-09-08)이 지나면, 구글을 연결하지 않은 활성 광고주 코드 계정에 만료일(=기한)을
 // 찍는다. 이후는 기존 흐름: 만료 팝업·읽기 전용 → 유예 3일(plan_note 로 판정) → 위 삭제. 총관리자 코드와 이미 그 전에 만료된 계정은
 // 건드리지 않는다. 연결 여부 = login_identities(role client) 에 그 코드가 있는지. dryRun 이면 대상만 보고한다.
+// 구글 연동 전환(미연동 만료·연동 계정 30일 시작·미연동 운영팀 해제)은 한 번만 하는 일이다.
+// 운영 실행 기록: 2026-10-08 04:22 만료 13·시작 4, 2026-10-11 04:22 삭제 13·운영팀 해제 4.
+// 기한 + 유예(3일) + 2일이 지나면 세 단계 모두 멈춘다. 그렇지 않으면 기한 뒤 다시 켠 계정·
+// 구글 연결을 해제한 계정·다시 켠 운영팀이 다음 03:30 에 바로 만료·삭제·해제된다(반박 검토 2026-10-16).
+const GOOGLE_LINK_TRANSITION_EXTRA_DAYS = 2;
+
+export function googleLinkTransitionClosed(nowMs, deadlineMs) {
+  if (!Number.isFinite(deadlineMs)) return true;
+  return nowMs >= deadlineMs + (GOOGLE_LINK_GRACE_DAYS + GOOGLE_LINK_TRANSITION_EXTRA_DAYS) * DAY_MS;
+}
+
+function createdAtOrAfterDeadline(row, deadlineMs) {
+  const createdMs = Date.parse(String(row?.created_at || ""));
+  return Number.isFinite(createdMs) && createdMs >= deadlineMs;
+}
+
+function touchedAtOrAfterDeadline(row, deadlineMs) {
+  const touchedMs = Date.parse(String(row?.plan_updated_at || ""));
+  return Number.isFinite(touchedMs) && touchedMs >= deadlineMs;
+}
+
 export async function expireUnlinkedClients(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
   const deadline = googleLinkDeadlineIso();
   const deadlineMs = Date.parse(String(deadline || ""));
   if (!Number.isFinite(deadlineMs) || nowMs < deadlineMs) return { active: false, deadline, marked: [], failed: [] };
+  if (googleLinkTransitionClosed(nowMs, deadlineMs)) return { active: false, closed: true, deadline, marked: [], failed: [] };
   const clients = await ctx.supabaseAdmin
     .from("clients")
-    .select("id, name, agency_code, status, plan_expires_at, plan_note")
+    .select("id, name, agency_code, status, plan_expires_at, plan_note, plan_updated_at, created_at")
     .eq("status", "active");
   if (clients.error) throw clients.error;
   const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "client");
@@ -153,6 +175,10 @@ export async function expireUnlinkedClients(ctx, { nowMs = Date.now(), dryRun = 
     if (!code || code === owner || linked.has(code)) continue;
     const currentMs = Date.parse(String(row.plan_expires_at || ""));
     if (Number.isFinite(currentMs) && currentMs <= deadlineMs) continue; // 이미 기한 전에 만료된 계정은 그대로
+    // 구글 연동 전환은 기한 시점에 이미 있던 계정에 한 번만 적용한다(검수 2026-10-03 긴급 ③).
+    // 기한 뒤 새로 만든 계정과 기한 뒤 총관리자가 이용 기간을 손댄 계정(연장·무기한)은 건드리지 않는다.
+    if (createdAtOrAfterDeadline(row, deadlineMs)) continue;
+    if (touchedAtOrAfterDeadline(row, deadlineMs)) continue;
     if (dryRun) {
       marked.push({ agencyCode: code, name: row.name || "", dryRun: true });
       continue;
@@ -193,9 +219,10 @@ export async function startLinkedClientPlans(ctx, { nowMs = Date.now(), dryRun =
   const deadlineMs = Date.parse(String(deadline || ""));
   const expiresAt = googleLinkPlanExpiryIso();
   if (!Number.isFinite(deadlineMs) || nowMs < deadlineMs || !expiresAt) return { active: false, deadline, expiresAt, started: [], failed: [] };
+  if (googleLinkTransitionClosed(nowMs, deadlineMs)) return { active: false, closed: true, deadline, expiresAt, started: [], failed: [] };
   const clients = await ctx.supabaseAdmin
     .from("clients")
-    .select("id, name, agency_code, status, plan_name, plan_expires_at, plan_updated_at")
+    .select("id, name, agency_code, status, plan_name, plan_expires_at, plan_updated_at, created_at")
     .eq("status", "active");
   if (clients.error) throw clients.error;
   const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "client");
@@ -208,8 +235,8 @@ export async function startLinkedClientPlans(ctx, { nowMs = Date.now(), dryRun =
     const code = String(row.agency_code || "").trim().toLowerCase();
     if (!code || code === owner || !linked.has(code)) continue;
     if (Number.isFinite(Date.parse(String(row.plan_expires_at || "")))) continue; // 이미 이용 기간이 있는 계정은 그대로
-    const touchedMs = Date.parse(String(row.plan_updated_at || ""));
-    if (Number.isFinite(touchedMs) && touchedMs >= deadlineMs) continue; // 기한 뒤 총관리자가 손댄 계정(예: 일부러 무기한)
+    if (touchedAtOrAfterDeadline(row, deadlineMs)) continue; // 기한 뒤 총관리자가 손댄 계정(예: 일부러 무기한)
+    if (createdAtOrAfterDeadline(row, deadlineMs)) continue; // 기한 뒤 만든 계정은 고정 만료일(11/06)을 찍지 않는다
     if (dryRun) {
       started.push({ agencyCode: code, name: row.name || "", expiresAt, dryRun: true });
       continue;
@@ -255,9 +282,10 @@ export async function revokeUnlinkedTeams(ctx, { nowMs = Date.now(), dryRun = fa
   const deadlineMs = Date.parse(String(deadline || ""));
   const revokeFromMs = Number.isFinite(deadlineMs) ? deadlineMs + GOOGLE_LINK_GRACE_DAYS * DAY_MS : NaN;
   if (!Number.isFinite(revokeFromMs) || nowMs < revokeFromMs) return { active: false, revokeFrom: Number.isFinite(revokeFromMs) ? new Date(revokeFromMs).toISOString() : null, revoked: [], failed: [] };
+  if (googleLinkTransitionClosed(nowMs, deadlineMs)) return { active: false, closed: true, revokeFrom: new Date(revokeFromMs).toISOString(), revoked: [], failed: [] };
   const teams = await ctx.supabaseAdmin
     .from("operation_team_codes")
-    .select("id, team_name, team_code, status, client_id")
+    .select("id, team_name, team_code, status, client_id, created_at")
     .eq("status", "active");
   if (teams.error) throw teams.error;
   const identities = await ctx.supabaseAdmin.from("login_identities").select("code").eq("role", "team");
@@ -269,6 +297,7 @@ export async function revokeUnlinkedTeams(ctx, { nowMs = Date.now(), dryRun = fa
   for (const row of teams.data || []) {
     const code = String(row.team_code || "").trim().toLowerCase();
     if (!code || linked.has(code)) continue;
+    if (createdAtOrAfterDeadline(row, deadlineMs)) continue; // 기한 뒤 만든 운영팀은 해제하지 않는다
     if (dryRun) {
       revoked.push({ teamCode: code, name: row.team_name || "", dryRun: true });
       continue;

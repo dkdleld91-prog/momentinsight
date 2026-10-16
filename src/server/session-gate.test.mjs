@@ -499,3 +499,15 @@ test("expired advertiser plans keep the session but block writes outside the rea
   const ok = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", fresh, { method: "POST", body: "{}", headers: { "content-type": "application/json", origin: "https://insight.momentlabs.co.kr" } }), env, { fetchImpl: activeFetch });
   assert.equal(ok.ok, true, "기간이 남은 광고주는 그대로 쓴다");
 });
+
+// ── 검수 2026-10-03 긴급 ②: apikey·authorization 머리글 하나로 코드 세션 게이트를 건너뛰던 결함 ──
+test("코드 세션 전용 광고주 경로는 외부 자격 머리글이 있어도 세션 게이트를 건너뛰지 않는다", () => {
+  for (const path of ["/api/client/public-state", "/api/client/home-feed", "/api/client/keyword-research", "/api/client/keyword-notes"]) {
+    for (const headers of [{ apikey: "anything" }, { authorization: "Bearer x" }, {}]) {
+      assert.equal(requiresCodeSession(new Request(`https://example.test${path}`, { headers })), true, `${path} ${JSON.stringify(headers)}`);
+    }
+  }
+  // 사용자 토큰을 검증하는 다른 광고주·관리 경로의 예외는 그대로다(withSupabase auth user/secret).
+  assert.equal(requiresCodeSession(new Request("https://example.test/api/client/dashboard", { headers: { authorization: "Bearer x" } })), false);
+  assert.equal(requiresCodeSession(new Request("https://example.test/api/admin/clients", { headers: { apikey: "k" } })), false);
+});

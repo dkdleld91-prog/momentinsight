@@ -65,12 +65,13 @@
   var BODY_LINE_1 = "모먼트 인사이트가 더 안전하고 간편한 구글 계정 로그인으로 전환됩니다.";
   // 두 번째 줄 앞머리의 기한(날짜 + 카운트다운)만 강조 노드로 떼어 낸다(대표 지시 2026-08-26 방식 유지).
   // 기한이 지난 뒤에도 미연동 계정에는 팝업이 계속 뜬다 — 그때는 "지나면"이 아니라 "지났다"로 말한다(2026-09-08 점검).
+  // 전환(미연동 만료·삭제)은 2026-10-12 로 닫혔다. 기한 뒤 문구에는 삭제·연장 요청을 말하지 않는다(2026-10-16 반박 검토).
   var DEADLINE_PASSED = DAYS_LEFT < 0;
   var DEADLINE_TEXT = DEADLINE_PASSED
     ? deadlineLabel() + " 연동 기한이 지났습니다"
     : deadlineLabel() + "까지 (" + COUNTDOWN_TEXT + ")";
   var BODY_LINE_2 = DEADLINE_PASSED
-    ? DEADLINE_TEXT + " — 지금 구글 계정을 연결하고 카카오톡 채널로 연장을 요청해 주세요. 연결하지 않은 계정은 만료 3일 뒤 삭제됩니다."
+    ? DEADLINE_TEXT + " — 구글 계정을 연결하면 다음부터 구글 계정으로 바로 로그인할 수 있습니다."
     : DEADLINE_TEXT + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되어 3일 뒤 삭제되고, 연결한 계정은 " + planStartLabel() + "부터 30일 이용 기간이 시작됩니다.";
   var PRIMARY_TEXT = "구글 계정 연결";
   var SECONDARY_TEXT = "나중에 하기";

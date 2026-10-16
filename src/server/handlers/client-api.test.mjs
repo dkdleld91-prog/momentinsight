@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import clientApiRouter from "./client-api.mjs";
 import test from "node:test";
 import {
   clientScheduleSelectFields,
@@ -718,4 +719,16 @@ test("public-state serves a synthetic empty state to a trial session without tou
   );
   assert.equal(write.status, 403);
   assert.equal((await write.json()).code, "PUBLIC_STATE_READ_ONLY");
+});
+
+// ── 검수 2026-10-03 긴급 ②: 홈 피드·키워드 조사·조사 노트도 외부 자격 머리글 요청을 거절한다 ──
+test("홈 피드·키워드 조사·조사 노트는 apikey·authorization 이 실린 요청을 401 로 거절한다", async () => {
+  for (const resource of ["home-feed", "keyword-research", "keyword-notes"]) {
+    for (const headers of [{ apikey: "anything", "x-mi-session-role": "owner", "x-mi-owner-agency-code": "mml93-a01" }, { authorization: "Bearer forged" }]) {
+      const response = await clientApiRouter.fetch(new Request(`https://example.test/api/client/${resource}`, { headers }));
+      assert.equal(response.status, 401, `${resource} ${JSON.stringify(Object.keys(headers))}`);
+      const body = await response.json();
+      assert.equal(body.code, "SESSION_REQUIRED");
+    }
+  }
 });

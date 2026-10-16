@@ -42,7 +42,7 @@ function nudgeCountdown() {
   const planStartText = `${Number(startMonth)}월 ${Number(startDay)}일`;
   // 기한 뒤에는 "지나면"이 아니라 "지났다"로 말한다(스크립트와 같은 분기).
   const bodyLine2 = passed
-    ? deadlineText + " — 지금 구글 계정을 연결하고 카카오톡 채널로 연장을 요청해 주세요. 연결하지 않은 계정은 만료 3일 뒤 삭제됩니다."
+    ? deadlineText + " — 구글 계정을 연결하면 다음부터 구글 계정으로 바로 로그인할 수 있습니다."
     : deadlineText + " 구글 계정을 연결해 주세요 — 기한이 지나면 연결하지 않은 계정은 이용이 만료되어 3일 뒤 삭제되고, 연결한 계정은 " +
       planStartText + "부터 30일 이용 기간이 시작됩니다.";
   return { countdown, deadlineText, planStartText, bodyLine2 };

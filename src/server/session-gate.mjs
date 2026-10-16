@@ -147,7 +147,17 @@ function requestHasExternalSupabaseCredential(request) {
   return Boolean(request.headers.get("authorization") || request.headers.get("apikey"));
 }
 
+// 코드 세션 전용 광고주 경로. 핸들러가 세션 게이트가 심은 x-mi-* 머리글만 믿으므로,
+// apikey·authorization 이 실려 와도 게이트를 건너뛰지 않는다(검수 2026-10-03 긴급 ②).
+const CODE_SESSION_ONLY_CLIENT_PATHS = new Set([
+  "/api/client/public-state",
+  "/api/client/home-feed",
+  "/api/client/keyword-research",
+  "/api/client/keyword-notes",
+]);
+
 function pathAcceptsExternalSupabaseCredential(path) {
+  if (CODE_SESSION_ONLY_CLIENT_PATHS.has(path)) return false;
   return path.startsWith("/api/client/") || path.startsWith("/api/admin/");
 }
 

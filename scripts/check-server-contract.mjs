@@ -2076,6 +2076,24 @@ check(
     && /geolocation=\(\)/.test(globalSecurityHeaders["permissions-policy"] || ""),
   files.vercel,
 );
+// C 30일 순위(쿠팡, 대표 승인 2026-10-16 D1): 라우터·게이트에는 추가 줄만 넣는다. 화면 API 는 일반 세션 경로
+// (미연결 팀 코드 주입·만료 광고주 GET 허용, 체험은 TRIAL_LOCKED), 수집기 API 는 세션 없는 경로(연결 코드 Bearer)다.
+function sessionGateSetBlock(name) {
+  return sessionGate.match(new RegExp(`const ${name} = new Set\\(\\[[\\s\\S]*?\\]\\);`))?.[0] || "";
+}
+const coupangTrialAllowedBlock = sessionGateSetBlock("TRIAL_ALLOWED_PATHS");
+check(
+  "C 30-day Coupang rank routes are wired through the router and session gate",
+  sessionFreePathsBlock.includes('"/api/coupang-rank-worker"')
+    && !sessionFreePathsBlock.includes('"/api/coupang-rank-trackers"')
+    && sessionGateSetBlock("TEAM_ACCOUNT_ONLY_RANK_PATHS").includes('"/api/coupang-rank-trackers"')
+    && sessionGateSetBlock("PLAN_EXPIRED_GET_PATHS").includes('"/api/coupang-rank-trackers"')
+    && coupangTrialAllowedBlock !== ""
+    && !coupangTrialAllowedBlock.includes('"/api/coupang-rank-')
+    && /if \(url\.pathname === "\/api\/coupang-rank-trackers"\) \{\s*return dispatch\("coupangRankTrackers", request\);/.test(serverIndex)
+    && /if \(url\.pathname === "\/api\/coupang-rank-worker"\) \{\s*return dispatch\("coupangRankWorker", request\);/.test(serverIndex),
+  `${files.sessionGate}, ${files.serverIndex}`,
+);
 
 for (const result of checks) {
   console.log(`${result.ok ? "PASS" : "FAIL"} ${result.name} (${result.detail})`);

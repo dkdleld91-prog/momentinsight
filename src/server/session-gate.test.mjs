@@ -9,6 +9,7 @@ import {
   boundedApiRequest,
   internalRequestForSession,
   isTrialClaims,
+  planExpiredAllowsRequest,
   requiresCodeSession,
   roleAllowsPath,
   sessionScopeAllowsPath,
@@ -510,4 +511,196 @@ test("코드 세션 전용 광고주 경로는 외부 자격 머리글이 있어
   // 사용자 토큰을 검증하는 다른 광고주·관리 경로의 예외는 그대로다(withSupabase auth user/secret).
   assert.equal(requiresCodeSession(new Request("https://example.test/api/client/dashboard", { headers: { authorization: "Bearer x" } })), false);
   assert.equal(requiresCodeSession(new Request("https://example.test/api/admin/clients", { headers: { apikey: "k" } })), false);
+});
+
+// ── C 30일 순위(쿠팡, 대표 승인 2026-10-16 D1) ──
+// 화면 API(/api/coupang-rank-trackers)는 일반 세션 경로다: 미연결 팀에는 팀 코드를 주입하고, 만료 광고주는 GET 만,
+// 체험은 TRIAL_LOCKED. 수집기 API(/api/coupang-rank-worker)는 세션 없는 경로로, 연결 코드(Bearer)는 핸들러가 검사한다.
+const COUPANG_TRACKERS_PATH = "/api/coupang-rank-trackers";
+const COUPANG_WORKER_PATH = "/api/coupang-rank-worker";
+const COUPANG_SITE_ORIGIN = "https://insight.momentlabs.co.kr";
+const COUPANG_FORGED_HEADERS = {
+  authorization: "Bearer forged-browser-token",
+  apikey: "forged-browser-key",
+  "x-demo-admin-code": "forged-demo",
+  "x-mi-super-admin-code": "forged-super",
+  "x-mi-owner-agency-code": "mml93-a01",
+  "x-mi-team-code": "mml93-t99",
+  "x-mi-agency-code": "mml93-a99",
+  "x-mi-rank-access-code": "forged-browser-secret",
+  "x-mi-session-role": "owner",
+  "x-mi-session-scope": "advertiser",
+};
+
+function coupangPostWithSession(path, claims, headers = {}) {
+  return requestWithSession(path, claims, {
+    method: "POST",
+    body: "{}",
+    headers: { "content-type": "application/json", origin: COUPANG_SITE_ORIGIN, ...headers },
+  });
+}
+
+test("C 순위: 수집기 경로만 세션 없이 열리고, 그 하위 경로와 화면 경로는 코드 세션을 요구한다", () => {
+  assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_WORKER_PATH}`)), false);
+  assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_WORKER_PATH}`, { method: "POST", body: "{}" })), false);
+  assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_WORKER_PATH}/x`)), true);
+  assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_TRACKERS_PATH}`)), true);
+  assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_TRACKERS_PATH}`, { method: "POST", body: "{}" })), true);
+  // 화면 경로는 /api/client/·/api/admin/ 이 아니므로 외부 자격 머리글이 실려 와도 게이트를 건너뛰지 않는다.
+  for (const headers of [{ apikey: "anything" }, { authorization: `Bearer mic1_${"A".repeat(43)}` }]) {
+    assert.equal(requiresCodeSession(new Request(`https://example.test${COUPANG_TRACKERS_PATH}`, { headers })), true, JSON.stringify(headers));
+  }
+  assert.equal(trialAllowsPath(COUPANG_TRACKERS_PATH), false);
+});
+
+test("C 순위: 총관리자·운영팀·광고주 역할 모두 화면 경로를 열고, 연결된 세션은 자기 광고주 코드로만 들어간다", async () => {
+  for (const role of ["owner", "team", "client"]) {
+    assert.equal(roleAllowsPath(role, COUPANG_TRACKERS_PATH), true, role);
+  }
+  const owner = createSessionClaims({ role: "owner", agencyCode: "mml93-a01" });
+  const linkedTeam = createSessionClaims({ role: "team", teamCode: "mml93-t01", teamId: "team-1", clientId: "client-1", agencyCode: "mml93-a02" });
+  const client = createSessionClaims({ role: "client", clientId: "client-1", agencyCode: "mml93-a02" });
+  for (const claims of [owner, linkedTeam, client]) {
+    assert.equal(sessionScopeAllowsPath(claims, COUPANG_TRACKERS_PATH), true, claims.role);
+  }
+
+  for (const claims of [linkedTeam, client]) {
+    const result = await authorizeCodeSession(requestWithSession(`${COUPANG_TRACKERS_PATH}?limit=500`, claims, {
+      headers: COUPANG_FORGED_HEADERS,
+    }), ENV, { activityCheck: async () => true });
+    assert.equal(result.ok, true, claims.role);
+    assert.equal(result.request.headers.get("x-mi-session-role"), claims.role);
+    assert.equal(result.request.headers.get("x-mi-session-scope"), "advertiser");
+    assert.equal(result.request.headers.get("x-mi-agency-code"), "mml93-a02");
+    assert.equal(result.request.headers.get("x-mi-rank-access-code"), "mml93-a02");
+    assert.equal(result.request.headers.get("x-mi-owner-agency-code"), null);
+    assert.equal(result.request.headers.get("x-mi-super-admin-code"), null);
+    assert.equal(result.request.headers.get("authorization"), null);
+    assert.equal(result.request.headers.get("apikey"), null);
+  }
+
+  // 총관리자: 게이트는 대표 코드를 심고, 요청한 대상 광고주 코드(x-mi-agency-code)는 범위 판정을 위해 그대로 넘긴다.
+  const ownerResult = await authorizeCodeSession(requestWithSession(`${COUPANG_TRACKERS_PATH}?limit=500`, owner, {
+    headers: { "x-mi-agency-code": "mml93-a02", "x-mi-session-role": "client" },
+  }), ENV, { activityCheck: async () => true });
+  assert.equal(ownerResult.ok, true);
+  assert.equal(ownerResult.request.headers.get("x-mi-session-role"), "owner");
+  assert.equal(ownerResult.request.headers.get("x-mi-owner-agency-code"), "mml93-a01");
+  assert.equal(ownerResult.request.headers.get("x-mi-agency-code"), "mml93-a02");
+  assert.equal(ownerResult.request.headers.get("apikey"), null, "화면 경로는 /api/admin/ 이 아니라 서버 비밀키를 싣지 않는다");
+});
+
+test("C 순위: 광고주 미연결 운영팀은 팀 코드 범위로 들어가고 브라우저가 위조한 머리글은 지워진다", async () => {
+  const claims = createSessionClaims({ role: "team", teamCode: "mml93-t01", teamId: "team-1" });
+  assert.equal(sessionScopeAllowsPath(claims, COUPANG_TRACKERS_PATH), true);
+
+  const internal = internalRequestForSession(new Request(`${COUPANG_SITE_ORIGIN}${COUPANG_TRACKERS_PATH}?limit=500`, {
+    headers: { ...COUPANG_FORGED_HEADERS, "x-mi-csrf": "forged-csrf" },
+  }), claims, ENV);
+  assert.equal(internal.headers.get("x-mi-session-role"), "team");
+  assert.equal(internal.headers.get("x-mi-session-scope"), "account-only");
+  assert.equal(internal.headers.get("x-mi-team-code"), "mml93-t01");
+  assert.equal(internal.headers.get("x-mi-agency-code"), "mml93-t01");
+  assert.equal(internal.headers.get("x-mi-rank-access-code"), "mml93-t01");
+  for (const name of ["authorization", "apikey", "x-demo-admin-code", "x-mi-super-admin-code", "x-mi-owner-agency-code", "x-mi-csrf"]) {
+    assert.equal(internal.headers.get(name), null, name);
+  }
+
+  for (const request of [
+    requestWithSession(`${COUPANG_TRACKERS_PATH}?limit=500`, claims, { headers: COUPANG_FORGED_HEADERS }),
+    coupangPostWithSession(COUPANG_TRACKERS_PATH, claims, COUPANG_FORGED_HEADERS),
+  ]) {
+    const result = await authorizeCodeSession(request, ENV, { activityCheck: async () => true });
+    assert.equal(result.ok, true, request.method);
+    assert.equal(result.session?.role, "team");
+    assert.equal(result.request.headers.get("x-mi-session-role"), "team");
+    assert.equal(result.request.headers.get("x-mi-session-scope"), "account-only");
+    assert.equal(result.request.headers.get("x-mi-team-code"), "mml93-t01");
+    assert.equal(result.request.headers.get("x-mi-agency-code"), "mml93-t01");
+    assert.equal(result.request.headers.get("x-mi-rank-access-code"), "mml93-t01");
+    assert.equal(result.request.headers.get("x-mi-owner-agency-code"), null);
+    assert.equal(result.request.headers.get("authorization"), null);
+    assert.equal(result.request.headers.get("x-mi-csrf"), null);
+  }
+});
+
+test("C 순위: 체험 계정은 화면 경로 GET·POST 모두 403 TRIAL_LOCKED 이고 예시 응답도 없다", async () => {
+  const claims = trialClaims();
+  const read = await authorizeCodeSession(requestWithSession(`${COUPANG_TRACKERS_PATH}?limit=500`, claims), ENV, {
+    activityCheck: async () => true,
+  });
+  assert.equal(read.ok, false);
+  assert.equal(read.response.status, 403);
+  assert.equal((await read.response.json()).code, "TRIAL_LOCKED");
+
+  const write = await authorizeCodeSession(coupangPostWithSession(COUPANG_TRACKERS_PATH, claims), ENV, {
+    activityCheck: async () => true,
+  });
+  assert.equal(write.ok, false);
+  assert.equal(write.response.status, 403);
+  assert.equal((await write.response.json()).code, "TRIAL_LOCKED");
+});
+
+test("C 순위: 이용 기간이 끝난 광고주는 기록 GET 만 열리고 POST 는 PLAN_EXPIRED 다(D4)", async () => {
+  assert.equal(planExpiredAllowsRequest(new Request(`${COUPANG_SITE_ORIGIN}${COUPANG_TRACKERS_PATH}?limit=500`), COUPANG_TRACKERS_PATH), true);
+  assert.equal(planExpiredAllowsRequest(new Request(`${COUPANG_SITE_ORIGIN}${COUPANG_TRACKERS_PATH}`, { method: "POST", body: "{}" }), COUPANG_TRACKERS_PATH), false);
+
+  const claims = createSessionClaims({ role: "client", clientId: "client-9", agencyCode: "mml93-a09" });
+  const env = { ...ENV, SUPABASE_URL: "https://project.supabase.co" };
+  const expiredFetch = async (url) => {
+    assert.match(new URL(url).pathname, /clients/);
+    return Response.json([{ id: "client-9", agency_code: "mml93-a09", status: "active", disconnected_at: null, plan_expires_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }]);
+  };
+  const read = await authorizeCodeSession(requestWithSession(`${COUPANG_TRACKERS_PATH}?limit=500`, claims), env, { fetchImpl: expiredFetch });
+  assert.equal(read.ok, true, "만료돼도 C 순위 기록 GET 은 열린다");
+  const write = await authorizeCodeSession(coupangPostWithSession(COUPANG_TRACKERS_PATH, claims), env, { fetchImpl: expiredFetch });
+  assert.equal(write.ok, false);
+  assert.equal(write.response.status, 403);
+  assert.equal((await write.response.json()).code, "PLAN_EXPIRED");
+});
+
+// 수집기 경로는 게이트가 세션을 열지 않으므로 신뢰 머리글(x-mi-*)을 심지도 지우지도 않는다. 그래서 핸들러
+// (src/server/handlers/coupang-rank-worker.mjs)는 x-mi-* 머리글을 하나도 읽지 않고 authorization: Bearer mic1_… 과
+// x-mi-coupang-collector 만 본다(scripts/coupang-rank-wiring.test.mjs 가 원문으로 강제). 본문 상한 64KB 도 핸들러가 강제한다.
+test("C 순위: 수집기 경로는 세션 없이(session: null) 통과하고 게이트가 요청·머리글을 바꾸지 않는다", async () => {
+  const request = new Request(`${COUPANG_SITE_ORIGIN}${COUPANG_WORKER_PATH}`, {
+    method: "POST",
+    headers: {
+      ...COUPANG_FORGED_HEADERS,
+      authorization: `Bearer mic1_${"A".repeat(43)}`,
+      "x-mi-coupang-collector": "1.0.0",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ action: "hello" }),
+  });
+  const before = [...request.headers.entries()];
+  const result = await authorizeCodeSession(request, ENV, {
+    activityCheck: async () => assert.fail("수집기 경로는 세션 활성 확인을 하지 않는다"),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.session, null);
+  assert.equal(result.request, request);
+  assert.deepEqual([...result.request.headers.entries()], before);
+  assert.equal(result.request.headers.get("x-mi-session-role"), "owner", "위조 머리글이 그대로 남으므로 핸들러가 무시해야 한다");
+
+  // 세션 쿠키가 실려 와도 마찬가지다: 세션을 열지 않고, 신뢰 머리글을 심지 않는다.
+  const owner = createSessionClaims({ role: "owner", agencyCode: "mml93-a01" });
+  const withCookie = requestWithSession(COUPANG_WORKER_PATH, owner, {
+    method: "POST",
+    body: "{}",
+    headers: { "x-mi-session-role": "client", origin: "https://evil.example" },
+  });
+  const passed = await authorizeCodeSession(withCookie, ENV);
+  assert.equal(passed.ok, true);
+  assert.equal(passed.session, null);
+  assert.equal(passed.request.headers.get("x-mi-session-role"), "client");
+  assert.equal(passed.request.headers.get("x-mi-owner-agency-code"), null);
+
+  // 게이트의 본문 선읽기는 기본 상한(12MiB)이라 64KB 를 넘는 본문도 핸들러까지 간다 — 413 은 핸들러 몫이다.
+  const large = await boundedApiRequest(new Request(`${COUPANG_SITE_ORIGIN}${COUPANG_WORKER_PATH}`, {
+    method: "POST",
+    body: "x".repeat(65537),
+  }));
+  assert.equal(large.ok, true);
+  assert.equal(large.request.headers.get("content-length"), "65537");
 });

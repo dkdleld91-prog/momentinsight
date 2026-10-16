@@ -77,3 +77,35 @@ export async function countActiveProductKeywordGroups(supabaseAdmin, table = "na
   const observation = await observeActiveProductKeywordGroups(supabaseAdmin, table);
   return observation.value;
 }
+
+// 2026-10-16(B안): 헬스 스냅샷 RPC(public.mi_rank_collection_health_snapshot)가 위 페이지 읽기를
+// 대신한다. RPC 는 활성 행의 원문 배열만 돌려주고, 정규화·빈 키 제외·Set 은 위와 같은 함수로
+// 여기서 한다(SQL 의 lower·정규식 공백은 JS toLowerCase·\s 와 결과가 다를 수 있다).
+// 행 상한은 위 페이지 경로가 최대로 읽는 행 수와 같다(10페이지 × 1000행).
+export const RANK_KEYWORD_GROUP_ROW_LIMIT = RANK_KEYWORD_GROUP_PAGE_SIZE * RANK_KEYWORD_GROUP_MAX_PAGES;
+
+// 스냅샷 RPC 인자 중 이 모듈 몫. 핸들러 소스에 열 이름이 들어가지 않도록 여기서 만든다.
+export function rankKeywordGroupSnapshotArgs() {
+  return { p_keyword_row_limit: RANK_KEYWORD_GROUP_ROW_LIMIT };
+}
+
+// 스냅샷 RPC 응답 → 위 observation 과 같은 { value, reliable }.
+// 상한까지 꽉 찼으면(truncated) reliable=false 다 — 페이지 경로의 "마지막 허용 페이지도 꽉 찼다"
+// (complete=false)와 같은 조건(활성 행 ≥ 상한)이다. 모양이 틀리면 null 을 돌려 핸들러가 스냅샷
+// 전체를 버리고 개별 조회로 돌아가게 한다(배열 아님·상한 초과·문자열도 null 도 아닌 원소·
+// truncated 가 불리언이 아니거나 배열 길이와 맞지 않음).
+export function observeSnapshotKeywordGroups(snapshot) {
+  const rows = snapshot?.active_product_keywords;
+  const truncated = snapshot?.active_product_keywords_truncated;
+  if (!Array.isArray(rows) || typeof truncated !== "boolean") return null;
+  if (rows.length > RANK_KEYWORD_GROUP_ROW_LIMIT) return null;
+  if (truncated !== (rows.length >= RANK_KEYWORD_GROUP_ROW_LIMIT)) return null;
+  const groups = new Set();
+  for (const value of rows) {
+    if (value !== null && typeof value !== "string") return null;
+    const key = normalizedRankKeywordKey(value);
+    // 빈 키는 그룹이 아니다(위 페이지 경로와 같다).
+    if (key) groups.add(key);
+  }
+  return { value: groups.size, reliable: !truncated };
+}

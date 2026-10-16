@@ -7,8 +7,12 @@ import {
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
 // 계정 데이터 열을 실제로 읽는 코드는 이 파일에 두지 않는다(아래 trackers 주석 참고).
-// 여기서는 집계된 정수와 그 조회 신뢰도만 돌려받는다.
-import { observeActiveProductKeywordGroups } from "../rank-capacity.mjs";
+// 여기서는 집계된 정수와 그 조회 신뢰도만 돌려받는다. 스냅샷 RPC 의 원문 배열도 그 모듈이 센다.
+import {
+  observeActiveProductKeywordGroups,
+  observeSnapshotKeywordGroups,
+  rankKeywordGroupSnapshotArgs,
+} from "../rank-capacity.mjs";
 import {
   WORKER_COMMIT_STALL_MINUTES,
   commitAgeMinutes,
@@ -43,6 +47,30 @@ const DELIBERATE_CIRCUIT_REASONS = new Set(["manual_stop", "manual_canary"]);
 // 자동 복구 종료 후 사람 판단이 필요한 상태다. 정상은 아니므로 ok는 false 지만,
 // Chrome 재기동으로 풀 수 없으므로 queue/worker/commit 복구 신호는 억제한다.
 const MANUAL_RECOVERY_CIRCUIT_REASON = "transient_recovery_manual_required";
+// 2026-10-16(B안, Supabase 로그 저장량 167%): 캐시 미스 1회의 재료 12개를 이 읽기 전용 RPC
+// 1건으로 받는다(supabase/migrations/20261017100000_rank_collection_health_snapshot.sql).
+// RPC 가 없거나 오류이거나 응답 모양이 틀리면 아래 개별 조회 12건(separateObservations)이
+// 지금과 똑같이 돈다. 판정·시각 경계·임계값은 두 경로 모두 이 파일과 상수 모듈이 정한다.
+const RANK_HEALTH_SNAPSHOT_RPC = "mi_rank_collection_health_snapshot";
+// RPC 가 없다고 확인되면(대표 SQL 실행 전) 이 동안은 RPC 를 건너뛰고 곧장 개별 조회로 간다.
+// 그러지 않으면 SQL 전에는 캐시 미스마다 요청이 12건이 아니라 13건이 된다. 함수가 생긴 뒤
+// 최대 이만큼 늦게 RPC 로 넘어가지만 응답은 어느 경로든 같다. 다시 물어도 같은 답이 나올 실패
+// (권한 없음·인자 불일치 같은 3xx·4xx, 모양이 틀린 응답)도 같은 시간 쉰다(2026-10-16 검토 반영).
+const SNAPSHOT_MISSING_RETRY_MS = 10 * 60_000;
+// 잠시 뒤 풀릴 수 있는 실패(5xx·시간 초과·네트워크)는 1분부터 쉬고, 연달아 나면 2·4·8분으로 늘려
+// 10분(위 상한)에서 멈춘다. 같은 실패가 계속되면 15분째부터 RPC 실패분은 10분에 1건이다.
+const SNAPSHOT_TRANSIENT_RETRY_MS = 60_000;
+// RPC 1건의 시간 상한. 느리게 실패하는 RPC 를 기다린 뒤에야 개별 조회가 시작되므로, 상한이 없으면
+// 그 시간이 응답에 그대로 더해진다(워치독 curl 15초·verify-live 20초). 넘으면 끊고 개별 조회로 간다.
+const SNAPSHOT_RPC_TIMEOUT_MS = 2_500;
+// 스냅샷 coordination 객체가 반드시 가져야 하는 칸. 개별 조회의 select 와 같은 5칸이다.
+const COORDINATION_SNAPSHOT_COLUMNS = Object.freeze([
+  "circuit_state",
+  "circuit_reason",
+  "cooldown_until",
+  "primary_seen_at",
+  "last_success_at",
+]);
 
 // ready.mjs 와 같은 모양의 인프로세스 캐시. 10분 주기 워치독 폴링을 흡수한다(CDN 은 위
 // CACHE_CONTROL 주석대로 no-store 라 캐시하지 않는다 — 2026-09-28 라이브 실측
@@ -51,6 +79,10 @@ const MANUAL_RECOVERY_CIRCUIT_REASON = "transient_recovery_manual_required";
 // 200 엔트리의 만료는 고정 60초가 아니라 rankHealthCacheExpiresAt 이 커밋 두 표식(코디네이션
 // last_success_at·상품 MAX(last_checked_at)) 중 최신으로 정한다(커밋 정체 경계에서 끊는다).
 let cached = null;
+// 스냅샷 RPC 를 다시 시도할 시각(위 SNAPSHOT_MISSING_RETRY_MS·SNAPSHOT_TRANSIENT_RETRY_MS). 0 이면 바로 시도한다.
+let snapshotMissingUntil = 0;
+// 연달아 난 일시 실패 수. RPC 가 쓸 수 있는 스냅샷을 돌려주면 0 으로 돌아간다.
+let snapshotTransientFailures = 0;
 
 // lanes 의 두 키. 입력 레인이 비어 있어도 공개 표면에는 이 두 키가 항상 실린다.
 const LANE_KEYS = ["product", "place"];
@@ -316,6 +348,36 @@ export function rankHealthCacheExpiresAt(now, lastSuccessAt, productLastCheckedA
   return stallAt > now ? Math.min(ttlExpiry, stallAt) : ttlExpiry;
 }
 
+// 코디네이션 관측의 안전값. 읽지 못했을 때는 여기에 reliable=false 만 덮어 낸다.
+const EMPTY_COORDINATION_OBSERVATION = Object.freeze({
+  deliberateStop: false,
+  recoverySuppressed: false,
+  controlHealthy: true,
+  primarySeenAt: "",
+  lastSuccessAt: "",
+  reliable: true,
+});
+
+// 읽어 온 global 행 → 관측 객체. 개별 조회(deliberateWorkerStop)와 스냅샷 RPC 가 같은 판정을
+// 쓰도록 한 곳에 둔다(2026-10-16 B안). fullObservation 은 5칸을 모두 읽었는지다.
+function coordinationObservationFromRow(data, now, fullObservation) {
+  const empty = EMPTY_COORDINATION_OBSERVATION;
+  // global 행은 worker control-plane migration이 필수로 만든다. full 조회가
+  // 성공해도 행이 없으면 정상 유휴가 아니라 제어면 소실이므로 fail closed 한다.
+  // 구형 축약 fallback 또한 heartbeat/commit 재료를 못 읽으므로 신뢰 불가다.
+  if (!data) return { ...empty, reliable: false };
+  if (typeof data !== "object" || Array.isArray(data)) return { ...empty, reliable: false };
+  const deliberateStop = deliberateWorkerStopFromRow(data, now);
+  return {
+    deliberateStop,
+    recoverySuppressed: workerRecoverySuppressedFromRow(data, now),
+    controlHealthy: workerControlHealthyFromRow(data, now),
+    primarySeenAt: String(data.primary_seen_at || ""),
+    lastSuccessAt: String(data.last_success_at || ""),
+    reliable: fullObservation,
+  };
+}
+
 // 조회만 담당하는 얇은 래퍼. 판정은 전부 위 순수 함수가 한다(테스트가 실행 검증한다).
 // 필수 global 행이 없거나 읽기 실패면 공개 값은 안전값으로 두되 reliable=false 로
 // 전달해 제어면 소실을 정상 유휴로 단정하지 않는다.
@@ -332,14 +394,7 @@ export function rankHealthCacheExpiresAt(now, lastSuccessAt, productLastCheckedA
 // (그것도 없으면 lastCommitAgeMinutes=null·commitStalled=false). 어느 경우든 reliable=false
 // 이므로 최상위 ok 는 false 로 닫힌다.
 async function deliberateWorkerStop(ctx, now) {
-  const empty = {
-    deliberateStop: false,
-    recoverySuppressed: false,
-    controlHealthy: true,
-    primarySeenAt: "",
-    lastSuccessAt: "",
-    reliable: true,
-  };
+  const empty = EMPTY_COORDINATION_OBSERVATION;
   try {
     let fullObservation = true;
     let { data, error } = await ctx.supabaseAdmin
@@ -356,20 +411,7 @@ async function deliberateWorkerStop(ctx, now) {
         .maybeSingle());
     }
     if (error) return { ...empty, reliable: false };
-    // global 행은 worker control-plane migration이 필수로 만든다. full 조회가
-    // 성공해도 행이 없으면 정상 유휴가 아니라 제어면 소실이므로 fail closed 한다.
-    // 구형 축약 fallback 또한 heartbeat/commit 재료를 못 읽으므로 신뢰 불가다.
-    if (!data) return { ...empty, reliable: false };
-    if (typeof data !== "object" || Array.isArray(data)) return { ...empty, reliable: false };
-    const deliberateStop = deliberateWorkerStopFromRow(data, now);
-    return {
-      deliberateStop,
-      recoverySuppressed: workerRecoverySuppressedFromRow(data, now),
-      controlHealthy: workerControlHealthyFromRow(data, now),
-      primarySeenAt: String(data.primary_seen_at || ""),
-      lastSuccessAt: String(data.last_success_at || ""),
-      reliable: fullObservation,
-    };
+    return coordinationObservationFromRow(data, now, fullObservation);
   } catch {
     return { ...empty, reliable: false };
   }
@@ -459,6 +501,201 @@ async function hasOverdueActive(ctx, table, cutoffIso) {
   return data.length > 0;
 }
 
+// 개별 조회 경로(B안 전까지의 유일한 경로). 스냅샷 RPC 가 없거나 실패하면 이 12건이 그대로
+// 나간다. 앞 네 조회의 실패는 throw 로 503, 나머지는 각자 reliable=false 로 200/ok:false 다.
+async function separateObservations(ctx, now, cutoffIso, stuckCutoffIso) {
+  const [
+    productLatest,
+    placeLatest,
+    productOverdue,
+    placeOverdue,
+    coordination,
+    lastRunObservation,
+    lastSignatureObservation,
+    neverFoundObservation,
+    stuckObservation,
+    placePartialObservation,
+    activeProductObservation,
+    activeProductKeywordGroupsObservation,
+  ] = await Promise.all([
+    latestCheckedAt(ctx, RANK_TABLES[0]),
+    latestCheckedAt(ctx, RANK_TABLES[1]),
+    hasOverdueActive(ctx, RANK_TABLES[0], cutoffIso),
+    hasOverdueActive(ctx, RANK_TABLES[1], cutoffIso),
+    deliberateWorkerStop(ctx, now),
+    latestWorkerRunVersion(ctx),
+    latestWorkerSignatureAt(ctx),
+    // 앞 두 집계는 상품 표(RANK_TABLES[0])만 본다. 임계값은 서버 상수 그대로다.
+    countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
+      .gte("check_count", RANK_NEVER_FOUND_MIN_CHECKS)
+      .eq("found_count", 0)),
+    // OR 의 두 갈래는 만성 격리(chronicIsolationCandidate)의 앵커 규칙과 같다:
+    // 성공 이력이 있으면 last_checked_at, 없으면(null) created_at 이 앵커다.
+    // retry_count 는 보지 않는다 — 소진 전에 멈춘 행을 잡는 것이 이 집계의 존재 이유다.
+    countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
+      .not("last_error", "is", null)
+      .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
+    // partial 반복은 플레이스 표(RANK_TABLES[1])의 결함이다 — 오류 없이 재시도만 쌓인다.
+    countActiveTrackers(ctx, RANK_TABLES[1], (query) => query
+      .is("last_error", null)
+      .gte("retry_count", RANK_PLACE_PARTIAL_MIN_RETRIES)),
+    // 용량의 분모. 필터는 status 하나뿐이다.
+    countActiveTrackers(ctx, RANK_TABLES[0], (query) => query),
+    // 용량의 분자. 공개 값은 정수지만 조회 신뢰도도 내부 observation 으로 받는다.
+    observeActiveProductKeywordGroups(ctx.supabaseAdmin, RANK_TABLES[0]),
+  ]);
+  return {
+    productLatest,
+    placeLatest,
+    productOverdue,
+    placeOverdue,
+    coordination,
+    lastRunObservation,
+    lastSignatureObservation,
+    neverFoundObservation,
+    stuckObservation,
+    placePartialObservation,
+    activeProductObservation,
+    activeProductKeywordGroupsObservation,
+  };
+}
+
+// ── 스냅샷 경로(2026-10-16 B안) ──
+// 스냅샷의 각 칸을 개별 조회 경로가 내는 것과 같은 값으로 옮긴다. 모양이 틀린 칸은 undefined 로
+// 표시하고, 하나라도 있으면 스냅샷 전체를 버린다(일부만 쓰면 두 경로의 결과가 갈라진다).
+
+// 선택 시각 칸. SQL null 은 개별 조회의 "행 없음"이고 그 경로도 빈 문자열을 낸다. 문자열이
+// 아니거나 시각으로 읽히지 않으면 undefined — 개별 조회의 latestCheckedAt 은 그런 값을
+// throw(503)로 다루므로, 스냅샷을 버리고 그 경로가 같은 판단을 하게 한다.
+function snapshotTimestamp(value) {
+  if (value === null) return "";
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return undefined;
+  return value;
+}
+
+// 선택 문자열 칸(실행 기록 버전). null 은 개별 조회의 String(row?.… || "") 과 같은 "" 다.
+function snapshotText(value) {
+  if (value === null) return "";
+  return typeof value === "string" ? value : undefined;
+}
+
+// count(*) 칸. 개별 조회의 count=exact 처럼 비음수 정수만 받는다.
+function snapshotCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return undefined;
+  return { value: nonNegativeInteger(value), reliable: true };
+}
+
+// coordination 칸. null 은 global 행 없음이라 개별 조회와 같은 reliable=false 다. 객체는 개별
+// 조회의 select 5칸을 모두 가져야 하고, 판정은 같은 coordinationObservationFromRow 가 한다.
+function snapshotCoordination(value, now) {
+  if (value === null) return coordinationObservationFromRow(null, now, true);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!COORDINATION_SNAPSHOT_COLUMNS.every((column) => Object.hasOwn(value, column))) return undefined;
+  return coordinationObservationFromRow(value, now, true);
+}
+
+// PostgREST 가 함수를 찾지 못한 응답이다(대표 SQL 실행 전, 또는 스키마 캐시가 아직 모름).
+function snapshotRpcMissing(result) {
+  const code = String(result?.error?.code || "");
+  const message = String(result?.error?.message || "");
+  return code === "PGRST202" || Number(result?.status) === 404 || /could not find the function/i.test(message);
+}
+
+// 다시 물어도 같은 답이 나올 실패인가. 상태 코드로만 가른다: 권한 없음(42501 을 PostgREST 는
+// 401·403 으로 낸다)과 인자·서명 불일치 같은 3xx·4xx 가 그렇다. 408·429 와 5xx·0(시간 초과·
+// 네트워크)은 잠시 뒤 풀릴 수 있다. PGRST000~003(DB 연결 실패)은 503·504 라 일시 실패에 든다.
+function snapshotRpcFailureLasting(result) {
+  const status = Number(result?.status);
+  return status >= 300 && status < 500 && status !== 408 && status !== 429;
+}
+
+// RPC 를 버리고 개별 조회로 갈 때 다음 시도 시각을 정하고 한 줄 남긴다. 줄은 쉬는 동안 다시 나지
+// 않으므로 인스턴스마다 최대 1분에 1줄, 같은 실패가 이어지면 10분에 1줄이다. 이 줄은 Vercel 함수
+// 로그에만 남고 Supabase 로그 저장량과는 상관없다. 응답에는 아무것도 싣지 않는다(바이트 같음).
+// 코드·상태만 남긴다(오류 문장은 남기지 않는다).
+function deferSnapshotRpc(now, reason, result) {
+  // 같은 인스턴스에서 동시에 난 캐시 미스가 함께 실패하면 먼저 끝난 쪽이 이미 쉬는 시간을 정했다.
+  // 그 실패는 한 번으로 친다(쉬는 시간을 여러 단계 올리거나 줄을 여러 번 남기지 않는다).
+  if (snapshotMissingUntil > now) return;
+  let retryMs = SNAPSHOT_MISSING_RETRY_MS;
+  if (reason === "transient") {
+    snapshotTransientFailures += 1;
+    retryMs = Math.min(SNAPSHOT_MISSING_RETRY_MS, SNAPSHOT_TRANSIENT_RETRY_MS * 2 ** (snapshotTransientFailures - 1));
+  }
+  snapshotMissingUntil = now + retryMs;
+  console.warn(JSON.stringify({
+    event: "rank_collection_health_snapshot_fallback",
+    reason,
+    status: Number(result?.status) || 0,
+    errorCode: String(result?.error?.code || ""),
+    retryInMs: retryMs,
+  }));
+}
+
+// 스냅샷 RPC 1건으로 12개 재료를 받는다. separateObservations 와 같은 이름·모양의 객체를
+// 돌려주거나, 쓸 수 없으면 null 이다(호출부가 개별 조회로 간다). throw 하지 않는다.
+// 인자: 시각 경계는 핸들러가 지금 쓰는 cutoffIso·stuckCutoffIso 그대로, 임계값은 서버 상수
+// 그대로, 용량 원문 상한은 용량 모듈이 정한다(페이지 경로가 최대로 읽는 행 수와 같다).
+// RPC 는 POST 라 postgrest-js 가 네트워크 throw 를 재시도하지 않는다(GET·HEAD·OPTIONS 만
+// 재시도한다 — node_modules/@supabase/postgrest-js 2.108.2 실측). Supabase 장애 중에도 이 실패
+// 1건은 바로 끝나고 개별 조회가 예전과 같은 503 을 낸다.
+//
+// 실패하면 이유에 따라 RPC 를 쉰다(deferSnapshotRpc): 없음·다시 물어도 같은 실패·모양 틀림은 10분,
+// 일시 실패는 1분부터 늘려 10분까지. 쉬는 동안은 RPC 없이 개별 조회 12건만 나간다(B안 전과 같다).
+// RPC 에는 SNAPSHOT_RPC_TIMEOUT_MS 상한을 건다. 끊기면 postgrest-js 가 status 0 오류로 돌려준다.
+async function snapshotObservations(ctx, now, cutoffIso, stuckCutoffIso) {
+  if (snapshotMissingUntil > now) return null;
+  let data;
+  try {
+    const result = await ctx.supabaseAdmin.rpc(RANK_HEALTH_SNAPSHOT_RPC, {
+      p_overdue_cutoff: cutoffIso,
+      p_stuck_cutoff: stuckCutoffIso,
+      p_never_found_min_checks: RANK_NEVER_FOUND_MIN_CHECKS,
+      p_place_partial_min_retries: RANK_PLACE_PARTIAL_MIN_RETRIES,
+      ...rankKeywordGroupSnapshotArgs(),
+    }).abortSignal(AbortSignal.timeout(SNAPSHOT_RPC_TIMEOUT_MS));
+    if (result?.error) {
+      if (snapshotRpcMissing(result)) deferSnapshotRpc(now, "missing", result);
+      else deferSnapshotRpc(now, snapshotRpcFailureLasting(result) ? "lasting" : "transient", result);
+      return null;
+    }
+    data = result?.data;
+  } catch {
+    deferSnapshotRpc(now, "transient", null);
+    return null;
+  }
+  const observed = snapshotObservationsFromData(data, now);
+  if (!observed) {
+    deferSnapshotRpc(now, "malformed", null);
+    return null;
+  }
+  snapshotTransientFailures = 0;
+  return observed;
+}
+
+// 스냅샷 본문 → separateObservations 와 같은 이름·모양의 객체. 한 칸이라도 틀리면 null 이다.
+function snapshotObservationsFromData(data, now) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const runtimeVersion = snapshotText(data.latest_run_runtime_version);
+  const signatureAt = snapshotTimestamp(data.latest_signature_at);
+  const observed = {
+    productLatest: snapshotTimestamp(data.product_latest_checked_at),
+    placeLatest: snapshotTimestamp(data.place_latest_checked_at),
+    productOverdue: typeof data.product_overdue === "boolean" ? data.product_overdue : undefined,
+    placeOverdue: typeof data.place_overdue === "boolean" ? data.place_overdue : undefined,
+    coordination: snapshotCoordination(data.coordination, now),
+    lastRunObservation: runtimeVersion === undefined ? undefined : { value: runtimeVersion, reliable: true },
+    lastSignatureObservation: signatureAt === undefined ? undefined : { value: signatureAt, reliable: true },
+    neverFoundObservation: snapshotCount(data.never_found),
+    stuckObservation: snapshotCount(data.stuck),
+    placePartialObservation: snapshotCount(data.place_partial),
+    activeProductObservation: snapshotCount(data.active_product),
+    activeProductKeywordGroupsObservation: observeSnapshotKeywordGroups(data) ?? undefined,
+  };
+  if (Object.values(observed).some((value) => value === undefined)) return null;
+  return observed;
+}
+
 export default {
   fetch: withSupabase({ auth: "none" }, async (request, ctx) => {
     if (request.method === "OPTIONS") {
@@ -479,7 +716,9 @@ export default {
     try {
       const cutoffIso = new Date(now - RANK_OVERDUE_THRESHOLD_MS).toISOString();
       const stuckCutoffIso = new Date(now - RANK_STUCK_TRACKER_MS).toISOString();
-      const [
+      // 2026-10-16(B안): 스냅샷 RPC 1건이 먼저다. null(없음·오류·모양 틀림)이면 개별 조회 12건으로
+      // 지금과 똑같이 답한다. 두 경로는 같은 이름·같은 모양의 재료를 돌려주므로 아래는 그대로다.
+      const {
         productLatest,
         placeLatest,
         productOverdue,
@@ -492,33 +731,8 @@ export default {
         placePartialObservation,
         activeProductObservation,
         activeProductKeywordGroupsObservation,
-      ] = await Promise.all([
-        latestCheckedAt(ctx, RANK_TABLES[0]),
-        latestCheckedAt(ctx, RANK_TABLES[1]),
-        hasOverdueActive(ctx, RANK_TABLES[0], cutoffIso),
-        hasOverdueActive(ctx, RANK_TABLES[1], cutoffIso),
-        deliberateWorkerStop(ctx, now),
-        latestWorkerRunVersion(ctx),
-        latestWorkerSignatureAt(ctx),
-        // 앞 두 집계는 상품 표(RANK_TABLES[0])만 본다. 임계값은 서버 상수 그대로다.
-        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
-          .gte("check_count", RANK_NEVER_FOUND_MIN_CHECKS)
-          .eq("found_count", 0)),
-        // OR 의 두 갈래는 만성 격리(chronicIsolationCandidate)의 앵커 규칙과 같다:
-        // 성공 이력이 있으면 last_checked_at, 없으면(null) created_at 이 앵커다.
-        // retry_count 는 보지 않는다 — 소진 전에 멈춘 행을 잡는 것이 이 집계의 존재 이유다.
-        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
-          .not("last_error", "is", null)
-          .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
-        // partial 반복은 플레이스 표(RANK_TABLES[1])의 결함이다 — 오류 없이 재시도만 쌓인다.
-        countActiveTrackers(ctx, RANK_TABLES[1], (query) => query
-          .is("last_error", null)
-          .gte("retry_count", RANK_PLACE_PARTIAL_MIN_RETRIES)),
-        // 용량의 분모. 필터는 status 하나뿐이다.
-        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query),
-        // 용량의 분자. 공개 값은 정수지만 조회 신뢰도도 내부 observation 으로 받는다.
-        observeActiveProductKeywordGroups(ctx.supabaseAdmin, RANK_TABLES[0]),
-      ]);
+      } = await snapshotObservations(ctx, now, cutoffIso, stuckCutoffIso)
+        || await separateObservations(ctx, now, cutoffIso, stuckCutoffIso);
       const monitoringReliable = [
         coordination,
         lastRunObservation,

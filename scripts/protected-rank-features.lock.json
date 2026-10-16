@@ -954,6 +954,12 @@
       "file": "supabase/migrations/20260929205303_naver_shopping_runtime_1_1_34_dead_lease_and_live_service_worker.sql",
       "sha256": "58a0856868d86e4fd36093d29d6aa34212f21cd104c9cce6688a7d51ca99ef85",
       "rankMigration": true
+    },
+    {
+      "id": "rank-collection-health-snapshot",
+      "file": "supabase/migrations/20261017100000_rank_collection_health_snapshot.sql",
+      "sha256": "0034ff564b5875fcea13a89c3fe72876cc8cc1e91ed72ccaf8bf7563b88b0997",
+      "rankMigration": true
     }
   ]
 }

@@ -28519,13 +28519,69 @@
       initPlaceRankTracking(keywordInput);
       // 수집기 건강 신호 폴링. 60초는 /api/rank-collection-health 의 서버 캐시(60초)와
       // 같은 주기다 — 더 촘촘히 돌면 캐시 미스만 늘고 새로 얻는 값이 없다.
+      // 2026-10-16 로그 저장량 절감: 숨은 탭(다른 탭을 보는 중·창 최소화)에서는 폴링을 멈춘다.
+      // 다시 보이면 즉시 1회 갱신한 뒤 같은 60초 주기로 돈다. 보이는 동안의 동작은 이전과 같다.
+      // 단, 마지막 요청이 60초 안이면(탭을 잠깐 오간 경우) 즉시 갱신은 건너뛰고 그 요청 60초 뒤에
+      // 첫 갱신을 건다. 서버 캐시도 60초라 그 안에 다시 물어도 새 값이 없고, 진행 중인 요청과
+      // 겹쳐 늦게 온 옛 응답이 새 응답을 덮는 일도 생기지 않는다.
       var rankCollectionHealthTimer = 0;
-      try {
+      var rankCollectionHealthDelayTimer = 0;
+      // 마지막으로 헬스 요청을 보낸 시각(응답 성공 여부와 무관). 0 은 아직 보내지 않음이다.
+      var rankCollectionHealthRequestedAt = 0;
+
+      // Page Visibility API 가 없는 브라우저는 늘 보이는 것으로 본다 — 이전처럼 계속 돈다.
+      function rankCollectionHealthPageHidden() {
+        return Boolean(document && document.hidden);
+      }
+
+      function requestRankCollectionHealthSignal() {
+        rankCollectionHealthRequestedAt = Date.now();
         refreshRankCollectionHealthSignal();
-        rankCollectionHealthTimer = window.setInterval(refreshRankCollectionHealthSignal, 60000);
+      }
+
+      function startRankCollectionHealthInterval() {
+        rankCollectionHealthTimer = window.setInterval(requestRankCollectionHealthSignal, 60000);
+      }
+
+      // 이미 돌고 있거나(남은 시간 대기 포함) 탭이 숨어 있으면 아무것도 하지 않는다. 보임 신호가
+      // 연속으로 와도 타이머는 하나이고 즉시 갱신도 한 번뿐이다.
+      function startRankCollectionHealthPolling() {
+        if (rankCollectionHealthTimer || rankCollectionHealthDelayTimer || rankCollectionHealthPageHidden()) return;
+        var elapsed = Date.now() - rankCollectionHealthRequestedAt;
+        if (rankCollectionHealthRequestedAt && elapsed >= 0 && elapsed < 60000) {
+          rankCollectionHealthDelayTimer = window.setTimeout(function () {
+            rankCollectionHealthDelayTimer = 0;
+            requestRankCollectionHealthSignal();
+            startRankCollectionHealthInterval();
+          }, 60000 - elapsed);
+          return;
+        }
+        requestRankCollectionHealthSignal();
+        startRankCollectionHealthInterval();
+      }
+
+      function stopRankCollectionHealthPolling() {
+        if (rankCollectionHealthTimer) window.clearInterval(rankCollectionHealthTimer);
+        if (rankCollectionHealthDelayTimer) window.clearTimeout(rankCollectionHealthDelayTimer);
+        rankCollectionHealthTimer = 0;
+        rankCollectionHealthDelayTimer = 0;
+      }
+
+      try {
+        // 처음부터 숨은 탭(백그라운드로 연 탭)이면 첫 갱신을 보일 때로 미룬다. 첫 응답 전의
+        // 순위판은 신호 기본값(경보 없음)으로 그려지는데, 보이는 탭도 첫 응답 전까지는 같다.
+        startRankCollectionHealthPolling();
+        document.addEventListener("visibilitychange", function () {
+          if (rankCollectionHealthPageHidden()) stopRankCollectionHealthPolling();
+          else startRankCollectionHealthPolling();
+        });
         window.addEventListener("pagehide", function () {
-          window.clearInterval(rankCollectionHealthTimer);
-          rankCollectionHealthTimer = 0;
+          stopRankCollectionHealthPolling();
+        });
+        // 뒤로 가기 캐시(bfcache)에서 돌아오면 pagehide 로 멈춘 폴링을 다시 돌린다. 처음 로드의
+        // pageshow 는 이미 돌고 있거나(보이는 탭) 숨은 탭이라 아무것도 하지 않는다.
+        window.addEventListener("pageshow", function () {
+          startRankCollectionHealthPolling();
         });
       } catch (error) {
         // fetch·setInterval 이 없는 환경에서도 페이지 초기화는 계속돼야 한다.

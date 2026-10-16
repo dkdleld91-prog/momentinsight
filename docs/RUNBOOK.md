@@ -459,3 +459,163 @@
   | N8 훈련 DRY | `DRY=1` 한 줄(대표 관리자 PowerShell) | `DRILL_WAITING` → `DRILL_DRYRUN_WOULD_STOP … host=0` → `DRILL_DRYRUN_WOULD_RESTORE task=Ready`, 빨간 오류 없음 |
   | N9 훈련 실제 | 한 줄 + 15초 간격 읽기 전용 감시 | `DRILL_STOPPED idle=12s 이상`, `DRILL_LEFT 0`. 60초 안 코디네이션 임대가 윈도우 것이 아님. STOPPED + 3분 뒤부터 맥 claim granted(idle 포함), 맥 catch-up 한 주기(약 14분) 안 커밋(할 일이 있을 때) 또는 `errorDetail` 증거 행. `DRILL_RESTORED` 뒤 2분 안 윈도우 `primary_seen_at` 신선·커밋 재개. 커밋 공백 45분 미만(경보 없음) |
   | N10 24시간 | 집계(tally), 코디네이션, 맥 원본 | 실패율 2% 이하(1.1.33: 1.6%), 최대 커밋 공백 45분 미만, 1.1.34 발 신규 실패 코드 0, SW 자가 새로고침 기계당 1회 이하, 죽은 임대 사건 0, 맥 원본의 다른 세션 미커밋 문서 그대로 |
+
+## C 30일 순위(쿠팡) (2026-10-16, 명세 v3)
+
+- 무엇: 로그인 없는 쿠팡 검색 1쪽에서 광고(`sourceType=srp_product_ads`)를 뺀 일반 순번 1~50을 계정 × 키워드 × 상품으로 KST 하루 칸에 기록한다. 51번째 이후·1쪽에 없음은 '밖'.
+- 독립 모듈: N30 코드·`naver_*` 표·크론·`/ready`·만료 크론·해지 모듈과 닿지 않는다(통합 계약 5줄: `docs/DECISIONS.md` 2026-10-16). C 장애는 N30 경보·헬스에 나타나지 않는다 — 이 절의 띠·패널로 본다.
+- 화면: 관리자 메뉴 `C 30일 순위`(`#mi-admin-coupang-rank-tracking`). 총관리자에게만 수집기 패널(접힌 칸, `[data-coupang-rank-owner]`)이 보인다. API: 화면 `/api/coupang-rank-trackers`(세션), 수집기 `/api/coupang-rank-worker`(연결 코드 Bearer).
+- 대표용 설치 순서·기대 출력: `docs/COUPANG_RANK_COLLECTOR_SETUP.md`. 대표 SQL 원문: `supabase/migrations/20261017090000_coupang_rank_tracking.sql` = `docs/sql/c30-1-tables.sql`(바이트 같음, sha256 `1eec1bac4645a8a46662b4d35e47f26a8737ca13ef895d40f235f1793653b07e`). 바탕화면 준비: `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261017090000_coupang_rank_tracking.sql C30-1-테이블만들기.txt`.
+
+### 켜기·끄기
+
+- **켜기 조건**(G8, 하나라도 아니면 보류하고 대표와 다시 논의)
+  1. 맥 시험 결과(`~/.local/share/momentinsight-coupang-trial/results/*.jsonl`)에서 2026-10-16 05:30Z 뒤 `httpStatus ∈ {403,429,503}` 또는 `status=blocked` 0회
+  2. 윈도우 0단계 시험(G7) `blocked=0`
+  3. 무료 한도(G6): DB 400MB 미만, 이번 달 egress 한도의 80% 미만
+- **켜기 순서**: 대표가 `checksPerDay`·시작 `maxRunsPerHour`(권장 6, [결정 필요])를 패널에 저장(내리기는 즉시) → 맥 시험 에이전트 내림 `launchctl bootout gui/$(id -u)/com.momentinsight.coupang-trial`(맥 터미널) → 새 연결 코드 → 설치 줄 → `MI_COUPANG_INSTALL_OK … auth=ok` → 대표 계정에 추적기 3~5개 → `수집 켜기`.
+- **첫 2시간 기준**: 회차 ≥ 1, 차단 0, 시간당 회차 ≤ 설정값, 카드 오늘 칸 기록. **48~72시간(G9)**: `stats` 의 blocked48h = 0·empty48h = 0·성공률 ≥ 90%·남은 프로필 0, 수집기 로그 오류 코드 분포·`throttled` 빈도, N30 실패율(켜기 전 3일 대 뒤 3일, `~/.claude/skills/mi-runtime-release/scripts/tally.mjs`)이 기준선 1.5%보다 나빠지면 **끄고** 원인 확인.
+- **끄기**: 패널 `수집 끄기` → 다음 claim 부터 `disabled`(즉시). 이미 받은 회차의 결과는 들어올 수 있다(record 는 늘 받음).
+- **완전히 멈추기**: `수집 끄기` → 수집기 PC에서 제거 줄 → 패널에서 연결 코드 `폐기`(그 코드의 다음 요청부터 401).
+- **속도 올리기**는 서버가 막는다: `confirmRaise` + 48시간 차단 0·빈 쪽 0·성공 ≥ 48 + 마지막 상향 뒤 48시간 + 사다리 한 칸(12→24→40→60, 사다리 밖 값은 바로 위 칸: 6→12). 어긋나면 409 `COUPANG_RAISE_NOT_ALLOWED`(`reasons`: `blocked_or_empty_48h`·`too_few_success_48h`·`quiet_window_short`·`ladder_step`). **내리기**는 언제든 즉시.
+
+### 상태 띠별 조치(위에서부터 처음 맞는 것)
+
+| state | 띠 문구 | 조치 |
+|---|---|---|
+| `setup_required` | 대표 SQL 실행 전입니다(설정 필요) | 대표 SQL(위) → 점검 SQL 결과 9·18·false·offscreen·100 |
+| `not_connected` | 수집기 연결 안 됨 | 폐기 안 된 코드 0개 → 코드 발급·설치 |
+| `disabled` | 수집 꺼짐 | 의도한 것이면 그대로. 켜려면 켜기 조건 확인 뒤 `수집 켜기` |
+| `review` | 대표 확인 필요 — 차단이 7일 안 3번 감지됐습니다 | **대표 판단**. 원인(아래 '쉬는 중 해제 판단') 확인 전에는 해제하지 않는다. 해제 전에 대표와 원인·속도를 다시 논의한다(속도 내리기는 즉시 된다) |
+| `budget` | 저장 용량 상한으로 멈춤 — 대표 확인 필요 | `budgetReason` = `storage`(C 저장 용량 > `maxStorageMb`) 또는 `database`(DB 크기 > `dbSizeStopMb`). Supabase 대시보드 DB 크기 확인 → 추적기 정리 또는 대표가 상한 조정 → `쉬는 중 해제` |
+| `cooldown` | 쉬는 중 ~MM-DD HH:MM(쿠팡 차단 또는 연속 오류 감지) | 기본은 **기다림**(자동 재개). 해제는 아래 판단표 |
+| `outdated` | 수집기 업데이트 필요 | 모든 활성 수집기가 `minCollectorVersion` 미만 → 패널 복사 줄(설치·업데이트)을 다시 실행 |
+| `offline` | 수집기 응답 없음(30분 넘음) — 수집기 PC가 켜져 있는지 확인하세요 | 수집기 PC 켜짐·**그 사용자 로그인**(예약 작업은 대화형·Limited, 로그온 안 하면 돌지 않음·PC를 깨우지 않음) → 확인 줄로 `LastRunTime`·로그 `run_end` → 로그의 오류 코드(아래)로 원인 |
+| `delayed` | 지연 — 예정 시각이 지난 키워드가 있습니다 | 패널 용량 줄이 `over` 면 '용량 맞추기'. 아니면 claim 사유(`gap`·`hourly_cap`·`daily_cap`)와 수집기 로그 확인 |
+| `idle_hours` | 수집 시간이 아닙니다(08~23시) | 정상 |
+| `ok` | 정상 · 마지막 수집 HH:MM · 하루 n회(08~23시) | 없음 |
+
+### 쉬는 중 해제 판단(`쉬는 중 해제` 버튼)
+
+- 원칙: **원인을 모르면 해제하지 않는다.** 자동 우회(프록시·UA 변경·로그인·캡차·재시도 폭주)는 없다. 해제해도 **7일 차단급 횟수는 지워지지 않아** 다음 차단은 곧바로 높은 단계(6시간 → 12시간 → 24시간 + 대표 확인)가 된다.
+- 근거: 패널의 사유·7일 차단급 횟수·최근 쉬기 10건, `?view=runs` 의 실패 회차(`status`·`errorCode`).
+
+| 사유(`cooldownReason`) | 뜻 | 판단 |
+|---|---|---|
+| `blocked` | 403·429·503·차단 문구·로그인 이동(차단 판정 1~3순위) | **해제하지 않고 기다린다.** 반복되면 끄고 대표와 다시 논의한다 |
+| `empty` / `empty_escalated` | 일반 상품 0개가 2연속(약한 차단 의심) / 24시간 안 두 번째 | 기다린다. `empty_escalated` 는 차단급 |
+| `error_streak` | 오류·시간 초과·임대 만료 3연속(30분) | 수집기 PC 문제일 수 있다. 로그 코드(`page_timeout`·`cdp_*`·`devtools_port_timeout`·`browser_launch_failed`·`browser_exit_early`·`browser_hard_cap`·`extract_failed`)로 원인을 고친 뒤에만 해제. 실패 회차에 `httpStatus` 403·429·503 이 섞였으면 해제 금지 |
+| `error_escalated` | 24시간 안 두 번째 오류 쉬기(차단급) | 위와 같고, 차단급이라 기다리는 쪽이 기본 |
+
+- `foreign_navigation`(쿠팡이 아닌 사이트로 감, 사람이 창을 건드린 경우 등)은 차단이 아니라 오류로 센다. `unsupported`(검색 결과가 아닌 쪽으로 보냄)는 그 키워드만 다음 날로 미루고 전역 쉬기를 걸지 않는다.
+
+### 설치·확인·제거 줄
+
+- **패널의 복사 버튼 6개를 쓴다**(윈도우 설치·업데이트 / 확인 / 제거, 맥 설치·업데이트 / 확인 / 제거). `-Release`·`--release` 에 지금 배포의 커밋 7자가 들어가고, 묶음 `release` 와 다르면 설치기가 `release_mismatch` 로 멈춘다. 아래는 모양만(`<release7>` 자리).
+- 윈도우(관리자 Windows PowerShell 5.1, 설치·업데이트·0단계 시험·제거 모두 같은 줄 + 매개변수 `-TrialOnly`·`-ResetToken`·`-Uninstall`)
+  ```powershell
+  iwr -UseBasicParsing https://insight.momentlabs.co.kr/coupang-collector/install-windows.ps1 -OutFile "$env:TEMP\mi-coupang-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\mi-coupang-install.ps1" -Release <release7>
+  Get-ScheduledTaskInfo -TaskName CoupangRank -TaskPath '\MomentInsight\' | Select-Object LastRunTime,LastTaskResult,NextRunTime; Get-Content "$env:LOCALAPPDATA\MomentInsight\CoupangRank\logs\worker.log" -Tail 10 -Encoding UTF8
+  ```
+  기대: 설치 `MI_COUPANG_INSTALL_OK release=… version=1.0.0 node=… browser=edge/… task=Ready auth=ok first_run=…`, 시험 `MI_COUPANG_TRIAL …`, 제거 `MI_COUPANG_UNINSTALL_OK`, 실패 `MI_COUPANG_INSTALL_FAIL code=…`.
+- 맥(터미널, 관리자 아님, 매개변수 `--trial-only`·`--reset-token`·`--browser-app <path>`·`--uninstall`)
+  ```bash
+  curl -fsSL https://insight.momentlabs.co.kr/coupang-collector/install-macos.sh -o /tmp/mi-coupang-install.sh && /bin/zsh /tmp/mi-coupang-install.sh --release <release7>
+  launchctl print gui/$(id -u)/co.kr.momentinsight.coupang-rank-collector | grep -E 'state|last exit code'; tail -n 10 "$HOME/Library/Application Support/MomentInsight/CoupangRank/logs/worker.log"
+  ```
+  기대: `MI_COUPANG_INSTALL_OK … browser=edge|chrome/… guard=none|n30-chrome agent=loaded auth=ok first_run=…`. 맥 시험 에이전트가 떠 있으면 `trial_agent_loaded` 로 멈춘다.
+- 예약 작업 `\MomentInsight\CoupangRank`(10분마다, 로그온 시 2분 지연, BelowNormal), launchd `co.kr.momentinsight.coupang-rank-collector`(600초). 제거 뒤에는 **연결 코드도 폐기**한다.
+- `--hello-only`·설치 확인의 `auth=` 값: `ok` / `rejected`(코드 틀림·폐기 → 새 코드 + `-ResetToken`) / `update_required`(줄 다시 실행) / `setup_required`(대표 SQL 전) / `route_missing`(경로가 없음 — 다른 배포가 덮었는지 `/health` release 대조, 증상 ②).
+
+### 맥 미니 이전(약 2달 뒤)
+
+1. 맥 미니에 Node 22 LTS와 **Microsoft Edge for Mac(필수, 무료)** 설치.
+2. 패널에서 새 연결 코드(이름 "맥 미니"). 윈도우 코드는 그대로 둔다(새 코드는 옛 코드를 폐기하지 않는다, 활성 최대 3개).
+3. 맥 미니 터미널에 맥 설치 줄 → `browser=edge guard=none auth=ok` 확인. **아니면 진행하지 않는다**(G11).
+4. 하루 동안 두 대를 같이 돌린다. 속도 상한은 서버 전역(설정 행 잠금)이라 요청량은 늘지 않는다. 패널에서 두 수집기의 마지막 신호·claim 사유를 보고, 두 대 합계 시간당 회차가 상한 이하인지 확인.
+5. 윈도우 코드 폐기 → 윈도우에서 제거 줄.
+6. N30 도 맥 미니로 옮겨 Chrome 을 쓰게 되어도 C 는 Edge 라 서로 닿지 않는다.
+
+### 점검 SQL(Supabase SQL 편집기용, 대표 SQL 실행 뒤)
+
+```sql
+select
+  (select count(*) from information_schema.tables
+    where table_schema = 'public' and table_name like 'coupang\_rank\_%') as tables,        -- 9
+  (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'coupang\_rank\_%') as functions,          -- 18
+  (select enabled from public.coupang_rank_settings where id = 1) as enabled,             -- false
+  (select window_mode from public.coupang_rank_settings where id = 1) as window_mode,     -- offscreen
+  (select keyword_limit from public.coupang_rank_account_limits where agency_code = 'mml93-a01') as owner_limit; -- 100
+```
+
+### 일별 칸 재생성(백업 복원 때, Supabase SQL 편집기용)
+
+`coupang_rank_days` 는 백업하지 않는다. 스냅숏(`coupang_rank_snapshots`)을 되살린 뒤 아래로 다시 만든다. 실패 칸 정보(`failure_count`)는 복원되지 않는다(0). PGlite 에서 실행 확인(명세 §4.7 시나리오 17).
+
+```sql
+insert into public.coupang_rank_days (
+  tracker_id, kst_day, slot_minute, slot_index, result, rank, organic_count, ad_order, checked_at,
+  success_count, failure_count, best_rank)
+select distinct on (s.tracker_id, s.kst_day, s.slot_minute)
+  s.tracker_id, s.kst_day, s.slot_minute, s.slot_index, s.result, s.rank, s.organic_count, s.ad_order, s.checked_at,
+  count(*) over w, 0, min(s.rank) over w
+from public.coupang_rank_snapshots s
+window w as (partition by s.tracker_id, s.kst_day, s.slot_minute)
+order by s.tracker_id, s.kst_day, s.slot_minute, s.checked_at desc
+on conflict (tracker_id, kst_day, slot_minute) do nothing;
+```
+
+### 완전 제거(대표 승인 뒤에만)
+
+1. 관리자 화면 `수집 끄기` → 수집기 PC에서 제거 줄 → 연결 코드 폐기.
+2. 코드: C 커밋을 되돌리고 잠금을 재생성한다(명세 §7.4 와 같은 확인 — 실패 목록이 정확히 `shopping-local-worker-router`·`shopping-local-worker-session-boundary` 두 개).
+3. SQL(Supabase SQL 편집기용, PGlite 에서 실행·재설치 확인):
+
+```sql
+begin;
+drop table if exists
+  public.coupang_rank_days, public.coupang_rank_snapshots, public.coupang_rank_runs,
+  public.coupang_rank_keywords, public.coupang_rank_trackers, public.coupang_rank_collectors,
+  public.coupang_rank_account_limits, public.coupang_rank_cooldowns, public.coupang_rank_settings cascade;
+drop function if exists
+  public.coupang_rank_stats(), public.coupang_rank_housekeeping(), public.coupang_rank_release(uuid, uuid, text),
+  public.coupang_rank_record(uuid, uuid, text, text, jsonb), public.coupang_rank_claim(uuid), public.coupang_rank_replan_all(),
+  public.coupang_rank_after_activate(uuid), public.coupang_rank_limit_status(text, text), public.coupang_rank_tracker_limit_guard(),
+  public.coupang_rank_reschedule_success(text, uuid, text), public.coupang_rank_reschedule_failure(text, uuid, text),
+  public.coupang_rank_note_error(uuid), public.coupang_rank_apply_cooldown(text, uuid), public.coupang_rank_mark_failed(uuid, text),
+  public.coupang_rank_apply_success(uuid, uuid, jsonb, jsonb), public.coupang_rank_match(jsonb, jsonb, text, text, boolean),
+  public.coupang_rank_plan_next(text, timestamptz, boolean), public.coupang_rank_tracker_is_eligible(uuid, text);
+commit;
+```
+
+### 수집기 로그 위치
+
+| 무엇 | 윈도우(`%LOCALAPPDATA%\MomentInsight\CoupangRank\`) | 맥(`~/Library/Application Support/MomentInsight/CoupangRank/`) |
+|---|---|---|
+| 실행 기록 | `logs\worker.log`(한 줄 기록, 1MB 순환) | `logs/worker.log`, launchd 표준 출력 `logs/launchd.log` |
+| 0단계 시험 결과 | `trial-results\<KST 날짜>.jsonl`(로컬이라 키워드 포함) | `trial-results/<KST 날짜>.jsonl` |
+| 보고 실패 보관함 | `outbox\`(25분 지나면 버림, `RECORD_FINAL_CODES` 응답만 삭제) | `outbox/` |
+| 띄운 브라우저 PID | `state\browser.pid` | `state/browser.pid` |
+| 임시 프로필 | `runs\mi-coupang-run-<ms>-<hex8>`(끝나면 삭제, 남은 것은 1시간 뒤 청소) | `runs/` |
+
+- `worker.log` 에는 키워드·토큰·제목을 남기지 않는다. 이벤트: `run_start`·`hello`·`claim_wait`(reason·retry·throttled)·`job`·`guard_wait`·`collect`(status·http·items·organic·ads·stable·ms)·`record`(accepted·matched·stop·late·code)·`release`·`outbox_saved`·`outbox_sent`·`record_dropped`·`api_route_missing`·`browser_orphan_killed`·`profile_cleanup_failed`·`run_end`.
+- 실행 환경 오류 코드: `config_invalid`·`token_missing`·`node_version_unsupported`(윈도우 래퍼는 `dpapi_unprotect_failed`), 서버 보고: `api_unreachable`·`api_route_missing`·`record_dropped`·`outbox_dropped`, 맥 N30 보호(맥 + Chrome 일 때만): `guard_n30_*`.
+- N30 폴더(`NaverShoppingBridge`)·N30 로그는 읽지도 쓰지도 않는다(맥 Chrome 예비 경로의 보호 판정만 N30 로그 두 개를 읽기 전용으로 연다).
+
+### 용량 맞추기
+
+- 패널 용량 줄: "하루 최대 측정 N회 → 하루 n번이면 키워드 약 M개 · 지금 활성 K개".
+  - `runsPerDay` = min(`maxRunsPerDay`, `maxRunsPerHour` × (`activeToHour` − `activeFromHour`)), `keywordsAtChecks`(M) = floor(`runsPerDay` ÷ `checksPerDay`), K = 수집 대상인 활성 고유 키워드 수. 기본(12/시·120/일·08~23시·하루 2회) = 120회 → 60개, 시간당 6 = 90회 → 45개.
+  - K > M(`over`)이면 경고색 "지연이 생깁니다". 기한이 지난 키워드는 가장 오래 못 잰 것부터 잰다(같은 키워드만 매일 빠지지 않음).
+- 버튼 `전체 한도를 M으로 맞추기` → `settings-update { globalKeywordLimit: M }`. 이미 활성인 추적기는 그대로, **새 키워드 등록만** 막힌다.
+- 다른 방법: 하루 횟수(`checksPerDay`)를 줄인다(내리기라 즉시, 저장 뒤 `replan_all`). 속도를 올리는 것은 위 상향 규칙을 따른다.
+- '대상 아님 n개': 연결 해제 광고주·해지된 팀 코드 범위의 활성 추적기. 수집·한도에서 빠지고, 다시 연결되면 자동 재개, 광고주가 지워지면 FK 로 함께 지워진다.
+
+### 백업(`scripts/db-export.mjs`)
+
+- 백업하는 C 표: `coupang_rank_settings`·`coupang_rank_account_limits`·`coupang_rank_trackers`·`coupang_rank_snapshots`(증분 — id·created_at, insert·보관 기간 delete 만).
+- 백업하지 않는 C 표: `coupang_rank_days`(스냅숏으로 재생성, 위 SQL)·`coupang_rank_runs`(14일 임시·증거)·`coupang_rank_keywords`(일정)·`coupang_rank_collectors`(토큰 해시·마지막 claim 답)·`coupang_rank_cooldowns`.
+- 대표 SQL 실행 전에는 네 표가 없다 → manifest 에 `skipped: "table_missing"`, 실패가 아니다(종료 코드 0). 로그 끝에 `WARN 선택 표 n개 건너뜀: <이름들> — 대표 SQL 실행 뒤에도 보이면 표가 사라진 것` 한 줄. **SQL 실행 뒤에도 이 줄이 보이면** 표가 사라진 것이니 점검 SQL 부터 돌린다.
+- 매일 03:00 백업은 메인 작업 트리(`~/Desktop/개발/모먼트 인사이트 개발`)의 스크립트를 쓴다. 메인 트리가 이 커밋으로 갱신되기 전에는 C 표가 백업에 없다(실패도 없다).
+- 복원 순서: 추적기(`coupang_rank_trackers`, `clients` 가 먼저 있어야 함 — FK) → 스냅숏 → 위 '일별 칸 재생성'. 회차·일정·연결 코드는 복원하지 않는다(키워드 일정은 다음 claim 이 다시 만들고, 연결 코드는 새로 발급).

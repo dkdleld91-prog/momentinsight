@@ -1,18 +1,25 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 import {
   AUDIT_LOG_DAYS,
+  DEFAULT_TABLES,
   FULL_REFRESH_DAYS,
   INCREMENTAL_OVERLAP_MS,
+  INCREMENTAL_TABLES,
+  OPTIONAL_TABLES,
   backupFolderName,
   daysSinceFullDownload,
   exportTable,
   findIncrementalBase,
+  isMissingTableError,
   parseArgs,
   parseEnvFile,
   pruneOldBackups,
@@ -633,4 +640,251 @@ test("증분 도중 연결이 끊기면 manifest 방식은 incremental 로 남�
   assert.equal(day3.manifest.tables[SNAP].method, "incremental");
   assert.equal(day3.manifest.tables[SNAP].base, path.basename(day1.folder));
   fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+// ─── C 30일 순위(쿠팡) 표: 선택 표 건너뜀 · 백업 제외 · 스냅숏 증분(명세 v3 §10.1) ─────────────────
+
+const C_BACKED_UP = ["coupang_rank_settings", "coupang_rank_account_limits", "coupang_rank_trackers", "coupang_rank_snapshots"];
+const C_NOT_BACKED_UP = ["coupang_rank_days", "coupang_rank_runs", "coupang_rank_keywords", "coupang_rank_collectors", "coupang_rank_cooldowns"];
+const CSNAP = "coupang_rank_snapshots";
+const C_WARN_TAIL = " — 대표 SQL 실행 뒤에도 보이면 표가 사라진 것";
+
+// 운영 PostgREST 가 스키마 캐시에 없는 표에 돌려주는 모양.
+function pgrst205(table) {
+  return new Response(
+    JSON.stringify({ code: "PGRST205", details: null, hint: null, message: `Could not find the table 'public.${table}' in the schema cache` }),
+    { status: 404, headers: { "content-type": "application/json" } },
+  );
+}
+
+// 마이그레이션 20261017090000 의 coupang_rank_snapshots 열 순서와 같은 모양(덧붙이기만 하는 표).
+function coupangSnapshotRow(seed, createdMs, tracker = uuidFrom("c-tracker-a")) {
+  const out = seed % 5 === 0;
+  return {
+    id: uuidFrom(`csnap-${seed}`),
+    tracker_id: tracker,
+    run_id: uuidFrom(`crun-${seed}`),
+    checked_at: stamp(createdMs - 900),
+    kst_day: new Date(createdMs + 9 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    slot_index: seed % 2,
+    slot_minute: seed % 2 ? 930 : 480,
+    result: out ? "out" : "found",
+    rank: out ? null : (seed % 50) + 1,
+    organic_count: 50,
+    organic_slot: out ? 53 : (seed % 50) + 11,
+    ad_order: seed % 3 ? null : 8,
+    vendor_item_id: String(96009802650 + seed),
+    same_option: seed % 4 !== 0,
+    title: `쿠팡 상품 ${seed}`,
+    source: "coupang_search_page1",
+    created_at: stamp(createdMs, seed % 1000),
+  };
+}
+function coupangHistory(n, { offset = 0, endMs = DAY1 - 10 * 60 * 1000 } = {}) {
+  return Array.from({ length: n }, (_, index) => coupangSnapshotRow(offset + index, endMs - (n - 1 - index) * 6 * 60 * 1000));
+}
+
+test("C 표 목록: 기본 목록 끝에 백업할 4개, 백업하지 않는 5개는 없음, 스냅숏은 증분, 선택 표 = 백업할 4개", () => {
+  assert.deepEqual(DEFAULT_TABLES.slice(-4), C_BACKED_UP);
+  assert.equal(DEFAULT_TABLES.filter((table) => table.startsWith("coupang_")).length, 4);
+  for (const table of C_NOT_BACKED_UP) assert.ok(!DEFAULT_TABLES.includes(table), `${table} 는 백업하지 않는다`);
+  assert.equal(new Set(DEFAULT_TABLES).size, DEFAULT_TABLES.length, "중복 없음");
+  assert.deepEqual(INCREMENTAL_TABLES, ["naver_rank_snapshots", "naver_place_rank_snapshots", CSNAP]);
+  assert.deepEqual([...OPTIONAL_TABLES].sort(), [...C_BACKED_UP].sort());
+  // 기존 표는 선택 표가 아니다(없으면 지금처럼 실패)
+  assert.ok(DEFAULT_TABLES.filter((table) => !table.startsWith("coupang_")).every((table) => !OPTIONAL_TABLES.has(table)));
+});
+
+test("표 없음 판정: 404 또는 본문의 PGRST205·42P01 만 — 5xx·열 없음(42703)·연결 끊김은 아니다", () => {
+  const httpError = (status, body) => Object.assign(new Error(`HTTP ${status}`), { status, body });
+  assert.equal(isMissingTableError(httpError(404, '{"code":"PGRST205"}')), true);
+  assert.equal(isMissingTableError(httpError(404, "")), true);
+  assert.equal(isMissingTableError(httpError(400, '{"code":"42P01","message":"relation does not exist"}')), true);
+  assert.equal(isMissingTableError(httpError(500, "boom")), false);
+  assert.equal(isMissingTableError(httpError(503, "upstream")), false);
+  assert.equal(isMissingTableError(httpError(400, '{"code":"42703"}')), false);
+  assert.equal(isMissingTableError(new TypeError("fetch failed")), false);
+  assert.equal(isMissingTableError(null), false);
+});
+
+test("대표 SQL 실행 전: 기본 목록 그대로 돌리면 C 표 4개는 건너뜀(실패 아님)·경고 한 줄, 백업하지 않는 C 표는 요청조차 없다", async () => {
+  const outDir = tmpDir();
+  const state = Object.fromEntries(DEFAULT_TABLES.filter((table) => !OPTIONAL_TABLES.has(table)).map((table) => [table, []]));
+  state.clients = byId([{ id: uuidFrom("c1"), name: "광고주", created_at: stamp(DAY1 - DAY_MS) }]);
+  const db = fakeDb(state, { intercept: (call) => (call.table.startsWith("coupang_") ? pgrst205(call.table) : null) });
+  const lines = [];
+  const { folder, manifest } = await runExport({ baseUrl: BASE, key: KEY, outDir, fetchImpl: db.impl, nowMs: DAY1, keep: 14, log: (line) => lines.push(line), sleep: async () => {} });
+  assert.deepEqual(manifest.errors, [], "건너뜀은 errors 에 넣지 않는다(종료 코드 0)");
+  for (const table of C_BACKED_UP) {
+    const entry = manifest.tables[table];
+    assert.equal(entry.rows, null);
+    assert.equal(entry.skipped, "table_missing");
+    assert.equal(entry.error, undefined);
+    assert.equal(entry.requests, 1, "404 는 다시 시도하지 않는다");
+    assert.ok(Number.isInteger(entry.ms) && Number.isInteger(entry.bytes));
+    assert.ok(!fs.existsSync(path.join(folder, `${table}.json.gz`)));
+    assert.ok(lines.includes(`${table}: 표 없음 → 건너뜀(대표 SQL 실행 전)`));
+  }
+  assert.equal(manifest.tables.coupang_rank_settings.method, "full");
+  assert.equal(manifest.tables[CSNAP].method, "full");
+  assert.equal(manifest.tables[CSNAP].fullRefresh, "no_full_found");
+  assert.equal(manifest.tables.clients.rows, 1, "다른 표는 그대로 백업");
+  for (const table of C_NOT_BACKED_UP) assert.equal(db.calls.filter((call) => call.table === table).length, 0, `${table} 요청 없음`);
+  const warns = lines.filter((line) => line.startsWith("WARN "));
+  assert.deepEqual(warns, [`WARN 선택 표 4개 건너뜀: ${C_BACKED_UP.join(", ")}${C_WARN_TAIL}`]);
+  assert.equal(lines.at(-1), warns[0], "경고는 끝에 한 줄");
+  const saved = JSON.parse(fs.readFileSync(path.join(folder, "manifest.json"), "utf8"));
+  assert.equal(saved.tables[CSNAP].skipped, "table_missing");
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test("선택 표가 아닌 표가 없으면 지금처럼 실패, 선택 표라도 5xx 는 건너뛰지 않고 실패 · 건너뜀이 없으면 경고 줄도 없다", async () => {
+  const outDir = tmpDir();
+  const db = fakeDb(
+    { clients: byId([{ id: uuidFrom("c1"), created_at: stamp(DAY1) }]) },
+    { intercept: (call) => (call.table === "coupang_rank_trackers" ? new Response("upstream", { status: 503 }) : null) },
+  );
+  const lines = [];
+  const { manifest } = await runExport({
+    baseUrl: BASE, key: KEY, outDir, fetchImpl: db.impl, nowMs: DAY1, keep: 14,
+    tables: ["clients", "naver_rank_trackers", "coupang_rank_trackers"], log: (line) => lines.push(line), sleep: async () => {},
+  });
+  assert.equal(manifest.errors.length, 2);
+  assert.match(manifest.errors[0], /^naver_rank_trackers: HTTP 404/);
+  assert.match(manifest.errors[1], /^coupang_rank_trackers: HTTP 503/);
+  assert.equal(manifest.tables.coupang_rank_trackers.skipped, undefined);
+  assert.equal(manifest.tables.coupang_rank_trackers.requests, 3, "5xx 는 두 번 더 시도");
+  assert.equal(lines.filter((line) => line.startsWith("WARN ")).length, 0);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test("대표 SQL 실행 뒤: 건너뛴 날은 증분 기준이 아니고, 첫날은 통째로, 다음 날부터 coupang_rank_snapshots 증분(추가·보관 기간 삭제)", async () => {
+  const outDir = tmpDir();
+  // 첫날: 표 없음(fakeDb 기본 404 · 42P01 본문)
+  const db = fakeDb({ clients: [] });
+  const day1 = await backup(db, outDir, DAY1, { tables: ["clients", "coupang_rank_settings", CSNAP] });
+  assert.equal(day1.manifest.tables[CSNAP].skipped, "table_missing");
+  assert.deepEqual(day1.manifest.errors, []);
+  // 대표 SQL 실행 → 표가 생기고 수집이 쌓인다
+  db.state.coupang_rank_settings = [{ id: 1, enabled: false, window_mode: "offscreen", updated_at: stamp(DAY1) }];
+  db.state[CSNAP] = byId(coupangHistory(400));
+  const lines = [];
+  const day2 = await backup(db, outDir, DAY1 + DAY_MS, { tables: ["clients", "coupang_rank_settings", CSNAP], log: (line) => lines.push(line) });
+  assert.deepEqual(day2.manifest.errors, []);
+  assert.equal(day2.manifest.tables[CSNAP].method, "full");
+  assert.equal(day2.manifest.tables[CSNAP].fullRefresh, "no_full_found", "건너뛴 날은 통째 수신으로 세지 않는다");
+  assert.equal(day2.manifest.tables[CSNAP].base, undefined);
+  assert.equal(day2.manifest.tables[CSNAP].rows, 400);
+  assert.equal(day2.manifest.tables.coupang_rank_settings.rows, 1);
+  assert.equal(lines.filter((line) => line.startsWith("WARN ")).length, 0, "표가 다 있으면 경고 없음");
+  assert.equal(findIncrementalBase(outDir, CSNAP, { projectRef: "example", excludeFolder: path.basename(day2.folder) }), null, "건너뛴 폴더는 기준이 될 수 없다");
+  // 셋째 날: 새 측정 40줄, 60일 정리로 오래된 25줄 삭제
+  const oldest = new Set(db.state[CSNAP].slice().sort((a, b) => tsKey(a.created_at) - tsKey(b.created_at)).slice(0, 25).map((row) => row.id));
+  const fresh = Array.from({ length: 40 }, (_, index) => coupangSnapshotRow(5000 + index, DAY1 + DAY_MS + (index + 1) * 6 * 60 * 1000));
+  db.state[CSNAP] = byId(db.state[CSNAP].filter((row) => !oldest.has(row.id)).concat(fresh));
+  db.calls.length = 0;
+  const day3 = await backup(db, outDir, DAY1 + 2 * DAY_MS, { tables: ["clients", "coupang_rank_settings", CSNAP] });
+  const entry = day3.manifest.tables[CSNAP];
+  assert.equal(entry.method, "incremental");
+  assert.equal(entry.base, path.basename(day2.folder));
+  assert.equal(entry.added, 40);
+  assert.equal(entry.deleted, 25);
+  assert.equal(entry.changed, 0);
+  assert.equal(entry.rows, 415);
+  const snapCalls = db.calls.filter((call) => call.table === CSNAP);
+  assert.equal(snapCalls.filter((call) => call.select === "*" && !call.filters.length).length, 0, "스냅숏 본문을 통째로 받지 않는다");
+  await assertSameAsFull(db, day3.folder, CSNAP);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+test("대표 SQL 실행 뒤 표가 사라지면 백업은 성공으로 끝나지만 경고 한 줄로 드러난다(증분 시도 404 → 통째 → 건너뜀)", async () => {
+  const outDir = tmpDir();
+  const db = fakeDb({ [CSNAP]: byId(coupangHistory(120)) });
+  const day1 = await backup(db, outDir, DAY1, { tables: [CSNAP] });
+  assert.equal(day1.manifest.tables[CSNAP].rows, 120);
+  delete db.state[CSNAP];
+  const lines = [];
+  const day2 = await backup(db, outDir, DAY1 + DAY_MS, { tables: [CSNAP], log: (line) => lines.push(line) });
+  const entry = day2.manifest.tables[CSNAP];
+  assert.deepEqual(day2.manifest.errors, []);
+  assert.equal(entry.skipped, "table_missing");
+  assert.equal(entry.method, "fallback");
+  assert.equal(entry.fallbackReason, "incremental_http_404");
+  assert.equal(entry.base, path.basename(day1.folder));
+  assert.deepEqual(lines.filter((line) => line.startsWith("WARN ")), [`WARN 선택 표 1개 건너뜀: ${CSNAP}${C_WARN_TAIL}`]);
+  fs.rmSync(outDir, { recursive: true, force: true });
+});
+
+// 실제 실행(main)의 종료 코드: 가짜 PostgREST 를 127.0.0.1 에 띄우고 스크립트를 자식 프로세스로 돌린다.
+// --env 는 빈 임시 파일이라 실제 backup.env 를 읽지 않고, 운영 주소로는 요청하지 않는다.
+const SCRIPT = fileURLToPath(new URL("./db-export.mjs", import.meta.url));
+
+async function withFakeServer(db, fn) {
+  const server = http.createServer(async (request, response) => {
+    try {
+      const reply = await db.impl(`http://fake${request.url}`, { method: request.method, headers: request.headers });
+      const headers = {};
+      reply.headers.forEach((value, name) => { headers[name] = value; });
+      response.writeHead(reply.status, headers);
+      response.end(request.method === "HEAD" ? undefined : Buffer.from(await reply.arrayBuffer()));
+    } catch (error) {
+      response.writeHead(500);
+      response.end(String(error));
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function runScript(args, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [SCRIPT, ...args], { env, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+function scriptEnv(baseUrl, tables) {
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.startsWith("SUPABASE_") || name === "MI_DB_EXPORT_TABLES" || name === "NODE_TEST_CONTEXT") delete env[name];
+  }
+  return { ...env, SUPABASE_URL: baseUrl, SUPABASE_SERVICE_ROLE_KEY: KEY, MI_DB_EXPORT_TABLES: tables.join(",") };
+}
+
+test("실행 종료 코드: 없는 선택 표만 있으면 exit 0 + 경고 줄, 없는 일반 표가 섞이면 지금처럼 exit 1", async () => {
+  const work = tmpDir();
+  const envFile = path.join(work, "empty.env");
+  fs.writeFileSync(envFile, "");
+  const db = fakeDb({ clients: byId([{ id: uuidFrom("c1"), name: "광고주", created_at: stamp(DAY1) }]) });
+  await withFakeServer(db, async (baseUrl) => {
+    const okOut = path.join(work, "ok");
+    const ok = await runScript(["--out", okOut, "--env", envFile, "--keep", "2"], scriptEnv(baseUrl, ["clients", "coupang_rank_settings", CSNAP]));
+    assert.equal(ok.code, 0, ok.stderr);
+    assert.match(ok.stdout, /clients: 1 rows \(full,/);
+    assert.ok(ok.stdout.includes("coupang_rank_settings: 표 없음 → 건너뜀(대표 SQL 실행 전)"));
+    assert.ok(ok.stdout.includes(`WARN 선택 표 2개 건너뜀: coupang_rank_settings, ${CSNAP}${C_WARN_TAIL}`));
+    assert.ok(!ok.stderr.includes("실패"));
+    const [folderName] = fs.readdirSync(okOut).filter((name) => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(name));
+    const manifest = JSON.parse(fs.readFileSync(path.join(okOut, folderName, "manifest.json"), "utf8"));
+    assert.deepEqual(manifest.errors, []);
+    assert.equal(manifest.tables[CSNAP].skipped, "table_missing");
+
+    const badOut = path.join(work, "bad");
+    const bad = await runScript(["--out", badOut, "--env", envFile], scriptEnv(baseUrl, ["clients", "naver_rank_trackers", "coupang_rank_trackers"]));
+    assert.equal(bad.code, 1);
+    assert.match(bad.stderr, /실패 1건: naver_rank_trackers: HTTP 404/);
+    assert.ok(bad.stdout.includes(`WARN 선택 표 1개 건너뜀: coupang_rank_trackers${C_WARN_TAIL}`));
+  });
+  assert.ok(db.calls.every((call) => call.method === "GET" || call.method === "HEAD"), "쓰기 요청 없음");
+  fs.rmSync(work, { recursive: true, force: true });
 });

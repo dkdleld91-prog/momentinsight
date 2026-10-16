@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>co.kr.momentinsight.coupang-rank-collector</string>
+  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>{ROOT}/app/run-worker.sh</string></array>
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><false/>
+  <key>Nice</key><integer>5</integer>
+  <key>ExitTimeOut</key><integer>30</integer>
+  <key>StandardOutPath</key><string>{ROOT}/logs/launchd.log</string>
+  <key>StandardErrorPath</key><string>{ROOT}/logs/launchd.log</string>
+</dict>
+</plist>

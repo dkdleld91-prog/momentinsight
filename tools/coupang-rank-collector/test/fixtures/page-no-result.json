@@ -1,0 +1,8 @@
+{
+  "host": "www.coupang.com",
+  "path": "/np/search",
+  "blockedText": false,
+  "noResultText": true,
+  "loginWall": false,
+  "items": []
+}

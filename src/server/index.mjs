@@ -37,6 +37,9 @@ const handlerLoaders = {
   reportCenter: () => import("./handlers/report-center.mjs"),
   workItems: () => import("./handlers/work-items.mjs"),
   superAdminApi: () => import("./handlers/super-admin-api.mjs"),
+  // C 30일 순위(쿠팡). 독립 모듈 — 대표 승인 2026-10-16(D1), 줄 추가만.
+  coupangRankTrackers: () => import("./handlers/coupang-rank-trackers.mjs"),
+  coupangRankWorker: () => import("./handlers/coupang-rank-worker.mjs"),
 };
 
 const handler = createHandlerResolver(handlerLoaders);
@@ -197,6 +200,15 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/integration-status") {
       return dispatch("integrationStatus", request);
+    }
+
+    // C 30일 순위(쿠팡). 화면 API 는 세션 게이트를 거치고, 수집기 API 는 연결 코드(Bearer)로만 열린다.
+    if (url.pathname === "/api/coupang-rank-trackers") {
+      return dispatch("coupangRankTrackers", request);
+    }
+
+    if (url.pathname === "/api/coupang-rank-worker") {
+      return dispatch("coupangRankWorker", request);
     }
 
     const route = routes.find((item) => item.method === request.method && item.path === url.pathname);

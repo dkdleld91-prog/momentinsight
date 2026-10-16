@@ -40,10 +40,14 @@ const SESSION_FREE_PATHS = new Set([
   "/api/google-oauth/callback",
   // 구글 로그인 시작은 무세션 공개 진입점으로, 구글 인증 화면으로의 302만 반환한다.
   "/api/google-login/start",
+  // C 30일 순위 수집기(쿠팡, 대표 승인 2026-10-16 D1). 세션 쿠키 없이 관리자 화면에서 발급한 연결 코드(Bearer)로만 열린다.
+  // 게이트가 머리글을 지우지 않으므로 핸들러가 x-mi-* 머리글을 모두 무시한다.
+  "/api/coupang-rank-worker",
 ]);
 const TEAM_ACCOUNT_ONLY_RANK_PATHS = new Set([
   "/api/naver-rank-trackers",
   "/api/naver-place-rank-trackers",
+  "/api/coupang-rank-trackers",
 ]);
 const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
   "/api/work-items",
@@ -105,6 +109,7 @@ const PLAN_EXPIRED_GET_PATHS = new Set([
   "/api/client/home-feed",
   "/api/naver-rank-trackers",
   "/api/naver-place-rank-trackers",
+  "/api/coupang-rank-trackers",
   "/api/my/google-login",
 ]);
 const PLAN_EXPIRED_WRITE_PATHS = new Set([

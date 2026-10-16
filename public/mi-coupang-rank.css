@@ -1,0 +1,1233 @@
+/*!
+ * 모먼트 인사이트 · C 30일 순위(쿠팡) 화면 CSS — 명세 v3 §8.6
+ * 범위는 #mi-admin .mi-coupang-rank-… 와 #mi-clean .mi-coupang-rank-…(2b용) 두 곳뿐이다.
+ * 기존 클래스(mi-card · mi-rank-filterbar · mi-rank-day-grid 등)는 그대로 쓰고, 조정은 .mi-coupang-rank-* 아래에서만 한다.
+ * 색은 var(--mi-*) 토큰만 쓴다(16진 색 0). 이 파일은 인라인 <style> 보다 먼저 읽히므로, 공용 클래스를 덮을 때는
+ * .mi-coupang-rank-* 를 하나 더 붙여 특이도를 올린다.
+ */
+
+#mi-admin .mi-coupang-rank-root,
+#mi-clean .mi-coupang-rank-root {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-root [hidden],
+#mi-clean .mi-coupang-rank-root [hidden] {
+  display: none !important;
+}
+
+/* ── 1. 수집 상태 띠 ── */
+#mi-admin .mi-coupang-rank-strip,
+#mi-clean .mi-coupang-rank-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 12px 14px;
+  color: var(--mi-navy);
+  background: var(--mi-panel);
+  box-shadow: var(--mi-shadow);
+}
+
+#mi-admin .mi-coupang-rank-strip strong,
+#mi-clean .mi-coupang-rank-strip strong {
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-strip small,
+#mi-clean .mi-coupang-rank-strip small {
+  color: var(--mi-muted);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-strip-dot,
+#mi-clean .mi-coupang-rank-strip-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--mi-radius-pill);
+  background: var(--mi-muted);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-ok,
+#mi-clean .mi-coupang-rank-strip.is-ok {
+  border-color: var(--mi-green);
+  background: var(--mi-green-bg);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-ok .mi-coupang-rank-strip-dot,
+#mi-clean .mi-coupang-rank-strip.is-ok .mi-coupang-rank-strip-dot {
+  background: var(--mi-green);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-ok strong,
+#mi-clean .mi-coupang-rank-strip.is-ok strong {
+  color: var(--mi-green);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-info .mi-coupang-rank-strip-dot,
+#mi-clean .mi-coupang-rank-strip.is-info .mi-coupang-rank-strip-dot {
+  background: var(--mi-navy-2);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-warn,
+#mi-clean .mi-coupang-rank-strip.is-warn {
+  border-color: var(--mi-warn);
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-warn .mi-coupang-rank-strip-dot,
+#mi-clean .mi-coupang-rank-strip.is-warn .mi-coupang-rank-strip-dot {
+  background: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-warn strong,
+#mi-clean .mi-coupang-rank-strip.is-warn strong {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-strip.is-muted,
+#mi-clean .mi-coupang-rank-strip.is-muted {
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-status,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-status {
+  margin: 0;
+  min-height: 0;
+}
+
+/* ── 2. 등록 폼 ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-form-card,
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-board,
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-form-card,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-board,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px;
+}
+
+#mi-admin .mi-coupang-rank-form-head,
+#mi-admin .mi-coupang-rank-board-head,
+#mi-clean .mi-coupang-rank-form-head,
+#mi-clean .mi-coupang-rank-board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+#mi-admin .mi-coupang-rank-form-head h3,
+#mi-admin .mi-coupang-rank-board-head h3,
+#mi-clean .mi-coupang-rank-form-head h3,
+#mi-clean .mi-coupang-rank-board-head h3 {
+  margin: 0;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-h4);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-board-head p,
+#mi-clean .mi-coupang-rank-board-head p {
+  margin: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-limit,
+#mi-clean .mi-coupang-rank-limit {
+  margin: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius-pill);
+  padding: 4px 10px;
+  color: var(--mi-navy);
+  background: var(--mi-grey-50);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-create,
+#mi-clean .mi-coupang-rank-create {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(220px, 1.6fr) minmax(130px, 0.8fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-create .mi-input,
+#mi-clean .mi-coupang-rank-create .mi-input {
+  min-width: 0;
+  width: 100%;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-range,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-range {
+  padding: 0 12px;
+}
+
+#mi-admin .mi-coupang-rank-help,
+#mi-admin .mi-coupang-rank-muted,
+#mi-clean .mi-coupang-rank-help,
+#mi-clean .mi-coupang-rank-muted {
+  margin: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  line-height: 1.5;
+}
+
+#mi-admin .mi-coupang-rank-muted.is-warn,
+#mi-admin .mi-coupang-rank-capacity,
+#mi-clean .mi-coupang-rank-muted.is-warn,
+#mi-clean .mi-coupang-rank-capacity {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-capacity,
+#mi-clean .mi-coupang-rank-capacity {
+  margin: 0;
+  border: 1px solid var(--mi-warn);
+  border-radius: var(--mi-radius);
+  padding: 9px 11px;
+  background: var(--mi-warn-bg);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+  line-height: 1.5;
+}
+
+/* ── 3·4. 필터 띠와 선택 도구 ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+#mi-admin .mi-coupang-rank-filterbar > .mi-input,
+#mi-clean .mi-coupang-rank-filterbar > .mi-input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-filterbar > .mi-rank-group-filter,
+#mi-clean .mi-coupang-rank-filterbar > .mi-rank-group-filter {
+  flex: 0 1 240px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-filterbar .mi-rank-filter-actions,
+#mi-clean .mi-coupang-rank-filterbar .mi-rank-filter-actions {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  margin: 0;
+}
+
+#mi-admin .mi-coupang-rank-bulk .mi-rank-bulk-title,
+#mi-clean .mi-coupang-rank-bulk .mi-rank-bulk-title {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-bulk-actions,
+#mi-clean .mi-coupang-rank-bulk-actions {
+  display: flex;
+  flex: 2 1 420px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-bulk-group,
+#mi-clean .mi-coupang-rank-bulk-group {
+  display: inline-flex;
+  flex: 1 1 240px;
+  gap: 6px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-bulk-group .mi-input,
+#mi-clean .mi-coupang-rank-bulk-group .mi-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  font-size: var(--mi-font-label);
+}
+
+#mi-admin .mi-coupang-rank-bulk-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-card-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-owner-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-row-actions .mi-link-button,
+#mi-admin .mi-coupang-rank-line-head .mi-link-button,
+#mi-admin .mi-coupang-rank-collector .mi-link-button,
+#mi-admin .mi-coupang-rank-group-editor .mi-link-button,
+#mi-clean .mi-coupang-rank-bulk-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-card-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-owner-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-row-actions .mi-link-button,
+#mi-clean .mi-coupang-rank-line-head .mi-link-button,
+#mi-clean .mi-coupang-rank-collector .mi-link-button,
+#mi-clean .mi-coupang-rank-group-editor .mi-link-button {
+  cursor: pointer;
+  background: var(--mi-panel);
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-link-button:disabled,
+#mi-admin .mi-coupang-rank-root .mi-button:disabled,
+#mi-clean .mi-coupang-rank-root .mi-link-button:disabled,
+#mi-clean .mi-coupang-rank-root .mi-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-danger,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-danger {
+  border-color: var(--mi-danger);
+  color: var(--mi-danger);
+}
+
+#mi-admin .mi-coupang-rank-list-note,
+#mi-clean .mi-coupang-rank-list-note {
+  margin: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 8px 11px;
+  color: var(--mi-muted);
+  background: var(--mi-grey-50);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-list-note.is-warn,
+#mi-clean .mi-coupang-rank-list-note.is-warn {
+  border-color: var(--mi-warn);
+  color: var(--mi-warn);
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-list,
+#mi-clean .mi-coupang-rank-list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ── 5. 그룹 구역 + 카드 ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-group .mi-rank-group-items,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-group .mi-rank-group-items {
+  gap: 10px;
+  padding: 12px;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card.is-paused,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card.is-paused {
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-card-head,
+#mi-clean .mi-coupang-rank-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-select input,
+#mi-admin .mi-coupang-rank-root .mi-rank-group-select input,
+#mi-clean .mi-coupang-rank-select input,
+#mi-clean .mi-coupang-rank-root .mi-rank-group-select input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--mi-navy);
+  cursor: pointer;
+}
+
+#mi-admin .mi-coupang-rank-title,
+#mi-clean .mi-coupang-rank-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-keyword,
+#mi-clean .mi-coupang-rank-keyword {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-h4);
+  font-weight: var(--mi-weight-black);
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-product,
+#mi-clean .mi-coupang-rank-product {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-product a,
+#mi-clean .mi-coupang-rank-product a {
+  color: var(--mi-blue);
+  font-weight: var(--mi-weight-black);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-product a:hover,
+#mi-clean .mi-coupang-rank-product a:hover {
+  text-decoration: underline;
+}
+
+#mi-admin .mi-coupang-rank-product-title,
+#mi-clean .mi-coupang-rank-product-title {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-option-note,
+#mi-admin .mi-coupang-rank-state-badge,
+#mi-clean .mi-coupang-rank-option-note,
+#mi-clean .mi-coupang-rank-state-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius-pill);
+  padding: 3px 9px;
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-black);
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-option-note,
+#mi-clean .mi-coupang-rank-option-note {
+  border-color: var(--mi-warn);
+  color: var(--mi-warn);
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-state-badge.is-active,
+#mi-clean .mi-coupang-rank-state-badge.is-active {
+  border-color: var(--mi-green);
+  color: var(--mi-green);
+  background: var(--mi-green-bg);
+}
+
+#mi-admin .mi-coupang-rank-state-badge.is-paused,
+#mi-clean .mi-coupang-rank-state-badge.is-paused {
+  color: var(--mi-muted);
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-metrics,
+#mi-clean .mi-coupang-rank-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-metric,
+#mi-clean .mi-coupang-rank-metric {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 8px 10px;
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-metric-label,
+#mi-clean .mi-coupang-rank-metric-label {
+  color: var(--mi-muted);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-metric strong,
+#mi-clean .mi-coupang-rank-metric strong {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-metric.is-current,
+#mi-clean .mi-coupang-rank-metric.is-current {
+  border-color: var(--mi-navy);
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge {
+  font-size: var(--mi-font-h3);
+}
+
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge.is-out,
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-badge.is-pending,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge.is-out,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-badge.is-pending {
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body-lg);
+}
+
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-up,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-up {
+  color: var(--mi-green);
+}
+
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-down,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-down {
+  color: var(--mi-danger);
+}
+
+#mi-admin .mi-coupang-rank-metric .mi-coupang-rank-trend.is-flat,
+#mi-clean .mi-coupang-rank-metric .mi-coupang-rank-trend.is-flat {
+  color: var(--mi-muted);
+}
+
+#mi-admin .mi-coupang-rank-attention,
+#mi-clean .mi-coupang-rank-attention {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--mi-warn);
+  border-radius: var(--mi-radius);
+  padding: 7px 10px;
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-attention strong,
+#mi-clean .mi-coupang-rank-attention strong {
+  color: var(--mi-warn);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-attention .mi-rank-pill,
+#mi-clean .mi-coupang-rank-attention .mi-rank-pill {
+  border-color: var(--mi-warn);
+  color: var(--mi-warn);
+  background: var(--mi-panel);
+}
+
+/* 30일 판: 공용 .mi-rank-day-grid(가로 스크롤) 그대로, 칸만 좁힌다. */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-days,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-days {
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day {
+  flex: 0 0 74px;
+  min-height: 60px;
+  padding: 8px 6px;
+  background: var(--mi-panel);
+  text-align: center;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day strong,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day strong {
+  display: block;
+  margin: 0 0 6px;
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-bold);
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-day.is-today,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-day.is-today {
+  background: var(--mi-gold-soft);
+}
+
+#mi-admin .mi-coupang-rank-today,
+#mi-clean .mi-coupang-rank-today {
+  display: block;
+  margin-top: 2px;
+  color: var(--mi-navy-2);
+  font-size: 10px;
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-cell,
+#mi-clean .mi-coupang-rank-cell {
+  display: block;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-day.is-found .mi-coupang-rank-cell,
+#mi-clean .mi-coupang-rank-day.is-found .mi-coupang-rank-cell {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-h4);
+}
+
+#mi-admin .mi-coupang-rank-day.is-failed .mi-coupang-rank-cell,
+#mi-admin .mi-coupang-rank-day.is-unsupported .mi-coupang-rank-cell,
+#mi-clean .mi-coupang-rank-day.is-failed .mi-coupang-rank-cell,
+#mi-clean .mi-coupang-rank-day.is-unsupported .mi-coupang-rank-cell {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-day.is-noresult .mi-coupang-rank-cell,
+#mi-clean .mi-coupang-rank-day.is-noresult .mi-coupang-rank-cell {
+  font-size: var(--mi-font-label);
+}
+
+#mi-admin .mi-coupang-rank-day.is-before,
+#mi-clean .mi-coupang-rank-day.is-before {
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-card-actions,
+#mi-admin .mi-coupang-rank-owner-actions,
+#mi-admin .mi-coupang-rank-group-editor,
+#mi-admin .mi-coupang-rank-row-actions,
+#mi-clean .mi-coupang-rank-card-actions,
+#mi-clean .mi-coupang-rank-owner-actions,
+#mi-clean .mi-coupang-rank-group-editor,
+#mi-clean .mi-coupang-rank-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-group-editor,
+#mi-clean .mi-coupang-rank-group-editor {
+  border-top: 1px dashed var(--mi-line);
+  padding-top: 10px;
+}
+
+#mi-admin .mi-coupang-rank-group-editor span,
+#mi-clean .mi-coupang-rank-group-editor span {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-group-editor .mi-input,
+#mi-clean .mi-coupang-rank-group-editor .mi-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  min-height: 34px;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-group-editor .mi-button,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-group-editor .mi-button {
+  min-height: 34px;
+}
+
+#mi-admin .mi-coupang-rank-runs,
+#mi-clean .mi-coupang-rank-runs {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border-top: 1px dashed var(--mi-line);
+  padding-top: 10px;
+}
+
+#mi-admin .mi-coupang-rank-runs h4,
+#mi-clean .mi-coupang-rank-runs h4 {
+  margin: 4px 0 0;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-run-list,
+#mi-admin .mi-coupang-rank-owner-lines,
+#mi-admin .mi-coupang-rank-guide-list,
+#mi-admin .mi-coupang-rank-owner-steps,
+#mi-clean .mi-coupang-rank-run-list,
+#mi-clean .mi-coupang-rank-owner-lines,
+#mi-clean .mi-coupang-rank-guide-list,
+#mi-clean .mi-coupang-rank-owner-steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--mi-ink);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-run-list,
+#mi-clean .mi-coupang-rank-run-list {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* ── 6. 사용 방법 · 7. 복붙 템플릿 ── */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-guide,
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-guide,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner {
+  min-width: 0;
+  padding: 0;
+}
+
+#mi-admin .mi-coupang-rank-guide summary,
+#mi-admin .mi-coupang-rank-owner summary,
+#mi-clean .mi-coupang-rank-guide summary,
+#mi-clean .mi-coupang-rank-owner summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 14px 18px;
+  color: var(--mi-navy);
+  cursor: pointer;
+  list-style: none;
+}
+
+#mi-admin .mi-coupang-rank-guide summary::-webkit-details-marker,
+#mi-admin .mi-coupang-rank-owner summary::-webkit-details-marker,
+#mi-clean .mi-coupang-rank-guide summary::-webkit-details-marker,
+#mi-clean .mi-coupang-rank-owner summary::-webkit-details-marker {
+  display: none;
+}
+
+#mi-admin .mi-coupang-rank-guide summary::after,
+#mi-admin .mi-coupang-rank-owner summary::after,
+#mi-clean .mi-coupang-rank-guide summary::after,
+#mi-clean .mi-coupang-rank-owner summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--mi-muted);
+}
+
+#mi-admin .mi-coupang-rank-guide[open] summary::after,
+#mi-admin .mi-coupang-rank-owner[open] summary::after,
+#mi-clean .mi-coupang-rank-guide[open] summary::after,
+#mi-clean .mi-coupang-rank-owner[open] summary::after {
+  content: "▴";
+}
+
+#mi-admin .mi-coupang-rank-guide summary strong,
+#mi-admin .mi-coupang-rank-owner summary strong,
+#mi-clean .mi-coupang-rank-guide summary strong,
+#mi-clean .mi-coupang-rank-owner summary strong {
+  font-size: var(--mi-font-h4);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-guide summary span,
+#mi-clean .mi-coupang-rank-guide summary span {
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-guide-list,
+#mi-clean .mi-coupang-rank-guide-list {
+  padding: 0 18px 16px 36px;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-template-text,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-template-text {
+  width: 100%;
+  min-height: 84px;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+/* ── 총관리자 수집기 패널 ── */
+#mi-admin .mi-coupang-rank-owner-state,
+#mi-clean .mi-coupang-rank-owner-state {
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius-pill);
+  padding: 3px 9px;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-owner-state:empty,
+#mi-clean .mi-coupang-rank-owner-state:empty {
+  display: none;
+}
+
+#mi-admin .mi-coupang-rank-owner-state.is-ok,
+#mi-clean .mi-coupang-rank-owner-state.is-ok {
+  border-color: var(--mi-green);
+  color: var(--mi-green);
+  background: var(--mi-green-bg);
+}
+
+#mi-admin .mi-coupang-rank-owner-body,
+#mi-clean .mi-coupang-rank-owner-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border-top: 1px solid var(--mi-line);
+  padding: 14px 18px 18px;
+}
+
+#mi-admin .mi-coupang-rank-owner-steps,
+#mi-clean .mi-coupang-rank-owner-steps {
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 10px 12px 10px 30px;
+  background: var(--mi-grey-50);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner-note,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner-note {
+  margin: 0;
+  min-height: 0;
+}
+
+#mi-admin .mi-coupang-rank-owner-section,
+#mi-clean .mi-coupang-rank-owner-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-owner-section:empty,
+#mi-clean .mi-coupang-rank-owner-section:empty {
+  display: none;
+}
+
+#mi-admin .mi-coupang-rank-owner-title,
+#mi-clean .mi-coupang-rank-owner-title {
+  margin: 0;
+  border-top: 1px dashed var(--mi-line);
+  padding-top: 12px;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-owner-subtitle,
+#mi-clean .mi-coupang-rank-owner-subtitle {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-capacity-line,
+#mi-clean .mi-coupang-rank-capacity-line {
+  margin: 0;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-capacity-line.is-warn,
+#mi-clean .mi-coupang-rank-capacity-line.is-warn {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-settings,
+#mi-clean .mi-coupang-rank-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-settings > .mi-coupang-rank-owner-actions,
+#mi-clean .mi-coupang-rank-settings > .mi-coupang-rank-owner-actions {
+  grid-column: 1 / -1;
+}
+
+#mi-admin .mi-coupang-rank-setting-wrap,
+#mi-clean .mi-coupang-rank-setting-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-setting,
+#mi-clean .mi-coupang-rank-setting {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-toggle,
+#mi-clean .mi-coupang-rank-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 0 12px;
+  color: var(--mi-navy);
+  background: var(--mi-panel);
+  cursor: pointer;
+}
+
+#mi-admin .mi-coupang-rank-toggle input,
+#mi-clean .mi-coupang-rank-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--mi-navy);
+}
+
+#mi-admin .mi-coupang-rank-settings,
+#mi-clean .mi-coupang-rank-settings {
+  align-items: start;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner-actions .mi-button,
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-form-head .mi-button,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner-actions .mi-button,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-form-head .mi-button {
+  min-height: var(--mi-button-secondary-h);
+  padding: 0 12px;
+  font-size: var(--mi-font-body);
+}
+
+#mi-admin .mi-coupang-rank-setting .mi-input,
+#mi-clean .mi-coupang-rank-setting .mi-input {
+  width: 100%;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-setting-wrap small,
+#mi-clean .mi-coupang-rank-setting-wrap small {
+  font-size: var(--mi-font-label);
+}
+
+#mi-admin .mi-coupang-rank-field-error,
+#mi-clean .mi-coupang-rank-field-error {
+  color: var(--mi-danger);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-table,
+#mi-clean .mi-coupang-rank-table {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-row,
+#mi-clean .mi-coupang-rank-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.2fr) minmax(90px, 120px) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid var(--mi-line);
+  padding: 8px 10px;
+  color: var(--mi-ink);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-row:first-child,
+#mi-clean .mi-coupang-rank-row:first-child {
+  border-top: 0;
+}
+
+#mi-admin .mi-coupang-rank-row.is-head,
+#mi-clean .mi-coupang-rank-row.is-head {
+  color: var(--mi-muted);
+  background: var(--mi-grey-50);
+  font-size: var(--mi-font-label);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-row.is-orphan,
+#mi-clean .mi-coupang-rank-row.is-orphan {
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-row .mi-input,
+#mi-clean .mi-coupang-rank-row .mi-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+}
+
+#mi-admin .mi-coupang-rank-code,
+#mi-clean .mi-coupang-rank-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-inline-form,
+#mi-clean .mi-coupang-rank-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-inline-form .mi-input,
+#mi-clean .mi-coupang-rank-inline-form .mi-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-collector,
+#mi-clean .mi-coupang-rank-collector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 10px 12px;
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-collector > div,
+#mi-clean .mi-coupang-rank-collector > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-collector strong,
+#mi-clean .mi-coupang-rank-collector strong {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-collector.is-revoked,
+#mi-clean .mi-coupang-rank-collector.is-revoked {
+  background: var(--mi-grey-50);
+  opacity: 0.7;
+}
+
+#mi-admin .mi-coupang-rank-token-box,
+#mi-clean .mi-coupang-rank-token-box {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--mi-warn);
+  border-radius: var(--mi-radius);
+  padding: 12px;
+  background: var(--mi-warn-bg);
+}
+
+#mi-admin .mi-coupang-rank-token-box strong,
+#mi-clean .mi-coupang-rank-token-box strong {
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-code-field,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-code-field {
+  width: 100%;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+#mi-admin .mi-coupang-rank-token-warning,
+#mi-clean .mi-coupang-rank-token-warning {
+  margin: 0;
+  color: var(--mi-warn);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-line,
+#mi-clean .mi-coupang-rank-line {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-line-head,
+#mi-clean .mi-coupang-rank-line-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--mi-navy);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-code-block,
+#mi-clean .mi-coupang-rank-code-block {
+  display: block;
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 8px 10px;
+  color: var(--mi-ink);
+  background: var(--mi-grey-50);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--mi-font-label);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* ── 모바일: 카드·폼·패널을 1열로(375px 에서 가로 넘침 0) ── */
+@media (max-width: 720px) {
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-form-card,
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-board,
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-form-card,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-board,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
+    padding: 14px;
+  }
+
+  #mi-admin .mi-coupang-rank-create,
+  #mi-clean .mi-coupang-rank-create {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar,
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-filterbar,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-bulk {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #mi-admin .mi-coupang-rank-filterbar > .mi-input,
+  #mi-admin .mi-coupang-rank-filterbar > .mi-rank-group-filter,
+  #mi-admin .mi-coupang-rank-bulk .mi-rank-bulk-title,
+  #mi-admin .mi-coupang-rank-bulk-actions,
+  #mi-admin .mi-coupang-rank-bulk-group,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-input,
+  #mi-clean .mi-coupang-rank-filterbar > .mi-rank-group-filter,
+  #mi-clean .mi-coupang-rank-bulk .mi-rank-bulk-title,
+  #mi-clean .mi-coupang-rank-bulk-actions,
+  #mi-clean .mi-coupang-rank-bulk-group {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  #mi-admin .mi-coupang-rank-bulk-actions,
+  #mi-clean .mi-coupang-rank-bulk-actions {
+    justify-content: flex-start;
+  }
+
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card {
+    padding: 12px;
+  }
+
+  #mi-admin .mi-coupang-rank-card-head,
+  #mi-clean .mi-coupang-rank-card-head {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  #mi-admin .mi-coupang-rank-state-badge,
+  #mi-clean .mi-coupang-rank-state-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  #mi-admin .mi-coupang-rank-metrics,
+  #mi-clean .mi-coupang-rank-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #mi-admin .mi-coupang-rank-product-title,
+  #mi-clean .mi-coupang-rank-product-title {
+    white-space: normal;
+  }
+
+  #mi-admin .mi-coupang-rank-settings,
+  #mi-clean .mi-coupang-rank-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #mi-admin .mi-coupang-rank-row,
+  #mi-clean .mi-coupang-rank-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  #mi-admin .mi-coupang-rank-row.is-head,
+  #mi-clean .mi-coupang-rank-row.is-head {
+    display: none;
+  }
+
+  #mi-admin .mi-coupang-rank-row-actions,
+  #mi-clean .mi-coupang-rank-row-actions {
+    grid-column: 1 / -1;
+  }
+
+  #mi-admin .mi-coupang-rank-owner-body,
+  #mi-clean .mi-coupang-rank-owner-body {
+    padding: 12px 14px 14px;
+  }
+}

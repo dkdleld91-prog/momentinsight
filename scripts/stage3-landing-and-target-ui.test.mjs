@@ -123,8 +123,8 @@ test("the picker drives all three consumers from one place", () => {
   // 3) 순위 화면은 범위 변경 이벤트로 다시 읽는다.
   assert.ok(targetGlueSource.includes('window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));'));
   assert.ok(targetGlueSource.includes("applyState(readState());"));
-  // 순위 화면 두 곳에 현재 대상이 보인다(마크업 2 + 갱신 셀렉터 1).
-  assert.equal((source.match(/<span class="mi-target-echo" data-mi-target-echo>/g) || []).length, 2);
+  // 순위 화면 세 곳(N 30일 · N 플레이스 · C 30일)에 현재 대상이 보인다(마크업 3 + 갱신 셀렉터 1).
+  assert.equal((source.match(/<span class="mi-target-echo" data-mi-target-echo>/g) || []).length, 3);
   assert.ok(source.includes('root.querySelectorAll("[data-mi-target-echo]")'));
   assert.ok(targetGlueSource.includes('node.textContent = "대상 광고주 · " + label;'));
   // 반대 방향도 하나로 모인다: 대표실 범위 입력과 실장 음성 전환이 전역 값을 갱신한다.

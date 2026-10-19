@@ -132,13 +132,18 @@ class Node {
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name) ?? null; }
   hasAttribute(name) { return this.attributes.has(name); }
+  matches(selector) {
+    return selector.split(",").some((part) => {
+      const match = /^([a-z-]+)?(?:\[([^=\]]+)(?:="([^"]*)")?\])?$/u.exec(part.trim());
+      return match && (!match[1] || match[1] === this.tagName) && (!match[2] || this.attributes.has(match[2]) && (match[3] === undefined || this.attributes.get(match[2]) === match[3]));
+    });
+  }
   closest(selector) {
-    if (selector.split(",").some((part) => {
-      const match = /^([a-z-]+)?(?:\[([^\]]+)\])?$/u.exec(part.trim());
-      return match && (!match[1] || match[1] === this.tagName) && (!match[2] || this.attributes.has(match[2]));
-    })) return this;
+    if (this.matches(selector)) return this;
     return this.parentNode?.closest(selector) || null;
   }
+  querySelector(selector) { return descendants(this).find((node) => node.matches(selector)) || null; }
+  querySelectorAll(selector) { return descendants(this).filter((node) => node.matches(selector)); }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   focus() { this.focused = true; }
 }
@@ -146,8 +151,25 @@ function fixture(windowOverrides = {}, optionOverrides = {}) {
   const client = api(windowOverrides);
   const names = ["form", "input", "run", "body", "status", "count", "title", "competition", "middle", "small", "category-status", "sort", "export"];
   const nodes = Object.fromEntries(names.map((name) => [name, new Node()]));
+  nodes.sort.value = "volume";
   const document = { createElement: (tag) => new Node(tag), body: new Node("body") };
-  const host = { ownerDocument: document, querySelector: (selector) => nodes[selector.replace("[data-related-query-", "").replace("]", "")] };
+  const headers = Object.fromEntries(["name", "volume", "pc", "mobile", "clicks", "ctr"].map((field) => {
+    const header = new Node("th"), button = new Node("button"), arrow = new Node("span");
+    header.setAttribute("aria-sort", "none");
+    button.setAttribute("data-related-query-sort-key", field);
+    arrow.setAttribute("data-related-query-sort-arrow", "");
+    button.appendChild(arrow);
+    header.appendChild(button);
+    return [field, { header, button, arrow }];
+  }));
+  const host = {
+    ownerDocument: document,
+    listeners: {},
+    addEventListener(name, listener) { this.listeners[name] = listener; },
+    contains: (node) => nodes.body.contains(node) || Object.values(headers).some((entry) => entry.header.contains(node)),
+    querySelector: (selector) => nodes[selector.replace("[data-related-query-", "").replace("]", "")],
+    querySelectorAll: (selector) => selector === "[data-related-query-sort-key]" ? Object.values(headers).map((entry) => entry.button) : []
+  };
   let session = "session-a";
   const requests = [];
   const copies = [], analyses = [];
@@ -158,7 +180,7 @@ function fixture(windowOverrides = {}, optionOverrides = {}) {
     analyze: (keyword, category) => { analyses.push({ keyword, category }); return true; },
     ...optionOverrides
   });
-  return { nodes, requests, controller, host, document, copies, analyses, session: (next) => { session = next; } };
+  return { nodes, requests, controller, host, document, headers, copies, analyses, session: (next) => { session = next; } };
 }
 function response(keyword, related) { return { ok: true, json: async () => ({ ok: true, keyword, related }) }; }
 function descendants(node, tag) {
@@ -584,4 +606,95 @@ test("competition choices preserve actual provider labels including 중간 and m
   const csv = api().csvText(api().normalizeRows([{ keyword: "중간 경쟁", competition: "중간" }], "기준어"));
   assert.match(csv, /"중간"/u);
   assert.doesNotMatch(csv, /"보통"/u);
+});
+
+test("sortable headers expose six explicit keyboard buttons and native column sort semantics on both surfaces", () => {
+  for (const page of ["admin", "client"]) {
+    const html = fs.readFileSync("src/pages/" + page + ".html", "utf8");
+    const start = html.search(/<section\b[^>]*\bdata-related-query(?:\s|>)/u);
+    const view = html.slice(start, html.indexOf("</section>", start));
+    const keys = [...view.matchAll(/<button\b[^>]*data-related-query-sort-key="([^"]+)"[^>]*>/gu)].map((match) => match[1]);
+    assert.deepEqual(keys, ["name", "volume", "pc", "mobile", "clicks", "ctr"], `${page}: sortable header keys`);
+    assert.equal((view.match(/data-related-query-sort-arrow/g) || []).length, 6);
+    assert.equal((view.match(/aria-sort="(?:ascending|descending|none)"/g) || []).length, 6);
+    assert.ok(/<option value="clicks">/u.test(view));
+    assert.ok(/<option value="ctr">/u.test(view));
+  }
+});
+
+test("numeric asc/desc sorting always keeps null and suppressed labels last, zero valid, and row identity unchanged", () => {
+  const client = api();
+  assert.equal(typeof client.sortRows, "function");
+  const list = client.normalizeRows([
+    { keyword: "다", volume: 100, pcVolume: 5, mobileVolume: 80, clicks: 10, ctr: 2 },
+    { keyword: "나", volume: 0, pcVolume: 0, mobileVolume: 0, clicks: 0, ctr: 0 },
+    { keyword: "라", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, clicks: null, ctr: null },
+    { keyword: "가", volume: 50, pcVolume: 2, mobileVolume: 20, clicks: 4, ctr: .5 }
+  ], "seed");
+  const original = list.map((row) => row.keyword);
+  for (const field of ["volume", "pc", "mobile", "clicks", "ctr"]) {
+    assert.deepEqual(client.sortRows(list, field, "asc").map((row) => row.keyword), ["나", "가", "다", "라"], `${field}: asc null last`);
+    assert.deepEqual(client.sortRows(list, field, "desc").map((row) => row.keyword), ["다", "가", "나", "라"], `${field}: desc null last`);
+    assert.equal(new Set(client.sortRows(list, field, "asc")).size, list.length, `${field}: no added or duplicate rows`);
+  }
+  assert.deepEqual(client.sortRows(list, "name", "asc").map((row) => row.keyword), ["가", "나", "다", "라"]);
+  assert.deepEqual(client.sortRows(list, "name", "desc").map((row) => row.keyword), ["라", "다", "나", "가"]);
+  assert.deepEqual(list.map((row) => row.keyword), original, "sorting never mutates the source response order");
+  for (const [field, value, label] of [["volume", "volume", "volumeLabel"], ["pc", "pcVolume", "pcVolumeLabel"], ["mobile", "mobileVolume", "mobileVolumeLabel"]]) {
+    const contradictory = client.normalizeRows([
+      { keyword: "표기 비공개", [value]: 999, [label]: " < 10 " },
+      { keyword: "정확한 값", [value]: 10 },
+      { keyword: "실제 영", [value]: 0 }
+    ], "seed");
+    assert.deepEqual(client.sortRows(contradictory, field, "asc").map((row) => row.keyword), ["실제 영", "정확한 값", "표기 비공개"], `${field}: a contradictory numeric value cannot override a suppressed label`);
+    assert.deepEqual(client.sortRows(contradictory, field, "desc").map((row) => row.keyword), ["정확한 값", "실제 영", "표기 비공개"]);
+  }
+});
+
+test("header toggles and field selection keep direction, arrows, aria-sort and local results synchronized", async () => {
+  const ui = fixture();
+  const task = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", [
+    { keyword: "허리찜질기", volume: 100, pcVolume: 90, mobileVolume: 10, clicks: 4, ctr: 2, competition: "중간" },
+    { keyword: "찜질패드", volume: 0, pcVolume: 0, mobileVolume: 0, clicks: 0, ctr: 0, competition: "낮음" },
+    { keyword: "전기찜질팩", volume: null, volumeLabel: "< 20", pcVolume: null, mobileVolume: null, clicks: null, ctr: null }
+  ]));
+  await task;
+  const order = () => ui.nodes.body.children.map((row) => row.children[0].textContent);
+  function state(field, direction) {
+    assert.equal(ui.headers[field].header.getAttribute("aria-sort"), direction === "asc" ? "ascending" : "descending");
+    assert.equal(ui.headers[field].arrow.textContent, direction === "asc" ? "↑" : "↓");
+    for (const other of Object.keys(ui.headers).filter((key) => key !== field)) {
+      assert.equal(ui.headers[other].header.getAttribute("aria-sort"), "none");
+      assert.equal(ui.headers[other].arrow.textContent, "↕");
+    }
+    assert.match(ui.headers[field].button.getAttribute("aria-label"), /오름차순/u);
+    assert.match(ui.headers[field].button.getAttribute("aria-label"), /내림차순/u);
+    assert.equal(ui.requests.length, 1, "no sort or filter operation sends another lookup");
+  }
+  state("volume", "desc");
+  ui.controller.setSort("volume");
+  state("volume", "asc");
+  assert.deepEqual(order(), ["찜질패드", "허리찜질기", "전기찜질팩"]);
+  ui.controller.setSort("volume");
+  state("volume", "desc");
+  assert.deepEqual(order(), ["허리찜질기", "찜질패드", "전기찜질팩"]);
+  ui.controller.setSort("name");
+  state("name", "asc");
+  assert.deepEqual(order(), ["전기찜질팩", "찜질패드", "허리찜질기"]);
+  ui.controller.setSort("name");
+  state("name", "desc");
+  for (const field of ["pc", "mobile", "clicks", "ctr"]) {
+    ui.nodes.sort.value = field;
+    ui.nodes.sort.listeners.change();
+    state(field, "desc");
+    assert.deepEqual(order(), ["허리찜질기", "찜질패드", "전기찜질팩"]);
+    ui.controller.setSort(field);
+    state(field, "asc");
+    assert.deepEqual(order(), ["찜질패드", "허리찜질기", "전기찜질팩"]);
+  }
+  ui.nodes.competition.value = "중간";
+  ui.nodes.competition.listeners.change();
+  state("ctr", "asc");
+  assert.deepEqual(order(), ["허리찜질기"]);
 });

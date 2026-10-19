@@ -54,8 +54,8 @@ const category = (status, paths, extra = {}) => ({
 const one = { middle: "냉온/찜질용품", small: "찜질기" };
 const other = { middle: "침구류", small: "전기매트" };
 const rows = [
-  { keyword: "허리찜질기", volume: 300, pcVolume: 100, mobileVolume: 200, competition: "보통", category: category("single", [one]) },
-  { keyword: "찜질패드", volume: 200, pcVolume: 50, mobileVolume: 150, competition: "중간", category: category("multiple", [one, other]) },
+  { keyword: "허리찜질기", volume: 300, pcVolume: 100, mobileVolume: 200, clicks: 4, ctr: 1.2, competition: "보통", category: category("single", [one]) },
+  { keyword: "찜질패드", volume: 200, pcVolume: 50, mobileVolume: 150, clicks: 0, ctr: 0, competition: "중간", category: category("multiple", [one, other]) },
   { keyword: "전기찜질팩", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, mobileVolumeLabel: "< 10", competition: "낮음", category: category("needs_confirmation", []) },
 ];
 let browser;
@@ -102,7 +102,8 @@ try {
     await page.locator("[data-related-query-run]").click();
     await page.locator("[data-related-query-body] tr").filter({ hasText: "허리찜질기" }).waitFor();
     assert.equal(await page.locator("[data-related-query-body] tr").count(), 3);
-    assert.deepEqual(await page.locator(".mi-rq-table thead th").allInnerTexts(), ["키워드", "통합 월 검색량", "PC", "모바일", "광고 경쟁도", "광고 평균 클릭", "광고 클릭률", "활용"]);
+    assert.deepEqual((await page.locator(".mi-rq-table thead th").allInnerTexts()).map((value) => value.replace(/[↕↑↓]/gu, "").trim()), ["키워드", "통합 월 검색량", "PC", "모바일", "광고 경쟁도", "광고 평균 클릭", "광고 클릭률", "활용"]);
+    assert.equal(await page.locator("[data-related-query-sort-key]").count(), 6);
     assert.equal(await page.locator(".mi-rq-result-head [data-related-query-export]").count(), 1);
     assert.equal(await page.locator(".mi-rq-controls [data-related-query-export]").count(), 0);
     assert.equal(await page.locator(".mi-rq-head h1").evaluate((node) => getComputedStyle(node).color), "rgb(255, 255, 255)", `${surface}: scoped navy hero is not overridden by the existing inline app`);
@@ -144,6 +145,47 @@ try {
       for await (const chunk of stream) chunks.push(chunk);
       return Buffer.concat(chunks).toString("utf8");
     }
+    const sortingApiBaseline = apiRequests;
+    const visibleKeywords = () => page.locator("[data-related-query-body] tr td:first-child").allInnerTexts();
+    async function sortState(field, direction, expected) {
+      const button = page.locator(`[data-related-query-sort-key="${field}"]`);
+      assert.equal(await button.locator("..").getAttribute("aria-sort"), direction === "asc" ? "ascending" : "descending");
+      assert.equal(await button.locator("[data-related-query-sort-arrow]").innerText(), direction === "asc" ? "↑" : "↓");
+      const label = await button.getAttribute("aria-label");
+      assert.match(label, /오름차순/u);
+      assert.match(label, /내림차순/u);
+      assert.deepEqual(await visibleKeywords(), expected);
+      assert.equal(new Set(await visibleKeywords()).size, 3, "sorting retains all three unique response rows");
+      assert.equal(await page.locator('.mi-rq-table th[aria-sort="none"]').count(), 5);
+      assert.equal(apiRequests, sortingApiBaseline, "sorting is local and never invokes another API");
+    }
+    const descending = ["허리찜질기", "찜질패드", "전기찜질팩"];
+    const ascending = ["찜질패드", "허리찜질기", "전기찜질팩"];
+    await sortState("volume", "desc", descending);
+    await page.locator('[data-related-query-sort-key="volume"]').click();
+    await sortState("volume", "asc", ascending);
+    await page.locator('[data-related-query-sort-key="volume"]').click();
+    await sortState("volume", "desc", descending);
+    await page.locator('[data-related-query-sort-key="name"]').focus();
+    await page.keyboard.press("Enter");
+    await sortState("name", "asc", ["전기찜질팩", "찜질패드", "허리찜질기"]);
+    await page.keyboard.press("Space");
+    await sortState("name", "desc", ["허리찜질기", "찜질패드", "전기찜질팩"]);
+    for (const field of ["pc", "mobile", "clicks", "ctr"]) {
+      await page.locator(`[data-related-query-sort-key="${field}"]`).click();
+      await sortState(field, "desc", descending);
+      await page.locator(`[data-related-query-sort-key="${field}"]`).click();
+      await sortState(field, "asc", ascending);
+    }
+    const sortedCsv = await exportedCsv();
+    const csvKeywords = sortedCsv.replace(/^\ufeff/u, "").split("\r\n").slice(1).map((line) => /^"([^"]*)"/u.exec(line)?.[1]);
+    assert.deepEqual(csvKeywords, ascending, "CSV row order exactly matches the current ascending result table");
+    await page.locator("[data-related-query-sort]").selectOption("clicks");
+    await sortState("clicks", "desc", descending);
+    await page.locator("[data-related-query-sort]").selectOption("name");
+    await sortState("name", "asc", ["전기찜질팩", "찜질패드", "허리찜질기"]);
+    await page.locator("[data-related-query-sort]").selectOption("volume");
+    await sortState("volume", "desc", descending);
     const completeCsv = await exportedCsv();
     assert.match(completeCsv, /"분류 표본 수","분류 확인 수","카테고리 확인 시각"/u);
     assert.match(completeCsv, /"5","5","2026-10-19T01:21:24\.483Z"/u);
@@ -184,6 +226,12 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, `${surface}: no whole-page mobile overflow`);
     assert.equal(await page.locator(".mi-rq-scroll").evaluate((node) => node.scrollWidth > node.clientWidth), true);
+    const touchSort = page.locator('[data-related-query-sort-key="volume"]');
+    assert.ok(await touchSort.evaluate((node) => node.getBoundingClientRect().height >= 44), "mobile sort buttons retain a 44px touch target");
+    await touchSort.tap();
+    await sortState("volume", "asc", ascending);
+    await touchSort.tap();
+    await sortState("volume", "desc", descending);
     await page.locator("[data-related-query-copy]").last().tap();
     assert.equal((await page.evaluate(() => window.__fixtureClipboard.writes)).at(-1), "전기찜질팩");
     await page.locator(".mi-rq-scroll").evaluate((node) => { node.scrollLeft = 0; });

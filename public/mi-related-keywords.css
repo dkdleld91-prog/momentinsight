@@ -36,6 +36,12 @@
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-scroll { overflow-x:auto; border:1px solid var(--rq-line); border-radius:9px; background:#fff; }
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table { width:100%; min-width:960px; border-collapse:collapse; color:var(--rq-text); font-size:12px; line-height:1.55; text-align:left; }
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table th { border:0; padding:14px 12px; color:#596b83; background:#f4f7fb; font-size:11px; font-weight:750; white-space:nowrap; }
+:is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-sort-key] { display:inline-flex; align-items:center; justify-content:flex-end; gap:6px; width:auto; min-width:0; min-height:30px; margin:-6px 0; border:0; border-radius:5px; padding:5px 3px; color:inherit; background:transparent; box-shadow:none; font:inherit; font-weight:750; line-height:1.5; letter-spacing:inherit; text-align:inherit; white-space:nowrap; cursor:pointer; }
+:is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table th:first-child [data-related-query-sort-key] { justify-content:flex-start; }
+:is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-sort-key]:hover { color:#1c426e; background:#e8eef7; }
+:is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-sort-arrow] { flex:0 0 12px; width:12px; color:#778ba5; font-size:13px; font-weight:650; line-height:1; text-align:center; }
+:is(#mi-admin,#mi-clean) [data-related-query] th:is([aria-sort="ascending"],[aria-sort="descending"]) [data-related-query-sort-key] { color:#17395e; }
+:is(#mi-admin,#mi-clean) [data-related-query] th:is([aria-sort="ascending"],[aria-sort="descending"]) [data-related-query-sort-arrow] { color:#193f6b; font-weight:850; }
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table td { height:55px; border:0; border-top:1px solid #edf1f6; padding:13px 14px; vertical-align:middle; background:transparent; transition:background-color 120ms ease; }
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table tbody tr:hover td { background:#f8fafd; }
 :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table th:nth-child(n+2),
@@ -95,6 +101,7 @@
   :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-controls { gap:10px; padding:12px; }
   :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table { min-width:940px; }
   :is(#mi-admin,#mi-clean) [data-related-query] .mi-rq-table td { padding:12px; }
+  :is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-sort-key] { min-height:44px; margin:-10px 0; padding:8px 3px; }
   :is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-copy],
   :is(#mi-admin,#mi-clean) [data-related-query] [data-related-query-analyze] { min-height:44px; padding:9px 12px; }
 }

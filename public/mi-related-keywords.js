@@ -90,6 +90,30 @@
       return row.category.paths.some(function (path) { return (!middle || path.middle === middle) && (!small || path.small === small); });
     });
   }
+  var SORT_FIELDS = {
+    name: { label: "키워드" },
+    volume: { label: "통합 월 검색량", value: "volume" },
+    pc: { label: "PC", value: "pcVolume" },
+    mobile: { label: "모바일", value: "mobileVolume" },
+    clicks: { label: "광고 평균 클릭", value: "clicks" },
+    ctr: { label: "광고 클릭률", value: "ctr" }
+  };
+  function validSort(field) { return Object.prototype.hasOwnProperty.call(SORT_FIELDS, field); }
+  function defaultSortDirection(field) { return field === "name" ? "asc" : "desc"; }
+  function sortRows(rows, field, direction) {
+    field = validSort(field) ? field : "volume";
+    var multiplier = direction === "asc" ? 1 : -1;
+    return rows.slice().sort(function (a, b) {
+      if (field === "name") return a.keyword.localeCompare(b.keyword, "ko") * multiplier;
+      var valueField = SORT_FIELDS[field].value;
+      var left = /^</.test(text(a[valueField + "Label"])) ? null : number(a[valueField]);
+      var right = /^</.test(text(b[valueField + "Label"])) ? null : number(b[valueField]);
+      // Unavailable and suppressed values stay last in either direction; zero is a real value.
+      if (left === null) return right === null ? 0 : 1;
+      if (right === null) return -1;
+      return (left - right) * multiplier;
+    });
+  }
   function categoryLabel(category) {
     if (isStoredCategory(category)) return category.status === "single" ? "저장 표본 내 단일 카테고리" : category.status === "multiple" ? "저장 표본 내 복수 카테고리" : "확인 필요";
     return category.status === "single" ? "표본 내 단일 카테고리" : category.status === "multiple" ? "복수 카테고리" : "확인 필요";
@@ -159,6 +183,7 @@
     var session = options.sessionKey();
     var activeRequest = null;
     var copyRequestId = 0;
+    var sortDirection = defaultSortDirection(sort.value);
     function element(tag, value, className) {
       var node = doc.createElement(tag);
       if (value !== undefined) node.textContent = value;
@@ -188,12 +213,20 @@
     }
     function visibleRows() {
       var list = rows.filter(function (row) { return !competition.value || row.competition === competition.value; });
-      if (sort.value === "name") list.sort(function (a, b) { return a.keyword.localeCompare(b.keyword, "ko"); });
-      else {
-        var field = sort.value === "mobile" ? "mobileVolume" : sort.value === "pc" ? "pcVolume" : "volume";
-        list.sort(function (a, b) { return (b[field] === null ? -1 : b[field]) - (a[field] === null ? -1 : a[field]); });
-      }
-      return list;
+      return sortRows(list, sort.value, sortDirection);
+    }
+    function updateSortHeaders() {
+      host.querySelectorAll("[data-related-query-sort-key]").forEach(function (control) {
+        var field = control.getAttribute("data-related-query-sort-key");
+        if (!validSort(field)) return;
+        var active = field === sort.value;
+        var nextDirection = active ? sortDirection === "asc" ? "desc" : "asc" : defaultSortDirection(field);
+        var header = control.closest("th");
+        var arrow = control.querySelector("[data-related-query-sort-arrow]");
+        if (header) header.setAttribute("aria-sort", active ? sortDirection === "asc" ? "ascending" : "descending" : "none");
+        if (arrow) arrow.textContent = active ? sortDirection === "asc" ? "↑" : "↓" : "↕";
+        control.setAttribute("aria-label", SORT_FIELDS[field].label + ", 현재 " + (active ? sortDirection === "asc" ? "오름차순" : "내림차순" : "정렬 안 함") + ", 클릭하면 " + (nextDirection === "asc" ? "오름차순" : "내림차순") + " 정렬");
+      });
     }
     function categoryCell(category) {
       var node = element("div", undefined, "mi-rq-category");
@@ -233,6 +266,7 @@
     }
     function render(emptyMessage) {
       var list = visibleRows();
+      updateSortHeaders();
       body.replaceChildren();
       if (!list.length) {
         var emptyRow = element("tr");
@@ -332,6 +366,13 @@
     }
     function submit(event) { event.preventDefault(); search(); }
     function filter() { if (!syncSession()) return; refreshFilters(false); render(); }
+    function setSort(field) {
+      if (!syncSession() || !validSort(field)) return false;
+      sortDirection = field === sort.value ? sortDirection === "asc" ? "desc" : "asc" : defaultSortDirection(field);
+      sort.value = field;
+      render();
+      return true;
+    }
     function selectedRow(keyword) {
       return visibleRows().find(function (row) { return row.keyword === keyword; });
     }
@@ -383,7 +424,17 @@
       window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }
     form.addEventListener("submit", submit);
-    [competition, sort].forEach(function (node) { node.addEventListener("change", filter); });
+    competition.addEventListener("change", filter);
+    sort.addEventListener("change", function () {
+      sortDirection = defaultSortDirection(sort.value);
+      filter();
+    });
+    host.addEventListener("click", function (event) {
+      var control = event.target && event.target.closest && event.target.closest("[data-related-query-sort-key]");
+      if (!control || !host.contains(control)) return;
+      event.preventDefault();
+      setSort(control.getAttribute("data-related-query-sort-key"));
+    });
     body.addEventListener("click", function (event) {
       var control = event.target && event.target.closest && event.target.closest("[data-related-query-copy], [data-related-query-analyze]");
       if (!control || !body.contains(control)) return;
@@ -393,7 +444,7 @@
     });
     exportButton.addEventListener("click", exportCsv);
     reset();
-    return { search: search, syncSession: syncSession, reset: reset, copyKeyword: copyKeyword, analyzeKeyword: analyzeKeyword };
+    return { search: search, syncSession: syncSession, reset: reset, copyKeyword: copyKeyword, analyzeKeyword: analyzeKeyword, setSort: setSort };
   }
   function navigateKeyword(root, keyword, category) {
     var admin = root.id === "mi-admin";
@@ -514,7 +565,7 @@
       }
     });
   }
-  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, csvText: csvText, createVerifiedFetch: createVerifiedFetch, navigateKeyword: navigateKeyword };
+  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, sortRows: sortRows, csvText: csvText, createVerifiedFetch: createVerifiedFetch, navigateKeyword: navigateKeyword };
   if (window.document) {
     if (window.document.readyState === "loading") window.document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
     else bootstrap();

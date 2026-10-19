@@ -150,16 +150,15 @@
     var status = host.querySelector("[data-related-query-status]");
     var count = host.querySelector("[data-related-query-count]");
     var title = host.querySelector("[data-related-query-title]");
-    var middle = host.querySelector("[data-related-query-middle]");
-    var small = host.querySelector("[data-related-query-small]");
-    var categoryStatus = host.querySelector("[data-related-query-category-status]");
+    var competition = host.querySelector("[data-related-query-competition]");
     var sort = host.querySelector("[data-related-query-sort]");
     var exportButton = host.querySelector("[data-related-query-export]");
-    if (!form || !input || !button || !body || !status || !middle || !small || !categoryStatus || !sort || !exportButton) return null;
+    if (!form || !input || !button || !body || !status || !competition || !sort || !exportButton) return null;
     var rows = [];
     var requestId = 0;
     var session = options.sessionKey();
     var activeRequest = null;
+    var copyRequestId = 0;
     function element(tag, value, className) {
       var node = doc.createElement(tag);
       if (value !== undefined) node.textContent = value;
@@ -182,16 +181,13 @@
       select.disabled = !values.length;
     }
     function refreshFilters(reset) {
-      if (reset) { middle.value = ""; small.value = ""; categoryStatus.value = ""; }
-      var mids = [];
-      var smalls = [];
-      rows.forEach(function (row) { row.category.paths.forEach(function (path) { if (mids.indexOf(path.middle) < 0) mids.push(path.middle); }); });
-      choices(middle, mids, "중분류 전체");
-      rows.forEach(function (row) { row.category.paths.forEach(function (path) { if ((!middle.value || path.middle === middle.value) && smalls.indexOf(path.small) < 0) smalls.push(path.small); }); });
-      choices(small, smalls, "소분류 전체");
+      if (reset) competition.value = "";
+      var values = [];
+      rows.forEach(function (row) { if (row.competition && values.indexOf(row.competition) < 0) values.push(row.competition); });
+      choices(competition, values, "전체");
     }
     function visibleRows() {
-      var list = filterRows(rows, middle.value, small.value, categoryStatus.value);
+      var list = rows.filter(function (row) { return !competition.value || row.competition === competition.value; });
       if (sort.value === "name") list.sort(function (a, b) { return a.keyword.localeCompare(b.keyword, "ko"); });
       else {
         var field = sort.value === "mobile" ? "mobileVolume" : sort.value === "pc" ? "pcVolume" : "volume";
@@ -204,21 +200,26 @@
       var stored = isStoredCategory(category);
       if (category.status === "single") {
         node.appendChild(element("span", category.middle + " > " + category.small));
-        if (stored) node.appendChild(element("small", "저장 표본 내 단일 카테고리"));
       }
       else if (category.status === "multiple") {
-        node.appendChild(element("span", (stored ? "저장 표본 내 복수 카테고리 · " : "복수 카테고리 · ") + category.paths.length + "개", "mi-rq-badge is-multiple"));
+        var multipleBadge = element("span", "복수 카테고리 · " + category.paths.length + "개", "mi-rq-badge is-multiple");
+        if (incomplete(category)) multipleBadge.title = "일부 분류 확인 필요";
+        node.appendChild(multipleBadge);
         var details = element("details");
         details.appendChild(element("summary", "카테고리 모두 보기"));
+        if (incomplete(category)) details.appendChild(element("p", "일부 분류 확인 필요", "mi-rq-reason"));
         var list = element("ul");
         category.paths.forEach(function (path) { list.appendChild(element("li", path.middle + " > " + path.small)); });
         details.appendChild(list);
         node.appendChild(details);
-        if (incomplete(category)) node.appendChild(element("small", "일부 분류 확인 필요"));
       } else {
-        node.appendChild(element("span", "확인 필요", "mi-rq-badge is-unconfirmed"));
+        var unconfirmedDetails = element("details");
+        var unconfirmedBadge = element("summary", "확인 필요", "mi-rq-badge is-unconfirmed");
         var disconnected = /not_configured|source_unavailable|source_not_configured|source_retired|provider_not_configured|unsupported/.test(category.reason);
-        node.appendChild(element("small", stored ? categoryReasonLabel(category) : disconnected ? "카테고리 데이터 연결 필요" : "분류 데이터를 확인하지 못했습니다"));
+        unconfirmedBadge.title = stored ? categoryReasonLabel(category) : disconnected ? "카테고리 데이터 연결 필요" : "분류 데이터를 확인하지 못했습니다";
+        unconfirmedDetails.appendChild(unconfirmedBadge);
+        unconfirmedDetails.appendChild(element("p", unconfirmedBadge.title, "mi-rq-reason"));
+        node.appendChild(unconfirmedDetails);
         if (category.paths.length) {
           var reference = element("details");
           reference.appendChild(element("summary", "확인된 참고 경로 보기"));
@@ -227,15 +228,6 @@
           reference.appendChild(referencePaths);
           node.appendChild(reference);
         }
-      }
-      if (stored) {
-        var sample = category.sampleSize === null ? "확인 필요" : category.sampleSize + "개";
-        var categorized = category.categorizedCount === null ? "확인 필요" : category.categorizedCount + "개";
-        node.appendChild(element("small", "저장된 순위 표본 " + sample + " 중 " + categorized + " 분류 · 수집 " + checkedAtLabel(category.checkedAt)));
-        node.appendChild(element("small", "저장 표본 기준 · 전체 분류 아님 · 추가 상품 조회 없음"));
-      } else if (category.source === "naver_commerce_catalog_sample") {
-        node.appendChild(element("small", categoryBasis(category) + (category.sampleSize !== null ? " · " + category.sampleSize + "개" : "")));
-        if (category.hasMore) node.appendChild(element("small", "추가 결과 있음 · 전체 검색 분류가 아닙니다"));
       }
       return node;
     }
@@ -252,10 +244,19 @@
       list.forEach(function (entry) {
         var row = element("tr");
         row.appendChild(element("td", entry.keyword));
-        var category = element("td");
-        category.appendChild(categoryCell(entry.category));
-        row.appendChild(category);
         [entry.volumeLabel || display(entry.volume), entry.pcVolumeLabel || display(entry.pcVolume), entry.mobileVolumeLabel || display(entry.mobileVolume), entry.competition || "확인 필요", display(entry.clicks, "회"), display(entry.ctr, "%")].forEach(function (value) { row.appendChild(element("td", value)); });
+        var actionCell = element("td");
+        var actions = element("div", undefined, "mi-rq-actions");
+        [["copy", "복사"], ["analyze", "상세 분석 →"]].forEach(function (action) {
+          var control = element("button", action[1]);
+          control.type = "button";
+          control.value = entry.keyword;
+          control.setAttribute("data-related-query-" + action[0], "");
+          control.setAttribute("aria-label", entry.keyword + " " + action[1].replace(" →", ""));
+          actions.appendChild(control);
+        });
+        actionCell.appendChild(actions);
+        row.appendChild(actionCell);
         body.appendChild(row);
       });
       if (count) count.textContent = "전체 " + rows.length + "개 · 표시 " + list.length + "개 · 최대 30개";
@@ -265,6 +266,8 @@
       requestId += 1;
       if (activeRequest) activeRequest.abort();
       activeRequest = null;
+      copyRequestId += 1;
+      if (typeof options.onReset === "function") options.onReset();
       rows = [];
       input.value = "";
       button.disabled = false;
@@ -301,7 +304,7 @@
       render("연관 키워드를 조회하고 있습니다.");
       button.disabled = true;
       if (title) title.textContent = keyword + " 연관 키워드";
-      announce("연관 키워드와 중·소분류를 조회 중입니다.");
+      announce("연관 키워드의 검색량과 광고 지표를 조회 중입니다.");
       function current() { return id === requestId && options.sessionKey() === currentSession; }
       try {
         var base = options.apiUrl || "/api/client/keyword-research";
@@ -315,10 +318,7 @@
         rows = normalizeRows(payload.related, keyword);
         refreshFilters(true);
         render(rows.length ? undefined : "제공된 연관 키워드가 없습니다.");
-        var single = rows.filter(function (row) { return row.category.status === "single"; }).length;
-        var multiple = rows.filter(function (row) { return row.category.status === "multiple"; }).length;
-        var storedCount = rows.filter(function (row) { return isStoredCategory(row.category); }).length;
-        announce(rows.length ? rows.length + "개 조회 · 단일 카테고리 " + single + "개 · 복수 카테고리 " + multiple + "개 · 확인 필요 " + (rows.length - single - multiple) + "개" + (storedCount ? " · 저장 순위 표본 기준 " + storedCount + "개 · 추가 상품 조회 없음" : "") : "이 키워드에 제공된 연관어가 없습니다. 다른 키워드로 조회해주세요.");
+        announce(rows.length ? rows.length + "개 조회 · 키워드별 복사 또는 상세 분석을 선택하세요." : "이 키워드에 제공된 연관어가 없습니다. 다른 키워드로 조회해주세요.");
       } catch (error) {
         if (!current()) { syncSession(); return; }
         rows = [];
@@ -332,6 +332,42 @@
     }
     function submit(event) { event.preventDefault(); search(); }
     function filter() { if (!syncSession()) return; refreshFilters(false); render(); }
+    function selectedRow(keyword) {
+      return visibleRows().find(function (row) { return row.keyword === keyword; });
+    }
+    async function copyKeyword(keyword) {
+      if (!syncSession()) return false;
+      var entry = selectedRow(keyword);
+      if (!entry) return false;
+      var currentSession = session;
+      var currentRequest = requestId;
+      var id = ++copyRequestId;
+      var timer;
+      function current() { return options.sessionKey() === currentSession && requestId === currentRequest && copyRequestId === id; }
+      try {
+        if (typeof options.copy !== "function") throw new Error("clipboard_unavailable");
+        var operation = options.copy(entry.keyword);
+        await Promise.race([Promise.resolve(operation), new Promise(function (resolve, reject) { timer = window.setTimeout(function () { reject(new Error("clipboard_timeout")); }, 2000); })]);
+        if (!current()) return false;
+        announce(entry.keyword + " 키워드를 복사했습니다.");
+        return true;
+      } catch (error) {
+        if (current()) announce("복사 완료를 확인하지 못했습니다. 키워드를 직접 선택해 복사해주세요.", true);
+        return false;
+      } finally { if (timer !== undefined) window.clearTimeout(timer); }
+    }
+    function analyzeKeyword(keyword) {
+      if (!syncSession()) return false;
+      var entry = selectedRow(keyword);
+      if (!entry) return false;
+      try {
+        if (typeof options.analyze !== "function" || options.analyze(entry.keyword, entry.category) !== true) throw new Error("keyword_view_unavailable");
+        return true;
+      } catch (error) {
+        announce("상세 분석 화면으로 이동하지 못했습니다. 기존 키워드 조회 메뉴에서 직접 입력해주세요.", true);
+        return false;
+      }
+    }
     function exportCsv() {
       if (!syncSession()) return;
       var list = visibleRows();
@@ -347,10 +383,53 @@
       window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }
     form.addEventListener("submit", submit);
-    [middle, small, categoryStatus, sort].forEach(function (node) { node.addEventListener("change", filter); });
+    [competition, sort].forEach(function (node) { node.addEventListener("change", filter); });
+    body.addEventListener("click", function (event) {
+      var control = event.target && event.target.closest && event.target.closest("[data-related-query-copy], [data-related-query-analyze]");
+      if (!control || !body.contains(control)) return;
+      event.preventDefault();
+      if (control.hasAttribute("data-related-query-copy")) copyKeyword(control.value);
+      else analyzeKeyword(control.value);
+    });
     exportButton.addEventListener("click", exportCsv);
     reset();
-    return { search: search, syncSession: syncSession, reset: reset };
+    return { search: search, syncSession: syncSession, reset: reset, copyKeyword: copyKeyword, analyzeKeyword: analyzeKeyword };
+  }
+  function navigateKeyword(root, keyword, category) {
+    var admin = root.id === "mi-admin";
+    var input = root.querySelector(admin ? "[data-admin-keyword-input]" : "[data-mi-keyword-input]");
+    var link = root.querySelector(admin ? 'a[data-mi-admin-screen="keyword"]' : 'a[data-mi-screen="keyword-tool"]');
+    var view = root.querySelector(admin ? "#mi-admin-keyword" : "#mi-keyword-tool");
+    var handoff = root.querySelector("[data-related-query-handoff]");
+    if (!input || !link || !view || !handoff) return false;
+    var previous = input.value;
+    input.value = keyword;
+    // Do not dispatch input/change: the old app also syncs those events to rank/SEO registration forms.
+    try { link.click(); } catch (error) { input.value = previous; throw error; }
+    if (!view.classList.contains("is-active")) { input.value = previous; return false; }
+    handoff.replaceChildren();
+    var label = root.ownerDocument.createElement("strong");
+    label.textContent = "연관 키워드에서 선택 · " + keyword;
+    var notice = root.ownerDocument.createElement("p");
+    notice.textContent = "아직 이 키워드를 조회하지 않았습니다. 아래에는 이전 조회 결과가 남아 있을 수 있습니다. 조회 버튼을 눌러 확인해주세요.";
+    handoff.appendChild(label);
+    handoff.appendChild(notice);
+    if (category.status !== "needs_confirmation" && category.paths.length) {
+      var detail = root.ownerDocument.createElement("details");
+      var summary = root.ownerDocument.createElement("summary");
+      summary.textContent = "저장된 카테고리 참고";
+      detail.appendChild(summary);
+      var paths = root.ownerDocument.createElement("p");
+      paths.textContent = category.paths.map(function (path) { return path.middle + " > " + path.small; }).join(" · ");
+      detail.appendChild(paths);
+      var evidence = root.ownerDocument.createElement("p");
+      evidence.textContent = categoryBasis(category) + " · " + (incomplete(category) ? "일부 분류 확인 필요" : categoryLabel(category)) + " · " + checkedAtLabel(category.checkedAt);
+      detail.appendChild(evidence);
+      handoff.appendChild(detail);
+    }
+    handoff.hidden = false;
+    input.focus();
+    return true;
   }
   function createVerifiedFetch(fetcher, sessionUrl, sessionKey) {
     return async function (url, options) {
@@ -392,10 +471,26 @@
     var controller = mount(host, {
       fetch: createVerifiedFetch(function (url, options) { return window.fetch(url, options); }, base + "/api/session", sessionKey),
       apiUrl: base + "/api/client/keyword-research",
-      sessionKey: sessionKey
+      sessionKey: sessionKey,
+      copy: function (keyword) {
+        if (!window.navigator || !window.navigator.clipboard || typeof window.navigator.clipboard.writeText !== "function") return Promise.reject(new Error("clipboard_unavailable"));
+        return window.navigator.clipboard.writeText(keyword);
+      },
+      analyze: function (keyword, category) { return navigateKeyword(root, keyword, category); },
+      onReset: function () {
+        var handoff = root.querySelector("[data-related-query-handoff]");
+        if (handoff) { handoff.hidden = true; handoff.replaceChildren(); }
+      }
     });
     if (!controller) return;
     host.setAttribute("data-related-query-mounted", "true");
+    function clearHandoff() { var node = root.querySelector("[data-related-query-handoff]"); if (node) { node.hidden = true; node.replaceChildren(); } }
+    root.addEventListener("input", function (event) {
+      if (event.target && event.target.matches && event.target.matches("[data-admin-keyword-input], [data-mi-keyword-input]")) clearHandoff();
+    });
+    root.addEventListener("click", function (event) {
+      if (event.target && event.target.closest && event.target.closest("[data-admin-keyword-search], [data-mi-keyword-search]")) clearHandoff();
+    });
     if (typeof window.MutationObserver === "function") {
       var observer = new window.MutationObserver(function (records) {
         var now = root.classList.contains("is-authed") + ":" + root.classList.contains("is-locked");
@@ -419,7 +514,7 @@
       }
     });
   }
-  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, csvText: csvText, createVerifiedFetch: createVerifiedFetch };
+  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, csvText: csvText, createVerifiedFetch: createVerifiedFetch, navigateKeyword: navigateKeyword };
   if (window.document) {
     if (window.document.readyState === "loading") window.document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
     else bootstrap();

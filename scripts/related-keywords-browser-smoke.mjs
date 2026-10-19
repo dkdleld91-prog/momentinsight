@@ -17,7 +17,14 @@ for (const page of ["admin", "client"]) {
   const styles = [...html.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gu)].map((match) => match[0]).join("\n");
   const id = page === "admin" ? "mi-admin" : "mi-clean";
   const cls = page === "admin" ? "mi-admin-wrap" : "mi-client-wrap";
-  pages.set(`/${page}`, `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LOCAL FIXTURE QA ONLY</title><link rel="stylesheet" href="/mi-tokens.css"><link rel="stylesheet" href="/mi-related-keywords.css">${styles}<body><p style="padding:12px">로컬 기능 검수 전용 · 아래 결과는 테스트 응답이며 실제 조회가 아닙니다.</p><section id="${id}" class="${cls} is-authed">${view}</section><script src="/mi-related-keywords.js" defer></script></body></html>`);
+  const nav = page === "admin" ? 'data-mi-admin-screen="keyword"' : 'data-mi-screen="keyword-tool"';
+  const keywordInput = page === "admin" ? "data-admin-keyword-input" : "data-mi-keyword-input";
+  const handoff = html.match(/<aside\b[^>]*data-related-query-handoff[^>]*>[\s\S]*?<\/aside>/u)?.[0];
+  assert.ok(handoff, `${page}: actual analysis handoff notice exists`);
+  const existingId = page === "admin" ? "mi-admin-keyword" : "mi-keyword-tool";
+  const existing = `<section class="mi-view" id="${existingId}" data-fixture-existing hidden>${handoff}<form data-fixture-existing-form><input ${keywordInput} value="기존 조회 키워드"><button type="submit">기존 키워드 조회</button></form><p data-fixture-old-result>기존 결과 · 이전 조회 데이터</p></section>`;
+  const stub = `<script>window.__fixtureNavigation=0;window.__fixtureInputEvents=0;window.__fixtureSubmits=0;document.querySelector('[data-fixture-nav]').addEventListener('click',function(e){e.preventDefault();window.__fixtureNavigation++;var related=document.querySelector('[data-related-query]');related.hidden=true;related.classList.remove('is-active');var existing=document.querySelector('[data-fixture-existing]');existing.hidden=false;existing.classList.add('is-active');});var oldForm=document.querySelector('[data-fixture-existing-form]');oldForm.addEventListener('submit',function(e){e.preventDefault();window.__fixtureSubmits++;});oldForm.querySelector('input').addEventListener('input',function(){window.__fixtureInputEvents++;});oldForm.querySelector('input').addEventListener('change',function(){window.__fixtureInputEvents++;});</script>`;
+  pages.set(`/${page}`, `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LOCAL FIXTURE QA ONLY</title><link rel="stylesheet" href="/mi-tokens.css"><link rel="stylesheet" href="/mi-related-keywords.css">${styles}<body><p style="padding:12px">로컬 기능 검수 전용 · 아래 결과는 테스트 응답이며 실제 조회가 아닙니다.</p><section id="${id}" class="${cls} is-authed"><a href="#fixture-existing" ${nav} data-fixture-nav>기존 키워드 조회 · 검수용 연결</a>${view}${existing}</section>${stub}<script src="/mi-related-keywords.js" defer></script></body></html>`);
 }
 for (const asset of ["mi-tokens.css", "mi-related-keywords.css", "mi-related-keywords.js"]) assets.set(`/${asset}`, await fs.readFile(`${root}/public/${asset}`));
 const server = http.createServer((request, response) => {
@@ -47,19 +54,26 @@ const category = (status, paths, extra = {}) => ({
 const one = { middle: "냉온/찜질용품", small: "찜질기" };
 const other = { middle: "침구류", small: "전기매트" };
 const rows = [
-  { keyword: "허리찜질기", volume: 300, pcVolume: 100, mobileVolume: 200, category: category("single", [one]) },
-  { keyword: "찜질패드", volume: 200, pcVolume: 50, mobileVolume: 150, category: category("multiple", [one, other]) },
-  { keyword: "전기찜질팩", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, mobileVolumeLabel: "< 10", category: category("needs_confirmation", []) },
+  { keyword: "허리찜질기", volume: 300, pcVolume: 100, mobileVolume: 200, competition: "보통", category: category("single", [one]) },
+  { keyword: "찜질패드", volume: 200, pcVolume: 50, mobileVolume: 150, competition: "중간", category: category("multiple", [one, other]) },
+  { keyword: "전기찜질팩", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, mobileVolumeLabel: "< 10", competition: "낮음", category: category("needs_confirmation", []) },
 ];
 let browser;
 let checks = 0;
 try {
   browser = await chromium.launch({ headless: true });
   for (const surface of ["admin", "client"]) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1050 } });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, hasTouch: true });
+    await page.addInitScript(() => {
+      window.__fixtureClipboard = { writes: [], denied: false };
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value) => {
+        window.__fixtureClipboard.writes.push(value);
+        if (window.__fixtureClipboard.denied) throw new Error("fixture clipboard permission denied");
+      } } });
+    });
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    let categoryRequests = 0;
+    let categoryRequests = 0, apiRequests = 0;
     await page.route("**/*", (route) => {
       // API routes below are fully mocked; every other request must be a
       // fixture asset served by this ephemeral loopback server.
@@ -70,6 +84,7 @@ try {
       const url = new URL(route.request().url());
       assert.ok([origin, "http://127.0.0.1:8790"].includes(url.origin), "QA API requests must remain local and fully intercepted");
       const headers = { "access-control-allow-origin": origin };
+      apiRequests += 1;
       if (url.pathname === "/api/session") {
         await route.fulfill({ headers, json: { ok: true, session: { role: surface === "admin" ? "owner" : "client", scopeKey: "fixture-session", clientId: "fixture-client" } } });
         return;
@@ -87,34 +102,108 @@ try {
     await page.locator("[data-related-query-run]").click();
     await page.locator("[data-related-query-body] tr").filter({ hasText: "허리찜질기" }).waitFor();
     assert.equal(await page.locator("[data-related-query-body] tr").count(), 3);
+    assert.deepEqual(await page.locator(".mi-rq-table thead th").allInnerTexts(), ["키워드", "통합 월 검색량", "PC", "모바일", "광고 경쟁도", "광고 평균 클릭", "광고 클릭률", "활용"]);
+    assert.equal(await page.locator(".mi-rq-result-head [data-related-query-export]").count(), 1);
+    assert.equal(await page.locator(".mi-rq-controls [data-related-query-export]").count(), 0);
+    assert.equal(await page.locator(".mi-rq-head h1").evaluate((node) => getComputedStyle(node).color), "rgb(255, 255, 255)", `${surface}: scoped navy hero is not overridden by the existing inline app`);
+    for (const keyword of ["허리찜질기", "전기찜질팩"]) {
+      const height = await page.locator("[data-related-query-body] tr").filter({ hasText: keyword }).evaluate((node) => node.getBoundingClientRect().height);
+      assert.ok(height >= 48 && height <= 82, `${surface}: ${keyword} compact row height ${height}`);
+    }
     const resultText = await page.locator("[data-related-query-body]").innerText();
-    assert.match(resultText, /저장 표본 내 단일 카테고리/u);
-    assert.match(resultText, /저장 표본 내 복수 카테고리 · 2개/u);
-    assert.match(resultText, /일부 분류 확인 필요/u);
-    assert.match(resultText, /저장된 순위 표본 5개 중 2개 분류 · 수집 2026\.10\.19 10:21:24 KST/u);
-    assert.match(resultText, /저장 표본 기준 · 전체 분류 아님 · 추가 상품 조회 없음/u);
-    assert.match(resultText, /저장된 순위 표본이 없어 확인 필요/u);
+    assert.equal(await page.locator("[data-related-query-body] small").count(), 0, "repeated source/sample/date descriptions are absent from the DOM");
+    assert.doesNotMatch(resultText, /냉온\/찜질용품|저장 표본|카테고리 모두 보기/u);
+    assert.equal(await page.locator("[data-related-query-copy]").count(), 3);
+    assert.equal(await page.locator("[data-related-query-analyze]").count(), 3);
     assert.match(resultText, /< 10/u);
-    assert.doesNotMatch(resultText, /전체 검색 카테고리를 보장하지 않습니다|카테고리 보완을 위한 추가 상품 조회 없이/u);
-    await page.locator("[data-related-query-middle]").selectOption("침구류");
+    const help = page.locator("details.mi-rq-help");
+    assert.equal(await help.count(), 1);
+    await help.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await help.evaluate((node) => node.open), true);
+    assert.match(await help.innerText(), /정확히 같은 키워드로 저장된 최근 순위 수집 상품 5개 표본 기준/u);
+    assert.match(await help.innerText(), /추가 상품 조회는 하지 않으며/u);
+    const contrastChecks = await page.locator(".mi-rq-table th,.mi-rq-help summary,.mi-rq-help p,.mi-rq-eyebrow").evaluateAll((nodes) => nodes.map((node) => {
+      function luminance(value) {
+        const channels = value.match(/[\d.]+/g).slice(0, 3).map(Number).map((channel) => { const s = channel / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; });
+        return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+      }
+      let current = node;
+      let background = "rgb(255,255,255)";
+      while (current) { const color = getComputedStyle(current).backgroundColor; if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") { background = color; break; } current = current.parentElement; }
+      const foreground = luminance(getComputedStyle(node).color), behind = luminance(background);
+      return { text: node.textContent, ratio: (Math.max(foreground, behind) + .05) / (Math.min(foreground, behind) + .05) };
+    }));
+    assert.ok(contrastChecks.every((check) => check.ratio >= 4.5), `${surface}: small header/help text has AA contrast ${JSON.stringify(contrastChecks)}`);
+    await page.keyboard.press("Enter");
+    async function exportedCsv() {
+      const downloaded = page.waitForEvent("download");
+      await page.locator("[data-related-query-export]").click();
+      const stream = await (await downloaded).createReadStream();
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      return Buffer.concat(chunks).toString("utf8");
+    }
+    const completeCsv = await exportedCsv();
+    assert.match(completeCsv, /"분류 표본 수","분류 확인 수","카테고리 확인 시각"/u);
+    assert.match(completeCsv, /"5","5","2026-10-19T01:21:24\.483Z"/u);
+    assert.match(completeCsv, /"5","2","2026-10-19T01:21:24\.483Z"/u);
+    assert.match(completeCsv, /냉온\/찜질용품 > 찜질기 \| 침구류 > 전기매트/u);
+    assert.match(completeCsv, /일부 분류 확인 필요/u);
+    assert.match(completeCsv, /기존 순위 수집의 저장 상위 5개 상품 표본 기준/u);
+    assert.match(completeCsv, /저장된 순위 표본이 없어 확인 필요/u);
+    assert.equal(await page.locator('[data-related-query-competition] option[value="중간"]').innerText(), "중간");
+    await page.locator("[data-related-query-competition]").selectOption("중간");
     assert.equal(await page.locator("[data-related-query-body] tr").count(), 1);
     assert.match(await page.locator("[data-related-query-body]").innerText(), /찜질패드/u);
-    await page.locator("[data-related-query-middle]").selectOption("");
-    await page.locator("[data-related-query-category-status]").selectOption("needs_confirmation");
+    await page.locator("[data-related-query-competition]").selectOption("낮음");
     assert.match(await page.locator("[data-related-query-body]").innerText(), /전기찜질팩/u);
-    const downloaded = page.waitForEvent("download");
-    await page.locator("[data-related-query-export]").click();
-    const stream = await (await downloaded).createReadStream();
-    const chunks = [];
-    for await (const chunk of stream) chunks.push(chunk);
-    const csv = Buffer.concat(chunks).toString("utf8");
+    const csv = await exportedCsv();
     assert.match(csv, /전기찜질팩/u);
     assert.match(csv, /확인 필요/u);
     assert.doesNotMatch(csv, /허리찜질기/u);
     checks += 1;
+    await page.locator("[data-related-query-competition]").selectOption("");
+    const idleApiRequests = apiRequests;
+    const firstCopy = page.locator("[data-related-query-copy]").first();
+    await firstCopy.click();
+    assert.deepEqual(await page.evaluate(() => window.__fixtureClipboard.writes), ["허리찜질기"]);
+    assert.equal(await page.locator("[data-related-query-status]").evaluate((node) => node.classList.contains("is-error")), false);
+    assert.match(await page.locator("[data-related-query-status]").innerText(), /복사/u);
+    await page.evaluate(() => { window.__fixtureClipboard.denied = true; });
+    await firstCopy.click();
+    await page.locator("[data-related-query-status].is-error").waitFor();
+    assert.equal(apiRequests, idleApiRequests, "copy and clipboard denial never query an API");
+    await page.evaluate(() => { window.__fixtureClipboard.denied = false; });
+    await firstCopy.click();
+    await page.locator("[data-related-query-status]:not(.is-error)").waitFor();
+    if (process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR) {
+      await fs.mkdir(process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: `${process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR}/${surface}-desktop.png`, fullPage: true });
+    }
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, `${surface}: no whole-page mobile overflow`);
+    assert.equal(await page.locator(".mi-rq-scroll").evaluate((node) => node.scrollWidth > node.clientWidth), true);
+    await page.locator("[data-related-query-copy]").last().tap();
+    assert.equal((await page.evaluate(() => window.__fixtureClipboard.writes)).at(-1), "전기찜질팩");
+    await page.locator(".mi-rq-scroll").evaluate((node) => { node.scrollLeft = 0; });
+    if (process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR}/${surface}-mobile.png`, fullPage: true });
     checks += 1;
+    const analysis = page.locator("[data-related-query-analyze]").filter({ hasText: "상세 분석" }).first();
+    await analysis.tap();
+    const existingInput = page.locator(surface === "admin" ? "[data-admin-keyword-input]" : "[data-mi-keyword-input]");
+    assert.equal(await existingInput.inputValue(), "허리찜질기");
+    assert.equal(await page.locator("[data-fixture-existing]").isVisible(), true);
+    assert.equal(await page.locator("[data-fixture-old-result]").innerText(), "기존 결과 · 이전 조회 데이터");
+    assert.equal(await page.evaluate(() => window.__fixtureNavigation), 1);
+    assert.equal(await page.evaluate(() => window.__fixtureSubmits + window.__fixtureInputEvents), 0);
+    assert.match(await page.locator("[data-related-query-handoff]").innerText(), /허리찜질기/u);
+    assert.match(await page.locator("[data-related-query-handoff]").innerText(), /아직 이 키워드를 조회하지 않았습니다/u);
+    assert.equal(apiRequests, idleApiRequests, "analysis handoff only navigates and prefills; it does not auto-query");
+    await page.locator("[data-related-query-handoff] summary").focus();
+    await page.keyboard.press("Enter");
+    assert.match(await page.locator("[data-related-query-handoff]").innerText(), /냉온\/찜질용품 > 찜질기/u);
+    await page.evaluate(() => { const old = document.querySelector("[data-fixture-existing]"); old.hidden = true; old.classList.remove("is-active"); const related = document.querySelector("[data-related-query]"); related.hidden = false; related.classList.add("is-active"); });
     await input.fill("오류검수");
     await page.locator("[data-related-query-run]").click();
     await page.locator("[data-related-query-status].is-error").waitFor();

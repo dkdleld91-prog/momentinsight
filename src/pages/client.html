@@ -10,7 +10,7 @@
 <meta http-equiv="Expires" content="0" />
 <link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
 <link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v7-20260827" />
-<link rel="stylesheet" href="/mi-related-keywords.css?v=rq-v1-20261014" />
+<link rel="stylesheet" href="/mi-related-keywords.css?v=rq-v3-20261019" />
 <section id="mi-clean" class="mi-client-wrap is-locked">
   <style>
     #mi-clean,
@@ -6879,6 +6879,8 @@
             <span class="mi-badge">개별 조회 · 비교 최대 5개</span>
           </header>
 
+          <aside class="mi-rq-handoff" data-related-query-handoff hidden aria-live="polite"></aside>
+
           <article class="mi-card mi-card-pad" style="margin-bottom:16px;">
             <div class="mi-card-head">
               <div>
@@ -7368,36 +7370,37 @@
         </section>
 
         <section class="mi-view" id="mi-related-keywords" data-mi-view="related-keywords" aria-label="연관 키워드 화면" data-related-query>
-          <header class="mi-screen-head">
+          <header class="mi-screen-head mi-rq-head">
             <div>
               <span class="mi-kicker">키워드 확장</span>
               <h1>연관 키워드 조회</h1>
-              <p>키워드별 검색량과 중·소분류를 함께 확인하고 새로운 후보를 찾습니다.</p>
+              <p>검색량과 광고 지표를 비교하고, 필요한 키워드를 바로 활용하세요.</p>
             </div>
             <a class="mi-link-button" href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 상세 분석 →</a>
           </header>
 
-          <article class="mi-card mi-card-pad">
+          <article class="mi-card mi-card-pad mi-rq-search">
             <form class="mi-rq-form" data-related-query-form>
               <label>키워드<input class="mi-input" data-related-query-input maxlength="60" placeholder="찾고 싶은 키워드를 입력하세요" autocomplete="off" required /></label>
               <button class="mi-button" type="submit" data-related-query-run>연관 키워드 조회</button>
             </form>
             <p class="mi-rq-status" data-related-query-status role="status" aria-live="polite">키워드를 입력하고 조회해주세요.</p>
           </article>
-          <article class="mi-card mi-card-pad" style="margin-top:16px;">
-            <h2 data-related-query-title>연관 키워드</h2>
+          <article class="mi-card mi-card-pad mi-rq-results">
+            <div class="mi-rq-result-head">
+              <div><span class="mi-rq-eyebrow">KEYWORD LIST</span><h2 data-related-query-title>연관 키워드</h2></div>
+              <button class="mi-button is-ghost mi-rq-export" type="button" data-related-query-export disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4" /></svg>엑셀용 CSV</button>
+            </div>
             <div class="mi-rq-controls">
-              <label>중분류<select data-related-query-middle disabled><option value="">중분류 전체</option></select></label>
-              <label>소분류<select data-related-query-small disabled><option value="">소분류 전체</option></select></label>
-              <label>카테고리 상태<select data-related-query-category-status><option value="">전체</option><option value="single">단일 카테고리</option><option value="multiple">복수 카테고리</option><option value="needs_confirmation">확인 필요</option></select></label>
+              <label>광고 경쟁도<select data-related-query-competition><option value="">전체</option><option value="낮음">낮음</option><option value="보통">보통</option><option value="높음">높음</option></select></label>
               <label>정렬<select data-related-query-sort><option value="volume">통합 검색량순</option><option value="pc">PC 검색량순</option><option value="mobile">모바일 검색량순</option><option value="name">가나다순</option></select></label>
-              <button class="mi-button is-ghost" type="button" data-related-query-export disabled>엑셀용 CSV</button>
+              <span class="mi-rq-filter-note">추가 수집 없이 후보 비교</span>
             </div>
-            <p class="mi-rq-count" data-related-query-count>조회 전 · 최대 30개</p>
+            <div class="mi-rq-result-meta"><p class="mi-rq-count" data-related-query-count>조회 전 · 최대 30개</p><span>최근 30일 검색량 · PC + 모바일</span></div>
             <div class="mi-rq-scroll" tabindex="0" role="region" aria-label="연관 키워드 조회 결과">
-              <table class="mi-rq-table"><thead><tr><th scope="col">키워드</th><th scope="col">중분류 &gt; 소분류</th><th scope="col">통합 월 검색량</th><th scope="col">PC</th><th scope="col">모바일</th><th scope="col">경쟁도</th><th scope="col">광고 평균 클릭</th><th scope="col">광고 클릭률</th></tr></thead><tbody data-related-query-body><tr><td colspan="8" class="mi-rq-empty">키워드를 조회하면 확인된 연관어가 표시됩니다.</td></tr></tbody></table>
+              <table class="mi-rq-table"><thead><tr><th scope="col">키워드</th><th scope="col">통합 월 검색량</th><th scope="col">PC</th><th scope="col">모바일</th><th scope="col">광고 경쟁도</th><th scope="col">광고 평균 클릭</th><th scope="col">광고 클릭률</th><th scope="col">활용</th></tr></thead><tbody data-related-query-body><tr><td colspan="8" class="mi-rq-empty">키워드를 조회하면 확인된 연관어가 표시됩니다.</td></tr></tbody></table>
             </div>
-            <p class="mi-rq-help">카테고리는 현재 계정에 정확히 같은 키워드로 저장된 최근 순위 수집 상품 5개 표본 기준입니다. 추가 상품 조회는 하지 않으며, 키워드 전체의 고유 분류를 확정한 값은 아닙니다. 여러 경로는 복수 카테고리, 저장 근거가 없거나 오래된 항목은 확인 필요로 구분하며 CSV에도 상태·경로·표본 기준이 저장됩니다.</p>
+            <details class="mi-rq-help"><summary>카테고리 표시 기준</summary><p>카테고리는 현재 계정에 정확히 같은 키워드로 저장된 최근 순위 수집 상품 5개 표본 기준입니다. 추가 상품 조회는 하지 않으며, 키워드 전체의 고유 분류를 확정한 값은 아닙니다. 여러 경로는 복수 카테고리, 저장 근거가 없거나 오래된 항목은 확인 필요로 구분하며 CSV에도 상태·경로·표본 기준이 저장됩니다.</p></details>
           </article>
         </section>
 
@@ -7447,7 +7450,7 @@
   <script src="/mi-personal-calendar.js?v=cal-v7-20260827"></script>
   <script src="/mi-google-nudge.js?v=gnudge-v6-20260908"></script>
   <script src="/mi-capture.js?v=cap-v3-20260909" defer></script>
-  <script src="/mi-related-keywords.js?v=rq-v1-20261014"></script>
+  <script src="/mi-related-keywords.js?v=rq-v3-20261019"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");

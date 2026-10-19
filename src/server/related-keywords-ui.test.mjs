@@ -24,9 +24,9 @@ const storedCategory = {
 };
 function rows(seed = "온열찜질기") {
   return api().normalizeRows([
-    { keyword: "허리찜질기", volume: 100, pcVolume: 0, mobileVolume: 100, category: categories.single },
-    { keyword: "찜질패드", volume: 80, category: categories.multiple },
-    { keyword: "전기찜질팩", volume: null, pcVolume: null, pcVolumeLabel: "<10", mobileVolume: null, category: categories.unknown },
+    { keyword: "허리찜질기", volume: 100, pcVolume: 0, mobileVolume: 100, competition: "보통", category: categories.single },
+    { keyword: "찜질패드", volume: 80, competition: "높음", category: categories.multiple },
+    { keyword: "전기찜질팩", volume: null, pcVolume: null, pcVolumeLabel: "<10", mobileVolume: null, competition: "낮음", category: categories.unknown },
     { keyword: seed, volume: 1000, category: categories.single }
   ], seed);
 }
@@ -120,33 +120,59 @@ class Node {
     this.value = "";
     this.disabled = false;
     this.listeners = {};
+    this.attributes = new Map();
     this.classes = new Set();
     this.classList = { toggle: (name, enabled) => enabled ? this.classes.add(name) : this.classes.delete(name), contains: (name) => this.classes.has(name) };
   }
   set textContent(value) { this.content = String(value); this.children = []; }
   get textContent() { return (this.content || "") + this.children.map((child) => child.textContent).join(""); }
-  appendChild(node) { this.children.push(node); return node; }
+  appendChild(node) { this.children.push(node); node.parentNode = this; return node; }
   replaceChildren(...nodes) { this.content = ""; this.children = nodes; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
+  hasAttribute(name) { return this.attributes.has(name); }
+  closest(selector) {
+    if (selector.split(",").some((part) => {
+      const match = /^([a-z-]+)?(?:\[([^\]]+)\])?$/u.exec(part.trim());
+      return match && (!match[1] || match[1] === this.tagName) && (!match[2] || this.attributes.has(match[2]));
+    })) return this;
+    return this.parentNode?.closest(selector) || null;
+  }
+  contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   focus() { this.focused = true; }
 }
-function fixture(windowOverrides = {}) {
+function fixture(windowOverrides = {}, optionOverrides = {}) {
   const client = api(windowOverrides);
-  const names = ["form", "input", "run", "body", "status", "count", "title", "middle", "small", "category-status", "sort", "export"];
+  const names = ["form", "input", "run", "body", "status", "count", "title", "competition", "middle", "small", "category-status", "sort", "export"];
   const nodes = Object.fromEntries(names.map((name) => [name, new Node()]));
   const document = { createElement: (tag) => new Node(tag), body: new Node("body") };
   const host = { ownerDocument: document, querySelector: (selector) => nodes[selector.replace("[data-related-query-", "").replace("]", "")] };
   let session = "session-a";
   const requests = [];
+  const copies = [], analyses = [];
   const controller = client.mount(host, {
     sessionKey: () => session,
-    fetch: (url, options) => new Promise((resolve) => requests.push({ url, options, resolve }))
+    fetch: (url, options) => new Promise((resolve) => requests.push({ url, options, resolve })),
+    copy: async (keyword) => { copies.push(keyword); },
+    analyze: (keyword, category) => { analyses.push({ keyword, category }); return true; },
+    ...optionOverrides
   });
-  return { nodes, requests, controller, host, document, session: (next) => { session = next; } };
+  return { nodes, requests, controller, host, document, copies, analyses, session: (next) => { session = next; } };
 }
 function response(keyword, related) { return { ok: true, json: async () => ({ ok: true, keyword, related }) }; }
+function descendants(node, tag) {
+  return node.children.flatMap((child) => [...(!tag || child.tagName === tag ? [child] : []), ...descendants(child, tag)]);
+}
+function action(ui, index, name) { return descendants(ui.nodes.body.children[index], "button").find((node) => node.getAttribute("data-related-query-" + name) !== null); }
+function clickAction(ui, index, name) {
+  const button = action(ui, index, name);
+  assert.ok(button, `row ${index}: ${name} action exists`);
+  const event = { target: button, preventDefault() {} };
+  return button.listeners.click ? button.listeners.click(event) : ui.nodes.body.listeners.click(event);
+}
 
-test("one explicit search issues one request, shows true category states and keeps labels/text safe", async () => {
+test("one explicit search issues one request, shows only metrics and explicit actions, and keeps labels/text safe", async () => {
   const { nodes, requests, controller } = fixture();
   const task = controller.search("온열찜질기");
   assert.equal(requests.length, 1);
@@ -157,10 +183,11 @@ test("one explicit search issues one request, shows true category states and kee
   await task;
   assert.equal(nodes.run.disabled, false);
   assert.equal(nodes.export.disabled, false);
-  assert.match(nodes.body.textContent, /냉온\/찜질용품 > 찜질기/u);
-  assert.match(nodes.body.textContent, /복수 카테고리 · 2개/u);
-  assert.match(nodes.body.textContent, /일부 분류 확인 필요/u);
-  assert.match(nodes.body.textContent, /카테고리 데이터 연결 필요/u);
+  assert.equal(descendants(nodes.body, "button").length, 8, "each provided keyword has copy and analyze actions");
+  assert.ok(nodes.body.children.every((row) => row.children.length === 8));
+  assert.equal(descendants(nodes.body, "small").length, 0);
+  assert.doesNotMatch(nodes.body.textContent, /냉온\/찜질용품|카테고리 모두 보기|저장 표본/u);
+  assert.match(nodes.body.textContent, /복사.*상세 분석/u);
   assert.match(nodes.body.textContent, /<10/u);
   assert.match(nodes.body.textContent, /<img src=x onerror=alert\(1\)>/u);
   assert.equal(nodes.body.children.flatMap((tr) => tr.children).some((td) => td.tagName === "img"), false);
@@ -187,20 +214,20 @@ test("late responses cannot overwrite a newer query and account changes clear re
   assert.equal(ui.nodes.run.disabled, false);
 });
 
-test("Commerce categories expose their catalog sample basis and extra results in UI and CSV", async () => {
+test("legacy Commerce metadata stays available without repeated row prose and is preserved in CSV", async () => {
   const ui = fixture();
   const task = ui.controller.search("온열찜질기");
   ui.requests[0].resolve(response("온열찜질기", [{ keyword: "허리찜질기", category: { ...categories.single, source: "naver_commerce_catalog_sample", hasMore: true } }]));
   await task;
-  assert.match(ui.nodes.body.textContent, /조회된 네이버 카탈로그 기준 · 10개/u);
-  assert.match(ui.nodes.body.textContent, /추가 결과 있음 · 전체 검색 분류가 아닙니다/u);
+  assert.doesNotMatch(ui.nodes.body.textContent, /냉온\/찜질용품|네이버 카탈로그/u);
+  assert.equal(descendants(ui.nodes.body, "small").length, 0);
   const csv = api().csvText(api().normalizeRows([{ keyword: "허리찜질기", category: { ...categories.single, source: "naver_commerce_catalog_sample", hasMore: true } }], "온열찜질기"));
   assert.match(csv, /"카테고리 기준","추가 결과 여부"/u);
   assert.match(csv, /"조회된 네이버 카탈로그 기준","추가 결과 있음"/u);
   assert.doesNotMatch(csv, /sourceExhausted|marketTotal/u);
 });
 
-test("stored rank snapshot categories state the narrow sample, collection time and no-extra-lookup limits in UI and CSV", async () => {
+test("category evidence stays out of result rows but remains unchanged in CSV and analysis handoff", async () => {
   const ui = fixture();
   const task = ui.controller.search("온열찜질기");
   const multiple = { ...storedCategory, status: "multiple", reason: "incomplete_sample", middle: null, small: null, paths: [...storedCategory.paths, { middle: "건강관리용품", small: "기타건강관리용품" }], categorizedCount: 2 };
@@ -215,18 +242,17 @@ test("stored rank snapshot categories state the narrow sample, collection time a
     { keyword: "온찜질기", category: noEvidence }
   ]));
   await task;
-  assert.match(ui.nodes.body.textContent, /저장 표본 내 단일 카테고리/u);
-  assert.match(ui.nodes.body.textContent, /저장 표본 내 복수 카테고리 · 2개/u);
-  assert.match(ui.nodes.body.textContent, /저장된 순위 표본 5개 중 5개 분류 · 수집 2026\.10\.19 10:21:24 KST/u);
-  assert.match(ui.nodes.body.textContent, /저장된 순위 표본 5개 중 2개 분류 · 수집 2026\.10\.19 10:21:24 KST/u);
-  assert.match(ui.nodes.body.textContent, /저장 표본 기준 · 전체 분류 아님 · 추가 상품 조회 없음/u);
-  assert.doesNotMatch(ui.nodes.body.textContent, /전체 검색 카테고리를 보장하지 않습니다|카테고리 보완을 위한 추가 상품 조회 없이/u);
-  assert.match(ui.nodes.body.textContent, /저장 표본이 부족하거나 일부만 분류되어 확인 필요/u);
-  assert.match(ui.nodes.body.textContent, /저장 표본이 오래되어 확인 필요/u);
-  assert.match(ui.nodes.body.textContent, /저장된 순위 표본이 없어 확인 필요/u);
-  assert.match(ui.nodes.body.textContent, /저장된 순위 표본 0개 중 0개 분류 · 수집 확인 필요/u);
-  assert.match(ui.nodes.status.textContent, /저장 순위 표본 기준 5개 · 추가 상품 조회 없음/u);
-  assert.doesNotMatch(ui.nodes.body.textContent, /조회된 네이버 카탈로그 기준|추가 결과 있음/u);
+  assert.equal(descendants(ui.nodes.body, "small").length, 0, "no per-row sample/date/source prose remains in the DOM");
+  assert.equal(descendants(ui.nodes.body, "details").length, 0);
+  assert.equal(descendants(ui.nodes.body, "button").length, 10);
+  assert.doesNotMatch(ui.nodes.body.textContent, /냉온\/찜질용품|저장 표본|카테고리|수집 2026/u);
+  await clickAction(ui, 1, "analyze");
+  assert.equal(ui.analyses.length, 1);
+  assert.equal(ui.analyses[0].keyword, "찜질패드");
+  assert.equal(ui.analyses[0].category.reason, "incomplete_sample");
+  assert.equal(ui.analyses[0].category.categorizedCount, 2);
+  assert.equal(ui.analyses[0].category.paths.length, 2);
+  assert.equal(ui.requests.length, 1, "handoff does not send any new lookup or rank request");
 
   const csv = api().csvText(api().normalizeRows([
     { keyword: "허리찜질기", volume: null, volumeLabel: "< 10", category: storedCategory },
@@ -349,7 +375,7 @@ test("external bootstrap stays idle, observes logout, and discards a late catego
   assert.equal(requests.length, 2, "a locked root stops the final session read and does not retry");
 });
 
-test("both existing keyword screens retain their preview and share only the independent related controller", () => {
+test("both existing keyword screens retain their preview, expose only action-based results, and share the independent controller", () => {
   for (const [page, screen] of [["admin", "data-mi-admin-screen"], ["client", "data-mi-screen"]]) {
     const html = fs.readFileSync("src/pages/" + page + ".html", "utf8");
     assert.match(html, new RegExp(`${screen}="(?:keyword|keyword-tool)">키워드 조회<\\/a>\\s*<a [^>]+${screen}="related-keywords">연관 키워드 조회<\\/a>`, "u"));
@@ -358,7 +384,11 @@ test("both existing keyword screens retain their preview and share only the inde
     assert.equal((html.match(/data-related-query-body/g) || []).length, 1);
     assert.doesNotMatch(html, /data-keyword-related-full[=" >]/u);
     assert.match(html, /정확히 같은 키워드로 저장된 최근 순위 수집 상품 5개 표본 기준/u);
-    const categoryHelp = html.match(/<p class="mi-rq-help">([^<]+)<\/p>/u)?.[1] || "";
+    assert.ok(/<th scope="col">활용<\/th>/u.test(html), `${page}: requested keyword actions replace sparse category column`);
+    assert.ok(!/<th scope="col">중분류 &gt; 소분류<\/th>/u.test(html), `${page}: old structural heading removed`);
+    for (const className of ["mi-rq-head", "mi-rq-search", "mi-rq-results", "mi-rq-result-head", "mi-rq-result-meta", "mi-rq-count"]) assert.ok(new RegExp(`class="[^"]*\\b${className}\\b`, "u").test(html), `${page}: scoped presentation hook ${className}`);
+    const categoryHelp = html.match(/<details class="mi-rq-help">([\s\S]*?)<\/details>/u)?.[1] || "";
+    assert.match(categoryHelp, /<summary>카테고리.*기준<\/summary>/u);
     assert.match(categoryHelp, /추가 상품 조회는 하지 않으며/u);
     assert.match(categoryHelp, /저장 근거가 없거나 오래된 항목은 확인 필요/u);
     assert.doesNotMatch(categoryHelp, /네이버 카탈로그 검색 기준/u);
@@ -379,4 +409,179 @@ test("both existing inline applications remain byte-identical to HEAD so their C
     const original = execFileSync("git", ["show", "HEAD:" + path], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
     assert.deepEqual(hashes(fs.readFileSync(path, "utf8")), hashes(original), path);
   }
+});
+
+test("premium visual rules are scoped to the related view and preserve numeric alignment, focus and reduced motion", () => {
+  const css = fs.readFileSync("public/mi-related-keywords.css", "utf8");
+  const rules = css.split("\n").map((line) => line.trim()).filter((line) => line.includes("{") && !line.startsWith("@") && !line.startsWith("/*"));
+  assert.ok(rules.length > 20);
+  assert.ok(rules.every((line) => line.startsWith(":is(#mi-admin,#mi-clean) [data-related-query]") || line.startsWith(":is(#mi-admin,#mi-clean) .mi-rq-handoff")), "every visual rule must remain under the independent related view or its narrow handoff notice");
+  assert.match(css, /font-variant-numeric:tabular-nums/u);
+  assert.match(css, /overflow-x:auto/u);
+  assert.match(css, /:focus-visible/u);
+  assert.match(css, /@media \(max-width:640px\)/u);
+  assert.match(css, /@media \(prefers-reduced-motion:reduce\)/u);
+  assert.doesNotMatch(css, /@import|url\(|https?:/u, "visual update loads no external font or bitmap");
+});
+
+test("copy reports success only after the promised write succeeds and failures stay explicit", async () => {
+  let finish;
+  const copied = [];
+  const ui = fixture({}, { copy: (keyword) => { copied.push(keyword); return new Promise((resolve) => { finish = resolve; }); } });
+  const search = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", rows()));
+  await search;
+  clickAction(ui, 0, "copy");
+  assert.deepEqual(copied, ["허리찜질기"]);
+  assert.doesNotMatch(ui.nodes.status.textContent, /복사했|복사되었|복사 완료/u);
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(ui.nodes.status.textContent, /복사/u);
+  assert.equal(ui.nodes.status.classes.has("is-error"), false);
+  assert.equal(ui.requests.length, 1, "clipboard action does not trigger another API call");
+  const denied = fixture({}, { copy: async () => { throw new Error("permission denied"); } });
+  const deniedSearch = denied.controller.search("온열찜질기");
+  denied.requests[0].resolve(response("온열찜질기", rows()));
+  await deniedSearch;
+  await clickAction(denied, 0, "copy");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(denied.nodes.status.classes.has("is-error"), true);
+  assert.match(denied.nodes.status.textContent, /복사/u);
+  assert.doesNotMatch(denied.nodes.status.textContent, /복사했습니다|복사되었습니다|복사 완료[.!]?(?:$|\s*·)/u);
+  assert.equal(denied.requests.length, 1);
+});
+
+test("copy completion after account change is discarded and analysis does not invoke a search", async () => {
+  let finish;
+  const ui = fixture({}, { copy: () => new Promise((resolve) => { finish = resolve; }) });
+  const search = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", rows()));
+  await search;
+  await clickAction(ui, 0, "analyze");
+  assert.equal(ui.analyses[0].keyword, "허리찜질기");
+  assert.equal(ui.requests.length, 1);
+  clickAction(ui, 0, "copy");
+  ui.session("session-b");
+  ui.controller.syncSession();
+  const clearedStatus = ui.nodes.status.textContent;
+  finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.nodes.status.textContent, clearedStatus);
+  assert.equal(ui.nodes.export.disabled, true);
+  assert.equal(ui.requests.length, 1);
+});
+
+test("a clipboard provider that never resolves times out once without retrying", async () => {
+  let expire;
+  let attempts = 0;
+  const ui = fixture({ setTimeout: (handler, milliseconds) => {
+    if (milliseconds === 2000) { expire = handler; return -1; }
+    return setTimeout(handler, milliseconds);
+  } }, { copy: () => { attempts += 1; return new Promise(() => {}); } });
+  const search = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", rows()));
+  await search;
+  clickAction(ui, 0, "copy");
+  assert.equal(typeof expire, "function");
+  expire();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(ui.nodes.status.classes.has("is-error"), true);
+  assert.equal(attempts, 1);
+  assert.equal(ui.requests.length, 1);
+});
+
+test("overlapping copy actions keep the newest feedback and hidden or forged rows cannot trigger actions", async () => {
+  const resolvers = [];
+  let copyCalls = 0;
+  const ui = fixture({}, { copy: () => { copyCalls += 1; return new Promise((resolve) => resolvers.push(resolve)); } });
+  const task = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", rows()));
+  await task;
+  const older = ui.controller.copyKeyword("허리찜질기");
+  const newer = ui.controller.copyKeyword("찜질패드");
+  resolvers[1]();
+  assert.equal(await newer, true);
+  const newestFeedback = ui.nodes.status.textContent;
+  assert.match(newestFeedback, /찜질패드/u);
+  resolvers[0]();
+  assert.equal(await older, false);
+  assert.equal(ui.nodes.status.textContent, newestFeedback);
+  ui.nodes.competition.value = "낮음";
+  ui.nodes.competition.listeners.change();
+  assert.equal(await ui.controller.copyKeyword("허리찜질기"), false);
+  assert.equal(ui.controller.analyzeKeyword("허리찜질기"), false);
+  assert.equal(await ui.controller.copyKeyword("조작된 키워드"), false);
+  assert.equal(copyCalls, 2);
+  assert.equal(ui.analyses.length, 0);
+  assert.equal(ui.requests.length, 1);
+});
+
+test("missing analysis destinations fail visibly and the existing screen is only prefilled, never auto-submitted", async () => {
+  const ui = fixture({}, { analyze: () => false });
+  const task = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", rows()));
+  await task;
+  assert.equal(ui.controller.analyzeKeyword("허리찜질기"), false);
+  assert.equal(ui.nodes.status.classes.has("is-error"), true);
+  assert.match(ui.nodes.status.textContent, /이동하지 못했습니다/u);
+  assert.equal(ui.requests.length, 1);
+  for (const admin of [true, false]) {
+    const input = new Node("input"), link = new Node("a"), view = new Node("section"), handoff = new Node("aside");
+    input.value = "이전 키워드";
+    input.dispatchEvent = () => { throw new Error("input/change dispatch must never happen"); };
+    let navigation = 0;
+    link.click = () => { navigation += 1; view.classes.add("is-active"); };
+    const selectors = new Map([
+      [admin ? "[data-admin-keyword-input]" : "[data-mi-keyword-input]", input],
+      [admin ? 'a[data-mi-admin-screen="keyword"]' : 'a[data-mi-screen="keyword-tool"]', link],
+      [admin ? "#mi-admin-keyword" : "#mi-keyword-tool", view],
+      ["[data-related-query-handoff]", handoff]
+    ]);
+    const root = { id: admin ? "mi-admin" : "mi-clean", ownerDocument: { createElement: (tag) => new Node(tag) }, querySelector: (selector) => selectors.get(selector) };
+    assert.equal(api().navigateKeyword(root, "허리찜질기", storedCategory), true);
+    assert.equal(input.value, "허리찜질기");
+    assert.equal(navigation, 1);
+    assert.equal(handoff.hidden, false);
+    assert.match(handoff.textContent, /아직 이 키워드를 조회하지 않았습니다/u);
+    assert.match(handoff.textContent, /이전 조회 결과가 남아 있을 수 있습니다/u);
+    assert.match(handoff.textContent, /냉온\/찜질용품 > 찜질기/u);
+    selectors.delete(admin ? "#mi-admin-keyword" : "#mi-keyword-tool");
+    input.value = "보존할 키워드";
+    assert.equal(api().navigateKeyword(root, "전달 실패", storedCategory), false);
+    assert.equal(input.value, "보존할 키워드");
+    assert.equal(navigation, 1);
+  }
+});
+
+test("related result tables replace sparse categories with two explicit safe actions", () => {
+  for (const page of ["admin", "client"]) {
+    const html = fs.readFileSync("src/pages/" + page + ".html", "utf8");
+    const start = html.search(/<section\b[^>]*\bdata-related-query(?:\s|>)/u);
+    const view = html.slice(start, html.indexOf("</section>", start));
+    assert.ok(/<th scope="col">활용<\/th>/u.test(view), `${page}: actions are the final table column`);
+    assert.ok(/data-related-query-competition/u.test(view), `${page}: competition filter remains based on provided real metrics`);
+    assert.doesNotMatch(view, /data-related-query-middle|data-related-query-small|data-related-query-category-status/u);
+    assert.ok(!/<th scope="col">카테고리<\/th>/u.test(view));
+  }
+});
+
+test("competition choices preserve actual provider labels including 중간 and missing values are not invented", async () => {
+  const ui = fixture();
+  const task = ui.controller.search("온열찜질기");
+  ui.requests[0].resolve(response("온열찜질기", [
+    { keyword: "중간 경쟁", competition: "중간", volume: 100 },
+    { keyword: "보통 경쟁", competition: "보통", volume: 80 },
+    { keyword: "경쟁도 미제공", volume: null }
+  ]));
+  await task;
+  assert.deepEqual(ui.nodes.competition.children.map((node) => node.value).sort(), ["", "보통", "중간"].sort());
+  assert.equal(ui.nodes.competition.children.find((node) => node.value === "중간").textContent, "중간");
+  ui.nodes.competition.value = "중간";
+  ui.nodes.competition.listeners.change();
+  assert.equal(ui.nodes.body.children.length, 1);
+  assert.match(ui.nodes.body.textContent, /중간 경쟁/u);
+  assert.doesNotMatch(ui.nodes.body.textContent, /보통 경쟁|경쟁도 미제공/u);
+  const csv = api().csvText(api().normalizeRows([{ keyword: "중간 경쟁", competition: "중간" }], "기준어"));
+  assert.match(csv, /"중간"/u);
+  assert.doesNotMatch(csv, /"보통"/u);
 });

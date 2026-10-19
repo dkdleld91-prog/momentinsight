@@ -243,6 +243,10 @@ async function loadContentMarket(config, keyword, nowMs) {
 
 // ── 핸들러 ───────────────────────────────────────────────────────
 export async function handleKeywordResearchRequest(request) {
+  if (new URL(request.url).searchParams.get("mode") === "related") {
+    const { handleRelatedKeywordsRequest } = await import("./related-keywords.mjs");
+    return handleRelatedKeywordsRequest(request);
+  }
   if (request.method !== "GET") return json({ ok: false, message: "Method not allowed" }, 405);
   const role = String(request.headers.get("x-mi-session-role") || "").trim().toLowerCase();
   if (!role) return json({ ok: false, message: "세션 역할을 확인할 수 없습니다." }, 401);

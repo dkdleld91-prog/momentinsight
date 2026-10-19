@@ -3474,6 +3474,29 @@ function startHealthServer(getBody) {
   });
 }
 
+// Fake runtime drift fixtures must not observe an unrelated real collection.
+// Only the three external observations are isolated in a temporary script;
+// the actual TMPDIR lock / owner PID / kill -0 guard stays executable.
+function isolateWatchdogExternalSignals(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mi-watchdog-signals-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scriptPath = path.join(root, "mi-rank-watchdog.sh");
+  let source = watchdogSource;
+  const replacements = [
+    ["  if /usr/bin/pgrep -f 'naver-shopping-native-host\\.mjs' >/dev/null 2>&1; then\n    return 0\n  fi", "  : # test isolation: inspect only the supplied TMPDIR lock"],
+    ['  DARWIN_TEMP_DIRECTORY="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" || DARWIN_TEMP_DIRECTORY=""', '  DARWIN_TEMP_DIRECTORY=""'],
+    ['  LOCK_ROOTS+=("/tmp")', '  : # test isolation: do not inspect the machine-wide /tmp lock'],
+  ];
+  for (const [from, to] of replacements) {
+    const index = source.indexOf(from);
+    assert.ok(index >= 0, "isolated external observation must exist");
+    assert.equal(source.indexOf(from, index + from.length), -1, "isolated external observation must be unique");
+    source = source.slice(0, index) + to + source.slice(index + from.length);
+  }
+  fs.writeFileSync(scriptPath, source, { mode: 0o700 });
+  return scriptPath;
+}
+
 test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정된다", darwinOnly, async (t) => {
   let responseBody = "";
   const server = await startHealthServer(() => responseBody);
@@ -3817,6 +3840,7 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
     server.close();
     for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
   });
+  const isolatedScriptPath = isolateWatchdogExternalSignals(t);
   const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
   const nowSeconds = Math.floor(Date.now() / 1000);
 
@@ -3840,6 +3864,8 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
     // 옛 2줄 상태 파일이 그대로 읽혀야 한다. stalled_since 가 실제로 읽혔다는 증거로
     // stall_cleared 까지 확인한다(안 읽혔다면 healthy 가 찍힌다).
     { label: "(k) 옛 2줄 상태 파일 하위호환", seed: { gitInit: true }, state: { stalledSince: nowSeconds - 5000, lastRestartAt: 0 }, expect: "runtime_in_sync", verdict: "stall_cleared" },
+    { label: "(l) 살아 있는 수집 잠금은 드리프트 동기화를 막는다", seed: { drift: true, gitInit: true }, collectionPid: process.pid, expect: "drift_detected", contains: "sync_skipped=collection_active", noSync: true },
+    { label: "(m) 죽은 소유자의 잠금은 드리프트 동기화를 막지 않는다", seed: { drift: true, gitInit: true }, collectionPid: 99999999, expect: "dry_run drift_sync_would_run files=1" },
   ];
 
   for (const scenario of scenarios) {
@@ -3847,8 +3873,17 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
     homes.push(home);
     const seeded = scenario.seed ? seedRuntimeSync(home, scenario.seed) : "";
     const syncSourcePath = scenario.sourceOverride ? path.join(home, scenario.sourceOverride) : seeded;
+    const probeRoot = path.join(home, "fixture-tmp");
+    fs.mkdirSync(probeRoot);
+    if (scenario.collectionPid) {
+      const lock = path.join(probeRoot, "moment-insight-n-shopping-worker.lock");
+      fs.mkdirSync(lock);
+      fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: scenario.collectionPid }));
+    }
     // eslint-disable-next-line no-await-in-loop
     const { status, events, raw } = await runWatchdog(home, healthUrl, {
+      scriptPath: isolatedScriptPath,
+      tmpdir: probeRoot,
       syncSourcePath,
       syncDisabled: scenario.syncDisabled ?? "",
     });
@@ -3872,6 +3907,7 @@ test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정�
         `${scenario.label} 은 ${scenario.verdict} 판정까지 도달해야 한다 :: ${raw}`,
       );
     }
+    if (scenario.noSync) assert.ok(events.every((event) => !event.startsWith("dry_run drift_sync_would_run")), "a live collection lock must prevent synchronization");
   }
 });
 
@@ -3959,6 +3995,7 @@ test("F13: 동기화 원본 fast-forward 판정이 실제 실행으로 고정된
     server.close();
     for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
   });
+  const isolatedScriptPath = isolateWatchdogExternalSignals(t);
   const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
 
   const scenarios = [
@@ -3970,14 +4007,22 @@ test("F13: 동기화 원본 fast-forward 판정이 실제 실행으로 고정된
     { label: "(d) 뒤처짐 + 런타임 파일 더러움", seed: { behind: true, dirty: true }, expect: "sync_source_behind action=none reason=repository_dirty" },
     { label: "(e) origin 과 동일", seed: {}, expect: "runtime_in_sync files=14" },
     { label: "(f) fetch 실패(원격 경로 없음)", seed: { brokenRemote: true }, expect: "sync_source_fetch_failed status=", verdict: "runtime_in_sync files=14" },
+    { label: "(g) 실제로 살아 있는 fixture 잠금이면 fast-forward 보류", seed: { behind: true }, collectionPid: process.pid, expect: "sync_source_behind action=deferred reason=collection_active" },
   ];
 
   for (const scenario of scenarios) {
     const home = createWatchdogHome(null);
     homes.push(home);
     const syncSourcePath = seedRemoteSync(home, scenario.seed);
+    const probeRoot = path.join(home, "fixture-tmp");
+    fs.mkdirSync(probeRoot);
+    if (scenario.collectionPid) {
+      const lock = path.join(probeRoot, "moment-insight-n-shopping-worker.lock");
+      fs.mkdirSync(lock);
+      fs.writeFileSync(path.join(lock, "owner.json"), JSON.stringify({ pid: scenario.collectionPid }));
+    }
     // eslint-disable-next-line no-await-in-loop
-    const { status, events, raw } = await runWatchdog(home, healthUrl, { syncSourcePath });
+    const { status, events, raw } = await runWatchdog(home, healthUrl, { syncSourcePath, tmpdir: probeRoot, scriptPath: isolatedScriptPath });
     assert.equal(status, 0, `${scenario.label} 은 exit 0 이어야 한다 :: ${raw}`);
     assert.ok(events.length > 0, `${scenario.label} 은 반드시 한 줄을 남긴다`);
     assert.ok(
@@ -3990,6 +4035,7 @@ test("F13: 동기화 원본 fast-forward 판정이 실제 실행으로 고정된
     }
     // 드라이런은 원본 저장소를 절대 움직이지 않는다.
     assert.ok(!events.some((event) => event.startsWith("sync_source_fast_forwarded")), `${scenario.label} :: ${raw}`);
+    if (scenario.collectionPid) assert.ok(!events.some((event) => event.startsWith("dry_run sync_source_would_fast_forward")), "a live collection lock must prevent fast-forward");
   }
 });
 

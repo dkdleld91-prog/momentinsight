@@ -976,18 +976,21 @@ test("③ 커서 복원은 핸드오프 직후 한 사이클에만 적용된다"
         scheduler_cycle_cursor_tracker_id = '${ids.mmlNew}',
         scheduler_cycle_status = 'completed'
     where lane_key = 'global';
+    with frozen as materialized (
+      select clock_timestamp() - interval '1 hour' as requested_at
+    )
     insert into public.naver_shopping_account_priority_requests(
       request_id, agency_code, cohort_count, cohort_hash,
       required_runtime_version, required_runtime_fingerprint,
       requested_at, expires_at, requested_cycle_id, requested_cycle_number,
       state, completed_at, succeeded
-    ) values (
+    ) select
       '${ids.request}', 'mml93-a01', 1, repeat('a', 32),
       '${runtimeVersion}', '${runtimeFingerprint}',
-      clock_timestamp() - interval '1 hour',
-      clock_timestamp() - interval '1 hour' + interval '24 hours',
+      frozen.requested_at,
+      frozen.requested_at + interval '24 hours',
       '${ids.cycle}', 47, 'completed', clock_timestamp(), false
-    );
+    from frozen;
     insert into public.naver_shopping_account_priority_cycle_resume_points(
       handoff_cycle_id, handoff_cycle_number, request_id,
       cursor_sort_order, cursor_created_at, cursor_tracker_id, resume_cursor,
@@ -1210,17 +1213,20 @@ test("④ 회귀: 24h 만료 reconcile 은 그대로 pending 만 만료시킨다
   t.after(() => database.close());
   await applyCohortMigration(database);
   await database.exec(`
+    with frozen as materialized (
+      select clock_timestamp() - interval '25 hours' as requested_at
+    )
     insert into public.naver_shopping_account_priority_requests(
       request_id, agency_code, cohort_count, cohort_hash,
       required_runtime_version, required_runtime_fingerprint,
       requested_at, expires_at, requested_cycle_id, requested_cycle_number
-    ) values (
+    ) select
       '${ids.request}', 'mml93-a01', 2, repeat('a', 32),
       '${runtimeVersion}', '${runtimeFingerprint}',
-      clock_timestamp() - interval '25 hours',
-      clock_timestamp() - interval '25 hours' + interval '24 hours',
+      frozen.requested_at,
+      frozen.requested_at + interval '24 hours',
       '${ids.cycle}', 47
-    );
+    from frozen;
     insert into public.naver_shopping_account_priority_members(
       request_id, position, tracker_id
     ) values
@@ -1242,23 +1248,55 @@ test("④ 회귀: 24h 만료 reconcile 은 그대로 pending 만 만료시킨다
   ]);
 });
 
+test("요청 fixture의 1ms 만료 오차는 거절하고 동일 시각의 정확한 24h만 허용한다", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  const insert = (age, expiryOffset) => database.query(`
+    with frozen as materialized (
+      select timestamptz '2026-10-19T06:57:51.253Z' - $1::interval as requested_at
+    )
+    insert into public.naver_shopping_account_priority_requests(
+      request_id, agency_code, cohort_count, cohort_hash,
+      required_runtime_version, required_runtime_fingerprint,
+      requested_at, expires_at, requested_cycle_id, requested_cycle_number
+    ) select
+      '${ids.request}', 'mml93-a01', 2, repeat('a', 32),
+      '${runtimeVersion}', '${runtimeFingerprint}',
+      frozen.requested_at,
+      frozen.requested_at + interval '24 hours' + $2::interval,
+      '${ids.cycle}', 47
+    from frozen
+    returning expires_at - requested_at = interval '24 hours' as exact_24h
+  `, [age, expiryOffset]);
+  // Reproduce the observed .253/.254 mismatch for each of the four fixture ages.
+  for (const age of ["1 hour", "25 hours", "3 hours", "3 hours"]) {
+    await assert.rejects(() => insert(age, "1 millisecond"), (error) =>
+      error.code === "23514"
+      && error.constraint === "naver_shopping_account_priority_requests_check");
+  }
+  assert.deepEqual((await insert("3 hours", "0 milliseconds")).rows, [{ exact_24h: true }]);
+});
+
 test("정체된 요청은 24h 을 기다리지 않고 여섯 케이던스 뒤 레인을 돌려준다", async (t) => {
   const database = await createDatabase();
   t.after(() => database.close());
   await applyCohortMigration(database);
   // 진행이 멈춘 지 3시간. 만료(24h)까지는 21시간이 남아 있다.
   await database.exec(`
+    with frozen as materialized (
+      select clock_timestamp() - interval '3 hours' as requested_at
+    )
     insert into public.naver_shopping_account_priority_requests(
       request_id, agency_code, cohort_count, cohort_hash,
       required_runtime_version, required_runtime_fingerprint,
       requested_at, expires_at, requested_cycle_id, requested_cycle_number
-    ) values (
+    ) select
       '${ids.request}', 'mml93-a01', 2, repeat('a', 32),
       '${runtimeVersion}', '${runtimeFingerprint}',
-      clock_timestamp() - interval '3 hours',
-      clock_timestamp() - interval '3 hours' + interval '24 hours',
+      frozen.requested_at,
+      frozen.requested_at + interval '24 hours',
       '${ids.cycle}', 47
-    );
+    from frozen;
     insert into public.naver_shopping_account_priority_members(
       request_id, position, tracker_id
     ) values
@@ -1299,17 +1337,20 @@ test("정체 판정은 진행 중인 클레임을 잘라내지 않는다", async
   await applyCohortMigration(database);
   // 3시간 전에 시작했지만 클레임 하나가 아직 살아 있는 요청.
   await database.exec(`
+    with frozen as materialized (
+      select clock_timestamp() - interval '3 hours' as requested_at
+    )
     insert into public.naver_shopping_account_priority_requests(
       request_id, agency_code, cohort_count, cohort_hash,
       required_runtime_version, required_runtime_fingerprint,
       requested_at, expires_at, requested_cycle_id, requested_cycle_number
-    ) values (
+    ) select
       '${ids.request}', 'mml93-a01', 2, repeat('a', 32),
       '${runtimeVersion}', '${runtimeFingerprint}',
-      clock_timestamp() - interval '3 hours',
-      clock_timestamp() - interval '3 hours' + interval '24 hours',
+      frozen.requested_at,
+      frozen.requested_at + interval '24 hours',
       '${ids.cycle}', 47
-    );
+    from frozen;
     insert into public.naver_shopping_account_priority_members(
       request_id, position, tracker_id, state, claimed_at, claimed_cycle_id,
       claimed_cycle_number, claimed_run_id, claimed_worker_id,

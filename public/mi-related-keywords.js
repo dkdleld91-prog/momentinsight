@@ -1,7 +1,7 @@
 // 연관어 탐색 전용 상태. 기존 키워드 분석·순위 수집 상태는 읽거나 변경하지 않는다.
 (function () {
   "use strict";
-  var MAX_ROWS = 30;
+  var MAX_ROWS = 50;
   var STORED_CATEGORY_SOURCE = "stored_rank_snapshot_categories";
   var STORED_CATEGORY_BASIS = "stored_top5";
   var STORED_CATEGORY_SAMPLE_SIZE = 5;
@@ -164,6 +164,22 @@
     });
     return "\ufeff" + [head].concat(lines).map(function (line) { return line.map(csvCell).join(","); }).join("\r\n");
   }
+  function workbookData(rows, meta) {
+    meta = meta || {};
+    function metric(value, label) {
+      var shown = text(label);
+      var exact = number(value);
+      if (shown && (!/^\d+(?:,\d{3})*(?:\.\d+)?$/.test(shown) || Number(shown.replace(/,/g, "")) !== exact)) return shown;
+      return exact === null ? shown || "확인 필요" : exact;
+    }
+    return {
+      keyword: text(meta.keyword), queriedAt: text(meta.queriedAt), exportedAt: text(meta.exportedAt),
+      competition: text(meta.competition), sortLabel: text(meta.sortLabel),
+      mainRows: rows.map(function (row, index) {
+        return [index + 1, row.keyword, metric(row.volume, row.volumeLabel), metric(row.pcVolume, row.pcVolumeLabel), metric(row.mobileVolume, row.mobileVolumeLabel), row.competition || "확인 필요", metric(row.clicks), number(row.ctr) === null ? "확인 필요" : number(row.ctr) / 100];
+      })
+    };
+  }
   function mount(host, options) {
     if (!host || !options || typeof options.fetch !== "function" || typeof options.sessionKey !== "function") return null;
     var doc = host.ownerDocument;
@@ -184,6 +200,7 @@
     var activeRequest = null;
     var copyRequestId = 0;
     var sortDirection = defaultSortDirection(sort.value);
+    var queryMeta = null;
     function element(tag, value, className) {
       var node = doc.createElement(tag);
       if (value !== undefined) node.textContent = value;
@@ -293,7 +310,7 @@
         row.appendChild(actionCell);
         body.appendChild(row);
       });
-      if (count) count.textContent = "전체 " + rows.length + "개 · 표시 " + list.length + "개 · 최대 30개";
+      if (count) count.textContent = "전체 " + rows.length + "개 · 표시 " + list.length + "개 · 최대 " + MAX_ROWS + "개";
       exportButton.disabled = !list.length;
     }
     function reset(message) {
@@ -303,6 +320,7 @@
       copyRequestId += 1;
       if (typeof options.onReset === "function") options.onReset();
       rows = [];
+      queryMeta = null;
       input.value = "";
       button.disabled = false;
       if (title) title.textContent = "연관 키워드";
@@ -334,6 +352,7 @@
         }, 18000);
       });
       rows = [];
+      queryMeta = null;
       refreshFilters(true);
       render("연관 키워드를 조회하고 있습니다.");
       button.disabled = true;
@@ -350,12 +369,14 @@
         if (!current()) { syncSession(); return; }
         if (!response.ok || !payload || payload.ok !== true || key(payload.keyword) !== key(keyword) || !Array.isArray(payload.related)) throw new Error("related_unavailable");
         rows = normalizeRows(payload.related, keyword);
+        queryMeta = { keyword: text(payload.keyword), queriedAt: text(payload.checkedAt) };
         refreshFilters(true);
         render(rows.length ? undefined : "제공된 연관 키워드가 없습니다.");
         announce(rows.length ? rows.length + "개 조회 · 키워드별 복사 또는 상세 분석을 선택하세요." : "이 키워드에 제공된 연관어가 없습니다. 다른 키워드로 조회해주세요.");
       } catch (error) {
         if (!current()) { syncSession(); return; }
         rows = [];
+        queryMeta = null;
         refreshFilters(true);
         render("조회 결과를 불러오지 못했습니다. 다시 조회해주세요.");
         announce(error && (error.name === "AbortError" || error.message === "related_timeout") ? "조회 시간이 초과되었습니다. 잠시 후 다시 조회해주세요." : "연관 키워드를 불러오지 못했습니다. 잠시 후 다시 조회해주세요.", true);
@@ -409,19 +430,39 @@
         return false;
       }
     }
-    function exportCsv() {
-      if (!syncSession()) return;
+    function exportXlsx() {
+      if (!syncSession()) return false;
       var list = visibleRows();
-      if (!list.length) return;
-      var blob = new Blob([csvText(list)], { type: "text/csv;charset=utf-8;" });
-      var url = URL.createObjectURL(blob);
-      var link = element("a");
-      link.href = url;
-      link.download = "연관키워드-" + new Date().toISOString().slice(0, 10) + ".csv";
-      doc.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      if (!list.length || !queryMeta) return false;
+      var url;
+      var link;
+      try {
+        var writer = window.MomentRelatedKeywordXlsx;
+        if (!writer || typeof writer.create !== "function") throw new Error("xlsx_unavailable");
+        var at = new Date();
+        var data = workbookData(list, {
+          keyword: queryMeta.keyword, queriedAt: queryMeta.queriedAt, exportedAt: at.toISOString(), competition: competition.value,
+          sortLabel: SORT_FIELDS[sort.value].label + " " + (sortDirection === "asc" ? "오름차순" : "내림차순")
+        });
+        var bytes = writer.create(data);
+        if (!bytes || bytes.byteLength < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) throw new Error("xlsx_invalid");
+        var blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        url = URL.createObjectURL(blob);
+        link = element("a");
+        link.href = url;
+        var filenameKeyword = queryMeta.keyword.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 60);
+        link.download = "모먼트인사이트_연관키워드_" + filenameKeyword + "_" + new Date(at.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) + ".xlsx";
+        doc.body.appendChild(link);
+        link.click();
+        announce("현재 표시된 " + list.length + "개 키워드의 엑셀 다운로드를 요청했습니다.");
+        return true;
+      } catch (error) {
+        announce("엑셀 파일을 만들지 못했습니다. 잠시 후 다시 시도해주세요.", true);
+        return false;
+      } finally {
+        if (link) link.remove();
+        if (url) window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      }
     }
     form.addEventListener("submit", submit);
     competition.addEventListener("change", filter);
@@ -442,9 +483,9 @@
       if (control.hasAttribute("data-related-query-copy")) copyKeyword(control.value);
       else analyzeKeyword(control.value);
     });
-    exportButton.addEventListener("click", exportCsv);
+    exportButton.addEventListener("click", exportXlsx);
     reset();
-    return { search: search, syncSession: syncSession, reset: reset, copyKeyword: copyKeyword, analyzeKeyword: analyzeKeyword, setSort: setSort };
+    return { search: search, syncSession: syncSession, reset: reset, copyKeyword: copyKeyword, analyzeKeyword: analyzeKeyword, setSort: setSort, exportXlsx: exportXlsx };
   }
   function navigateKeyword(root, keyword, category) {
     var admin = root.id === "mi-admin";
@@ -565,7 +606,7 @@
       }
     });
   }
-  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, sortRows: sortRows, csvText: csvText, createVerifiedFetch: createVerifiedFetch, navigateKeyword: navigateKeyword };
+  window.MomentRelatedKeywords = { mount: mount, normalizeRows: normalizeRows, filterRows: filterRows, sortRows: sortRows, csvText: csvText, workbookData: workbookData, createVerifiedFetch: createVerifiedFetch, navigateKeyword: navigateKeyword };
   if (window.document) {
     if (window.document.readyState === "loading") window.document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
     else bootstrap();

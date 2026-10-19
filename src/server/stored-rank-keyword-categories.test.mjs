@@ -87,6 +87,20 @@ test("stored keyword matching trims and NFC-normalizes only; case and inner spac
   assert.equal(storedKeywordKey("\u1100\u1161"), "가");
 });
 
+test("fifty exact keywords share a single bounded saved-data GET and never invoke a collector", async () => {
+  const data = { trackers: [], terminals: [], events: [] };
+  const h = harness({ data });
+  const keywords = Array.from({ length: 51 }, (_, index) => `저장키워드${index}`);
+  const rows = await h.lookup(keywords, { request: request() });
+  assert.deepEqual(rows.map((row) => row.keyword), keywords.slice(0, 50));
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].url.pathname, "/rest/v1/naver_rank_trackers");
+  assert.equal(h.calls[0].url.searchParams.get("limit"), "61");
+  assert.ok(h.calls[0].url.searchParams.get("keyword").includes('"저장키워드49"'));
+  assert.ok(!h.calls[0].url.searchParams.get("keyword").includes('"저장키워드50"'));
+  assert.ok(rows.every((row) => row.category.reason === "no_stored_evidence"));
+});
+
 test("real group-null-agency shape verifies one saved top-five sample with three read-only GETs", async () => {
   const { category, calls } = await lookupOne(fixture());
   assert.equal(category.status, "single");

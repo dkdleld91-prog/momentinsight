@@ -116,7 +116,7 @@ export function createStoredRankCategoryLookup({ env = process.env, fetchImpl = 
   const cache = new Map();
   const pending = new Map();
   return async function lookupStoredCategories(keywords, { request, deadline = now() + 4_000 } = {}) {
-    const values = [...new Set((Array.isArray(keywords) ? keywords : []).map(storedKeywordKey).filter((v) => v && v.length <= 60 && !/[\u0000-\u001f\u007f]/u.test(v)))].slice(0, 30);
+    const values = [...new Set((Array.isArray(keywords) ? keywords : []).map(storedKeywordKey).filter((v) => v && v.length <= 60 && !/[\u0000-\u001f\u007f]/u.test(v)))].slice(0, 50);
     const fallback = (reason) => values.map((keyword) => ({ keyword, category: unknown(reason, now()) }));
     const scope = storedCategoryScope(request, env);
     if (!scope) return fallback("scope_unavailable");

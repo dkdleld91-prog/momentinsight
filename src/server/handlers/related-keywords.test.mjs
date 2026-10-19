@@ -11,13 +11,43 @@ const item = (keyword, extra = {}) => ({ relKeyword: keyword, monthlyPcQcCnt: 10
 const response = (payload, status = 200) => new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
 const request = (keyword = "찜질기", options = {}) => new Request(`https://app.example/api/client/keyword-research?mode=related&keyword=${encodeURIComponent(keyword)}`, { headers: { "x-mi-session-role": "owner" }, ...options });
 
-test("related rows exclude normalized seed, dedupe, cap30 and use their own SearchAd values", () => {
-  const rows = relatedRowsFromSearchAd({ keywordList: [item("찜 질기"), item("허리찜질기"), item("허리 찜질기"), ...Array.from({ length: 40 }, (_, i) => item(`연관${i}`, { monthlyPcQcCnt: i }))] }, "찜질기");
-  assert.equal(rows.length, 30);
+test("related rows exclude normalized seed, dedupe, cap50 and use their own SearchAd values", () => {
+  const rows = relatedRowsFromSearchAd({ keywordList: [item("찜 질기"), item("허리찜질기"), item("허리 찜질기"), ...Array.from({ length: 60 }, (_, i) => item(`연관${i}`, { monthlyPcQcCnt: i }))] }, "찜질기");
+  assert.equal(rows.length, 50);
   assert.equal(rows[0].keyword, "허리찜질기");
   assert.equal(rows[0].volume, 300);
   assert.equal(rows[1].volume, 200);
   assert.equal(rows[0].ctr, 1.5);
+});
+
+test("a short official response is never padded to fifty", () => {
+  const keywords = Array.from({ length: 14 }, (_, index) => `실제연관${index}`);
+  const rows = relatedRowsFromSearchAd({ keywordList: [item("기준어"), ...keywords.map((keyword) => item(keyword))] }, "기준어");
+  assert.deepEqual(rows.map((row) => row.keyword), keywords);
+});
+
+test("fifty related rows use one existing SearchAd request and one bounded category batch", async () => {
+  let searchCalls = 0;
+  let categoryCalls = 0;
+  const keywords = Array.from({ length: 50 }, (_, index) => `연관${index}`);
+  const handler = createRelatedKeywordsHandler({ env: env(), now: () => NOW,
+    fetchImpl: async (url, options) => {
+      searchCalls += 1;
+      assert.equal(new URL(url).origin, "https://api.searchad.naver.com");
+      assert.equal(options.method, "GET");
+      return response({ keywordList: [item("기준어"), ...keywords.map((keyword) => item(keyword))] });
+    },
+    lookupCategories: async (values) => {
+      categoryCalls += 1;
+      assert.deepEqual(values, keywords);
+      return values.map((keyword) => ({ keyword, category: unconfirmedCategory("no_stored_evidence", NOW) }));
+    },
+  });
+  const payload = await (await handler(request("기준어"))).json();
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.related.map((row) => row.keyword), keywords);
+  assert.equal(searchCalls, 1);
+  assert.equal(categoryCalls, 1);
 });
 
 test("suppressed/missing counts preserve labels and null instead of fabricated numeric5/zero", () => {

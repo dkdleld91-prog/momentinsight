@@ -30,7 +30,7 @@ const moduleSource = read("public/mi-coupang-rank.js");
 const cssSource = read("public/mi-coupang-rank.css");
 
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])/gu;
-const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위</a>';
+const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위 <small>(개발중)</small></a>';
 const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>';
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
 const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v2" />';
@@ -105,9 +105,18 @@ const sectionSource = between(adminSource, SECTION_OPEN, "</section>");
 
 // ── admin.html 구조 ─────────────────────────────────────────────
 
-test("메뉴 링크는 N 플레이스 링크 바로 뒤에 hidden 으로 하나만 있다", () => {
+test("C30 메뉴는 기존 접힌 실험실 안에 hidden·개발중으로 하나만 있고 N30·P30 순서는 그대로다", () => {
   assert.equal(adminSource.split(NAV_LINK).length - 1, 1);
-  assert.ok(adminSource.includes(`${PLACE_LINK}\n          ${NAV_LINK}\n`));
+  assert.equal((adminSource.match(/<a\b[^>]*\bdata-coupang-rank-nav(?:\s|>)/gu) || []).length, 1);
+  const lab = between(adminSource, '<div class="mi-nav-lab-items" id="mi-admin-nav-lab">', "</div>");
+  assert.ok(lab.includes(NAV_LINK));
+  assert.ok(adminSource.includes('data-mi-nav-lab-toggle aria-expanded="false" aria-controls="mi-admin-nav-lab"'));
+  const rankGroup = adminSource.match(/<div class="mi-nav-group">\s*<p class="mi-nav-title">순위 조회·추적<\/p>([\s\S]*?)<\/div>/u)?.[1] || "";
+  assert.deepEqual(rankGroup.match(/<a\b[^>]*>[\s\S]*?<\/a>/gu), [
+    '<a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
+    PLACE_LINK
+  ]);
+  assert.doesNotMatch(rankGroup, /coupang-rank-tracking|data-coupang-rank-nav/u);
   // #mi-admin .mi-nav a 는 display:flex 라 [hidden] 규칙이 따로 있어야 숨겨진다.
   assert.ok(adminSource.includes("#mi-admin .mi-nav a[hidden]"));
 });

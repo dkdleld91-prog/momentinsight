@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import http from "node:http";
+import JSZip from "jszip";
 import { chromium } from "../tools/naver-shopping-rank-collector/node_modules/playwright/index.mjs";
 
 const root = process.cwd();
@@ -24,9 +25,9 @@ for (const page of ["admin", "client"]) {
   const existingId = page === "admin" ? "mi-admin-keyword" : "mi-keyword-tool";
   const existing = `<section class="mi-view" id="${existingId}" data-fixture-existing hidden>${handoff}<form data-fixture-existing-form><input ${keywordInput} value="기존 조회 키워드"><button type="submit">기존 키워드 조회</button></form><p data-fixture-old-result>기존 결과 · 이전 조회 데이터</p></section>`;
   const stub = `<script>window.__fixtureNavigation=0;window.__fixtureInputEvents=0;window.__fixtureSubmits=0;document.querySelector('[data-fixture-nav]').addEventListener('click',function(e){e.preventDefault();window.__fixtureNavigation++;var related=document.querySelector('[data-related-query]');related.hidden=true;related.classList.remove('is-active');var existing=document.querySelector('[data-fixture-existing]');existing.hidden=false;existing.classList.add('is-active');});var oldForm=document.querySelector('[data-fixture-existing-form]');oldForm.addEventListener('submit',function(e){e.preventDefault();window.__fixtureSubmits++;});oldForm.querySelector('input').addEventListener('input',function(){window.__fixtureInputEvents++;});oldForm.querySelector('input').addEventListener('change',function(){window.__fixtureInputEvents++;});</script>`;
-  pages.set(`/${page}`, `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LOCAL FIXTURE QA ONLY</title><link rel="stylesheet" href="/mi-tokens.css"><link rel="stylesheet" href="/mi-related-keywords.css">${styles}<body><p style="padding:12px">로컬 기능 검수 전용 · 아래 결과는 테스트 응답이며 실제 조회가 아닙니다.</p><section id="${id}" class="${cls} is-authed"><a href="#fixture-existing" ${nav} data-fixture-nav>기존 키워드 조회 · 검수용 연결</a>${view}${existing}</section>${stub}<script src="/mi-related-keywords.js" defer></script></body></html>`);
+  pages.set(`/${page}`, `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LOCAL FIXTURE QA ONLY</title><link rel="stylesheet" href="/mi-tokens.css"><link rel="stylesheet" href="/mi-related-keywords.css">${styles}<body><p style="padding:12px">로컬 기능 검수 전용 · 아래 결과는 테스트 응답이며 실제 조회가 아닙니다.</p><section id="${id}" class="${cls} is-authed"><a href="#fixture-existing" ${nav} data-fixture-nav>기존 키워드 조회 · 검수용 연결</a>${view}${existing}</section>${stub}<script src="/mi-related-keywords-xlsx.js" defer></script><script src="/mi-related-keywords.js" defer></script></body></html>`);
 }
-for (const asset of ["mi-tokens.css", "mi-related-keywords.css", "mi-related-keywords.js"]) assets.set(`/${asset}`, await fs.readFile(`${root}/public/${asset}`));
+for (const asset of ["mi-tokens.css", "mi-related-keywords.css", "mi-related-keywords-xlsx.js", "mi-related-keywords.js"]) assets.set(`/${asset}`, await fs.readFile(`${root}/public/${asset}`));
 const server = http.createServer((request, response) => {
   const path = new URL(request.url, "http://127.0.0.1").pathname;
   response.setHeader("cache-control", "no-store");
@@ -58,20 +59,26 @@ const rows = [
   { keyword: "찜질패드", volume: 200, pcVolume: 50, mobileVolume: 150, clicks: 0, ctr: 0, competition: "중간", category: category("multiple", [one, other]) },
   { keyword: "전기찜질팩", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, mobileVolumeLabel: "< 10", competition: "낮음", category: category("needs_confirmation", []) },
 ];
+const fiftyOneRows = Array.from({ length: 51 }, (_, index) => ({ keyword: "연관어" + String(index).padStart(2, "0"), volume: 1000 + index, pcVolume: index, mobileVolume: 1000, clicks: index, ctr: index / 100, competition: index % 2 ? "높음" : "중간", category: category("single", [one]) }));
 let browser;
 let checks = 0;
+let checkedWorkbooks = 0;
 try {
   browser = await chromium.launch({ headless: true });
   for (const surface of ["admin", "client"]) {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, hasTouch: true });
     await page.addInitScript(() => {
       window.__fixtureClipboard = { writes: [], denied: false };
+      window.__fixtureExportTypes = [];
+      const createObjectURL = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (blob) => { window.__fixtureExportTypes.push(blob.type); return createObjectURL(blob); };
       Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (value) => {
         window.__fixtureClipboard.writes.push(value);
         if (window.__fixtureClipboard.denied) throw new Error("fixture clipboard permission denied");
       } } });
     });
     const errors = [];
+    let workbookDownloads = 0;
     page.on("pageerror", (error) => errors.push(error.message));
     let categoryRequests = 0, apiRequests = 0;
     await page.route("**/*", (route) => {
@@ -94,7 +101,7 @@ try {
       categoryRequests += 1;
       const keyword = url.searchParams.get("keyword");
       if (keyword === "오류검수") await route.fulfill({ headers, status: 503, json: { ok: false, related: [] } });
-      else await route.fulfill({ headers, json: { ok: true, keyword, related: rows } });
+      else await route.fulfill({ headers, json: { ok: true, keyword, related: keyword === "50개검수" ? fiftyOneRows : rows, checkedAt: storedCheckedAt } });
     });
     await page.goto(`${origin}/${surface}`, { waitUntil: "load" });
     const input = page.locator("[data-related-query-input]");
@@ -105,6 +112,7 @@ try {
     assert.deepEqual((await page.locator(".mi-rq-table thead th").allInnerTexts()).map((value) => value.replace(/[↕↑↓]/gu, "").trim()), ["키워드", "통합 월 검색량", "PC", "모바일", "광고 경쟁도", "광고 평균 클릭", "광고 클릭률", "활용"]);
     assert.equal(await page.locator("[data-related-query-sort-key]").count(), 6);
     assert.equal(await page.locator(".mi-rq-result-head [data-related-query-export]").count(), 1);
+    assert.equal(await page.locator("[data-related-query-export]").innerText(), "엑셀 다운로드");
     assert.equal(await page.locator(".mi-rq-controls [data-related-query-export]").count(), 0);
     assert.equal(await page.locator(".mi-rq-head h1").evaluate((node) => getComputedStyle(node).color), "rgb(255, 255, 255)", `${surface}: scoped navy hero is not overridden by the existing inline app`);
     for (const keyword of ["허리찜질기", "전기찜질팩"]) {
@@ -137,13 +145,58 @@ try {
     }));
     assert.ok(contrastChecks.every((check) => check.ratio >= 4.5), `${surface}: small header/help text has AA contrast ${JSON.stringify(contrastChecks)}`);
     await page.keyboard.press("Enter");
-    async function exportedCsv() {
+    async function exportedWorkbook(expectedKeyword = "온열찜질기") {
       const downloaded = page.waitForEvent("download");
       await page.locator("[data-related-query-export]").click();
-      const stream = await (await downloaded).createReadStream();
+      const download = await downloaded;
+      assert.match(download.suggestedFilename(), /\.xlsx$/u);
+      assert.doesNotMatch(download.suggestedFilename(), /\.csv/iu);
+      assert.equal((await page.evaluate(() => window.__fixtureExportTypes)).at(-1), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      const stream = await download.createReadStream();
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
-      return Buffer.concat(chunks).toString("utf8");
+      const bytes = Buffer.concat(chunks);
+      assert.deepEqual([...bytes.subarray(0, 4)], [0x50, 0x4b, 3, 4], "download is a real ZIP workbook, not CSV renamed to XLSX");
+      const zip = await JSZip.loadAsync(bytes, { checkCRC32: true });
+      for (const file of ["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml", "xl/worksheets/sheet1.xml"]) assert.ok(zip.file(file), `required OOXML part ${file}`);
+      assert.equal(zip.file("xl/worksheets/sheet2.xml"), null, "the downloaded workbook contains no category or hidden second worksheet");
+      for (const file of ["[Content_Types].xml", "xl/_rels/workbook.xml.rels"]) assert.doesNotMatch(await zip.file(file).async("string"), /sheet2\.xml/u);
+      const payload = { workbook: await zip.file("xl/workbook.xml").async("string"), styles: await zip.file("xl/styles.xml").async("string"), main: await zip.file("xl/worksheets/sheet1.xml").async("string") };
+      const parsed = await page.evaluate((xml) => {
+        const parser = new DOMParser();
+        const parse = (value) => { const result = parser.parseFromString(value, "application/xml"); if (result.querySelector("parsererror")) throw new Error("invalid generated XLSX XML"); return result; };
+        const book = parse(xml.workbook), styles = parse(xml.styles);
+        const formats = Object.fromEntries([...styles.getElementsByTagName("numFmt")].map((node) => [node.getAttribute("numFmtId"), node.getAttribute("formatCode")]));
+        const numberFormats = [...styles.getElementsByTagName("cellXfs")[0].children].map((node) => formats[node.getAttribute("numFmtId")] || node.getAttribute("numFmtId"));
+        function sheet(value) {
+          const document = parse(value);
+          const cells = Object.fromEntries([...document.getElementsByTagName("c")].map((node) => {
+            const type = node.getAttribute("t");
+            const numeric = node.getElementsByTagName("v")[0]?.textContent;
+            const value = type === "inlineStr" ? [...node.getElementsByTagName("t")].map((part) => part.textContent).join("") : numeric !== undefined ? Number(numeric) : "";
+            return [node.getAttribute("r"), { value, type, format: numberFormats[Number(node.getAttribute("s") || 0)] }];
+          }));
+          const pane = document.getElementsByTagName("pane")[0];
+          return { cells, rows: [...document.getElementsByTagName("row")].map((node) => Number(node.getAttribute("r"))), freeze: pane ? { x: pane.getAttribute("xSplit"), y: pane.getAttribute("ySplit"), topLeft: pane.getAttribute("topLeftCell") } : null, filter: document.getElementsByTagName("autoFilter")[0]?.getAttribute("ref"), dimension: document.getElementsByTagName("dimension")[0]?.getAttribute("ref"), merges: [...document.getElementsByTagName("mergeCell")].map((node) => node.getAttribute("ref")), text: [...document.getElementsByTagName("t")].map((node) => node.textContent).join(" ") };
+        }
+        return { names: [...book.getElementsByTagName("sheet")].map((node) => node.getAttribute("name")), main: sheet(xml.main) };
+      }, payload);
+      assert.deepEqual(parsed.names, ["연관 키워드"]);
+      assert.deepEqual(parsed.main.freeze, { x: "2", y: "6", topLeft: "C7" });
+      assert.equal(parsed.main.cells.B6.value, "키워드");
+      parsed.mainRows = parsed.main.rows.filter((number) => number >= 7).map((number) => "ABCDEFGH".split("").map((column) => parsed.main.cells[column + number]?.value ?? ""));
+      assert.equal(parsed.main.filter, `A6:H${6 + parsed.mainRows.length}`);
+      assert.equal(parsed.main.dimension, `A2:H${6 + parsed.mainRows.length}`);
+      assert.ok(parsed.mainRows.length > 0 && parsed.mainRows.length <= 50);
+      assert.deepEqual(parsed.mainRows.map((row) => row[0]), parsed.mainRows.map((_, index) => index + 1));
+      assert.ok(parsed.main.text.includes("기준어: " + expectedKeyword), "metadata contains the confirmed server query, not an arbitrary input");
+      checkedWorkbooks += 1;
+      workbookDownloads += 1;
+      if (process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR) {
+        await fs.mkdir(process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR, { recursive: true });
+        await fs.writeFile(`${process.env.MI_RELATED_SMOKE_SCREENSHOT_DIR}/${surface}-export-${workbookDownloads}.xlsx`, bytes);
+      }
+      return parsed;
     }
     const sortingApiBaseline = apiRequests;
     const visibleKeywords = () => page.locator("[data-related-query-body] tr td:first-child").allInnerTexts();
@@ -177,33 +230,42 @@ try {
       await page.locator(`[data-related-query-sort-key="${field}"]`).click();
       await sortState(field, "asc", ascending);
     }
-    const sortedCsv = await exportedCsv();
-    const csvKeywords = sortedCsv.replace(/^\ufeff/u, "").split("\r\n").slice(1).map((line) => /^"([^"]*)"/u.exec(line)?.[1]);
-    assert.deepEqual(csvKeywords, ascending, "CSV row order exactly matches the current ascending result table");
+    const sortedWorkbook = await exportedWorkbook();
+    assert.deepEqual(sortedWorkbook.mainRows.map((row) => row[1]), ascending, "workbook row order exactly matches the current ascending result table");
     await page.locator("[data-related-query-sort]").selectOption("clicks");
     await sortState("clicks", "desc", descending);
     await page.locator("[data-related-query-sort]").selectOption("name");
     await sortState("name", "asc", ["전기찜질팩", "찜질패드", "허리찜질기"]);
     await page.locator("[data-related-query-sort]").selectOption("volume");
     await sortState("volume", "desc", descending);
-    const completeCsv = await exportedCsv();
-    assert.match(completeCsv, /"분류 표본 수","분류 확인 수","카테고리 확인 시각"/u);
-    assert.match(completeCsv, /"5","5","2026-10-19T01:21:24\.483Z"/u);
-    assert.match(completeCsv, /"5","2","2026-10-19T01:21:24\.483Z"/u);
-    assert.match(completeCsv, /냉온\/찜질용품 > 찜질기 \| 침구류 > 전기매트/u);
-    assert.match(completeCsv, /일부 분류 확인 필요/u);
-    assert.match(completeCsv, /기존 순위 수집의 저장 상위 5개 상품 표본 기준/u);
-    assert.match(completeCsv, /저장된 순위 표본이 없어 확인 필요/u);
+    const completeWorkbook = await exportedWorkbook();
+    assert.deepEqual(completeWorkbook.mainRows[0].slice(0, 7), [1, "허리찜질기", 300, 100, 200, "보통", 4]);
+    assert.ok(Math.abs(completeWorkbook.mainRows[0][7] - .012) < 1e-12);
+    assert.equal(completeWorkbook.main.cells.H7.format, "0.00%", "CTR cells are numeric Excel percentages");
+    assert.equal(completeWorkbook.main.cells.C7.format, "#,##0");
+    assert.equal(completeWorkbook.main.cells.G7.format, "#,##0.0");
+    assert.deepEqual(completeWorkbook.mainRows[1].slice(6), [0, 0], "actual zero clicks and zero CTR remain numeric zero");
+    assert.deepEqual(completeWorkbook.mainRows[2].slice(2, 5), ["< 20", "< 10", "< 10"]);
+    assert.deepEqual(completeWorkbook.mainRows[2].slice(6), ["확인 필요", "확인 필요"]);
+    assert.doesNotMatch(completeWorkbook.main.text, /카테고리 근거|저장 상위 5개 상품 표본/u, "the single-sheet download contains only the current result metrics");
     assert.equal(await page.locator('[data-related-query-competition] option[value="중간"]').innerText(), "중간");
     await page.locator("[data-related-query-competition]").selectOption("중간");
     assert.equal(await page.locator("[data-related-query-body] tr").count(), 1);
     assert.match(await page.locator("[data-related-query-body]").innerText(), /찜질패드/u);
     await page.locator("[data-related-query-competition]").selectOption("낮음");
     assert.match(await page.locator("[data-related-query-body]").innerText(), /전기찜질팩/u);
-    const csv = await exportedCsv();
-    assert.match(csv, /전기찜질팩/u);
-    assert.match(csv, /확인 필요/u);
-    assert.doesNotMatch(csv, /허리찜질기/u);
+    const filteredWorkbook = await exportedWorkbook();
+    assert.deepEqual(filteredWorkbook.mainRows.map((row) => row[1]), ["전기찜질팩"]);
+    await page.evaluate(() => {
+      window.__fixtureOriginalWriter = window.MomentRelatedKeywordXlsx;
+      window.MomentRelatedKeywordXlsx = { create: () => { throw new Error("fixture workbook generation failure"); } };
+    });
+    const fallbackDownload = page.waitForEvent("download", { timeout: 250 }).then(() => true, () => false);
+    await page.locator("[data-related-query-export]").click();
+    await page.locator("[data-related-query-status].is-error").waitFor();
+    assert.match(await page.locator("[data-related-query-status]").innerText(), /엑셀 파일을 만들지 못했습니다/u);
+    assert.equal(await fallbackDownload, false, "writer failure never downloads a renamed CSV fallback");
+    await page.evaluate(() => { window.MomentRelatedKeywordXlsx = window.__fixtureOriginalWriter; delete window.__fixtureOriginalWriter; });
     checks += 1;
     await page.locator("[data-related-query-competition]").selectOption("");
     const idleApiRequests = apiRequests;
@@ -259,9 +321,43 @@ try {
     assert.equal(categoryRequests, 2, "one explicit query sends one new category search, no retry");
     assert.deepEqual(errors, []);
     checks += 1;
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    await input.fill("50개검수");
+    await page.locator("[data-related-query-run]").click();
+    await page.locator("[data-related-query-body] tr").filter({ hasText: "연관어49" }).waitFor();
+    assert.equal(await page.locator("[data-related-query-body] tr").count(), 50, "a supplied 51-row response is capped at fifty real records");
+    assert.match(await page.locator("[data-related-query-count]").innerText(), /전체 50개 · 표시 50개 · 최대 50개/u);
+    const fiftyActual = fiftyOneRows.slice(0, 50);
+    assert.deepEqual(await visibleKeywords(), fiftyActual.slice().reverse().map((row) => row.keyword));
+    assert.equal(new Set(await visibleKeywords()).size, 50, "all fifty displayed records are unique and supplied by the response");
+    const fiftyApiBaseline = apiRequests;
+    await page.locator('[data-related-query-sort-key="volume"]').click();
+    assert.deepEqual(await visibleKeywords(), fiftyActual.map((row) => row.keyword));
+    const fiftyWorkbook = await exportedWorkbook("50개검수");
+    assert.equal(fiftyWorkbook.mainRows.length, 50);
+    assert.equal(fiftyWorkbook.main.dimension, "A2:H56");
+    assert.deepEqual(fiftyWorkbook.mainRows.map((row) => row[1]), await visibleKeywords(), "all fifty exported rows match the current on-screen ascending order");
+    for (const [index, actual] of fiftyWorkbook.mainRows.entries()) {
+      assert.deepEqual(actual.slice(0, 7), [index + 1, fiftyActual[index].keyword, 1000 + index, index, 1000, fiftyActual[index].competition, index]);
+      assert.ok(Math.abs(actual[7] - index / 10000) < 1e-12, "all fifty raw CTR values remain numeric percentage fractions");
+      assert.equal(actual[2], actual[3] + actual[4], "PC plus mobile retains the exact supplied combined count");
+    }
+    await page.locator("[data-related-query-competition]").selectOption("중간");
+    await page.locator('[data-related-query-sort-key="volume"]').click();
+    const filteredFifty = fiftyActual.filter((row) => row.competition === "중간").reverse();
+    assert.match(await page.locator("[data-related-query-count]").innerText(), /전체 50개 · 표시 25개 · 최대 50개/u);
+    assert.deepEqual(await visibleKeywords(), filteredFifty.map((row) => row.keyword));
+    const filteredFiftyWorkbook = await exportedWorkbook("50개검수");
+    assert.equal(filteredFiftyWorkbook.mainRows.length, 25, "an active filter exports its actual visible count, not padded fifty records");
+    assert.deepEqual(filteredFiftyWorkbook.mainRows.map((row) => row[1]), await visibleKeywords());
+    assert.deepEqual(filteredFiftyWorkbook.mainRows.map((row) => row[2]), filteredFifty.map((row) => row.volume));
+    assert.equal(apiRequests, fiftyApiBaseline, "fifty-row sorting, filtering and exports are fully local");
+    assert.equal(categoryRequests, 3, "one explicit fifty-row query has no automatic retry");
+    assert.deepEqual(errors, []);
+    checks += 1;
     await page.close();
   }
-  console.log(JSON.stringify({ ok: true, checks, surfaces: ["admin", "client"], mockOnly: true, productionRequests: 0, rankRequests: 0 }));
+  console.log(JSON.stringify({ ok: true, checks, checkedWorkbooks, workbookSheets: 1, fiftyRowSurfaces: 2, surfaces: ["admin", "client"], mockOnly: true, productionRequests: 0, rankRequests: 0 }));
 } finally {
   await browser?.close();
   await new Promise((resolve) => server.close(resolve));

@@ -6,7 +6,7 @@ import {
 import { createStoredRankCategoryLookup, storedKeywordKey } from "../stored-rank-keyword-categories.mjs";
 
 const SEARCHAD_URL = "https://api.searchad.naver.com/keywordstool";
-const MAX_KEYWORDS = 30;
+const MAX_KEYWORDS = 50;
 const MAX_CACHE_SIZE = 256;
 const TIMEOUT_MS = 4_000;
 const TOTAL_TIMEOUT_MS = 16_000;

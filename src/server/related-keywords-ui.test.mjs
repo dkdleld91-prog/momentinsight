@@ -6,9 +6,9 @@ import test from "node:test";
 import vm from "node:vm";
 
 const source = fs.readFileSync("public/mi-related-keywords.js", "utf8");
-function api(overrides = {}) {
+function api(overrides = {}, globals = {}) {
   const window = { setTimeout, clearTimeout, AbortController, ...overrides };
-  vm.runInNewContext(source, { window, Blob, URL, Date });
+  vm.runInNewContext(source, { window, Blob, URL, Date, Uint8Array, ArrayBuffer, ...globals });
   return window.MomentRelatedKeywords;
 }
 const categories = {
@@ -31,7 +31,7 @@ function rows(seed = "온열찜질기") {
   ], seed);
 }
 
-test("related rows use only provided categories, deduplicate, exclude seed, and cap at 30 without padding", () => {
+test("related rows use only provided categories, deduplicate, exclude seed, and cap at 50 without padding", () => {
   const client = api();
   const list = rows();
   assert.equal(list.length, 3);
@@ -46,7 +46,12 @@ test("related rows use only provided categories, deduplicate, exclude seed, and 
   assert.equal(list[2].pcVolumeLabel, "<10");
   assert.equal(client.normalizeRows([], "seed").length, 0);
   assert.equal(client.normalizeRows([{ keyword: "허리찜질기" }, { keyword: "허리 찜질기" }], "seed").length, 1);
-  assert.equal(client.normalizeRows(Array.from({ length: 45 }, (_, index) => ({ keyword: "연관어" + index })), "seed").length, 30);
+  const supplied = Array.from({ length: 51 }, (_, index) => ({ keyword: "연관어" + index, volume: index, pcVolume: 0, mobileVolume: index }));
+  const capped = client.normalizeRows(supplied, "seed");
+  assert.equal(capped.length, 50);
+  assert.deepEqual(Array.from(capped, (row) => row.keyword), supplied.slice(0, 50).map((row) => row.keyword));
+  assert.deepEqual(Array.from(capped, (row) => row.volume), supplied.slice(0, 50).map((row) => row.volume));
+  assert.equal(client.normalizeRows(supplied.slice(0, 14), "seed").length, 14, "a short real response is never padded to the limit");
   const invalid = client.normalizeRows([{ keyword: "invalid", category: { ...categories.single, middle: "틀린 분류" } }], "seed")[0];
   assert.equal(invalid.category.status, "needs_confirmation");
 });
@@ -146,13 +151,16 @@ class Node {
   querySelectorAll(selector) { return descendants(this).filter((node) => node.matches(selector)); }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   focus() { this.focused = true; }
+  click() { this.clicked = true; this.listeners.click?.({ target: this, preventDefault() {} }); }
+  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((node) => node !== this); }
 }
-function fixture(windowOverrides = {}, optionOverrides = {}) {
-  const client = api(windowOverrides);
+function fixture(windowOverrides = {}, optionOverrides = {}, globals = {}) {
+  const client = api(windowOverrides, globals);
   const names = ["form", "input", "run", "body", "status", "count", "title", "competition", "middle", "small", "category-status", "sort", "export"];
   const nodes = Object.fromEntries(names.map((name) => [name, new Node()]));
   nodes.sort.value = "volume";
-  const document = { createElement: (tag) => new Node(tag), body: new Node("body") };
+  const created = [];
+  const document = { createElement: (tag) => { const node = new Node(tag); created.push(node); return node; }, body: new Node("body"), created };
   const headers = Object.fromEntries(["name", "volume", "pc", "mobile", "clicks", "ctr"].map((field) => {
     const header = new Node("th"), button = new Node("button"), arrow = new Node("span");
     header.setAttribute("aria-sort", "none");
@@ -182,7 +190,7 @@ function fixture(windowOverrides = {}, optionOverrides = {}) {
   });
   return { nodes, requests, controller, host, document, headers, copies, analyses, session: (next) => { session = next; } };
 }
-function response(keyword, related) { return { ok: true, json: async () => ({ ok: true, keyword, related }) }; }
+function response(keyword, related, extra = {}) { return { ok: true, json: async () => ({ ok: true, keyword, related, checkedAt: storedCheckedAt, ...extra }) }; }
 function descendants(node, tag) {
   return node.children.flatMap((child) => [...(!tag || child.tagName === tag ? [child] : []), ...descendants(child, tag)]);
 }
@@ -697,4 +705,170 @@ test("header toggles and field selection keep direction, arrows, aria-sort and l
   ui.nodes.competition.listeners.change();
   state("ctr", "asc");
   assert.deepEqual(order(), ["허리찜질기"]);
+});
+
+test("download UI loads the true XLSX helper before its controller and no longer promises a renamed CSV", () => {
+  assert.equal(typeof api().workbookData, "function");
+  for (const page of ["admin", "client"]) {
+    const html = fs.readFileSync("src/pages/" + page + ".html", "utf8");
+    const label = html.match(/<button\b[^>]*data-related-query-export[^>]*>([\s\S]*?)<\/button>/u)?.[1].replace(/<[^>]*>/gu, "").trim();
+    assert.equal(label, "엑셀 다운로드", `${page}: true workbook download label`);
+    assert.equal((html.match(/src="\/mi-related-keywords-xlsx\.js/gu) || []).length, 1);
+    assert.ok(html.indexOf('src="/mi-related-keywords-xlsx.js') < html.indexOf('src="/mi-related-keywords.js'), `${page}: workbook writer is available before the controller`);
+    const section = html.match(/<section\b[^>]*data-related-query(?:\s|>)[\s\S]*?<\/section>/u)?.[0];
+    assert.match(section, /조회 전 · 최대 50개/u);
+    assert.doesNotMatch(section, /카테고리 근거 시트/u);
+    assert.match(section, /현재 표시된 키워드의 검색량·광고 지표만 한 시트/u);
+  }
+});
+
+test("single-sheet workbook data preserves exact zero, suppressed labels, unavailable values and CTR fractions without category payload", () => {
+  const client = api();
+  const list = client.normalizeRows([
+    { keyword: "실제 영", volume: 0, pcVolume: 0, mobileVolume: 0, competition: "중간", clicks: 0, ctr: 0, category: storedCategory },
+    { keyword: "비공개", volume: null, volumeLabel: "< 20", pcVolume: null, pcVolumeLabel: "< 10", mobileVolume: null, mobileVolumeLabel: "< 10", category: categories.unknown },
+    { keyword: "실제 값", volume: 100, pcVolume: 20, mobileVolume: 80, competition: "보통", clicks: 1.2, ctr: 1.23, category: categories.multiple }
+  ], "확정 검색어");
+  const meta = { keyword: "확정 검색어", queriedAt: storedCheckedAt, exportedAt: "2026-10-19T05:00:00.000Z", competition: "", sortLabel: "통합 월 검색량 · 오름차순" };
+  const data = client.workbookData(list, meta);
+  for (const key of Object.keys(meta)) assert.equal(data[key], meta[key], `confirmed export metadata ${key}`);
+  assert.deepEqual(Array.from(data.mainRows[0]), [1, "실제 영", 0, 0, 0, "중간", 0, 0]);
+  assert.deepEqual(Array.from(data.mainRows[1]), [2, "비공개", "< 20", "< 10", "< 10", "확인 필요", "확인 필요", "확인 필요"]);
+  assert.equal(data.mainRows[2][6], 1.2);
+  assert.ok(Math.abs(data.mainRows[2][7] - .0123) < 1e-12, "1.23% is stored as a numeric Excel fraction, not 1.23");
+  assert.equal(Object.hasOwn(data, "categoryRows"), false, "the single-sheet writer receives no category sheet payload");
+  assert.ok(data.mainRows.every((row) => row.length === 8), "only the current eight result columns are exported");
+  assert.equal(list[0].category.status, "single", "category evidence remains available to the existing analysis handoff");
+  assert.equal(list[2].category.status, "multiple");
+  const contradictory = client.workbookData(client.normalizeRows([
+    { keyword: "표시 우선", volume: 999, volumeLabel: "확인 필요", pcVolume: 900, pcVolumeLabel: "12", mobileVolume: 1000, mobileVolumeLabel: "1,000" }
+  ], "seed"), meta);
+  assert.equal(contradictory.mainRows[0][2], "확인 필요", "an unpublished underlying number never replaces the visible unknown label");
+  assert.equal(contradictory.mainRows[0][3], "12", "a contradictory visible label remains literal text, not the hidden numeric value");
+  assert.equal(contradictory.mainRows[0][4], 1000, "a matching formatted numeric label retains its numeric Excel type");
+});
+
+function workbookFixture(writer) {
+  const blobs = [], revoked = [];
+  const ui = fixture({ MomentRelatedKeywordXlsx: { create: writer }, setTimeout: (handler, milliseconds) => milliseconds === 1000 ? (handler(), -1) : setTimeout(handler, milliseconds) }, {}, {
+    URL: { createObjectURL: (blob) => { blobs.push(blob); return "blob:fixture-" + blobs.length; }, revokeObjectURL: (url) => revoked.push(url) }
+  });
+  return { ...ui, blobs, revoked };
+}
+
+test("true XLSX export uses current filtered sorted rows and confirmed response metadata rather than edited input", async () => {
+  const payloads = [];
+  // Writer contract stub only; real ZIP/XML validity is independently checked by browser QA.
+  const bytes = new Uint8Array(22);
+  bytes.set([0x50, 0x4b, 3, 4]);
+  const ui = workbookFixture((data) => { payloads.push(data); return bytes; });
+  const task = ui.controller.search("확정 검색어");
+  ui.requests[0].resolve(response("확정 검색어", [
+    { keyword: "큰 값", volume: 300, pcVolume: 100, mobileVolume: 200, competition: "중간", category: storedCategory },
+    { keyword: "작은 값", volume: 100, pcVolume: 50, mobileVolume: 50, competition: "중간", category: storedCategory },
+    { keyword: "필터 제외", volume: 1, competition: "낮음", category: categories.unknown }
+  ]));
+  await task;
+  ui.nodes.input.value = "아직 실행하지 않은 입력어";
+  ui.nodes.competition.value = "중간";
+  ui.nodes.competition.listeners.change();
+  ui.controller.setSort("volume");
+  assert.equal(await ui.controller.exportXlsx(), true);
+  assert.equal(payloads.length, 1);
+  assert.equal(payloads[0].keyword, "확정 검색어");
+  assert.equal(payloads[0].queriedAt, storedCheckedAt);
+  assert.equal(payloads[0].competition, "중간");
+  assert.match(payloads[0].sortLabel, /오름차순/u);
+  assert.deepEqual(Array.from(payloads[0].mainRows, (row) => row[1]), ["작은 값", "큰 값"]);
+  assert.equal(Object.hasOwn(payloads[0], "categoryRows"), false);
+  assert.equal(ui.blobs.length, 1);
+  assert.equal(ui.blobs[0].type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  assert.deepEqual(new Uint8Array(await ui.blobs[0].arrayBuffer()), bytes);
+  const link = ui.document.created.find((node) => node.tagName === "a");
+  assert.ok(link.clicked);
+  assert.match(link.download, /\.xlsx$/u);
+  assert.doesNotMatch(link.download, /\.csv/iu);
+  assert.equal(ui.revoked.length, 1);
+  assert.equal(ui.requests.length, 1, "export does not send another API request");
+});
+
+test("a 51-row provided response retains exactly 50 actual rows and exports all or only the current filter in local sort order", async () => {
+  const payloads = [];
+  const bytes = new Uint8Array(22);
+  bytes.set([0x50, 0x4b, 3, 4]);
+  const ui = workbookFixture((data) => { payloads.push(data); return bytes; });
+  const supplied = Array.from({ length: 51 }, (_, index) => ({ keyword: "연관어" + String(index).padStart(2, "0"), volume: 1000 + index, pcVolume: index, mobileVolume: 1000, competition: index % 2 ? "높음" : "중간", clicks: index, ctr: index / 100, category: storedCategory }));
+  const task = ui.controller.search("확정 검색어");
+  ui.requests[0].resolve(response("확정 검색어", supplied));
+  await task;
+  assert.match(ui.nodes.count.textContent, /전체 50개 · 표시 50개 · 최대 50개/u);
+  ui.controller.setSort("volume");
+  assert.equal(ui.controller.exportXlsx(), true);
+  assert.equal(payloads.length, 1);
+  assert.equal(payloads[0].mainRows.length, 50);
+  assert.equal(Object.hasOwn(payloads[0], "categoryRows"), false);
+  assert.deepEqual(Array.from(payloads[0].mainRows, (row) => row[1]), supplied.slice(0, 50).map((row) => row.keyword));
+  for (const [index, actual] of payloads[0].mainRows.entries()) {
+    assert.deepEqual(Array.from(actual).slice(0, 7), [index + 1, supplied[index].keyword, 1000 + index, index, 1000, supplied[index].competition, index]);
+    assert.ok(Math.abs(actual[7] - index / 10000) < 1e-12, "all fifty CTR values retain their numeric percentage fractions");
+  }
+  ui.nodes.competition.value = "중간";
+  ui.nodes.competition.listeners.change();
+  assert.match(ui.nodes.count.textContent, /전체 50개 · 표시 25개 · 최대 50개/u);
+  assert.equal(ui.controller.exportXlsx(), true);
+  const expected = supplied.slice(0, 50).filter((row) => row.competition === "중간");
+  assert.deepEqual(Array.from(payloads[1].mainRows, (row) => row[1]), expected.map((row) => row.keyword));
+  assert.deepEqual(Array.from(payloads[1].mainRows, (row) => row[0]), expected.map((_, index) => index + 1));
+  assert.equal(ui.requests.length, 1, "all fifty rows, sorting, filtering and both exports share the one explicit request");
+});
+
+test("failed workbook creation and stale account data never download a CSV fallback or claim success", async () => {
+  const ui = workbookFixture(() => { throw new Error("fixture workbook error"); });
+  const task = ui.controller.search("확정 검색어");
+  ui.requests[0].resolve(response("확정 검색어", rows()));
+  await task;
+  assert.equal(await ui.controller.exportXlsx(), false);
+  assert.equal(ui.blobs.length, 0);
+  assert.equal(ui.document.created.some((node) => node.tagName === "a" && node.clicked), false);
+  assert.match(ui.nodes.status.textContent, /엑셀 파일을 만들지 못했습니다/u);
+  assert.equal(ui.nodes.status.classes.has("is-error"), true);
+  ui.session("session-b");
+  assert.equal(await ui.controller.exportXlsx(), false);
+  assert.equal(ui.blobs.length, 0);
+  assert.equal(ui.requests.length, 1);
+});
+
+test("new in-flight queries and late old responses cannot export stale workbook rows or stale query metadata", async () => {
+  const payloads = [];
+  const bytes = new Uint8Array(22);
+  bytes.set([0x50, 0x4b, 3, 4]);
+  const ui = workbookFixture((data) => { payloads.push(data); return bytes; });
+  const initial = ui.controller.search("이전 검색어");
+  ui.requests[0].resolve(response("이전 검색어", [{ keyword: "이전 연관어", category: storedCategory }]));
+  await initial;
+  const earlier = ui.controller.search("다음 검색어");
+  assert.equal(ui.controller.exportXlsx(), false);
+  assert.equal(payloads.length, 0);
+  const latest = ui.controller.search("최신 검색어");
+  ui.requests[2].resolve(response("최신 검색어", [{ keyword: "최신 연관어", category: storedCategory }], { checkedAt: "2026-10-19T06:00:00.000Z" }));
+  await latest;
+  ui.requests[1].resolve(response("다음 검색어", [{ keyword: "늦은 과거 연관어", category: storedCategory }]));
+  await earlier;
+  assert.equal(ui.controller.exportXlsx(), true);
+  assert.equal(payloads[0].keyword, "최신 검색어");
+  assert.equal(payloads[0].queriedAt, "2026-10-19T06:00:00.000Z");
+  assert.deepEqual(Array.from(payloads[0].mainRows, (row) => row[1]), ["최신 연관어"]);
+  assert.equal(ui.requests.length, 3);
+});
+
+test("non-ZIP output is rejected rather than downloaded with an XLSX filename or CSV fallback", async () => {
+  const ui = workbookFixture(() => new TextEncoder().encode("keyword,volume\r\nrenamed-csv,0\r\n"));
+  const task = ui.controller.search("확정 검색어");
+  ui.requests[0].resolve(response("확정 검색어", rows()));
+  await task;
+  assert.equal(ui.controller.exportXlsx(), false);
+  assert.equal(ui.blobs.length, 0);
+  assert.equal(ui.document.created.some((node) => node.tagName === "a" && node.clicked), false);
+  assert.match(ui.nodes.status.textContent, /엑셀 파일을 만들지 못했습니다/u);
+  assert.equal(ui.requests.length, 1);
 });

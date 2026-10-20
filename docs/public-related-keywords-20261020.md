@@ -41,3 +41,10 @@
 - 첫 실측 6건은 1분 고정 제한 구간 갱신 경계를 걸쳐 모두 허용됐다. 이를 차단 성공이나 결함으로 단정하지 않고 카운터를 읽기 전용 대조했다. 경계 회귀를 보완하고, 같은 캐시 결과의 bounded 재검수에서 2026-10-20T01:24:51.401Z~01:24:52.370Z 1~5회200·6회429/Retry-After60 및 실제 화면 제한 안내·export 비활성을 확인했다. 임의 RPC 수정/재시도/카운터 초기화는 하지 않았다.
 - 독립 P0/P1 blocker0, Git diff-check 통과. 원본 보호9개 파일의 SHA256/모드 보존. 기존 private 세션 게이트·순위 런타임·DB 함수/마이그레이션·vercel.json·admin inline·XLSX writer 변경 없음.
 - Git 밖 상세 증거: .codex-deployments/public-related-20261020/. 운영 승격 증거는 배포 후 기록한다.
+
+## 커밋 후 배포 검사 보완
+
+- 첫 Git 배포 589cf4b는 신규 CSS 보존 검사가 변경되는 HEAD를 이전 파일로 잘못 사용하여 ERROR로 차단됐다. 운영 릴리스는 b5c02f7로 유지됐으며 이 시도를 배포 성공으로 세지 않는다.
+- 커밋된 HEAD에서 실패를 재현한 뒤, 배포 전 Production b5c02f73bd08cfeebc0fe537b3f73b18c88e21da의 CSS·기존 inline·private related view SHA256을 고정 기준으로 사용하도록 테스트만 보완했다. Git 이력 없는 배포 체크아웃에서도 같은 비교를 한다. 런타임·CSS·UI·DB는 추가 변경하지 않았다.
+- 보완 후 대상·전체 release 검사, 독립 검토, 커밋 후 대상 재검사를 거친 다음에만 새 Git 배포를 진행한다. 실패 배포를 그대로 재실행하거나 검사 자체를 건너뛰지 않는다.
+- 보완 후 전체 release 3411/3411(core3248·Place59·Shopping104), auth18/18, 실패·skip0. Git 없는 복사본 대상9/9, 독립 in-memory CSS/inline/private-view 부정 검증3/3(각 변형을 정확히 거절), 독립 P0/P1 blocker0를 확인했다. 첫 ERROR deployment는 dpl_2GVyNCbk6ry8nz3NRtfkdYvfmH4c이며 동일 빌드 재시도는 하지 않았다.

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import vm from "node:vm";
@@ -8,6 +7,15 @@ import vm from "node:vm";
 const source = fs.readFileSync("public/mi-public-related-keywords.js", "utf8");
 const origin = "https://insight.momentlabs.co.kr";
 const pathname = "/api/public/related-keywords";
+// Frozen from the pre-public Production release b5c02f73bd08cfeebc0fe537b3f73b18c88e21da.
+// HEAD changes after commit, and a deployment checkout need not contain its history.
+const privateBaseline = Object.freeze({
+  css: "0a65adfc3365e0cc66f75a1060e3f043c505148294c3f2c6672890aba0defcfb",
+  homeInline: ["99105621d423b52d0eee5e32459f4f11f567839e14452d3cde36d1f18a894f20", "f2fee52f1d35d9d62b113931d72a2062d374fbad946271a76fa0f702a6602039"],
+  clientInline: ["b6f74a7cf4a262b80453d38783bdab2b8531af0ba1fc310ae1234a49823e60bd"],
+  clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
+});
+const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 function load(overrides = {}) {
   const window = { location: { origin }, ...overrides };
   vm.runInNewContext(source, { window, URL, Promise });
@@ -129,10 +137,10 @@ test("public page reuses the same 50-row, eight-column and single-XLSX interface
 
 test("public styling adds only its ID scope and shell, preserving every existing private visual declaration", () => {
   const css = fs.readFileSync("public/mi-related-keywords.css", "utf8");
-  const previous = execFileSync("git", ["show", "HEAD:public/mi-related-keywords.css"], { encoding: "utf8" });
   const boundary = css.indexOf("/* Public related-query shell only;");
   assert.ok(boundary > 0);
-  assert.equal(css.slice(0, boundary).trimEnd().replaceAll(":is(#mi-admin,#mi-clean,#mi-public-related)", ":is(#mi-admin,#mi-clean)"), previous.trimEnd());
+  const restoredPrivateCss = css.slice(0, boundary).trimEnd().replaceAll(":is(#mi-admin,#mi-clean,#mi-public-related)", ":is(#mi-admin,#mi-clean)");
+  assert.equal(sha256(restoredPrivateCss), privateBaseline.css);
   const newRules = css.slice(boundary).split("\n").map((line) => line.trim()).filter((line) => line.includes("{") && !line.startsWith("@") && !line.startsWith("/*"));
   assert.ok(newRules.every((rule) => rule.startsWith("#mi-public-related")));
 });
@@ -141,13 +149,12 @@ test("home and login entry links do not change existing inline applications, CSP
   const inline = (html) => [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu)].filter((match) => !/\bsrc\s*=/iu.test(match[1])).map((match) => createHash("sha256").update(match[2]).digest("hex"));
   for (const page of ["home", "client"]) {
     const current = fs.readFileSync(`src/pages/${page}.html`, "utf8");
-    const previous = execFileSync("git", ["show", `HEAD:src/pages/${page}.html`], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
-    assert.deepEqual(inline(current), inline(previous), `${page}: all pre-existing inline bytes and CSP hashes are unchanged`);
+    assert.deepEqual(inline(current), privateBaseline[page + "Inline"], `${page}: all pre-existing inline bytes and CSP hashes are unchanged`);
     assert.match(current, /href="\/related-keywords\.html"/u);
     if (page === "client") {
       const privateView = (html) => html.match(/<section\b[^>]*data-related-query(?:\s|>)[\s\S]*?<\/section>/u)?.[0];
-      assert.ok(privateView(previous));
-      assert.equal(privateView(current), privateView(previous));
+      assert.ok(privateView(current));
+      assert.equal(sha256(privateView(current)), privateBaseline.clientRelatedView);
       assert.match(current, /로그인 없이 연관 키워드 조회/u);
     }
   }

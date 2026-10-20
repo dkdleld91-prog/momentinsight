@@ -145,13 +145,21 @@ test("public styling adds only its ID scope and shell, preserving every existing
   assert.ok(newRules.every((rule) => rule.startsWith("#mi-public-related")));
 });
 
-test("home and login entry links do not change existing inline applications, CSP hashes or the private related view", () => {
+test("home keeps only login and signup actions while the client public entry and private views remain unchanged", () => {
   const inline = (html) => [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu)].filter((match) => !/\bsrc\s*=/iu.test(match[1])).map((match) => createHash("sha256").update(match[2]).digest("hex"));
   for (const page of ["home", "client"]) {
     const current = fs.readFileSync(`src/pages/${page}.html`, "utf8");
     assert.deepEqual(inline(current), privateBaseline[page + "Inline"], `${page}: all pre-existing inline bytes and CSP hashes are unchanged`);
-    assert.match(current, /href="\/related-keywords\.html"/u);
+    if (page === "home") {
+      const header = current.match(/<header class="mi-topbar">[\s\S]*?<\/header>/u)?.[0];
+      assert.ok(header);
+      assert.doesNotMatch(header, /related-keywords/u, "the homepage header must not expose a related-keyword action");
+      const actions = header.match(/<div class="mi-actions">([\s\S]*?)<\/div>/u)?.[1];
+      assert.ok(actions);
+      assert.deepEqual([...actions.matchAll(/\bhref="([^"]+)"/gu)].map((match) => match[1]), ["/client", "/client?signup=1"]);
+    }
     if (page === "client") {
+      assert.match(current, /href="\/related-keywords\.html"/u);
       const privateView = (html) => html.match(/<section\b[^>]*data-related-query(?:\s|>)[\s\S]*?<\/section>/u)?.[0];
       assert.ok(privateView(current));
       assert.equal(sha256(privateView(current)), privateBaseline.clientRelatedView);

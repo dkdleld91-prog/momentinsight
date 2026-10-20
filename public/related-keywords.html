@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#081f40" />
+  <title>연관 키워드 조회 | 모먼트 인사이트</title>
+  <meta name="description" content="로그인 없이 연관 키워드 최대 50개의 PC·모바일 검색량과 광고 지표를 비교하고 엑셀로 다운로드하세요. 모먼트 인사이트의 공개 키워드 도구입니다." />
+  <link rel="canonical" href="https://insight.momentlabs.co.kr/related-keywords.html" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
+  <link rel="stylesheet" href="/mi-related-keywords.css?v=rq-public-v1-20261020" />
+  <script src="/mi-related-keywords-xlsx.js?v=rq-xlsx-v2-20261019" defer></script>
+  <script src="/mi-related-keywords.js?v=rq-public-v7-20261020" defer></script>
+  <script src="/mi-public-related-keywords.js?v=public-rq-v1-20261020" defer></script>
+</head>
+<body id="mi-public-related">
+  <a class="mi-public-skip" href="#mi-public-related-main">조회 도구로 바로가기</a>
+  <header class="mi-public-topbar">
+    <a class="mi-public-brand" href="/" aria-label="모먼트 인사이트 홈"><span aria-hidden="true">MI</span><strong>Moment Insight</strong></a>
+    <nav aria-label="공개 도구 메뉴"><a href="/">홈</a><a href="/related-keywords.html" aria-current="page">연관 키워드 조회</a><a class="mi-public-login" href="/client">로그인</a></nav>
+  </header>
+  <main class="mi-public-main" id="mi-public-related-main">
+    <section data-related-query aria-label="비로그인 연관 키워드 조회">
+      <header class="mi-rq-head">
+        <div><span class="mi-kicker">모먼트 인사이트 · 공개 도구</span><h1>연관 키워드 조회</h1><p>검색량과 광고 지표를 비교하고, 다음에 활용할 키워드를 찾아보세요.</p></div>
+        <a class="mi-link-button" href="/client">로그인하고 상세 분석 →</a>
+      </header>
+      <article class="mi-rq-search">
+        <form class="mi-rq-form" data-related-query-form>
+          <label>키워드<input class="mi-input" data-related-query-input maxlength="60" placeholder="찾고 싶은 키워드를 입력하세요" autocomplete="off" required /></label>
+          <button class="mi-button" type="submit" data-related-query-run>연관 키워드 조회</button>
+        </form>
+        <p class="mi-rq-status" data-related-query-status role="status" aria-live="polite">키워드를 입력하고 조회해주세요.</p>
+        <p class="mi-public-limit">로그인 없이 이용 · IP별 1분 5회 / 1시간 30회까지 조회할 수 있습니다.</p>
+        <noscript><p>조회와 엑셀 다운로드를 이용하려면 브라우저의 JavaScript를 켜주세요.</p></noscript>
+      </article>
+      <aside class="mi-public-analysis" data-public-related-login hidden aria-live="polite">
+        <div><strong data-public-related-selection></strong><p>키워드 상세 분석은 로그인 후 이용할 수 있습니다. 자동 조회나 순위 등록은 하지 않습니다.</p></div>
+        <a href="/client" data-public-related-cta>로그인하고 계속하기 →</a>
+      </aside>
+      <article class="mi-rq-results">
+        <div class="mi-rq-result-head"><div><span class="mi-rq-eyebrow">KEYWORD LIST</span><h2 data-related-query-title>연관 키워드</h2></div><button class="mi-button is-ghost mi-rq-export" type="button" data-related-query-export disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-3-3 3 3 3-3M4 13v4h12v-4" /></svg>엑셀 다운로드</button></div>
+        <div class="mi-rq-controls">
+          <label>광고 경쟁도<select data-related-query-competition><option value="">전체</option></select></label>
+          <label>정렬<select data-related-query-sort><option value="volume">통합 검색량순</option><option value="pc">PC 검색량순</option><option value="mobile">모바일 검색량순</option><option value="clicks">광고 평균 클릭순</option><option value="ctr">광고 클릭률순</option><option value="name">가나다순</option></select></label>
+          <span class="mi-rq-filter-note">필터·정렬·다운로드는 추가 조회 없이 이용</span>
+        </div>
+        <div class="mi-rq-result-meta"><p class="mi-rq-count" data-related-query-count>조회 전 · 최대 50개</p><span>최근 30일 검색량 · PC + 모바일</span></div>
+        <div class="mi-rq-scroll" tabindex="0" role="region" aria-label="연관 키워드 조회 결과">
+          <table class="mi-rq-table"><thead><tr>
+            <th scope="col" aria-sort="none"><button type="button" data-related-query-sort-key="name" aria-label="키워드, 현재 정렬 안 함, 클릭하면 오름차순 정렬">키워드 <span data-related-query-sort-arrow aria-hidden="true">↕</span></button></th>
+            <th scope="col" aria-sort="descending"><button type="button" data-related-query-sort-key="volume" aria-label="통합 월 검색량, 현재 내림차순, 클릭하면 오름차순 정렬">통합 월 검색량 <span data-related-query-sort-arrow aria-hidden="true">↓</span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-related-query-sort-key="pc" aria-label="PC, 현재 정렬 안 함, 클릭하면 내림차순 정렬">PC <span data-related-query-sort-arrow aria-hidden="true">↕</span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-related-query-sort-key="mobile" aria-label="모바일, 현재 정렬 안 함, 클릭하면 내림차순 정렬">모바일 <span data-related-query-sort-arrow aria-hidden="true">↕</span></button></th>
+            <th scope="col">광고 경쟁도</th>
+            <th scope="col" aria-sort="none"><button type="button" data-related-query-sort-key="clicks" aria-label="광고 평균 클릭, 현재 정렬 안 함, 클릭하면 내림차순 정렬">광고 평균 클릭 <span data-related-query-sort-arrow aria-hidden="true">↕</span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" data-related-query-sort-key="ctr" aria-label="광고 클릭률, 현재 정렬 안 함, 클릭하면 내림차순 정렬">광고 클릭률 <span data-related-query-sort-arrow aria-hidden="true">↕</span></button></th>
+            <th scope="col">활용</th>
+          </tr></thead><tbody data-related-query-body><tr><td colspan="8" class="mi-rq-empty">키워드를 조회하면 제공된 연관어가 표시됩니다.</td></tr></tbody></table>
+        </div>
+        <details class="mi-rq-help"><summary>조회 결과 안내</summary><p>제공된 연관 키워드만 최대 50개 표시하며 개수를 맞추기 위해 새 키워드를 만들지 않습니다. 검색량이 적거나 공개되지 않은 값은 표시된 범위 또는 확인 필요로 유지합니다. 엑셀에는 현재 필터와 정렬이 적용된 키워드의 검색량·광고 지표가 한 시트에 저장됩니다.</p></details>
+      </article>
+    </section>
+    <footer class="mi-public-foot"><span>Moment Insight · 모먼트 인사이트</span><a href="/privacy">개인정보 처리방침</a></footer>
+  </main>
+</body>
+</html>

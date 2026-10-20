@@ -21,6 +21,11 @@ function send(res, status, body, cacheControl) {
 
 export default async function handler(req, res) {
   const resource = resourceOf(req);
+  if (resource === "related-keywords") {
+    const { publicRelatedNodeResponse } = await import("../../src/server/public-related-keyword-adapter.mjs");
+    const { writeWebResponse } = await import("../_response-adapter.mjs");
+    return writeWebResponse(res, await publicRelatedNodeResponse(req));
+  }
   if (!RESOURCE_PATTERN.test(resource) || (resource !== "market-news" && resource !== "news-page")) return send(res, 404, { ok: false, message: "Not found" });
   if ((req.method || "GET") !== "GET") return send(res, 405, { ok: false, message: "Method not allowed" });
   // /news → 서버가 기사 목록을 넣은 HTML을 보낸다(검색 로봇용). 실패해도 빈 목록 페이지를 200으로 돌려준다.

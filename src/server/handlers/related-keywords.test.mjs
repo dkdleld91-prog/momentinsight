@@ -142,6 +142,30 @@ test("SearchAd concurrent same query dedupes, cached rows remain scoped to chang
   assert.equal(calls, 2);
 });
 
+test("extracted source cache still runs each private category lookup with the exact request and sixteen-second deadline", async () => {
+  let at = NOW, calls = 0;
+  const contexts = [];
+  const handler = createRelatedKeywordsHandler({ env: env(), now: () => at,
+    fetchImpl: async () => { calls++; return response({ keywordList: [item("연관어")] }); },
+    lookupCategories: async (keywords, context) => {
+      assert.deepEqual(keywords, ["연관어"]);
+      contexts.push(context);
+      return [];
+    },
+  });
+  const first = request("기준어");
+  const second = request("기준어", { headers: { "x-mi-session-role": "client", "x-mi-agency-code": "client-scope" } });
+  assert.equal((await handler(first)).status, 200);
+  at += 1000;
+  assert.equal((await handler(second)).status, 200);
+  assert.equal(calls, 1);
+  assert.equal(contexts.length, 2);
+  assert.equal(contexts[0].request, first);
+  assert.equal(contexts[1].request, second);
+  assert.equal(contexts[0].deadline, NOW + 16_000);
+  assert.equal(contexts[1].deadline, NOW + 17_000);
+});
+
 test("unconfigured, invalid, rate-limited provider returns explicit error, no fabricated empty success", async () => {
   const missing = createRelatedKeywordsHandler({ env: {}, now: () => NOW, fetchImpl: async () => { throw new Error("must-not-call"); } });
   const missingResult = await (await missing(request())).json();

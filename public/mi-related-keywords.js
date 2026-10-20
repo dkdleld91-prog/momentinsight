@@ -367,7 +367,11 @@
         var response = result.response;
         var payload = result.payload;
         if (!current()) { syncSession(); return; }
-        if (!response.ok || !payload || payload.ok !== true || key(payload.keyword) !== key(keyword) || !Array.isArray(payload.related)) throw new Error("related_unavailable");
+        if (!response.ok || !payload || payload.ok !== true || key(payload.keyword) !== key(keyword) || !Array.isArray(payload.related)) {
+          var failure = new Error("related_unavailable");
+          failure.status = response.status;
+          throw failure;
+        }
         rows = normalizeRows(payload.related, keyword);
         queryMeta = { keyword: text(payload.keyword), queriedAt: text(payload.checkedAt) };
         refreshFilters(true);
@@ -379,7 +383,12 @@
         queryMeta = null;
         refreshFilters(true);
         render("조회 결과를 불러오지 못했습니다. 다시 조회해주세요.");
-        announce(error && (error.name === "AbortError" || error.message === "related_timeout") ? "조회 시간이 초과되었습니다. 잠시 후 다시 조회해주세요." : "연관 키워드를 불러오지 못했습니다. 잠시 후 다시 조회해주세요.", true);
+        var message = error && (error.name === "AbortError" || error.message === "related_timeout") ? "조회 시간이 초과되었습니다. 잠시 후 다시 조회해주세요." : "연관 키워드를 불러오지 못했습니다. 잠시 후 다시 조회해주세요.";
+        if (typeof options.errorMessage === "function") {
+          var customMessage = options.errorMessage(error);
+          if (typeof customMessage === "string" && customMessage.trim()) message = customMessage;
+        }
+        announce(message, true);
       } finally {
         window.clearTimeout(timer);
         if (current()) { button.disabled = false; activeRequest = null; }

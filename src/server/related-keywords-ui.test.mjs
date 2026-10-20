@@ -445,7 +445,7 @@ test("premium visual rules are scoped to the related view and preserve numeric a
   const css = fs.readFileSync("public/mi-related-keywords.css", "utf8");
   const rules = css.split("\n").map((line) => line.trim()).filter((line) => line.includes("{") && !line.startsWith("@") && !line.startsWith("/*"));
   assert.ok(rules.length > 20);
-  assert.ok(rules.every((line) => line.startsWith(":is(#mi-admin,#mi-clean) [data-related-query]") || line.startsWith(":is(#mi-admin,#mi-clean) .mi-rq-handoff")), "every visual rule must remain under the independent related view or its narrow handoff notice");
+  assert.ok(rules.every((line) => line.startsWith(":is(#mi-admin,#mi-clean,#mi-public-related) [data-related-query]") || line.startsWith(":is(#mi-admin,#mi-clean,#mi-public-related) .mi-rq-handoff") || line.startsWith("#mi-public-related")), "every visual rule must remain under the independent related view, its narrow handoff notice or the isolated public shell");
   assert.match(css, /font-variant-numeric:tabular-nums/u);
   assert.match(css, /overflow-x:auto/u);
   assert.match(css, /:focus-visible/u);

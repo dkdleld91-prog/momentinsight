@@ -2670,6 +2670,48 @@ test("응답 없음(lost) 뒤 서버가 그 확인을 잠시 '진행 중'으로 
   assert.match(manualResult(screen).textContent, /검색이 됐는지는 확인하지 못했습니다/u);
 });
 
+// 2026-10-23 재검사: 결과 보내기(manual-record)가 연결 실패로 끝난 뒤 상태 줄이 '다른 확인이 진행 중'이라고 했다(본인 확인이다).
+test("결과를 서버에 보내지 못한 뒤 서버가 그 확인을 '진행 중'으로 셀 때 상태 줄은 본인 상황(보내지 못함·잠시 뒤 다시 보냄), 다시 보내면 지운다", async () => {
+  const busy = manualPayload({ state: "busy", busyUntil: iso(SERVER_NOW + 95000) });
+  assert.equal(view({ server: busy, ownUnsent: true }).text,
+    "지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다. 이 화면을 열어 두면 잠시 뒤(약 1분 35초) 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).");
+  assert.equal(view({ server: busy, ownUnsent: true }).countdown, true);
+  assert.match(view({ server: busy, ownUnsent: true, ownLost: true }).text, /결과를 서버에 보내지 못했습니다/u, "보내지 못함이 응답 없음보다 먼저");
+  assert.match(view({ server: busy, ownUnsent: false }).text, /다른 확인이 진행 중입니다/u);
+
+  const clock = { now: Date.now() };
+  let online = false;
+  const screen = mountManual({
+    mount: { clock },
+    record: (body, server) => {
+      if (!online) return new Error("offline");
+      server.manual = manualPayload({ state: "gap", usedToday: 4, nextAt: iso(SERVER_NOW + 180000) });
+      return { ok: true, accepted: true, duplicate: false, outcome: body.outcome, status: "ok", errorCode: null, matched: 1, counted: true, stopped: false, stopCode: null, late: false,
+        tracker: { trackerId: TRACKER_ID, result: "found", rank: 12, organicCount: 50, adOrder: null, checkedAt: iso(SERVER_NOW + 20000) }, manual: server.manual };
+    },
+  });
+  screen.controller.show();
+  await settle();
+  dispatch(manualButtonFor(screen), "click");
+  await settle();
+  assert.equal(screen.server.of("manual-record").length, 3, "같은 실행 안에서 3번 보내 봤지만 연결 실패");
+  assert.match(manualResult(screen).textContent, /결과를 서버에 보내지 못했습니다\(인터넷 연결을 확인해 주세요\)/u);
+  // 기록 뒤 목록 GET 의 manual 은 claim 때의 '진행 중'(60초) 그대로다 — 본인 확인이라고 말한다
+  assert.match(manualLine(screen).textContent, /^지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다\. 이 화면을 열어 두면 잠시 뒤/u);
+  assert.doesNotMatch(manualLine(screen).textContent, /다른 확인이 진행 중/u);
+  // 진행 중이 끝날 때(+2초) 목록을 다시 받으며 남긴 결과를 저절로 다시 보낸다(30초 간격 뒤) → 보냈으면 그 문구를 지운다
+  online = true;
+  clock.now += 31000;
+  const refresh = screen.timeouts.filter((entry) => !entry.cleared && entry.ms >= 61000 && entry.ms <= 63000);
+  assert.equal(refresh.length, 1);
+  refresh[0].fn();
+  await settle();
+  assert.equal(screen.server.of("manual-record").length, 4);
+  assert.equal(screen.local.getItem("miCoupangRankManual:v1:pending"), null);
+  assert.doesNotMatch(manualLine(screen).textContent, /보내지 못했습니다|다른 확인이 진행 중/u);
+  assert.match(screen.host.querySelector("[data-coupang-rank-status]").textContent, /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인 완료/u);
+});
+
 test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지금 확인 켜짐일 때만 일시중지 앞에 있다", async () => {
   const screen = mountManual();
   screen.controller.show();

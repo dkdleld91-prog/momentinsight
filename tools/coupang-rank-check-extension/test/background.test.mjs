@@ -1,7 +1,7 @@
 // 서비스 워커 동작(가짜 chrome·가짜 서버). 지난 검토 결함 장면을 모두 다시 본다(previous-run review:*).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createBackground, startBackground } from "../background.js";
+import { createBackground, isSearchAddress, startBackground } from "../background.js";
 import { searchUrl } from "../lib/protocol.js";
 import {
   ADMIN_SENDER, CHROME_UA, CLAIM_ID, CLAIM_ID_2, CLAIM_ID_3, CLAIM_TOKEN, FAST_TIMING, SERVER_KEYWORD,
@@ -78,6 +78,72 @@ test("형식 검사: 모르는 type·토큰 없음·uuid 아님 → bad_request(
   }
   assert.equal(fake.calls.create.length, 0);
   assert.equal(fetchImpl.calls.length, 0);
+});
+
+// 2026-10-23 재검사 r7: 꾸민 check 마다 서버 확인 전에 빈 시크릿 창이 포커스를 가져가며 열렸다 닫혔다.
+// 창을 열기 전에 보낸 쪽·메시지 모양(검색어 포함)을 모두 본다. 어긋나면 창 0개·서버 요청 0번.
+test("창을 열기 전 검사: 검색어 없음·빈 값·앞뒤 공백·50자 넘음·제어 문자·문자열 아님 → bad_request, 창 0개", async () => {
+  const { fake, fetchImpl, background } = setup();
+  for (const keyword of [undefined, null, "", " 아이폰", "아이폰 ", "가".repeat(51), "아이폰\n케이스", "a\u0000b", 42, ["아이폰"], "\ud800"]) {
+    const reply = await send(background, checkMessage({ keyword }));
+    assert.deepEqual([reply.outcome, reply.code], ["not_started", "bad_request"], JSON.stringify(keyword));
+  }
+  // r7 그대로: 서버가 준 적 없는 요청 id·모양 맞는 토큰·검색어 없음 10번
+  for (let index = 0; index < 10; index += 1) {
+    const reply = await send(background, { type: "mi-coupang-check", claimId: CLAIM_ID_2, claimToken: CLAIM_TOKEN });
+    assert.equal(reply.code, "bad_request");
+  }
+  assert.equal(fake.calls.create.length, 0, "창 0개");
+  assert.equal(fake.calls.windowsUpdate.length, 0);
+  assert.equal(fetchImpl.calls.length, 0, "서버 요청 0번");
+  // 50자(코드 포인트) 검색어는 모양이 맞다
+  assert.equal((await send(background, checkMessage({ keyword: "가".repeat(50) }))).outcome, "measured");
+});
+
+test("창을 열기 전 검사: 보낸 쪽 origin·tab·frameId 가 없거나 다르면 origin_rejected(hello 도), 창 0개", async () => {
+  const { fake, fetchImpl, background } = setup();
+  const { origin: _origin, ...noOrigin } = ADMIN_SENDER;
+  const { tab: _tab, ...noTab } = ADMIN_SENDER;
+  const { frameId: _frameId, ...noFrame } = ADMIN_SENDER;
+  for (const sender of [
+    noOrigin,
+    noTab,
+    noFrame,
+    { ...ADMIN_SENDER, tab: { incognito: false } },
+    { ...ADMIN_SENDER, origin: "https://insight.momentlabs.co.kr:8443" },
+    { ...ADMIN_SENDER, url: "https://insight.momentlabs.co.kr/admin/x" },
+    { ...ADMIN_SENDER, id: "abcdefghijklmnopabcdefghijklmnop", url: "chrome-extension://abcdefghijklmnopabcdefghijklmnop/admin", origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop" },
+  ]) {
+    for (const message of [checkMessage(), { type: "mi-coupang-hello" }]) {
+      let answer;
+      assert.equal(background.listener(message, sender, (reply) => { answer = reply; }), false);
+      assert.deepEqual(answer, { ok: false, code: "origin_rejected" }, JSON.stringify(sender));
+    }
+  }
+  assert.equal(fake.calls.create.length, 0);
+  assert.equal(fetchImpl.calls.length, 0);
+});
+
+test("서버가 거절한 요청(모양은 맞음)은 빈 창을 포커스 없이 열었다 닫는다: 앞으로 가져오기 0번·쿠팡 이동 0번", async () => {
+  const { fake, fetchImpl, background } = setup({ fetch: () => ({ status: 404, body: { ok: false, code: "COUPANG_MANUAL_CLAIM_NOT_FOUND" } }) });
+  for (let index = 0; index < 3; index += 1) {
+    const reply = await send(background, checkMessage());
+    assert.deepEqual([reply.code, reply.serverCode], ["verify_refused", "COUPANG_MANUAL_CLAIM_NOT_FOUND"]);
+  }
+  assert.deepEqual([...new Set(fake.calls.create.map((call) => call.focused))], [false]);
+  assert.equal(fake.calls.windowsUpdate.length, 0, "서버 확인 전·거절 뒤에는 창을 앞으로 가져오지 않는다");
+  assert.equal(fake.calls.remove.length, 3);
+  assert.equal(fake.windows.size, 0);
+  noSearch(fake, fetchImpl, { verifies: 3 });
+});
+
+test("창을 앞으로 가져오지 못해도(windows.update 실패) 측정은 그대로 한다", async () => {
+  const { fake, background } = setup({ chrome: { focusFails: true } });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.outcome, "measured");
+  assert.equal(reply.page.status, "ok");
+  assert.equal(fake.calls.windowsUpdate.length, 1);
+  assert.equal(fake.calls.update.length, 1);
 });
 
 // ── hello ──
@@ -296,10 +362,13 @@ test("맥 시계가 서버와 몇 시간 어긋나도 확인은 거절되지 않
 
 // ── 창 만들기(지난 결함: windows.create null) ──
 
-test("창: 빈 시크릿 창을 먼저 열고(about:blank·focused·1280×900), 시크릿이 맞을 때만 그 탭을 쿠팡 검색 1쪽으로 보낸다", async () => {
+test("창: 빈 시크릿 창을 포커스 없이 먼저 열고(about:blank·focused:false·1280×900), 서버 확인 뒤에만 앞으로 가져와 그 탭을 쿠팡 검색 1쪽으로 보낸다", async () => {
   const { fake, background } = setup();
   assert.equal((await send(background, checkMessage())).outcome, "measured");
-  assert.deepEqual(fake.calls.create, [{ url: "about:blank", incognito: true, focused: true, type: "normal", width: 1280, height: 900 }]);
+  assert.deepEqual(fake.calls.create, [{ url: "about:blank", incognito: true, focused: false, type: "normal", width: 1280, height: 900 }]);
+  assert.deepEqual(fake.calls.windowsUpdate, [{ id: fake.lastWindowId(), focused: true }]);
+  const order = fake.log.filter((name) => ["fetch", "windows.create", "windows.update", "tabs.update"].includes(name));
+  assert.deepEqual(order, ["windows.create", "fetch", "windows.update", "tabs.update"], "앞으로 가져오기는 서버 확인 뒤·쿠팡 이동 전");
   assert.equal(fake.calls.update.length, 1);
   assert.equal(fake.calls.update[0].url, `https://www.coupang.com/np/search?q=${encodeURIComponent(SERVER_KEYWORD)}`);
   assert.equal(fake.calls.remove.length, 1, "창은 항상 닫는다");
@@ -644,6 +713,50 @@ test("측정 중 쿠팡이 주소 꼬리만 바꾸면(같은 경로·같은 q) �
     assert.equal(reply.page.errorCode, expected, expected);
     assert.equal(reply.stopSignal, false);
   }
+});
+
+// 2026-10-23 재검사 r6: 경로·q 만 보던 탓에 정렬·쪽 번호가 바뀐 목록도 이동이 아니었다.
+test("측정 중 주소의 정렬·쪽 번호·목록 크기가 바뀌면 이동(user_navigated), 쿠팡 기본값(1쪽·랭킹순)·추적 꼬리만이면 이동 아님", async () => {
+  const cases = [
+    [(url) => `${url}&sorter=saleCountDesc`, "user_navigated", null],
+    [(url) => `${url}&page=2`, "user_navigated", null],
+    [(url) => `${url}&listSize=72`, "user_navigated", null],
+    [(url) => `${url}&page=1&sorter=scoreDesc&channel=user`, "page_load_failed", null],
+    // 측정 시작 때 이미 붙어 있던 목록 값은 기준이다: 그 뒤 추적 꼬리만 붙으면 이동 아님, 값이 바뀌면 이동
+    [(url) => `${url}&traceId=abc`, "page_load_failed", (url) => `${url}&listSize=36`],
+    [(url) => url.replace("listSize=36", "listSize=72"), "user_navigated", (url) => `${url}&listSize=36`],
+  ];
+  for (const [nextUrl, expected, loadedUrl] of cases) {
+    let fakeRef;
+    const { fake, background } = setup({
+      chrome: {
+        scenario: {
+          ...(loadedUrl ? { finalUrl: loadedUrl } : {}),
+          measure: ({ tab }) => {
+            const url = nextUrl(tab.url);
+            tab.url = url;
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { url });
+            throw new Error("Frame with ID 0 is showing error page");
+          },
+        },
+      },
+    });
+    fakeRef = fake;
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, expected, `${nextUrl("U")} ${loadedUrl ? "(불러온 주소에 listSize=36)" : ""}`);
+    assert.equal(reply.stopSignal, false);
+  }
+});
+
+test("isSearchAddress: 같은 검색어의 검색 1쪽 + 목록 값이 기준과 같을 때만 참", () => {
+  const url = searchUrl(SERVER_KEYWORD);
+  assert.equal(isSearchAddress(url, SERVER_KEYWORD), true);
+  assert.equal(isSearchAddress(`${url}&channel=user&page=1&sorter=scoreDesc`, SERVER_KEYWORD), true);
+  for (const tail of ["&page=2", "&sorter=latestAsc", "&listSize=60"]) assert.equal(isSearchAddress(`${url}${tail}`, SERVER_KEYWORD), false, tail);
+  assert.equal(isSearchAddress(`${url}&listSize=60`, SERVER_KEYWORD, { sorter: "scoreDesc", page: "1", listSize: "60" }), true);
+  assert.equal(isSearchAddress(searchUrl("다른 검색어"), SERVER_KEYWORD), false);
+  assert.equal(isSearchAddress("https://www.coupang.com/vp/products/1", SERVER_KEYWORD), false);
+  assert.equal(isSearchAddress("not a url", SERVER_KEYWORD), false);
 });
 
 test("작업 중 15초마다 확장 API(windows.get) 호출로 서비스 워커를 깨워 둔다", async () => {

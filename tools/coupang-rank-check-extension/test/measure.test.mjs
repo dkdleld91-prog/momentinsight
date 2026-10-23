@@ -5,6 +5,7 @@ import test from "node:test";
 import vm from "node:vm";
 import { miCoupangMeasure, miCoupangProbe } from "../lib/measure.js";
 import { splitItems } from "../lib/assemble.js";
+import { LIST_PARAM_DEFAULTS, sameListParams, searchAddressOf } from "../lib/protocol.js";
 import { EXTRACT_SOURCE, parseExtractResult, splitItems as collectorSplitItems } from "../../coupang-rank-collector/lib/extract.mjs";
 import { fixture } from "./helpers.mjs";
 
@@ -132,6 +133,60 @@ test("쿠팡이 불러온 뒤 주소 꼬리(추적 값)만 바꾸면 사람의 �
   const moved = await run(other);
   assert.equal(moved.navigated, true);
   assert.equal(moved.stable, false);
+});
+
+// 2026-10-23 재검사 r6: 같은 쪽 안 이동(pushState)으로 정렬·쪽 번호가 바뀌고 목록이 바뀌어도 이동으로 보지 않아 바뀐 목록이 ok 였다.
+// 목록의 순서·범위를 바꾸는 값(sorter·page·listSize)은 경로·q 와 함께 본다. 쿠팡 기본값(1쪽·랭킹순)과 추적 꼬리는 이동이 아니다.
+// 확장 쪽(background isSearchAddress = protocol listParamsOf·sameListParams)과 판정이 같아야 한다.
+const LIST_CASES = [
+  ["&sorter=saleCountDesc", true],
+  ["&sorter=salePriceAsc&channel=user", true],
+  ["&page=2", true],
+  ["&listSize=72", true],
+  ["&listSize=36", true],
+  ["&page=1", false],
+  ["&sorter=scoreDesc", false],
+  ["&page=1&sorter=scoreDesc&traceId=abc&channel=recent", false],
+  ["&page=&sorter=", false],
+];
+
+test("측정 중 정렬·쪽 번호·목록 크기가 바뀌면 이동(navigated, stable 아님), 기본값·추적 꼬리만이면 이동 아님 — 확장 판정과 같다", async () => {
+  const base = `?q=${encodeURIComponent("아이폰 케이스")}&channel=user`;
+  for (const [tail, expected] of LIST_CASES) {
+    const dom = makeDom({
+      search: base,
+      onScroll: (state, count) => {
+        if (count === 2) {
+          Reflect.set(state.location, "search", `${state.location.search}${tail}`);
+          state.forbidden.pop();
+        }
+      },
+    });
+    const result = await run(dom);
+    assert.equal(result.navigated, expected, tail);
+    if (expected) assert.equal(result.stable, false, tail);
+    const start = searchAddressOf(`https://www.coupang.com/np/search${base}`);
+    const end = searchAddressOf(`https://www.coupang.com/np/search${base}${tail}`);
+    assert.equal(!sameListParams(start.list, end.list), expected, `확장 판정 ${tail}`);
+  }
+  // 측정 시작 때 이미 붙어 있던 값은 기준이다(쿠팡이 불러오는 동안 붙였어도 그 뒤 바뀜만 본다)
+  const already = makeDom({
+    search: `${base}&listSize=36&page=1`,
+    onScroll: (state, count) => {
+      if (count === 2) {
+        Reflect.set(state.location, "search", `${state.location.search}&traceId=x`);
+        state.forbidden.pop();
+      }
+    },
+  });
+  assert.equal((await run(already)).navigated, false);
+});
+
+test("쪽 함수의 목록 값 기본값 표 = lib/protocol.js LIST_PARAM_DEFAULTS(쪽 함수는 자기완결이라 import 못 함)", () => {
+  const source = miCoupangMeasure.toString();
+  const literal = source.match(/const listDefaults = (\{[^}]*\});/);
+  assert.ok(literal, "쪽 함수 안에 listDefaults 표가 있다");
+  assert.deepEqual(JSON.parse(JSON.stringify(vm.runInNewContext(`(${literal[1]})`))), { ...LIST_PARAM_DEFAULTS });
 });
 
 test("정상 검색 1쪽: 스크롤 8번(1400px)·읽기 3번·stable·검색어·HTTP 상태·광고 표식·제목 첫 줄", async () => {

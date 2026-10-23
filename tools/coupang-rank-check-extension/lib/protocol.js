@@ -147,10 +147,46 @@ export function searchUrl(keyword) {
   return `${SEARCH_URL_PREFIX}${encodeURIComponent(keyword)}`;
 }
 
-// 보낸 쪽: insight.momentlabs.co.kr 의 관리자 화면 최상위 프레임만. manifest matches(/admin*)와 겹쳐 한 번 더 본다.
+// ── 측정 중 주소 바뀜 판정(2026-10-23 재검사 반영) ──
+// 쿠팡 검색 목록의 순서·범위를 바꾸는 주소 값: 정렬(sorter)·쪽 번호(page)·목록 크기(listSize). 측정 중 이 값이 바뀌면
+// 같은 쪽 안 이동(pushState)이어도 사람이 옮긴 것으로 본다(바뀐 목록으로 순위를 내지 않게).
+// 쿠팡 기본값(정렬 scoreDesc = 쿠팡 랭킹순, 1쪽)은 값이 없는 것과 같다[추정: 기본값 이름은 실제 크롬 실측 전].
+// 목록 크기는 기본값을 몰라 새로 생기기만 해도 바뀐 것으로 본다(틀린 순위 대신 '기록 안 함' 쪽).
+// 그 밖의 꼬리(channel·traceId 등 쿠팡이 붙이는 추적 값)는 보지 않는다.
+// lib/measure.js 쪽 함수에도 같은 표가 있다(쪽 함수는 자기완결이라 import 하지 못한다 — 테스트가 같은지 본다).
+export const LIST_PARAM_DEFAULTS = Object.freeze({ sorter: "scoreDesc", page: "1", listSize: "" });
+export const LIST_PARAMS = Object.freeze(Object.keys(LIST_PARAM_DEFAULTS));
+
+export function listParamsOf(searchParams) {
+  const out = {};
+  for (const name of LIST_PARAMS) {
+    const raw = searchParams && typeof searchParams.get === "function" ? searchParams.get(name) : null;
+    const value = raw === null || raw === undefined ? "" : String(raw).trim();
+    out[name] = value === "" ? LIST_PARAM_DEFAULTS[name] : value;
+  }
+  return out;
+}
+
+export function sameListParams(left, right) {
+  return LIST_PARAMS.every((name) => (left || LIST_PARAM_DEFAULTS)[name] === (right || LIST_PARAM_DEFAULTS)[name]);
+}
+
+// 주소 → { host, path, q, list }(목록 값은 기본값으로 채운 것). 주소가 아니면 null.
+export function searchAddressOf(url) {
+  try {
+    const parsed = new URL(String(url || ""));
+    return { host: parsed.host.toLowerCase(), path: parsed.pathname, q: parsed.searchParams.get("q"), list: listParamsOf(parsed.searchParams) };
+  } catch {
+    return null;
+  }
+}
+
+// 보낸 쪽: insight.momentlabs.co.kr 의 관리자 화면(/admin·/admin.html) 최상위 프레임의 탭만. manifest matches(/admin*)와 겹쳐 한 번 더 본다.
+// 크롬 80 부터 웹 쪽 메시지에는 origin 이 늘 채워지고(최소 110), 탭에서 온 메시지에는 tab·frameId 가 있다 — 하나라도 없으면 받지 않는다
+// (다른 확장·워커·하위 프레임·같은 출처의 다른 쪽에서 온 메시지는 창을 열기 전에 거절).
 export function isAllowedSender(sender) {
   if (!sender || typeof sender !== "object") return false;
-  if (sender.origin !== undefined && sender.origin !== PAGE_ORIGIN) return false;
+  if (sender.origin !== PAGE_ORIGIN) return false;
   if (typeof sender.url !== "string") return false;
   let parsed;
   try {
@@ -160,11 +196,14 @@ export function isAllowedSender(sender) {
   }
   if (parsed.origin !== PAGE_ORIGIN) return false;
   if (!PAGE_PATHS.includes(parsed.pathname)) return false;
-  if (sender.frameId !== undefined && sender.frameId !== 0) return false;
+  if (sender.frameId !== 0) return false;
+  if (!sender.tab || typeof sender.tab !== "object" || !Number.isInteger(sender.tab.id)) return false;
   return true;
 }
 
 // 메시지 모양 검사. 통과하면 { type, ... }, 아니면 { type: null }.
+// check 는 창을 열기 전에 모양을 모두 본다: 요청 id(uuid)·요청 토큰(mcm1_ + 43자)·검색어(1~50자, 제어 문자·앞뒤 공백 없음).
+// 하나라도 어긋나면 invalid(창 0개·서버 요청 0번). 창에 넣는 검색어는 그래도 서버 확인 응답의 keyword 만 쓴다(화면 값은 모양 검사용).
 export function parseMessage(message) {
   if (!message || typeof message !== "object" || Array.isArray(message)) return { type: null };
   if (message.type === MESSAGE_TYPES.hello) return { type: "hello" };
@@ -172,8 +211,7 @@ export function parseMessage(message) {
     return isUuid(message.claimId) ? { type: "ack", claimId: message.claimId.toLowerCase() } : { type: null };
   }
   if (message.type === MESSAGE_TYPES.check) {
-    if (!isUuid(message.claimId) || !isClaimToken(message.claimToken)) return { type: "check", invalid: true };
-    // 화면이 보내는 keyword 는 참고값이다. 창에 넣는 검색어는 서버 확인 응답의 keyword 만 쓴다.
+    if (!isUuid(message.claimId) || !isClaimToken(message.claimToken) || !isSearchKeyword(message.keyword)) return { type: "check", invalid: true };
     return { type: "check", claimId: message.claimId.toLowerCase(), claimToken: message.claimToken };
   }
   return { type: null };

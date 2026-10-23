@@ -93,7 +93,8 @@ export function rawPage(overrides = {}) {
 // 가짜 chrome. scenario 로 탭 이동·쪽 함수 결과를 바꾼다.
 export function makeFakeChrome(options = {}) {
   const log = [];
-  const calls = { create: [], remove: [], update: [], executeScript: [], getAll: [], windowsGet: [], tabsGet: [], query: [] };
+  // update = tabs.update(쿠팡 이동), windowsUpdate = windows.update(창 앞으로 가져오기)
+  const calls = { create: [], remove: [], update: [], windowsUpdate: [], executeScript: [], getAll: [], windowsGet: [], tabsGet: [], query: [] };
   const windows = new Map();
   const tabs = new Map();
   let nextWindowId = 500;
@@ -113,6 +114,7 @@ export function makeFakeChrome(options = {}) {
     getAllWithTypes: "ok", // ok | throw
     getAllDefault: "ok", // ok | throw
     removeFails: false,
+    focusFails: false,
     extraIncognitoAfterCreate: false,
     ...options,
   };
@@ -201,11 +203,20 @@ export function makeFakeChrome(options = {}) {
         if (config.createBehavior === "throw") throw new Error("Incognito mode is disabled by policy");
         const id = nextWindowId += 1;
         const incognito = config.createBehavior === "normal" ? false : createData.incognito === true;
-        windows.set(id, { id, incognito, type: "normal" });
+        windows.set(id, { id, incognito, type: "normal", focused: createData.focused === true });
         const tabId = nextTabId += 1;
         tabs.set(tabId, { id: tabId, windowId: id, url: createData.url, status: "complete", incognito });
         if (config.createBehavior === "null") return undefined;
         return { id, incognito, type: "normal", tabs: config.tabsInCreate ? [tabView(tabs.get(tabId))] : undefined };
+      },
+      async update(id, updateInfo) {
+        calls.windowsUpdate.push({ id, ...clone(updateInfo) });
+        log.push("windows.update");
+        if (config.focusFails) throw new Error("update failed");
+        const win = windows.get(id);
+        if (!canSee(win)) throw new Error(`No window with id: ${id}.`);
+        if (updateInfo && updateInfo.focused === true) win.focused = true;
+        return { id: win.id, incognito: win.incognito, type: win.type, focused: win.focused === true };
       },
       async remove(id) {
         calls.remove.push(id);

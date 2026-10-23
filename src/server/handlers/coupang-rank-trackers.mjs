@@ -1062,6 +1062,27 @@ async function updateSettingsRow(ctx, patch, stage) {
   return result.data;
 }
 
+// 조건부 설정 갱신: guard 가 거는 조건(예: 자동 수집 꺼짐)이 쓰는 순간에도 맞을 때만 쓴다. 맞는 행이 없으면 null.
+// PostgreSQL 은 같은 행의 UPDATE 를 줄 세우고, 뒤에 선 UPDATE 는 앞 갱신이 끝난 행으로 WHERE 를 다시 본다(READ COMMITTED).
+// 그래서 같은 순간 온 '지금 확인 켜기'와 '수집 켜기'는 각자 읽은 설정으로 판정해도 둘 중 하나만 저장된다(2026-10-23 재검사).
+async function updateSettingsRowWhere(ctx, patch, stage, guard) {
+  const result = await guard(ctx.supabaseAdmin
+    .from(TABLES.settings)
+    .update({ ...patch, updated_by: "owner" })
+    .eq("id", 1))
+    .select("*")
+    .maybeSingle();
+  if (result.error) throw dbError(stage, result.error);
+  return plainObject(result.data) ? result.data : null;
+}
+
+// 조건부 갱신이 0행이면 설정을 다시 읽는다: 행이 없으면 예전처럼 준비 안 됨, 있으면 그 사이 바뀐 설정 = 409.
+async function reloadSettingsAfterRace(ctx, stage) {
+  const loaded = await loadSettings(ctx);
+  if (loaded.setupRequired || !plainObject(loaded.settings)) throw new SetupMissingError(stage);
+  return loaded.settings;
+}
+
 async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
   const patch = body.settings;
   if (!plainObject(patch)) return failure(request, "COUPANG_SETTINGS_INVALID", { field: "settings" });
@@ -1087,7 +1108,17 @@ async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
     return failure(request, code, extra);
   }
   trace.stage = "settings_update";
-  const saved = await updateSettingsRow(ctx, checked.update, "settings_update");
+  let saved;
+  if (checked.update.manual_enabled === true) {
+    // 지금 확인 켜기: 위에서 읽은 뒤 '수집 켜기'가 먼저 저장됐을 수 있어, 자동 수집이 꺼져 있을 때만 쓴다(갱신 0행 = 409).
+    saved = await updateSettingsRowWhere(ctx, checked.update, "settings_update", (query) => query.eq("enabled", false));
+    if (!saved) {
+      await reloadSettingsAfterRace(ctx, "settings_update");
+      return failure(request, "COUPANG_MANUAL_COLLECTOR_CONFLICT", { reason: "collector_enabled" });
+    }
+  } else {
+    saved = await updateSettingsRow(ctx, checked.update, "settings_update");
+  }
   let replanned = 0;
   if (checked.replan) {
     trace.stage = "replan";
@@ -1109,6 +1140,17 @@ function manualAutoConflict(settings, now) {
   return null;
 }
 
+// 수집 켜기의 조건부 쓰기: '지금 확인 꺼짐' 이고 (그날 중지 기록 없음 또는 그날 중지가 오늘 아님)일 때만.
+// '또는' 을 두 번의 조건부 갱신으로 나눈다(각 갱신이 쓰는 순간 조건 전체를 다시 보므로 어느 쪽이 통과해도 안전하다).
+async function enableCollectorIfNoManual(ctx, now, stage) {
+  const today = kstDayOf(now);
+  const noStop = await updateSettingsRowWhere(ctx, { enabled: true }, stage,
+    (query) => query.eq("manual_enabled", false).is("manual_stopped_day", null));
+  if (noStop) return noStop;
+  return updateSettingsRowWhere(ctx, { enabled: true }, stage,
+    (query) => query.eq("manual_enabled", false).neq("manual_stopped_day", today));
+}
+
 async function collectorEnableAction(request, ctx, settings, enable, now, trace) {
   if (enable) {
     const conflict = manualAutoConflict(settings, now);
@@ -1117,6 +1159,13 @@ async function collectorEnableAction(request, ctx, settings, enable, now, trace)
     if ((await countActiveCollectors(ctx)) < 1) return failure(request, "COUPANG_NO_COLLECTOR");
   }
   trace.stage = enable ? "enable" : "disable";
+  // 수동 칸이 있으면(대표 SQL 뒤) 위에서 읽은 뒤 '지금 확인 켜기'·그날 중지가 먼저 저장됐을 수 있어 조건부로 쓴다(갱신 0행 = 409).
+  if (enable && hasManualColumns(settings)) {
+    const saved = await enableCollectorIfNoManual(ctx, now, trace.stage);
+    if (saved) return respond(request, { ok: true, settings: settingsPayload(saved) });
+    const reloaded = await reloadSettingsAfterRace(ctx, trace.stage);
+    return failure(request, "COUPANG_COLLECTOR_MANUAL_CONFLICT", { reason: manualAutoConflict(reloaded, now) || "settings_changed" });
+  }
   const saved = await updateSettingsRow(ctx, { enabled: enable }, trace.stage);
   return respond(request, { ok: true, settings: settingsPayload(saved) });
 }

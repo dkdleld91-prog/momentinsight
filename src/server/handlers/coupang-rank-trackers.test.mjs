@@ -137,6 +137,11 @@ class MockQuery {
     return this.addFilter("eq", column, value, (row) => row[column] === value);
   }
 
+  // SQL <> 처럼 null 은 맞지 않는다.
+  neq(column, value) {
+    return this.addFilter("neq", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] !== value);
+  }
+
   gte(column, value) {
     return this.addFilter("gte", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] >= value);
   }
@@ -227,6 +232,8 @@ class MockQuery {
 
   async execute(mode) {
     const state = this.state;
+    // 동시 요청 시험: 갱신 직전에 멈춰 두 요청이 모두 읽은 뒤 쓰게 한다(쓰는 순간 조건은 아래에서 그때의 행으로 다시 본다).
+    if (this.operation === "update" && typeof state.beforeUpdate === "function") await state.beforeUpdate(this);
     state.queries.push({ table: this.table, operation: this.operation, filters: this.log, values: this.values, options: this.options });
     if (this.wireError) return { data: null, error: this.wireError, count: null };
     const injected = state.errors.find((entry) => entry.table === this.table
@@ -2108,6 +2115,89 @@ test("지금 확인 ↔ 자동 수집: 지금 확인이 켜져 있거나 오늘 
   const before = createState();
   before.tables.coupang_rank_collectors.push({ ...collector });
   assert.equal((await post(before, ownerHeaders(), { action: "collector-enable" })).status, 200);
+});
+
+// 2026-10-23 재검사 r3-4: '지금 확인 켜기'와 '수집 켜기'를 같은 순간 보내면 각자 시작 때 읽은 설정으로 판정해 둘 다 저장됐다.
+// 두 쓰기를 조건부 갱신으로 바꿨다. 시험: 두 요청이 모두 설정을 읽은 뒤(갱신 직전에서 멈춤) 순서를 바꿔 가며 풀어 준다.
+// 설정 갱신을 붙잡아 두는 문: 두 요청(지금 확인 켜기 = manual, 수집 켜기 = collector)이 모두 갱신 직전에 오면 bothWaiting 이 풀리고,
+// openFor(kind) 는 그쪽 갱신만 지나가게, openAll() 은 모두 지나가게 한다.
+function holdSettingsUpdates(state) {
+  const waiting = [];
+  const passing = new Set();
+  let signal;
+  const bothWaiting = new Promise((resolve) => { signal = resolve; });
+  const kindOf = (query) => (Object.hasOwn(query.values || {}, "manual_enabled") ? "manual" : "collector");
+  const release = () => {
+    for (const entry of [...waiting]) {
+      if (!passing.has(entry.kind)) continue;
+      waiting.splice(waiting.indexOf(entry), 1);
+      entry.resolve();
+    }
+  };
+  state.beforeUpdate = (query) => {
+    if (query.table !== "coupang_rank_settings") return undefined;
+    const kind = kindOf(query);
+    if (passing.has(kind)) return undefined;
+    return new Promise((resolve) => {
+      waiting.push({ kind, resolve });
+      if (new Set(waiting.map((entry) => entry.kind)).size === 2) signal();
+    });
+  };
+  return {
+    bothWaiting,
+    openFor(kind) { passing.add(kind); release(); },
+    openAll() { passing.add("manual"); passing.add("collector"); release(); },
+  };
+}
+
+test("동시: '지금 확인 켜기'와 '수집 켜기'가 같은 순간 와도(둘 다 읽은 뒤 쓰기) 하나만 저장되고 다른 하나는 409 — 어느 쪽이 먼저 쓰든", async () => {
+  const collector = { id: uuid(520), revoked_at: null, token_sha256: "d".repeat(64) };
+  for (const winner of ["manual", "collector"]) {
+    for (const stoppedDay of [null, "2026-10-16"]) {
+      const state = manualState({ settings: { manual_enabled: false, enabled: false, manual_stopped_day: stoppedDay } });
+      state.tables.coupang_rank_collectors.push({ ...collector });
+      const gate = holdSettingsUpdates(state);
+      const manualReply = post(state, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: true } });
+      const autoReply = post(state, ownerHeaders(), { action: "collector-enable" });
+      await gate.bothWaiting;
+      gate.openFor(winner);
+      await (winner === "manual" ? manualReply : autoReply);
+      gate.openAll();
+      const [manual, auto] = await Promise.all([manualReply, autoReply]);
+      const order = `${winner} 먼저`;
+      const label = `${order} · 그날 중지 ${stoppedDay}`;
+      const row = state.tables.coupang_rank_settings[0];
+      if (winner === "manual") {
+        assert.equal(manual.status, 200, label);
+        assert.deepEqual([auto.status, auto.body.code, auto.body.reason], [409, "COUPANG_COLLECTOR_MANUAL_CONFLICT", "manual_enabled"], label);
+        assert.deepEqual([row.manual_enabled, row.enabled], [true, false], label);
+      } else {
+        assert.equal(auto.status, 200, label);
+        assert.deepEqual([manual.status, manual.body.code, manual.body.reason], [409, "COUPANG_MANUAL_COLLECTOR_CONFLICT", "collector_enabled"], label);
+        assert.deepEqual([row.manual_enabled, row.enabled], [false, true], label);
+      }
+      // 쓰기는 조건부다: 지금 확인 켜기는 enabled=false, 수집 켜기는 manual_enabled=false + 그날 중지 조건을 건다
+      const writes = state.queries.filter((query) => query.table === "coupang_rank_settings" && query.operation === "update");
+      assert.ok(writes.filter((query) => Object.hasOwn(query.values, "manual_enabled"))
+        .every((query) => query.filters.some((filter) => filter.op === "eq" && filter.column === "enabled" && filter.value === false)), label);
+      assert.ok(writes.filter((query) => Object.hasOwn(query.values, "enabled"))
+        .every((query) => query.filters.some((filter) => filter.op === "eq" && filter.column === "manual_enabled" && filter.value === false)), label);
+    }
+  }
+});
+
+test("동시: 수집 켜기를 읽은 뒤 지금 확인이 차단으로 오늘 멈추면(그날 중지가 먼저 저장) 수집 켜기는 409 manual_stopped_today", async () => {
+  const state = manualState({ settings: { manual_enabled: false, enabled: false, manual_stopped_day: "2026-10-16" } });
+  state.tables.coupang_rank_collectors.push({ id: uuid(521), revoked_at: null, token_sha256: "e".repeat(64) });
+  // 수집 켜기가 설정을 읽은 뒤·쓰기 전에 manual-stop(SQL)이 오늘 그날 중지를 건 것과 같다
+  state.beforeUpdate = (query) => {
+    if (query.table !== "coupang_rank_settings") return;
+    state.tables.coupang_rank_settings[0].manual_stopped_day = "2026-10-17";
+    state.beforeUpdate = null;
+  };
+  const auto = await post(state, ownerHeaders(), { action: "collector-enable" });
+  assert.deepEqual([auto.status, auto.body.code, auto.body.reason], [409, "COUPANG_COLLECTOR_MANUAL_CONFLICT", "manual_stopped_today"]);
+  assert.equal(state.tables.coupang_rank_settings[0].enabled, false);
 });
 
 // 2026-10-23 검토: 수동 '지금 확인' 성공이 자동 집계(coupang_rank_stats)에 섞여 수집기 0대로도 속도 올리기 관문이 열렸다.

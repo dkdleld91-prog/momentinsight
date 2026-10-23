@@ -1222,8 +1222,14 @@
       }
       case "hours": return make(false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
       case "busy": {
+        var busyLeft = Date.parse(server.busyUntil) - now;
+        // 이 화면이 방금 결과를 서버에 보내지 못했다(연결 실패·로그인 풀림·5xx). 서버는 그 확인을 잠시 '진행 중'으로 센다 — 다른 사람이 아니다.
+        if (options.ownUnsent) {
+          return make(false, "지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다. 이 화면을 열어 두면 잠시 뒤" +
+            (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + ")" : "") +
+            " 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).", "is-warn", { countdown: true });
+        }
         if (options.ownLost) {
-          var busyLeft = Date.parse(server.busyUntil) - now;
           return make(false, "지금 확인: 방금 확인이 확장 응답 없이 끝났습니다" +
             (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + " 뒤 다시 누를 수 있습니다)" : "") + ".", "is-warn", { countdown: true });
         }
@@ -1560,7 +1566,7 @@
         owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 },
         // ① 지금 확인. server 는 목록 GET 의 manual 칸(총관리자만, 캐시에 남기지 않음), offsetMs 는 서버 시각 - 내 시계.
         manual: { server: null, offsetMs: 0, hello: null, helloFlight: null, run: null, result: null, stopDetail: "", busyRefreshFor: "", toggling: false,
-          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null }
+          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null, unsent: null }
       };
     }
 
@@ -3597,18 +3603,30 @@
       return age >= 0 && age < MANUAL_LOST_BUSY_MS;
     }
 
+    // 이 화면이 방금 결과(manual-record)를 서버에 보내지 못했는지(연결 실패·로그인 풀림·5xx). 서버는 결과를 받기 전까지
+    // 그 확인을 '진행 중'(확인 뒤 150초·확인 요청 기한 60초)으로 센다. 보내지 못한 뒤 150초 안의 '진행 중'은 이 확인이다.
+    // 결과를 끝내 보내면(settleManualRecord 의 끝난 답) 지운다.
+    function ownUnsentActive() {
+      var unsent = state.manual.unsent;
+      if (!unsent) return false;
+      var age = Date.now() - Number(unsent.at || 0);
+      return age >= 0 && age < MANUAL_LOST_BUSY_MS;
+    }
+
     function currentManualView() {
       var manual = state.manual;
       var busy = Boolean(manual.server && manual.server.state === "busy");
-      var ownLost = busy ? ownLostActive() : false;
+      var ownUnsent = busy ? ownUnsentActive() : false;
+      var ownLost = busy && !ownUnsent ? ownLostActive() : false;
       return manualView({
         server: manual.server,
         now: manualNow(),
         hello: manual.hello,
         run: manual.run,
         stopDetail: manual.stopDetail,
-        ownPending: busy && !ownLost ? ownPendingActive() : false,
+        ownPending: busy && !ownLost && !ownUnsent ? ownPendingActive() : false,
         ownLost: ownLost,
+        ownUnsent: ownUnsent,
         userAgent: userAgentText()
       });
     }
@@ -3842,12 +3860,15 @@
         clearPending(claim.claimId);
         manual.settled[claim.claimId] = true;
         manual.resumePolls = 0;
+        if (manual.unsent && manual.unsent.claimId === claim.claimId) manual.unsent = null;
         if (parsed && parsed.outcome === "measured") sendManualAck(claim.claimId);
         // 30초 캐시의 hello 가 아직 이 결과를 들고 있다고 하면 지운다(다시 보내거나 다시 ack 하지 않게).
         if (manual.hello && manual.hello.pending && manual.hello.pending.claimId === claim.claimId) manual.hello.pending = null;
       } else {
         // 방금 보내지 못했다. 화면을 다시 열거나 탭이 다시 보일 때(30초 뒤부터) 저절로 다시 보낸다.
         manual.resumeTriedAt[claim.claimId] = Date.now();
+        // 서버가 그동안 이 확인을 '진행 중'으로 세는 사이 상태 줄이 '다른 확인'이라고 하지 않게 기억한다.
+        manual.unsent = { claimId: claim.claimId, at: Date.now() };
       }
       var outcome = manualRecordText(recorded, parsed, claim.keyword, manual.server);
       if (outcome.stopped) {
@@ -3958,6 +3979,7 @@
         var resent = await postManualRecord(earlier.body, scope, owner);
         if (owner !== state) return;
         if (!manualRecordFinal(resent)) {
+          manual.unsent = { claimId: earlier.claim.claimId, at: Date.now() };
           finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false);
           return;
         }

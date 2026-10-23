@@ -2,10 +2,12 @@
 // 관리자 화면(insight.momentlabs.co.kr/admin)이 보낸 메시지에만 답한다. 예약·알람·자동 반복은 없다.
 // 확인 1번의 순서:
 //   1) 작업 중 표시(바로) → 2) 확장 안 검사(오늘 본 차단·같은 크롬 상대 간격·시크릿 허용·사이트 액세스·다른 시크릿 창)
-//   → 3) 빈 시크릿 창(about:blank, 쿠팡 요청 0)을 열어 정말 시크릿인지·다른 시크릿 창이 새로 안 생겼는지 본다
+//   → 3) 빈 시크릿 창(about:blank, 쿠팡 요청 0)을 포커스 없이(focused:false) 열어 정말 시크릿인지·다른 시크릿 창이 새로 안 생겼는지 본다
+//      (보낸 쪽·메시지 모양이 어긋난 요청은 그 전에 거절해 창 0개)
 //   → 4) 서버 확인(GET manual-verify: 토큰·기한·상태·전역 간격을 서버 시각으로 판정, 이 요청을 '검색함'으로 한 번만 표시)
 //      — 창을 못 열거나 검사에서 멈추면 서버 확인 전이라 횟수·간격을 쓰지 않는다
-//   → 5) 그 탭만 서버가 준 검색어의 쿠팡 검색 1쪽으로 → 6) 읽기 → 7) 창 닫기(항상)
+//   → 5) 확인을 받은 뒤에만 창을 앞으로 가져오고(windows.update focused) 그 탭만 서버가 준 검색어의 쿠팡 검색 1쪽으로
+//   → 6) 읽기 → 7) 창 닫기(항상)
 //   → 8) 차단 신호면 서버에 바로 '그날 중지'(GET manual-stop, 실패하면 같은 실행 안에서 0·3·10초에 다시)
 //   → 9) 결과를 storage.local 에 남기고 화면에 답
 //      (화면이 manual-record 로 서버에 보낸 뒤 ack 할 때까지. 탭이 닫혀도 다음 hello 가 다시 준다).
@@ -17,7 +19,8 @@ import {
   EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
   READ_GAP_MS, RESULT_RESEND_MS, SCROLL_COUNT, SCROLL_GAP_MS, SCROLL_PIXELS, SEARCH_HOST, SEARCH_PATH, SERVER_ORIGIN_PATTERN,
   SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
-  browserLabel, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, searchUrl, splitAddress, verifyClaim,
+  LIST_PARAM_DEFAULTS, browserLabel, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, sameListParams, searchAddressOf, searchUrl,
+  splitAddress, verifyClaim,
 } from "./lib/protocol.js";
 import { miCoupangMeasure, miCoupangProbe } from "./lib/measure.js";
 import { assemblePage, stopReasonOf } from "./lib/assemble.js";
@@ -55,14 +58,12 @@ class StopError extends Error {
   }
 }
 
-// 주소가 서버가 준 검색어의 쿠팡 검색 1쪽인지(경로·q 만 본다 — 쿠팡이 붙이는 추적 꼬리는 사람의 이동이 아니다).
-function isSearchAddress(url, keyword) {
-  try {
-    const parsed = new URL(String(url || ""));
-    return parsed.host.toLowerCase() === SEARCH_HOST && parsed.pathname === SEARCH_PATH && parsed.searchParams.get("q") === keyword;
-  } catch {
-    return false;
-  }
+// 주소가 서버가 준 검색어의 쿠팡 검색 1쪽이고, 목록의 순서·범위를 바꾸는 값(정렬·쪽 번호·목록 크기)이 측정 시작 때와 같은지.
+// 쿠팡이 붙이는 추적 꼬리(channel 등)는 사람의 이동이 아니라 보지 않는다(lib/protocol.js LIST_PARAM_DEFAULTS 설명).
+export function isSearchAddress(url, keyword, baseline = LIST_PARAM_DEFAULTS) {
+  const address = searchAddressOf(url);
+  if (!address) return false;
+  return address.host === SEARCH_HOST && address.path === SEARCH_PATH && address.q === keyword && sameListParams(address.list, baseline);
 }
 
 export function createBackground(chromeApi, deps = {}) {
@@ -362,6 +363,8 @@ export function createBackground(chromeApi, deps = {}) {
     let tabId = null;
     let keyword = null;
     let measuring = false;
+    // 측정 시작 때 탭 주소의 목록 값(정렬·쪽 번호·목록 크기). 쿠팡이 불러오는 동안 기본값을 붙였어도 그 뒤 '바뀜'만 본다.
+    let listBaseline = LIST_PARAM_DEFAULTS;
     let navigatedDuringMeasure = false;
     let navigationIssued = false;
     let navigationStarted = false;
@@ -387,12 +390,12 @@ export function createBackground(chromeApi, deps = {}) {
     const onTabRemoved = (id) => {
       if (tabId !== null && id === tabId) stop("window_closed");
     };
-    // 측정 중 주소 바뀜: 새 주소가 보이면 경로·검색어(q)만 비교하고(쿠팡이 붙이는 추적 꼬리는 무시), 주소 없이
-    // 다시 불러오기 시작하면(새로고침·권한 밖 주소로 이동) 바뀐 것으로 본다.
+    // 측정 중 주소 바뀜: 새 주소가 보이면 경로·검색어(q)·목록 값(정렬·쪽 번호·목록 크기)을 비교하고(쿠팡이 붙이는 추적 꼬리는 무시),
+    // 주소 없이 다시 불러오기 시작하면(새로고침·권한 밖 주소로 이동) 바뀐 것으로 본다.
     const onTabUpdated = (id, info) => {
       if (tabId === null || id !== tabId || !measuring || !info) return;
       if (typeof info.url === "string") {
-        if (!isSearchAddress(info.url, keyword)) navigatedDuringMeasure = true;
+        if (!isSearchAddress(info.url, keyword, listBaseline)) navigatedDuringMeasure = true;
         return;
       }
       if (info.status === "loading") navigatedDuringMeasure = true;
@@ -413,7 +416,14 @@ export function createBackground(chromeApi, deps = {}) {
         tabId = id;
         keyword = searchKeyword;
       },
-      setMeasuring(value) { measuring = value; },
+      // 측정 시작 때(value=true) 탭 주소가 같은 검색어의 쿠팡 검색 1쪽이면 그 목록 값을 기준으로 삼는다(아니면 기본값).
+      setMeasuring(value, startUrl) {
+        if (value === true) {
+          const start = searchAddressOf(startUrl);
+          listBaseline = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start.list : LIST_PARAM_DEFAULTS;
+        }
+        measuring = value;
+      },
       // 쪽 안 읽기 결과(load 확인·짧은 읽기)에서 차단 신호·주소를 남긴다.
       noteRead(raw) {
         if (!raw || typeof raw !== "object") return;
@@ -569,7 +579,9 @@ export function createBackground(chromeApi, deps = {}) {
         if (firstPage.status === "blocked") return { page: firstPage };
       }
       let results;
-      run.setMeasuring(true);
+      // 측정 시작 때의 탭 주소를 기준으로 그 뒤 주소 바뀜(경로·q·정렬·쪽 번호·목록 크기)을 본다. 쪽 함수도 자기 시작 때와 비교한다.
+      const startAddress = await tabAddress(tabId);
+      run.setMeasuring(true, startAddress.url);
       try {
         results = await run.guard(c.scripting.executeScript({ target: { tabId }, func: miCoupangMeasure, args: [measureOptions] }));
       } catch (error) {
@@ -617,12 +629,25 @@ export function createBackground(chromeApi, deps = {}) {
     }
   }
 
+  // 서버 확인을 받은 뒤에만 창을 앞으로 가져온다. 측정하는 창이 다른 창에 가려지면 크롬이 덜 그려 목록을 끝까지 못 읽을 수 있다
+  // (숨김 = partial). 못 가져와도 멈추지 않는다(숨김이면 쪽 함수의 wasHidden 으로 서버가 partial 로 판정).
+  async function focusWindow(windowId) {
+    if (!c.windows || typeof c.windows.update !== "function") return false;
+    try {
+      await withTimeout(c.windows.update(windowId, { focused: true }), t.closeTimeoutMs);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async function openAndMeasure({ claimId, claimToken }) {
     let win;
     try {
       // 빈 창을 먼저 열어 정말 시크릿인지 본다(쿠팡 요청 0번). 여기서 멈추면 서버 확인 전이라 횟수·간격을 쓰지 않는다.
+      // 포커스 없이 연다(focused:false = 크롬 문서 '비활성 창'): 서버가 거절할 요청(꾸민 요청 id 등)이면 화면을 가로채지 않고 닫힌다.
       win = await c.windows.create({
-        url: "about:blank", incognito: true, focused: true, type: "normal", width: WINDOW_WIDTH, height: WINDOW_HEIGHT,
+        url: "about:blank", incognito: true, focused: false, type: "normal", width: WINDOW_WIDTH, height: WINDOW_HEIGHT,
       });
     } catch {
       return notStarted("window_create_failed", claimId);
@@ -654,6 +679,7 @@ export function createBackground(chromeApi, deps = {}) {
         // 서버 확인: 빈 창 검사를 모두 마친 뒤, 쿠팡 주소를 넣기 직전. 간격·하루·시간·그날 중지·기한·1회용은
         // 서버가 서버 시각으로 판정한다. 확인 중에 창이 닫히면(사람) 쿠팡 주소를 넣지 않는다.
         const verified = await verifyClaim(fetchImpl, { claimId, claimToken, ...serverOptions });
+        if (verified.ok && !run.stopCode) await run.guard(focusWindow(windowId));
         if (!verified.ok) {
           const { ok: _ok, code, ...detail } = verified;
           result = { notStarted: code, detail };

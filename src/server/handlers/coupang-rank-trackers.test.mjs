@@ -661,90 +661,63 @@ test("역할 3 ④·대표 코드 불일치: SCOPE_NOT_FOUND / ACCESS_DENIED", a
   assert.equal(missing.body.code, "COUPANG_ACCESS_DENIED");
 });
 
-test("역할 4: 운영팀 — 공개 꺼짐·코드 불일치·계정 전용·광고주 범위", async () => {
-  const closed = createState({ settings: { team_access_enabled: false } });
-  const off = await list(closed, teamHeaders("adv-a"));
-  assert.equal(off.status, 403);
-  assert.equal(off.body.code, "COUPANG_TEAM_NOT_OPEN");
+// 대표 결정 2026-10-23: C 30일 순위는 총관리자 전용이다. 운영팀·광고주 세션은 설정의 공개 값
+// (team_access_enabled·client_view_enabled)과 상관없이 모든 화면 경로(메뉴 확인 view=access 포함)에서 COUPANG_OWNER_ONLY 이고,
+// 설정·DB 를 읽기 전에 거절된다(그래서 C 표가 준비됐는지 setupRequired 도 알 수 없다).
+const NON_OWNER_GET_VIEWS = ["?view=access", "?limit=500", "?view=runs&trackerId=" + uuid(1), "?view=collector", "?view=manual-verify&claimId=" + uuid(2), "?view=manual-stop&claimId=" + uuid(2) + "&reason=page_unreadable"];
+const NON_OWNER_POST_ACTIONS = [
+  "create", "pause", "resume", "delete", "group",
+  "settings-update", "collector-enable", "collector-disable", "cooldown-clear", "account-limit-set", "collector-token-create", "collector-token-revoke",
+  "manual-claim", "manual-record",
+];
 
-  const state = createState();
-  state.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A }));
-  state.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "team-a", product_id: "5555" }));
-  const mismatch = await list(state, teamHeaders("adv-a", { accessCode: "adv-b" }));
-  assert.equal(mismatch.status, 403);
-  assert.equal(mismatch.body.code, "COUPANG_ACCESS_DENIED");
-
-  const advertiser = await list(state, teamHeaders("adv-a"));
-  assert.equal(advertiser.status, 200);
-  assert.equal(advertiser.body.scopeMode, "advertiser");
-  assert.equal(advertiser.body.scopeClientId, CLIENT_A);
-  assert.equal(advertiser.body.trackers.length, 1);
-  assert.ok(advertiser.body.limit, "운영팀은 한도를 받는다");
-
-  const accountOnly = await list(state, teamHeaders("team-a", { accountOnly: true, teamCode: "TEAM-A" }));
-  assert.equal(accountOnly.status, 200);
-  assert.equal(accountOnly.body.scopeMode, "team-account");
-  assert.equal(accountOnly.body.scopeClientId, "");
-  assert.equal(accountOnly.body.trackers[0].productId, "5555");
-
-  const wrongTeam = await list(state, teamHeaders("team-a", { accountOnly: true, teamCode: "team-b" }));
-  assert.equal(wrongTeam.body.code, "COUPANG_ACCESS_DENIED");
-
-  const noClient = await list(state, teamHeaders("adv-gone"));
-  assert.equal(noClient.status, 403);
-  assert.equal(noClient.body.code, "COUPANG_SCOPE_NOT_FOUND");
-});
-
-test("역할 5: 광고주 — 공개 꺼짐·쓰기 금지·읽기 전용 조회(한도 null)", async () => {
-  const closed = createState({ settings: { client_view_enabled: false } });
-  assert.equal((await list(closed, clientHeaders("adv-a"))).body.code, "COUPANG_CLIENT_NOT_OPEN");
-  assert.equal((await post(closed, clientHeaders("adv-a"), { action: "pause", ids: [uuid(1)] })).body.code, "COUPANG_CLIENT_NOT_OPEN");
-
-  const state = createState();
-  state.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A }));
-  for (const action of ["create", "pause", "resume", "delete", "group", "settings-update", "collector-enable", "collector-token-create"]) {
-    const result = await post(state, clientHeaders("adv-a"), { action, ids: [uuid(1)] });
-    assert.equal(result.status, 403, action);
-    assert.equal(result.body.code, "COUPANG_READ_ONLY", action);
+async function assertNonOwnerRejected(headers, label) {
+  for (const settings of [{ team_access_enabled: true, client_view_enabled: true }, { team_access_enabled: false, client_view_enabled: false }]) {
+    const state = createState({ settings });
+    state.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A }));
+    const tag = `${label} · 공개 ${settings.team_access_enabled ? "켜짐" : "꺼짐"}`;
+    for (const query of NON_OWNER_GET_VIEWS) {
+      const result = await list(state, headers, query);
+      assert.equal(result.status, 403, `${tag} GET ${query}`);
+      assert.equal(result.body.code, "COUPANG_OWNER_ONLY", `${tag} GET ${query}`);
+      assert.equal(result.body.trackers, undefined, `${tag} GET ${query}`);
+      assert.equal(result.body.open, undefined, `${tag} GET ${query}`);
+      assert.equal(result.body.setupRequired, undefined, `${tag} GET ${query}`);
+    }
+    for (const action of NON_OWNER_POST_ACTIONS) {
+      const result = await post(state, headers, { action, ids: [uuid(1)], keyword: "필름", productUrl: "8533720933", trackerId: uuid(1), settings: { maxRunsPerHour: 6 } });
+      assert.equal(result.status, 403, `${tag} POST ${action}`);
+      assert.equal(result.body.code, "COUPANG_OWNER_ONLY", `${tag} POST ${action}`);
+    }
+    assert.equal(state.queries.length, 0, `${tag}: 설정·추적기·광고주 표를 읽지 않는다`);
+    assert.equal(state.rpcCalls.length, 0, `${tag}: RPC 를 부르지 않는다`);
+    assert.equal(state.tables.coupang_rank_trackers.length, 1);
+    assert.equal(state.tables.coupang_rank_trackers[0].status, "active");
   }
-  const view = await list(state, clientHeaders("adv-a"));
-  assert.equal(view.status, 200);
-  assert.equal(view.body.readOnly, true);
-  assert.equal(view.body.scopeMode, "advertiser");
-  assert.equal(view.body.scopeClientId, CLIENT_A);
-  assert.equal(view.body.limit, null);
-  assert.equal(state.rpcCalls.filter((entry) => entry.name === "coupang_rank_limit_status").length, 0);
-  assert.equal((await list(state, clientHeaders("adv-a", "adv-b"))).body.code, "COUPANG_ACCESS_DENIED");
-  assert.equal((await list(state, clientHeaders("adv-gone"))).body.code, "COUPANG_SCOPE_NOT_FOUND");
+}
+
+test("총관리자 전용: 운영팀 세션(광고주 범위·계정 전용·대표 코드)은 공개 값과 상관없이 목록·기록·수집기·지금 확인·모든 동작이 OWNER_ONLY", async () => {
+  await assertNonOwnerRejected(teamHeaders("adv-a"), "운영팀 광고주 범위");
+  await assertNonOwnerRejected(teamHeaders("team-a", { accountOnly: true, teamCode: "TEAM-A" }), "운영팀 계정 전용");
+  await assertNonOwnerRejected(teamHeaders(PRIMARY), "운영팀 대표 코드");
 });
 
-test("운영팀·광고주는 대표 코드 범위로 열리지 않는다(레거시 코드 매핑 포함)", async () => {
+test("총관리자 전용: 광고주 세션도 공개 값과 상관없이 조회까지 OWNER_ONLY(읽기 전용 화면 없음)", async () => {
+  await assertNonOwnerRejected(clientHeaders("adv-a"), "광고주");
+  await assertNonOwnerRejected(clientHeaders(PRIMARY), "광고주 대표 코드");
+});
+
+test("총관리자 전용: 레거시 대표 코드·그 밖의 역할도 OWNER_ONLY", async () => {
   const previous = process.env.MI_LEGACY_AGENCY_CODES;
   process.env.MI_LEGACY_AGENCY_CODES = "old-owner";
   try {
-    const state = createState();
-    state.tables.coupang_rank_trackers.push(trackerRow());
-    for (const headers of [
-      teamHeaders(PRIMARY),
-      teamHeaders("old-owner", { accountOnly: true, teamCode: "old-owner" }),
-      clientHeaders(PRIMARY),
-      clientHeaders("old-owner"),
-    ]) {
-      const result = await list(state, headers);
-      assert.equal(result.status, 403);
-      assert.equal(result.body.code, "COUPANG_ACCESS_DENIED");
-    }
+    await assertNonOwnerRejected(teamHeaders("old-owner", { accountOnly: true, teamCode: "old-owner" }), "운영팀 레거시 코드");
+    await assertNonOwnerRejected(clientHeaders("old-owner"), "광고주 레거시 코드");
   } finally {
     if (previous === undefined) delete process.env.MI_LEGACY_AGENCY_CODES;
     else process.env.MI_LEGACY_AGENCY_CODES = previous;
   }
-});
-
-test("역할 6: 그 밖의 역할은 ACCESS_DENIED", async () => {
-  const state = createState();
-  const result = await list(state, { "x-mi-session-role": "admin", "x-mi-session-scope": "advertiser", "x-mi-agency-code": PRIMARY });
-  assert.equal(result.status, 403);
-  assert.equal(result.body.code, "COUPANG_ACCESS_DENIED");
+  await assertNonOwnerRejected({ "x-mi-session-role": "admin", "x-mi-session-scope": "advertiser", "x-mi-agency-code": PRIMARY }, "admin 역할");
 });
 
 test("body·query 의 자격 값은 읽지 않는다", async () => {
@@ -754,13 +727,18 @@ test("body·query 의 자격 값은 읽지 않는다", async () => {
   const owner = await list(state, ownerHeaders(), "?limit=500&agencyCode=adv-a&agency_code=adv-a&accessCode=adv-a");
   assert.equal(owner.body.scopeAgencyCode, PRIMARY);
   assert.equal(owner.body.trackers.length, 0);
+  const target = state.tables.coupang_rank_trackers[0];
+  const ownerPause = await post(state, ownerHeaders(), { action: "pause", ids: [target.id], agencyCode: "adv-a", accessCode: "adv-a" });
+  assert.deepEqual(ownerPause.body, { ok: true, updated: 0 });
+  assert.equal(target.status, "active");
   // 머리글 없는 요청은 body 의 자격 값으로 열리지 않는다
   const forged = await post(state, {}, { action: "pause", ids: [uuid(1)], agencyCode: "adv-a", accessCode: "adv-a", role: "owner" });
   assert.equal(forged.status, 401);
-  // 운영팀이 body 로 다른 광고주를 보내도 머리글 범위로만 바뀐다
-  const target = state.tables.coupang_rank_trackers[0];
-  const teamPause = await post(state, teamHeaders("adv-b"), { action: "pause", ids: [target.id], agencyCode: "adv-a", accessCode: "adv-a" });
-  assert.deepEqual(teamPause.body, { ok: true, updated: 0 });
+  // 운영팀이 body·query 로 총관리자 역할을 보내도 열리지 않는다
+  const teamForged = await post(state, teamHeaders("adv-a"), { action: "pause", ids: [target.id], role: "owner", ownerAgencyCode: PRIMARY });
+  assert.equal(teamForged.body.code, "COUPANG_OWNER_ONLY");
+  const teamQuery = await list(state, teamHeaders("adv-a"), `?limit=500&role=owner&ownerAgencyCode=${PRIMARY}`);
+  assert.equal(teamQuery.body.code, "COUPANG_OWNER_ONLY");
   assert.equal(target.status, "active");
 });
 
@@ -770,7 +748,7 @@ test("추적기 쿼리는 모두 agency_code 조건을 건다(다른 계정 id �
   const theirs = trackerRow({ agency_code: "adv-b", client_id: CLIENT_B, product_id: "6002" });
   const theirsPaused = trackerRow({ agency_code: "adv-b", client_id: CLIENT_B, product_id: "6003", status: "paused", paused_at: NOW });
   state.tables.coupang_rank_trackers.push(mine, theirs, theirsPaused);
-  const headers = teamHeaders("adv-a");
+  const headers = ownerHeaders("adv-a");
   assert.deepEqual((await post(state, headers, { action: "pause", ids: [theirs.id] })).body, { ok: true, updated: 0 });
   assert.deepEqual((await post(state, headers, { action: "group", ids: [theirs.id], groupName: "남의 것" })).body, { ok: true, updated: 0 });
   assert.deepEqual((await post(state, headers, { action: "resume", ids: [theirsPaused.id] })).body, { ok: true, updated: 0 });
@@ -995,7 +973,7 @@ test("GET 목록: 하나라도 읽기에 실패하면 500(DB 문구 숨김, 기�
 
 // ── 표 없음·메서드 ──────────────────────────────────────────────────────────
 
-test("setupRequired: GET 200(역할 판정 전)·POST 503·access", async () => {
+test("setupRequired: 총관리자 GET 200·POST 503·access, 운영팀은 표가 없어도 OWNER_ONLY", async () => {
   const state = createState();
   delete state.tables.coupang_rank_settings;
   const listed = await list(state, ownerHeaders());
@@ -1004,16 +982,22 @@ test("setupRequired: GET 200(역할 판정 전)·POST 503·access", async () => 
     ok: true, setupRequired: true, trackers: [], returnedCount: 0, totalCount: 0, hasMore: false, complete: true,
     collector: { state: "setup_required" },
   });
-  // 표가 없으면 역할 판정보다 먼저: 운영팀 공개 여부를 볼 수 없어도 setupRequired
-  assert.equal((await list(state, teamHeaders("adv-a"))).body.setupRequired, true);
+  // 총관리자 전용(대표 결정 2026-10-23): 세션 관문이 표 확인보다 먼저라 운영팀은 setupRequired 를 받지 않는다
+  const teamList = await list(state, teamHeaders("adv-a"));
+  assert.equal(teamList.status, 403);
+  assert.equal(teamList.body.code, "COUPANG_OWNER_ONLY");
+  assert.equal(teamList.body.setupRequired, undefined);
   const posted = await post(state, ownerHeaders(), { action: "create", keyword: "필름", productUrl: "8533720933" });
   assert.equal(posted.status, 503);
   assert.equal(posted.body.code, "COUPANG_SETUP_REQUIRED");
   const ownerAccess = await list(state, ownerHeaders(), "?view=access");
   assert.deepEqual(ownerAccess.body, { ok: true, open: true, role: "owner", readOnly: false, setupRequired: true });
+  // 메뉴 확인(view=access)도 운영팀은 표 확인 전에 거절된다(표가 준비됐는지 알 수 없다).
   const teamAccess = await list(state, teamHeaders("adv-a"), "?view=access");
-  assert.equal(teamAccess.body.open, false);
-  assert.equal(teamAccess.body.setupRequired, true);
+  assert.equal(teamAccess.status, 403);
+  assert.equal(teamAccess.body.code, "COUPANG_OWNER_ONLY");
+  assert.equal(teamAccess.body.open, undefined);
+  assert.equal(teamAccess.body.setupRequired, undefined);
   assert.equal((await list(state, ownerHeaders(), "?view=collector")).body.setupRequired, true);
 });
 
@@ -1114,16 +1098,24 @@ test("POST 본문: 32KB 초과 413, JSON 아님·객체 아님·모르는 action
 
 // ── view=access ───────────────────────────────────────────────────────────
 
-test("GET ?view=access: 꺼져 있어도 403 이 아니라 open:false", async () => {
-  const closed = createState({ settings: { team_access_enabled: false, client_view_enabled: false } });
-  assert.deepEqual((await list(closed, ownerHeaders(), "?view=access")).body, { ok: true, open: true, role: "owner", readOnly: false, setupRequired: false });
-  assert.deepEqual((await list(closed, teamHeaders("adv-a"), "?view=access")).body, { ok: true, open: false, role: "team", readOnly: false, setupRequired: false });
-  assert.deepEqual((await list(closed, clientHeaders("adv-a"), "?view=access")).body, { ok: true, open: false, role: "client", readOnly: true, setupRequired: false });
+test("GET ?view=access: 총관리자만 open:true, 운영팀·광고주는 공개 값과 상관없이 설정을 읽기 전에 COUPANG_OWNER_ONLY(대표 결정 2026-10-23)", async () => {
+  for (const settings of [{ team_access_enabled: false, client_view_enabled: false }, { team_access_enabled: true, client_view_enabled: true }]) {
+    const state = createState({ settings });
+    for (const headers of [teamHeaders("adv-a"), clientHeaders("adv-a")]) {
+      const denied = await list(state, headers, "?view=access");
+      assert.equal(denied.status, 403);
+      assert.equal(denied.body.code, "COUPANG_OWNER_ONLY");
+      assert.equal(denied.body.open, undefined);
+    }
+    assert.equal(state.queries.length, 0, "운영팀·광고주는 설정 표를 읽지 않는다");
+    assert.deepEqual((await list(state, ownerHeaders(), "?view=access")).body, { ok: true, open: true, role: "owner", readOnly: false, setupRequired: false });
+  }
   const open = createState();
-  assert.equal((await list(open, teamHeaders("adv-a"), "?view=access")).body.open, true);
-  assert.equal((await list(open, clientHeaders("adv-a"), "?view=access")).body.open, true);
-  assert.equal((await list(open, { ...ownerHeaders(), "x-mi-owner-agency-code": "x" }, "?view=access")).body.open, false);
+  const wrongOwnerCode = await list(open, { ...ownerHeaders(), "x-mi-owner-agency-code": "x" }, "?view=access");
+  assert.equal(wrongOwnerCode.status, 403);
+  assert.equal(wrongOwnerCode.body.code, "COUPANG_ACCESS_DENIED");
   assert.equal((await list(open, {}, "?view=access")).status, 401);
+  assert.equal(open.queries.length, 0);
 });
 
 // ── view=runs ─────────────────────────────────────────────────────────────
@@ -1157,10 +1149,10 @@ test("GET ?view=runs: 최근 30일 스냅샷과 같은 키워드의 14일 실패
 
 // ── create ────────────────────────────────────────────────────────────────
 
-test("create: 새 등록 — 정규화된 값으로 insert, after_activate, firstCheck queued, 응답 limit.capacity", async () => {
+test("create: 새 등록(총관리자 · 광고주 범위) — 정규화된 값으로 insert, after_activate, firstCheck queued, 응답 limit.capacity", async () => {
   const state = createState();
   state.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A, keyword_key: "기존", product_id: "1234", sort_order: 300 }));
-  const { status, body } = await post(state, teamHeaders("adv-a"), {
+  const { status, body } = await post(state, ownerHeaders("adv-a"), {
     action: "create",
     keyword: "  iPhone 18 Pro　사생활  필름 ",
     productUrl: "https://www.coupang.com/vp/products/8533720933?itemId=1&vendorItemId=96009802650",
@@ -1181,7 +1173,7 @@ test("create: 새 등록 — 정규화된 값으로 insert, after_activate, firs
     vendor_item_id: "96009802650",
     group_name: "필름",
     sort_order: 400,
-    created_by: "team",
+    created_by: "owner",
   });
   assert.equal(body.tracker.keyword, "iPhone 18 Pro 사생활 필름");
   assert.equal(body.tracker.status, "active");
@@ -1286,7 +1278,7 @@ test("create: 사전 한도 검사 403(계정·전체), 이미 수집 중인 키
   const account = createState();
   account.tables.coupang_rank_account_limits.push({ agency_code: "adv-a", keyword_limit: 1 });
   account.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A, keyword_key: "a", product_id: "1111" }));
-  const accountLimit = await post(account, teamHeaders("adv-a"), { action: "create", keyword: "b", productUrl: "2222" });
+  const accountLimit = await post(account, ownerHeaders("adv-a"), { action: "create", keyword: "b", productUrl: "2222" });
   assert.equal(accountLimit.status, 403);
   assert.deepEqual(
     { code: accountLimit.body.code, limit: accountLimit.body.limit, count: accountLimit.body.count },
@@ -1298,13 +1290,13 @@ test("create: 사전 한도 검사 403(계정·전체), 이미 수집 중인 키
     trackerRow({ agency_code: "adv-b", client_id: CLIENT_B, keyword_key: "x", product_id: "1111" }),
     trackerRow({ agency_code: "adv-b", client_id: CLIENT_B, keyword_key: "y", product_id: "2222" }),
   );
-  const globalLimit = await post(global, teamHeaders("adv-a"), { action: "create", keyword: "z", productUrl: "3333" });
+  const globalLimit = await post(global, ownerHeaders("adv-a"), { action: "create", keyword: "z", productUrl: "3333" });
   assert.equal(globalLimit.status, 403);
   assert.deepEqual(
     { code: globalLimit.body.code, limit: globalLimit.body.limit, count: globalLimit.body.count },
     { code: "COUPANG_GLOBAL_KEYWORD_LIMIT_REACHED", limit: 2, count: 2 },
   );
-  const shared = await post(global, teamHeaders("adv-a"), { action: "create", keyword: "X", productUrl: "4444" });
+  const shared = await post(global, ownerHeaders("adv-a"), { action: "create", keyword: "X", productUrl: "4444" });
   assert.equal(shared.status, 200, "같은 키워드를 이미 수집 중이면 전체 한도에 걸리지 않음");
   assert.equal(account.queries.filter((query) => query.operation === "insert").length, 0);
 });
@@ -1395,7 +1387,7 @@ test("resume: id 마다 순서대로, 도중 한도 오류면 그 자리에서 �
 
 // ── 총관리자 전용 ─────────────────────────────────────────────────────────
 
-test("총관리자 전용 동작·조회: 운영팀은 OWNER_ONLY(공개 꺼짐이면 TEAM_NOT_OPEN)", async () => {
+test("총관리자 전용 동작·조회: 운영팀은 공개 값과 상관없이 OWNER_ONLY", async () => {
   const state = createState();
   for (const action of ["settings-update", "collector-enable", "collector-disable", "cooldown-clear", "account-limit-set", "collector-token-create", "collector-token-revoke"]) {
     const result = await post(state, teamHeaders("adv-a"), { action, settings: { maxRunsPerHour: 6 } });
@@ -1405,7 +1397,7 @@ test("총관리자 전용 동작·조회: 운영팀은 OWNER_ONLY(공개 꺼짐�
   assert.equal((await list(state, teamHeaders("adv-a"), "?view=collector")).body.code, "COUPANG_OWNER_ONLY");
   assert.equal((await list(state, clientHeaders("adv-a"), "?view=collector")).body.code, "COUPANG_OWNER_ONLY");
   const closed = createState({ settings: { team_access_enabled: false } });
-  assert.equal((await post(closed, teamHeaders("adv-a"), { action: "collector-enable" })).body.code, "COUPANG_TEAM_NOT_OPEN");
+  assert.equal((await post(closed, teamHeaders("adv-a"), { action: "collector-enable" })).body.code, "COUPANG_OWNER_ONLY");
   // 총관리자 전용 조회는 대상 범위와 무관하다(해제된 광고주를 고른 채여도 패널이 열린다)
   const owner = await list(state, ownerHeaders("adv-gone"), "?view=collector");
   assert.equal(owner.status, 200);
@@ -1752,10 +1744,10 @@ test("manual-claim: 세션 없음 401·체험 403, 운영팀·광고주는 공�
   assert.equal((await post(state, { "x-mi-session-role": "client", "x-mi-session-scope": "trial" }, body)).body.code, "TRIAL_LOCKED");
   assert.equal((await post(state, teamHeaders("adv-a"), body)).body.code, "COUPANG_OWNER_ONLY");
   assert.equal((await post(state, teamHeaders("team-a", { accountOnly: true }), body)).body.code, "COUPANG_OWNER_ONLY");
-  assert.equal((await post(state, clientHeaders("adv-a"), body)).body.code, "COUPANG_READ_ONLY");
+  assert.equal((await post(state, clientHeaders("adv-a"), body)).body.code, "COUPANG_OWNER_ONLY");
   const closed = manualState({ settings: { team_access_enabled: false, client_view_enabled: false } });
-  assert.equal((await post(closed, teamHeaders("adv-a"), body)).body.code, "COUPANG_TEAM_NOT_OPEN");
-  assert.equal((await post(closed, clientHeaders("adv-a"), body)).body.code, "COUPANG_CLIENT_NOT_OPEN");
+  assert.equal((await post(closed, teamHeaders("adv-a"), body)).body.code, "COUPANG_OWNER_ONLY");
+  assert.equal((await post(closed, clientHeaders("adv-a"), body)).body.code, "COUPANG_OWNER_ONLY");
   for (const current of [state, closed]) {
     assert.equal(current.rpcCalls.filter((entry) => entry.name.startsWith("coupang_rank_manual_")).length, 0);
   }
@@ -2039,7 +2031,7 @@ test("GET ?view=manual-stop: 사유는 계약 목록만, 토큰 해시·회차 �
   assert.equal((await manualGet(state, teamHeaders("adv-a"), "manual-stop", { reason: "page_unreadable" })).body.code, "COUPANG_OWNER_ONLY");
 });
 
-test("GET 목록: manual 칸은 총관리자에게만(확장 ID·zip 경로 포함), 운영팀·광고주 응답에는 키 자체가 없다, 요약 실패는 setup_required(200)", async () => {
+test("GET 목록: manual 칸은 총관리자에게만(확장 ID·zip 경로 포함), 운영팀·광고주는 목록 자체를 받지 못한다, 요약 실패는 setup_required(200)", async () => {
   const state = manualState();
   state.tables.coupang_rank_trackers.push(trackerRow());
   const owner = await list(state, ownerHeaders());
@@ -2053,8 +2045,10 @@ test("GET 목록: manual 칸은 총관리자에게만(확장 ID·zip 경로 포�
   teamState.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A }));
   for (const headers of [teamHeaders("adv-a"), clientHeaders("adv-a")]) {
     const result = await list(teamState, headers);
-    assert.equal(result.status, 200);
+    assert.equal(result.status, 403);
+    assert.equal(result.body.code, "COUPANG_OWNER_ONLY");
     assert.equal(Object.hasOwn(result.body, "manual"), false);
+    assert.equal(Object.hasOwn(result.body, "trackers"), false);
   }
   assert.equal(rpcArgs(teamState, "coupang_rank_manual_summary").length, 0);
   const missing = manualState();

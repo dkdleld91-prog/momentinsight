@@ -26,7 +26,7 @@
   var RANK_TOP = 50;
   var COUPANG_SEARCH_URL = "https://www.coupang.com/np/search?q=";
   var OWNER_POLL_MS = 60000;
-  // 화면 열기(show)가 짧은 간격으로 두 번 오면(메뉴 클릭의 setScreen + hashchange, 운영팀 세션 동기화의
+  // 화면 열기(show)가 짧은 간격으로 두 번 오면(메뉴 클릭의 setScreen + hashchange, 세션 동기화의
   // scope-changed + auth-ready) 같은 범위 목록·수집기 상태를 다시 받지 않는 시간.
   var LIST_REUSE_MS = 2000;
   var EXPORT_MAX_HEIGHT = 30000;
@@ -177,9 +177,8 @@
   ];
 
   // §5.9 편집 칸. 범위는 서버 검사와 같고, 서버가 마지막으로 다시 검사한다.
+  // 운영팀·광고주 공개 칸은 없다: C 30일 순위는 총관리자 전용이다(대표 결정 2026-10-23).
   var SETTING_FIELDS = [
-    { key: "teamAccessEnabled", label: "운영팀 공개", type: "bool", help: "켜면 운영팀 메뉴에 C 30일 순위가 보입니다(2a)." },
-    { key: "clientViewEnabled", label: "광고주 공개", type: "bool", help: "광고주 화면 연결(2b) 뒤에 켭니다." },
     { key: "checksPerDay", label: "하루 측정 횟수", type: "int", min: 1, max: 6, help: "바꾸면 모든 키워드 일정을 다시 계산합니다." },
     { key: "activeFromHour", label: "수집 시작(시)", type: "int", min: 0, max: 23 },
     { key: "activeToHour", label: "수집 끝(시)", type: "int", min: 1, max: 24 },
@@ -200,8 +199,6 @@
     COUPANG_SESSION_REQUIRED: "로그인이 필요합니다. 다시 로그인해주세요.",
     TRIAL_LOCKED: "체험 계정에서는 쓸 수 없는 기능입니다.",
     PLAN_EXPIRED: "이용 기간이 끝나 바꿀 수 없습니다. 기록은 계속 볼 수 있습니다.",
-    COUPANG_TEAM_NOT_OPEN: "운영팀 공개가 아직 꺼져 있습니다.",
-    COUPANG_CLIENT_NOT_OPEN: "광고주 공개가 아직 꺼져 있습니다.",
     COUPANG_READ_ONLY: "읽기 전용 화면이라 바꿀 수 없습니다.",
     COUPANG_SCOPE_NO_CREATE: "이 팀 코드 범위에서는 새로 등록하거나 다시 시작할 수 없습니다(조회·중지·삭제만)",
     COUPANG_OWNER_ONLY: "총관리자만 할 수 있습니다.",
@@ -3223,11 +3220,6 @@
       if (isRaise(data.settings, result.patch)) {
         if (!confirmAction(raiseConfirmText(data, result.patch))) return;
         body.confirmRaise = true;
-      } else if (result.patch.teamAccessEnabled === true || result.patch.clientViewEnabled === true) {
-        var opened = [];
-        if (result.patch.teamAccessEnabled === true) opened.push("운영팀 메뉴");
-        if (result.patch.clientViewEnabled === true) opened.push("광고주 읽기 화면");
-        if (!confirmAction(opened.join("·") + "에 C 30일 순위가 열립니다. 저장할까요?")) return;
       }
       await ownerPost(body, function (payload) {
         return "설정을 저장했습니다." + (isNum(payload.replanned) && payload.replanned > 0 ? " 키워드 " + payload.replanned + "개의 일정을 다시 계산했습니다." : "");
@@ -4503,7 +4495,7 @@
       }
       renderAll();
       ensureManualHello();
-      // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 운영팀 세션 동기화도 scope-changed 와
+      // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 세션 동기화도 scope-changed 와
       // auth-ready 로 두 번 부른다. 같은 범위를 받는 중이거나 2초 안에 받았으면 다시 보내지 않는다.
       loadList({ reuse: true, announce: true });
       startNextTicker();

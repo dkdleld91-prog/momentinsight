@@ -11840,6 +11840,8 @@
           <p class="mi-nav-title">순위 조회·추적</p>
           <a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>
           <a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
+          <!-- C 30일 순위는 총관리자에게만 보인다(대표 결정 2026-10-23). 세션 확인 전에는 숨겨 둔다. -->
+          <a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위</a>
         </div>
 
         <!-- 개발 중 화면은 상시 메뉴에서 내려 접힌 그룹으로 모은다(4단계 §3).
@@ -11847,7 +11849,6 @@
         <div class="mi-nav-group mi-nav-lab" data-mi-nav-lab>
           <button class="mi-nav-title mi-nav-lab-toggle" type="button" data-mi-nav-lab-toggle aria-expanded="false" aria-controls="mi-admin-nav-lab">실험실 · 개발 중<span aria-hidden="true">▾</span></button>
           <div class="mi-nav-lab-items" id="mi-admin-nav-lab">
-            <a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위 <small>(개발중)</small></a>
             <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>
             <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
             <!-- 운영 입력·보고서 관리·공개 관리는 아직 쓰지 않아 실험실로 내린다(2026-09-07 대표 지시). 화면은 그대로 열린다. -->
@@ -20618,6 +20619,9 @@
         renderSourceFile();
         resetWorkOperation();
         syncPersonalCalendarMenu();
+        // C 30일 순위는 총관리자 전용(대표 결정 2026-10-23). 아래 await(광고주 자료 받기) 전에 운영팀이면
+        // C 메뉴를 숨기고 C 화면에서 홈으로 보낸다. 잠금을 푼 뒤 여기까지 await 가 없어 C 머리글이 그려지지 않는다.
+        applyCoupangRankSession();
         // 넛지는 "새 세션이 적용되고 화면이 열린 직후" 여기서 한 번 평가한다.
         // 아래 역할별 분기에는 await 와 adminSessionIsCurrent 게이트가 있어서, 이미 착지한
         // 뒤에도 함수 마지막 줄까지 가지 못하는 경로가 있다(화면 안 로그아웃 → 코드 재로그인).
@@ -20678,6 +20682,8 @@
         resetWorkOperation();
         unmountPersonalCalendar();
         syncPersonalCalendarMenu();
+        discardCoupangRank();
+        syncCoupangRankMenu();
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
         syncGlobalAdvertiserTargetFromPublicCode();
@@ -21096,11 +21102,11 @@
       }
 
       var coupangRankController = null;
-      var coupangRankOpen = false;
-      var coupangRankAccessSeq = 0;
 
+      // C 30일 순위(쿠팡)는 총관리자 전용이다(대표 결정 2026-10-23). 운영팀·광고주에게는 메뉴도 화면도 없다
+      // (설정의 운영팀·광고주 공개 값과 상관없다. 서버도 총관리자 세션이 아니면 거절한다).
       function coupangRankMenuVisible() {
-        return secureSession.role === "owner" || (secureSession.role === "team" && coupangRankOpen);
+        return secureSession.role === "owner";
       }
 
       function syncCoupangRankMenu() {
@@ -21120,23 +21126,28 @@
         else setScreen("home", false);
       }
 
-      function refreshCoupangRankAccess() {
-        var seq = ++coupangRankAccessSeq;
-        if (secureSession.role !== "team") {
-          coupangRankOpen = false;
-          syncCoupangRankMenu();
-          syncCoupangRankScreen();
-          return;
-        }
-        miFetch("/api/coupang-rank-trackers?view=access", { method: "GET", timeoutMs: 15000 })
-          .then(function (response) { return response.json(); })
-          .then(function (payload) {
-            if (seq !== coupangRankAccessSeq || secureSession.role !== "team") return;
-            coupangRankOpen = Boolean(payload && payload.ok === true && payload.open === true);
-            syncCoupangRankMenu();
-            syncCoupangRankScreen();
-          })
-          .catch(function () {});
+      // 세션이 확인될 때마다(mi:rank-auth-ready) 메뉴와 화면을 역할에 맞춘다. 서버에 묻지 않는다.
+      function syncCoupangRankAccess() {
+        syncCoupangRankMenu();
+        syncCoupangRankScreen();
+      }
+
+      // 로그아웃·총관리자가 아닌 세션: 총관리자 때 붙은 C 화면과 목록 캐시(sessionStorage)를 지운다.
+      function discardCoupangRank() {
+        if (!coupangRankController) return;
+        try {
+          coupangRankController.destroy();
+        } catch (error) {}
+        coupangRankController = null;
+      }
+
+      // 세션을 적용한 직후, 첫 await 전에 부른다(activateAdminSession). 총관리자가 아니면 메뉴를 숨기고
+      // 화면·캐시를 지우고, C 화면이면 홈으로 보낸다(주소창도 홈). 총관리자는 auth-ready 에서 붙인다.
+      function applyCoupangRankSession() {
+        syncCoupangRankMenu();
+        if (coupangRankMenuVisible()) return;
+        discardCoupangRank();
+        if (coupangRankViewActive()) setScreen("home", false);
       }
 
       function mountCoupangRank() {
@@ -21162,7 +21173,7 @@
         coupangRankController.show();
       }
 
-      window.addEventListener("mi:rank-auth-ready", refreshCoupangRankAccess);
+      window.addEventListener("mi:rank-auth-ready", syncCoupangRankAccess);
       window.addEventListener("mi:rank-scope-changed", function () {
         if (coupangRankController) coupangRankController.scopeChanged();
       });
@@ -21265,7 +21276,9 @@
           else link.removeAttribute("aria-current");
         });
         var hasOwnerHashWithoutOwner = secureSession.role === "team" && /^#mi-admin-owner-/.test(window.location.hash || "");
-        if ((rejectedProductRankTarget || rejectedPersonalTarget || rejectedWorkTarget || embeddedWorkTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner || rejectedCoupangTarget) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
+        // 새로고침·새 탭으로 C 주소를 연 운영팀 세션은 setScreen("home") 으로 오므로, 남은 C 해시도 홈으로 바꾼다.
+        var hasCoupangHashWithoutOwner = Boolean(secureSession.role) && !coupangRankMenuVisible() && window.location.hash === "#mi-admin-coupang-rank-tracking";
+        if ((rejectedProductRankTarget || rejectedPersonalTarget || rejectedWorkTarget || embeddedWorkTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner || rejectedCoupangTarget || hasCoupangHashWithoutOwner) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
           window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-admin-" + target);
         }
         if (target !== "work" && target !== "owner-assistant") deactivateWorkOperation();

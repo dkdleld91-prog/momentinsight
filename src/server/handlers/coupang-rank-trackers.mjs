@@ -28,7 +28,7 @@ import {
 } from "../coupang-rank/contract.mjs";
 import { chunk, inList, isSetupMissing, loadSettings, mapLimit, selectPages } from "../coupang-rank/db.mjs";
 import { generateCollectorToken } from "../coupang-rank/worker-token.mjs";
-import { accessView, canonicalAgencyCode, resolveCoupangAccess } from "../coupang-rank/access.mjs";
+import { accessView, canonicalAgencyCode, ownerSessionDenial, resolveCoupangAccess } from "../coupang-rank/access.mjs";
 import {
   coupangKeywordKey,
   isUuid,
@@ -135,9 +135,6 @@ const RAISE_WINDOW_MS = 48 * 60 * 60 * 1000;
 const MESSAGES = Object.freeze({
   COUPANG_SESSION_REQUIRED: "로그인 세션을 확인할 수 없습니다. 다시 로그인해 주세요.",
   TRIAL_LOCKED: "체험 계정에서는 쿠팡 30일 순위를 쓸 수 없습니다. 도입 문의 후 이용할 수 있습니다.",
-  COUPANG_TEAM_NOT_OPEN: "쿠팡 30일 순위는 아직 운영팀에 열리지 않았습니다.",
-  COUPANG_CLIENT_NOT_OPEN: "쿠팡 30일 순위는 아직 광고주 화면에 열리지 않았습니다.",
-  COUPANG_READ_ONLY: "광고주 화면에서는 쿠팡 순위를 조회만 할 수 있습니다.",
   COUPANG_SCOPE_NO_CREATE: "이 팀 코드 범위에서는 새로 등록하거나 다시 시작할 수 없습니다(조회·중지·삭제만).",
   COUPANG_OWNER_ONLY: "총관리자만 할 수 있는 작업입니다.",
   COUPANG_SCOPE_NOT_FOUND: "대상 범위(광고주·팀 코드)를 찾을 수 없습니다.",
@@ -775,6 +772,11 @@ async function collectorView(request, ctx, settings, now, trace) {
 
 async function handleGet(request, ctx, url, view, now, trace) {
   if (!VIEWS.has(view)) return failure(request, "COUPANG_ACTION_INVALID");
+  // 총관리자 전용(대표 결정 2026-10-23): 총관리자 세션이 아니면 설정을 읽기 전에 거절한다
+  // (목록·기록·수집기·지금 확인, 메뉴 확인 view=access 까지 모두. 관리자 화면은 view=access 를 부르지 않는다).
+  trace.stage = "access";
+  const denial = ownerSessionDenial(request);
+  if (denial) return failure(request, denial);
   trace.stage = "settings";
   const loaded = await loadSettings(ctx);
   if (loaded.setupRequired) {
@@ -790,8 +792,7 @@ async function handleGet(request, ctx, url, view, now, trace) {
   }
 
   trace.stage = "access";
-  const resolved = await resolveCoupangAccess(request, ctx, settings, {
-    write: false,
+  const resolved = await resolveCoupangAccess(request, ctx, {
     create: false,
     ownerOnly: view === "collector" || MANUAL_VIEWS.has(view),
   });
@@ -1439,6 +1440,10 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
 }
 
 async function handlePost(request, ctx, now, trace) {
+  // 총관리자 전용(대표 결정 2026-10-23): 총관리자 세션이 아니면 본문을 읽기 전에 거절한다(등록·중지·지금 확인 등 모든 동작).
+  trace.stage = "access";
+  const denial = ownerSessionDenial(request);
+  if (denial) return failure(request, denial);
   trace.stage = "body";
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return failure(request, parsed.code);
@@ -1456,8 +1461,7 @@ async function handlePost(request, ctx, now, trace) {
 
   trace.stage = "access";
   const ownerOnly = OWNER_ACTIONS.has(action) || action === "manual-record";
-  const resolved = await resolveCoupangAccess(request, ctx, settings, {
-    write: true,
+  const resolved = await resolveCoupangAccess(request, ctx, {
     create: CREATE_ACTIONS.has(action),
     ownerOnly,
   });

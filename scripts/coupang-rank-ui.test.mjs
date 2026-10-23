@@ -32,7 +32,8 @@ const moduleSource = read("public/mi-coupang-rank.js");
 const cssSource = read("public/mi-coupang-rank.css");
 
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![0-9a-zA-Z_-])/gu;
-const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위 <small>(개발중)</small></a>';
+// 대표 결정 2026-10-23: '순위 조회·추적' 묶음, '(개발중)' 표시 없음, 총관리자만(세션 전에는 hidden).
+const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위</a>';
 const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>';
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
 // 캐시 꼬리표: ① 지금 확인(spec-manual §7.9)으로 c30-v2 → c30-v3.
@@ -108,18 +109,19 @@ const sectionSource = between(adminSource, SECTION_OPEN, "</section>");
 
 // ── admin.html 구조 ─────────────────────────────────────────────
 
-test("C30 메뉴는 기존 접힌 실험실 안에 hidden·개발중으로 하나만 있고 N30·P30 순서는 그대로다", () => {
+test("C30 메뉴는 '순위 조회·추적'의 N 플레이스 다음에 hidden 으로 하나만 있고, 실험실에는 없다(대표 결정 2026-10-23)", () => {
   assert.equal(adminSource.split(NAV_LINK).length - 1, 1);
   assert.equal((adminSource.match(/<a\b[^>]*\bdata-coupang-rank-nav(?:\s|>)/gu) || []).length, 1);
   const lab = between(adminSource, '<div class="mi-nav-lab-items" id="mi-admin-nav-lab">', "</div>");
-  assert.ok(lab.includes(NAV_LINK));
+  assert.doesNotMatch(lab, /coupang-rank-tracking|data-coupang-rank-nav/u);
   assert.ok(adminSource.includes('data-mi-nav-lab-toggle aria-expanded="false" aria-controls="mi-admin-nav-lab"'));
   const rankGroup = adminSource.match(/<div class="mi-nav-group">\s*<p class="mi-nav-title">순위 조회·추적<\/p>([\s\S]*?)<\/div>/u)?.[1] || "";
   assert.deepEqual(rankGroup.match(/<a\b[^>]*>[\s\S]*?<\/a>/gu), [
     '<a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
-    PLACE_LINK
+    PLACE_LINK,
+    NAV_LINK
   ]);
-  assert.doesNotMatch(rankGroup, /coupang-rank-tracking|data-coupang-rank-nav/u);
+  assert.doesNotMatch(NAV_LINK, /개발중/u);
   // #mi-admin .mi-nav a 는 display:flex 라 [hidden] 규칙이 따로 있어야 숨겨진다.
   assert.ok(adminSource.includes("#mi-admin .mi-nav a[hidden]"));
 });
@@ -163,23 +165,42 @@ test("연결 코드는 var personalCalendarController = null; 바로 앞에 있�
     "renderRankTrackerCard", "renderRankBulkBar", "updateRankFilterPanel", "renderRankExportSheet", "initRankTracking", "initPlaceRankTracking", "resetAdminAsyncControls"]) {
     assert.ok(!glueSource.includes(forbidden), `N30 함수 ${forbidden} 를 부르면 안 됩니다`);
   }
-  assert.ok(glueSource.includes('window.addEventListener("mi:rank-auth-ready", refreshCoupangRankAccess);'));
-  assert.ok(glueSource.includes('miFetch("/api/coupang-rank-trackers?view=access", { method: "GET", timeoutMs: 15000 })'));
+  assert.ok(glueSource.includes('window.addEventListener("mi:rank-auth-ready", syncCoupangRankAccess);'));
   assert.ok(glueSource.includes('mode: "admin",'));
-  // 운영팀 접근 응답을 기다리는 동안 미리 false 로 되돌리지 않는다(세션 갱신 때 튕김 방지).
-  const teamBranch = glueSource.slice(glueSource.indexOf("miFetch(\"/api/coupang-rank-trackers?view=access\""));
-  assert.ok(!between(glueSource, "function refreshCoupangRankAccess() {", "miFetch(").includes("coupangRankOpen = false;\n        }\n        coupangRankOpen = false"));
-  assert.ok(teamBranch.includes("coupangRankOpen = Boolean(payload && payload.ok === true && payload.open === true);"));
+  // 총관리자 전용(대표 결정 2026-10-23): 메뉴는 역할만 보고, 운영팀 공개 여부를 서버에 묻지 않는다.
+  assert.equal(functionBlock(glueSource, "coupangRankMenuVisible").replace(/\s+/g, " "), 'function coupangRankMenuVisible() { return secureSession.role === "owner"; }');
+  for (const removed of ["view=access", "coupangRankOpen", "coupangRankAccessSeq", "refreshCoupangRankAccess", '"team"', '"client"']) {
+    assert.ok(!glueSource.includes(removed), `${removed} 가 남아 있습니다`);
+  }
 });
 
 test("setScreen 에 rejectedCoupangTarget 3곳과 mount 1줄이 있다", () => {
   assert.ok(setScreenSource.includes('var rejectedCoupangTarget = target === "coupang-rank-tracking" && Boolean(secureSession.role) && !coupangRankMenuVisible();'));
   assert.ok(setScreenSource.includes('if (rejectedNoticeTarget) target = "home";\n        if (rejectedCoupangTarget) target = "home";'));
-  assert.ok(setScreenSource.includes("((rejectedOwnerTarget || hasOwnerHashWithoutOwner || rejectedCoupangTarget) && secureSession.role)"));
+  assert.ok(setScreenSource.includes("((rejectedOwnerTarget || hasOwnerHashWithoutOwner || rejectedCoupangTarget || hasCoupangHashWithoutOwner) && secureSession.role)"));
   assert.equal((setScreenSource.match(/rejectedCoupangTarget/g) || []).length, 3);
+  // 새로고침으로 C 주소를 연 운영팀 세션: 홈으로 올 때 남은 C 해시도 홈으로 바꾼다.
+  assert.ok(setScreenSource.includes('var hasCoupangHashWithoutOwner = Boolean(secureSession.role) && !coupangRankMenuVisible() && window.location.hash === "#mi-admin-coupang-rank-tracking";'));
+  assert.equal((setScreenSource.match(/hasCoupangHashWithoutOwner/g) || []).length, 2);
   assert.ok(setScreenSource.includes('else unmountPersonalCalendar();\n        if (target === "coupang-rank-tracking") mountCoupangRank();'));
   // 정의는 rejectedNoticeTarget 다음 줄 묶음 안에 있다.
   assert.ok(setScreenSource.indexOf("var rejectedCoupangTarget") > setScreenSource.indexOf("var rejectedNoticeTarget"));
+});
+
+test("세션 적용 직후(첫 await 전)와 로그아웃에서 C 메뉴·화면을 역할에 맞춘다", () => {
+  // 줄 주석은 빼고 본다(주석 안의 'await' 낱말을 실제 await 로 세지 않는다).
+  const activate = functionBlock(adminSource, "activateAdminSession").replace(/^\s*\/\/.*$/gmu, "");
+  const applied = activate.indexOf("applySecureSession(payload);");
+  const coupang = activate.indexOf("applyCoupangRankSession();");
+  assert.ok(applied >= 0 && coupang > applied, "세션을 적용한 뒤에 부른다");
+  assert.equal(activate.split("applyCoupangRankSession();").length - 1, 1);
+  // 운영팀 분기의 await(광고주 자료 받기) 동안 C 머리글이 보이지 않도록 첫 await 보다 먼저 부른다.
+  assert.ok(activate.indexOf("await ") > coupang, "첫 await 전에 불러야 합니다");
+  const logout = functionBlock(adminSource, "logoutAdmin");
+  const cleared = logout.indexOf("clearAdminAuthCode();");
+  const discarded = logout.indexOf("discardCoupangRank();\n        syncCoupangRankMenu();");
+  assert.ok(cleared >= 0 && discarded > cleared, "역할을 비운 뒤 C 화면·캐시를 지우고 메뉴를 숨긴다");
+  assert.ok(discarded < logout.indexOf('root.classList.add("is-locked");'));
 });
 
 // ── 세션 전 해시 유지(P6) ────────────────────────────────────────
@@ -208,6 +229,7 @@ function screenHarness({ role = "", hash = "#mi-admin-coupang-rank-tracking", ac
   const replaceCalls = [];
   const mounts = [];
   const shows = [];
+  const destroys = [];
   const listeners = {};
   const fetchCalls = [];
   const root = {
@@ -226,14 +248,21 @@ function screenHarness({ role = "", hash = "#mi-admin-coupang-rank-tracking", ac
   };
   const window = {
     location: { hash, pathname: "/admin", search: "", protocol: "https:" },
-    history: { replaceState: (...args) => replaceCalls.push(args) },
+    // 실제 브라우저처럼 replaceState 는 주소창 해시를 바꾼다(hashchange 는 없다).
+    history: {
+      replaceState: (...args) => {
+        replaceCalls.push(args);
+        const at = String(args[2] || "").indexOf("#");
+        window.location.hash = at >= 0 ? String(args[2]).slice(at) : "";
+      },
+    },
     requestAnimationFrame: (fn) => fn(),
     scrollTo() {},
     addEventListener: (type, fn) => { (listeners[type] ||= []).push(fn); },
     MomentCoupangRank: {
       mount(mountHost, deps) {
         mounts.push({ host: mountHost, deps });
-        return { show: () => shows.push(true), scopeChanged() {} };
+        return { show: () => shows.push(true), scopeChanged() {}, destroy: () => destroys.push(mountHost) };
       },
     },
   };
@@ -275,7 +304,7 @@ function screenHarness({ role = "", hash = "#mi-admin-coupang-rank-tracking", ac
   });
   vm.runInContext(`${glueSource}\n${setScreenSource}\n`, context, { filename: "admin-coupang-glue.js" });
   const active = () => views.filter((view) => view.classList.contains("is-active")).map((view) => view.name);
-  return { context, views, navLink, replaceCalls, mounts, shows, listeners, fetchCalls, window, active };
+  return { context, views, navLink, replaceCalls, mounts, shows, destroys, listeners, fetchCalls, window, active };
 }
 
 const flushMicrotasks = async () => {
@@ -311,34 +340,137 @@ test("세션 확인 뒤 총관리자면 syncCoupangRankScreen 이 모듈을 붙�
   assert.deepEqual(harness.active(), ["coupang-rank-tracking"]);
 });
 
-test("운영팀 + 공개 꺼짐이면 setScreen(\"home\") 으로 보내고, 해시로 들어와도 홈으로 돌린다", async () => {
+for (const accessPayload of [{ ok: true, open: false }, { ok: true, open: true }]) {
+  test(`운영팀 세션은 서버 공개 값(open:${accessPayload.open})과 상관없이 메뉴가 숨고 C 화면은 홈으로 간다(서버에 묻지 않음)`, async () => {
+    const harness = screenHarness({ role: "", accessPayload });
+    harness.context.setScreen("coupang-rank-tracking", false);
+    harness.context.secureSession.role = "team";
+    harness.listeners["mi:rank-auth-ready"][0]();
+    await flushMicrotasks();
+    assert.equal(harness.fetchCalls.length, 0, "view=access 를 부르지 않는다");
+    assert.equal(harness.navLink.hidden, true);
+    assert.deepEqual(harness.active(), ["home"]);
+    assert.equal(harness.mounts.length, 0);
+    // 남은 C 해시(새로고침·새 탭으로 연 주소)도 홈으로 바뀐다.
+    assert.deepEqual(harness.replaceCalls.map((call) => call[2]), ["/admin#mi-admin-home"]);
+    assert.equal(harness.window.location.hash, "#mi-admin-home");
+    // 세션이 있는 상태에서 C 해시로 직접 들어오면(hashchange) 거절되고 주소창도 홈으로 바뀐다.
+    harness.window.location.hash = "#mi-admin-coupang-rank-tracking";
+    harness.context.setScreen("coupang-rank-tracking", false);
+    assert.deepEqual(harness.active(), ["home"]);
+    assert.equal(harness.replaceCalls.length, 2);
+    assert.equal(harness.replaceCalls[1][2], "/admin#mi-admin-home");
+    assert.equal(harness.window.location.hash, "#mi-admin-home");
+    // 메뉴를 눌러도(해시 기록) 홈으로 간다.
+    harness.context.setScreen("coupang-rank-tracking", true);
+    assert.deepEqual(harness.active(), ["home"]);
+    assert.equal(harness.window.location.hash, "#mi-admin-home");
+    assert.equal(harness.mounts.length, 0);
+    assert.equal(harness.fetchCalls.length, 0);
+  });
+}
+
+// activateAdminSession 순서 그대로: 첫 setScreen(세션 전) → 세션 적용 → applyCoupangRankSession(첫 await 전)
+// → 착지 setScreen("home", !restored) → mi:rank-auth-ready.
+test("운영팀이 C 주소로 새로고침하면 첫 await 전에 화면·주소창이 홈이 되고 메뉴는 숨는다", async () => {
+  const harness = screenHarness({ role: "" });
+  harness.context.setScreen("coupang-rank-tracking", false);
+  assert.deepEqual(harness.active(), ["coupang-rank-tracking"], "세션 전에는 해시를 남긴다(P6)");
+  harness.context.secureSession.role = "team";
+  harness.context.applyCoupangRankSession();
+  assert.deepEqual(harness.active(), ["home"], "광고주 자료를 기다리는 동안 C 구역이 열려 있지 않다");
+  assert.equal(harness.window.location.hash, "#mi-admin-home");
+  assert.deepEqual(harness.replaceCalls.map((call) => call[2]), ["/admin#mi-admin-home"]);
+  assert.equal(harness.navLink.hidden, true);
+  harness.context.setScreen("home", false);
+  harness.listeners["mi:rank-auth-ready"][0]();
+  await flushMicrotasks();
+  assert.deepEqual(harness.active(), ["home"]);
+  assert.equal(harness.window.location.hash, "#mi-admin-home");
+  assert.equal(harness.replaceCalls.length, 1, "이미 홈 해시라 다시 바꾸지 않는다");
+  assert.equal(harness.mounts.length, 0);
+  assert.equal(harness.fetchCalls.length, 0);
+});
+
+test("applyCoupangRankSession 없이도 운영팀 착지 setScreen(\"home\", false) 가 남은 C 해시를 홈으로 바꾼다", () => {
   const harness = screenHarness({ role: "" });
   harness.context.setScreen("coupang-rank-tracking", false);
   harness.context.secureSession.role = "team";
-  harness.listeners["mi:rank-auth-ready"][0]();
-  assert.equal(harness.fetchCalls.length, 1);
-  assert.equal(harness.fetchCalls[0].url, `${COUPANG_TRACKERS_PATH}?view=access`);
-  await flushMicrotasks();
-  assert.equal(harness.navLink.hidden, true);
+  harness.context.setScreen("home", false);
   assert.deepEqual(harness.active(), ["home"]);
-  assert.equal(harness.mounts.length, 0);
-  // 세션이 있는 상태에서 C 해시로 직접 들어오면 거절되고 주소창도 홈으로 바뀐다.
-  harness.context.setScreen("coupang-rank-tracking", false);
-  assert.deepEqual(harness.active(), ["home"]);
-  assert.equal(harness.replaceCalls.length, 1);
-  assert.equal(harness.replaceCalls[0][2], "/admin#mi-admin-home");
+  assert.deepEqual(harness.replaceCalls.map((call) => call[2]), ["/admin#mi-admin-home"]);
+  assert.equal(harness.window.location.hash, "#mi-admin-home");
 });
 
-test("운영팀 + 공개 켜짐이면 메뉴가 보이고 C 화면에서 모듈을 붙인다", async () => {
-  const harness = screenHarness({ role: "", accessPayload: { ok: true, open: true } });
+test("총관리자는 세션 적용 직후 메뉴만 열고(붙이기는 auth-ready), C 해시를 그대로 둔다", () => {
+  const harness = screenHarness({ role: "" });
   harness.context.setScreen("coupang-rank-tracking", false);
-  harness.context.secureSession.role = "team";
+  harness.context.secureSession.role = "owner";
+  harness.context.applyCoupangRankSession();
+  assert.equal(harness.navLink.hidden, false);
+  assert.equal(harness.mounts.length, 0, "범위 확인(loadOwnerCodes) 전에는 붙이지 않는다");
+  assert.deepEqual(harness.active(), ["coupang-rank-tracking"]);
+  assert.deepEqual(harness.replaceCalls, []);
   harness.listeners["mi:rank-auth-ready"][0]();
-  await flushMicrotasks();
+  assert.equal(harness.mounts.length, 1);
+  assert.deepEqual(harness.replaceCalls, []);
+  assert.equal(harness.window.location.hash, "#mi-admin-coupang-rank-tracking");
+});
+
+test("총관리자 로그아웃 → 같은 탭 운영팀 로그인: 로그아웃 때 C 화면·캐시를 지우고 메뉴를 숨겨 운영팀 세션 확인 전에도 보이지 않는다", () => {
+  const harness = screenHarness({ role: "owner" });
+  harness.context.setScreen("coupang-rank-tracking", false);
+  harness.listeners["mi:rank-auth-ready"][0]();
   assert.equal(harness.navLink.hidden, false);
   assert.equal(harness.mounts.length, 1);
-  assert.equal(harness.mounts[0].deps.isOwner(), false);
+  // logoutAdmin: clearAdminAuthCode(역할 비움) → discardCoupangRank → syncCoupangRankMenu → setScreen("home")
+  harness.context.secureSession.role = "";
+  harness.context.discardCoupangRank();
+  harness.context.syncCoupangRankMenu();
+  harness.context.setScreen("home", false);
+  assert.equal(harness.destroys.length, 1, "총관리자 목록·캐시를 지운다(destroy → reset → pruneCache)");
+  assert.equal(harness.navLink.hidden, true);
+  harness.context.discardCoupangRank();
+  assert.equal(harness.destroys.length, 1, "두 번 지우지 않는다");
+  // 운영팀 로그인: 세션 적용 직후(auth-ready 전) 메뉴는 이미 숨어 있고 붙지 않는다.
+  harness.context.secureSession.role = "team";
+  harness.context.applyCoupangRankSession();
+  assert.equal(harness.navLink.hidden, true);
+  harness.context.setScreen("coupang-rank-tracking", true);
+  assert.deepEqual(harness.active(), ["home"]);
+  assert.equal(harness.mounts.length, 1);
+  // 다시 총관리자로 로그인하면 새로 붙인다(지운 컨트롤러를 다시 쓰지 않는다).
+  harness.context.secureSession.role = "owner";
+  harness.context.applyCoupangRankSession();
+  harness.context.setScreen("coupang-rank-tracking", true);
+  assert.equal(harness.mounts.length, 2);
   assert.deepEqual(harness.active(), ["coupang-rank-tracking"]);
+});
+
+test("로그아웃 없이 총관리자 → 운영팀 세션이 적용돼도 총관리자 때 붙은 C 화면을 지운다", () => {
+  const harness = screenHarness({ role: "owner" });
+  harness.context.setScreen("coupang-rank-tracking", false);
+  harness.listeners["mi:rank-auth-ready"][0]();
+  assert.equal(harness.mounts.length, 1);
+  harness.context.secureSession.role = "team";
+  harness.context.applyCoupangRankSession();
+  assert.equal(harness.destroys.length, 1);
+  assert.equal(harness.navLink.hidden, true);
+  assert.deepEqual(harness.active(), ["home"]);
+  assert.equal(harness.window.location.hash, "#mi-admin-home");
+});
+
+test("총관리자 세션에서 운영팀 세션으로 바뀌면 메뉴가 다시 숨는다", () => {
+  const harness = screenHarness({ role: "owner", hash: "#mi-admin-home" });
+  harness.listeners["mi:rank-auth-ready"][0]();
+  assert.equal(harness.navLink.hidden, false);
+  harness.context.secureSession.role = "team";
+  harness.listeners["mi:rank-auth-ready"][0]();
+  assert.equal(harness.navLink.hidden, true);
+  harness.context.secureSession.role = "";
+  harness.listeners["mi:rank-auth-ready"][0]();
+  assert.equal(harness.navLink.hidden, true);
+  assert.equal(harness.fetchCalls.length, 0);
 });
 
 // ── 금지 패턴 ─────────────────────────────────────────────────
@@ -1129,7 +1261,8 @@ test("설정 patch: 범위 오류·바뀐 칸만·속도 올림 판정", () => {
   const bad = internals.settingsPatch(current, { checksPerDay: "7", minGapSeconds: "abc", activeFromHour: "20", activeToHour: "10", minCollectorVersion: "1.0" });
   assert.deepEqual(Object.keys(bad.errors).sort(), ["activeToHour", "checksPerDay", "minCollectorVersion", "minGapSeconds"]);
   assert.deepEqual(JSON.parse(JSON.stringify(bad.patch)), {});
-  assert.deepEqual(JSON.parse(JSON.stringify(internals.settingsPatch(current, { minCollectorVersion: "1.0.1", teamAccessEnabled: true }).patch)), { minCollectorVersion: "1.0.1", teamAccessEnabled: true });
+  // 운영팀·광고주 공개 칸은 화면 설정에 없다(대표 결정 2026-10-23: 총관리자 전용). 값이 들어와도 patch 에 싣지 않는다.
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.settingsPatch(current, { minCollectorVersion: "1.0.1", teamAccessEnabled: true, clientViewEnabled: true }).patch)), { minCollectorVersion: "1.0.1" });
   assert.match(internals.templateText(2), /^쿠팡 순위는 로그인하지 않은 검색 1쪽에서 광고를 뺀 일반 상품 순서입니다\. 하루 2회 측정하고/);
 });
 
@@ -1436,6 +1569,10 @@ test("총관리자 패널: 열면 view=collector 를 받고 60초마다 다시 �
     assert.ok(panelText.includes(expected), expected);
   }
   assert.equal(details.querySelectorAll('[data-coupang-rank-action="line-copy"]').length, 6);
+  // 운영팀·광고주 공개 켜기는 없다(대표 결정 2026-10-23: 총관리자 전용).
+  assert.equal(details.querySelector('[data-coupang-rank-setting="teamAccessEnabled"]'), null);
+  assert.equal(details.querySelector('[data-coupang-rank-setting="clientViewEnabled"]'), null);
+  for (const removed of ["운영팀 공개", "광고주 공개", "운영팀 메뉴", "광고주 읽기 화면"]) assert.ok(!panelText.includes(removed), removed);
   // 시간당 12 → 24 로 올림: 확인 창에 48시간 수치를 보여 주고 confirmRaise:true 로 보낸다.
   const input = details.querySelector('[data-coupang-rank-setting="maxRunsPerHour"]');
   input.value = "24";
@@ -1963,7 +2100,7 @@ test("메뉴 한 번(setScreen + hashchange 로 show 두 번)에 목록 GET 은 
   release();
   await flush();
   assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 2, "합친 요청의 응답으로 그린다");
-  // 운영팀 세션 동기화: mi:rank-scope-changed → scopeChanged, mi:rank-auth-ready → view=access → show
+  // 세션 동기화: mi:rank-scope-changed → scopeChanged, mi:rank-auth-ready → show
   clock.now += 1500;
   screen.controller.scopeChanged();
   screen.controller.show();

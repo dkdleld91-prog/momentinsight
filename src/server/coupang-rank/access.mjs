@@ -102,102 +102,50 @@ function ownerAccess(agencyCode, clientId, extra = {}) {
   };
 }
 
-// 역할·범위 판정(§5.2 표, 위에서부터 처음 맞는 행).
-// options
-// - write: POST(모든 동작). 광고주 역할이면 COUPANG_READ_ONLY.
-// - create: 등록·다시 시작. 총관리자 ③(팀 코드 범위)이면 COUPANG_SCOPE_NO_CREATE.
-// - ownerOnly: 총관리자 전용 동작·조회. 대상 범위와 무관하므로 범위를 찾지 않는다. 총관리자가 아니면 COUPANG_OWNER_ONLY.
-// 반환: { ok: true, access } | { ok: false, code }
-// access = { role, owner, mode, agencyCode, clientId, readOnly, teamCodeScope, createdBy }
-export async function resolveCoupangAccess(request, ctx, settings, options = {}) {
-  const write = options.write === true;
-  const create = options.create === true;
-  const ownerOnly = options.ownerOnly === true;
+// 총관리자 세션 관문(대표 결정 2026-10-23: C 30일 순위는 총관리자 전용).
+// 운영팀·광고주 세션은 설정의 공개 값(team_access_enabled·client_view_enabled)과 상관없이 COUPANG_OWNER_ONLY.
+// 설정 칸·DB 는 그대로 둔다. 설정·DB 를 읽지 않으므로 핸들러가 설정을 읽기 전에 부른다.
+// 반환: 통과면 "", 아니면 거절 코드.
+export function ownerSessionDenial(request) {
   const role = sessionRole(request);
-  if (!role) return denied("COUPANG_SESSION_REQUIRED");
-  if (sessionScope(request) === "trial") return denied("TRIAL_LOCKED");
-
-  if (role === "owner") {
-    if (!ownerCodeMatches(request)) return denied("COUPANG_ACCESS_DENIED");
-    if (ownerOnly) return granted(ownerAccess(PRIMARY_AGENCY_CODE, null));
-    const requested = canonicalAgencyCode(header(request, "x-mi-agency-code"));
-    const target = OWNER_PLACEHOLDER_CODES.has(requested) ? PRIMARY_AGENCY_CODE : requested;
-    // ① 대표 코드
-    if (safeEqual(target, PRIMARY_AGENCY_CODE)) return granted(ownerAccess(PRIMARY_AGENCY_CODE, null));
-    // ② 활성 광고주
-    const clientId = await activeClientId(ctx, target);
-    if (clientId) return granted(ownerAccess(target, clientId));
-    // ③ 대표 소유 팀 코드(조회·중지·그룹·삭제만)
-    if (await ownerTeamCodeExists(ctx, target)) {
-      if (create) return denied("COUPANG_SCOPE_NO_CREATE");
-      return granted(ownerAccess(target, null, { teamCodeScope: true }));
-    }
-    // ④
-    return denied("COUPANG_SCOPE_NOT_FOUND");
-  }
-
-  if (role === "team") {
-    if (settings?.team_access_enabled !== true) return denied("COUPANG_TEAM_NOT_OPEN");
-    if (ownerOnly) return denied("COUPANG_OWNER_ONLY");
-    const code = canonicalAgencyCode(header(request, "x-mi-agency-code"));
-    const accessCode = canonicalAgencyCode(header(request, "x-mi-rank-access-code"));
-    if (!code || !safeEqual(code, accessCode)) return denied("COUPANG_ACCESS_DENIED");
-    // 대표 코드 범위(총관리자 자신의 추적기)는 총관리자만 연다(레거시 코드가 대표 코드로 바뀌는 경우 포함).
-    if (safeEqual(code, PRIMARY_AGENCY_CODE)) return denied("COUPANG_ACCESS_DENIED");
-    if (sessionScope(request) === "account-only") {
-      const teamCode = canonicalAgencyCode(header(request, "x-mi-team-code"));
-      if (!teamCode || !safeEqual(teamCode, code)) return denied("COUPANG_ACCESS_DENIED");
-      return granted({
-        role: "team",
-        owner: false,
-        mode: "team-account",
-        agencyCode: code,
-        clientId: null,
-        readOnly: false,
-        teamCodeScope: false,
-        createdBy: "team",
-      });
-    }
-    const clientId = await activeClientId(ctx, code);
-    if (!clientId) return denied("COUPANG_SCOPE_NOT_FOUND");
-    return granted({
-      role: "team",
-      owner: false,
-      mode: "advertiser",
-      agencyCode: code,
-      clientId,
-      readOnly: false,
-      teamCodeScope: false,
-      createdBy: "team",
-    });
-  }
-
-  if (role === "client") {
-    if (settings?.client_view_enabled !== true) return denied("COUPANG_CLIENT_NOT_OPEN");
-    if (write) return denied("COUPANG_READ_ONLY");
-    if (ownerOnly) return denied("COUPANG_OWNER_ONLY");
-    const code = canonicalAgencyCode(header(request, "x-mi-agency-code"));
-    const accessCode = canonicalAgencyCode(header(request, "x-mi-rank-access-code"));
-    if (!code || !safeEqual(code, accessCode)) return denied("COUPANG_ACCESS_DENIED");
-    if (safeEqual(code, PRIMARY_AGENCY_CODE)) return denied("COUPANG_ACCESS_DENIED");
-    const clientId = await activeClientId(ctx, code);
-    if (!clientId) return denied("COUPANG_SCOPE_NOT_FOUND");
-    return granted({
-      role: "client",
-      owner: false,
-      mode: "advertiser",
-      agencyCode: code,
-      clientId,
-      readOnly: true,
-      teamCodeScope: false,
-      createdBy: "client",
-    });
-  }
-
-  return denied("COUPANG_ACCESS_DENIED");
+  if (!role) return "COUPANG_SESSION_REQUIRED";
+  if (sessionScope(request) === "trial") return "TRIAL_LOCKED";
+  if (role !== "owner") return "COUPANG_OWNER_ONLY";
+  if (!ownerCodeMatches(request)) return "COUPANG_ACCESS_DENIED";
+  return "";
 }
 
-// GET ?view=access(§5.4): 메뉴 노출 판단. 꺼져 있어도 403 이 아니라 open:false.
+// 역할·범위 판정(§5.2 표, 위에서부터 처음 맞는 행). 총관리자 세션만 통과한다(위 관문).
+// options
+// - create: 등록·다시 시작. 총관리자 ③(팀 코드 범위)이면 COUPANG_SCOPE_NO_CREATE.
+// - ownerOnly: 총관리자 전용 동작·조회. 대상 범위와 무관하므로 범위를 찾지 않는다.
+// 반환: { ok: true, access } | { ok: false, code }
+// access = { role, owner, mode, agencyCode, clientId, readOnly, teamCodeScope, createdBy }
+export async function resolveCoupangAccess(request, ctx, options = {}) {
+  const create = options.create === true;
+  const ownerOnly = options.ownerOnly === true;
+  const denial = ownerSessionDenial(request);
+  if (denial) return denied(denial);
+  if (ownerOnly) return granted(ownerAccess(PRIMARY_AGENCY_CODE, null));
+  const requested = canonicalAgencyCode(header(request, "x-mi-agency-code"));
+  const target = OWNER_PLACEHOLDER_CODES.has(requested) ? PRIMARY_AGENCY_CODE : requested;
+  // ① 대표 코드
+  if (safeEqual(target, PRIMARY_AGENCY_CODE)) return granted(ownerAccess(PRIMARY_AGENCY_CODE, null));
+  // ② 활성 광고주
+  const clientId = await activeClientId(ctx, target);
+  if (clientId) return granted(ownerAccess(target, clientId));
+  // ③ 대표 소유 팀 코드(조회·중지·그룹·삭제만)
+  if (await ownerTeamCodeExists(ctx, target)) {
+    if (create) return denied("COUPANG_SCOPE_NO_CREATE");
+    return granted(ownerAccess(target, null, { teamCodeScope: true }));
+  }
+  // ④
+  return denied("COUPANG_SCOPE_NOT_FOUND");
+}
+
+// GET ?view=access(§5.4): 메뉴 노출 판단.
+// 총관리자만 open:true 다(대표 결정 2026-10-23, 설정의 운영팀·광고주 공개 값은 보지 않는다).
+// 핸들러는 ownerSessionDenial 관문을 지난 총관리자 세션에서만 부른다(운영팀·광고주는 설정을 읽기 전에 COUPANG_OWNER_ONLY).
 // settings 가 null 이면 표가 없는 것(setupRequired). DB 를 읽지 않는다.
 // 반환: { ok: true, open, role, readOnly, setupRequired } | { ok: false, code }(세션 없음·체험)
 export function accessView(request, settings) {
@@ -207,12 +155,5 @@ export function accessView(request, settings) {
   const knownRole = SESSION_ROLES.has(role) ? role : "";
   const owner = knownRole === "owner" && ownerCodeMatches(request);
   const readOnly = knownRole === "client";
-  if (!settings) {
-    return { ok: true, open: owner, role: knownRole, readOnly, setupRequired: true };
-  }
-  let open = false;
-  if (owner) open = true;
-  else if (knownRole === "team") open = settings.team_access_enabled === true;
-  else if (knownRole === "client") open = settings.client_view_enabled === true;
-  return { ok: true, open, role: knownRole, readOnly, setupRequired: false };
+  return { ok: true, open: owner, role: knownRole, readOnly, setupRequired: !settings };
 }

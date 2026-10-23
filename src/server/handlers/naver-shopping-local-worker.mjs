@@ -24,6 +24,14 @@ import {
   selectRepresentativeTrackingRank,
   verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
+import {
+  evaluateGroupTrackingRank,
+  groupTrackingRankMessage,
+  isOptionColumnMissingError,
+  optionColumnRecentlyMissing,
+  rememberOptionColumnMissing,
+  trackerOptionProductIds,
+} from "../naver-rank-option-group.mjs";
 
 // Keep each continuity-history RPC below Supabase's common 1,000-row response
 // ceiling (8 trackers x 120 snapshots). One keyword job may still contain up to
@@ -95,6 +103,9 @@ const WORKER_TRACKER_SELECT = [
   "processing_until",
   "worker_quarantined_until",
 ].join(", ");
+// N30 그룹상품(2026-10-23): 같은 조회에 옵션 번호 칸을 더한다. 칸이 없으면(대표 SQL 전) 위 옛 조회로
+// 한 번 더 읽고 옵션은 빈 목록 = 지금 동작이다.
+const WORKER_TRACKER_OPTION_SELECT = `${WORKER_TRACKER_SELECT}, option_product_ids`;
 
 const WORKER_LOOKUP_SELECT = [
   "id",
@@ -722,10 +733,16 @@ async function claimCycleKeyword(ctx, body) {
 
 async function loadClaimTrackers(ctx, job) {
   const ids = job.claims.map((claim) => claim.trackerId);
-  const { data, error } = await ctx.supabaseAdmin
+  const query = (columns) => ctx.supabaseAdmin
     .from("naver_rank_trackers")
-    .select(WORKER_TRACKER_SELECT)
+    .select(columns)
     .in("id", ids);
+  const skipOptions = optionColumnRecentlyMissing();
+  let { data, error } = await query(skipOptions ? WORKER_TRACKER_SELECT : WORKER_TRACKER_OPTION_SELECT);
+  if (error && !skipOptions && isOptionColumnMissingError(error)) {
+    rememberOptionColumnMissing("local-worker-submit");
+    ({ data, error } = await query(WORKER_TRACKER_SELECT));
+  }
   if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
   const byId = new Map((data || []).map((row) => [String(row.id).toLowerCase(), row]));
   return job.claims.map((claim) => {
@@ -737,7 +754,8 @@ async function loadClaimTrackers(ctx, job) {
   });
 }
 
-async function loadVerifiedCatalogs(ctx, claimTrackers, checkedAt) {
+// historyByTrackerId(선택): 이미 읽은 30일 일치 기록을 그룹상품 스토어 대조에 다시 쓴다(추가 조회 0).
+async function loadVerifiedCatalogs(ctx, claimTrackers, checkedAt, historyByTrackerId = null) {
   const trackerIds = claimTrackers.map(({ tracker }) => tracker.id);
   const historyRows = [];
   for (let offset = 0; offset < trackerIds.length; offset += CATALOG_HISTORY_BATCH_MAX) {
@@ -757,6 +775,9 @@ async function loadVerifiedCatalogs(ctx, claimTrackers, checkedAt) {
   for (const row of historyRows) {
     const rows = byTrackerId.get(String(row?.tracker_id || "").toLowerCase());
     if (rows && rows.length < SNAPSHOT_HISTORY_PER_TRACKER) rows.push(row);
+  }
+  if (historyByTrackerId instanceof Map) {
+    byTrackerId.forEach((rows, trackerId) => historyByTrackerId.set(trackerId, rows));
   }
   return new Map(claimTrackers.map(({ tracker }) => [
     String(tracker.id).toLowerCase(),
@@ -791,7 +812,8 @@ async function submitWindow(ctx, rawJob, rawWindow) {
   try {
     if (job.kind === "lookup") return await submitLookupWindow(ctx, job, window);
     const claimTrackers = await loadClaimTrackers(ctx, job);
-    const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
+    const catalogHistory = new Map();
+    const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt, catalogHistory);
     for (const { claim, tracker } of claimTrackers) {
       const checkedAt = window.collectedAt;
       const verifiedRelatedCatalogId = verifiedCatalogs.get(String(tracker.id).toLowerCase()) || "";
@@ -816,7 +838,25 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
         skipTargetMetadata: true,
       });
-      const result = selectRepresentativeTrackingRank(lookup, tracker.product_id);
+      const representativeResult = selectRepresentativeTrackingRank(lookup, tracker.product_id);
+      // N30 그룹상품: 옵션 번호가 있는 추적만 같은 창을 한 번 더 훑는다(네이버 요청 0). 옵션 판정은
+      // 절대 던지지 않고, 어긋나면 대표 결과를 그대로 돌려준다 — 묶음의 다른 추적은 영향 없음.
+      const optionProductIds = trackerOptionProductIds(tracker);
+      const result = optionProductIds.length
+        // eslint-disable-next-line no-await-in-loop
+        ? await evaluateGroupTrackingRank({
+          window,
+          tracker,
+          representativeResult,
+          optionProductIds,
+          historyRows: catalogHistory.get(String(tracker.id).toLowerCase()) || [],
+          maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
+          selectRepresentative: selectRepresentativeTrackingRank,
+          acceptResult: (candidate) => candidate?.complete === true
+            && Number(candidate.checkedCount) === window.checkedCount
+            && (!finiteWindow || isValidFiniteMatchResult(candidate, window.checkedCount)),
+        })
+        : representativeResult;
       if (result.complete !== true || Number(result.checkedCount) !== window.checkedCount) {
         throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
       }
@@ -839,8 +879,11 @@ async function submitWindow(ctx, rawJob, rawWindow) {
       if (finiteWindow && !isValidFiniteMatchResult(result, window.checkedCount)) {
         throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }
-      const message = representativeTrackingRankMessage(result);
+      const message = groupTrackingRankMessage(result, representativeTrackingRankMessage(result));
       const snapshot = buildProductRankSnapshotRecord(tracker, checkedAt, result, message);
+      // 옵션으로 잡힌 행은 추적의 대표 번호·스토어·제목 칸을 옵션 카드 값으로 채우지 않는다
+      // (RPC 는 빈 칸만 채운다 — 잘못 넣은 번호의 스토어가 기준으로 굳는 것을 막는다).
+      const groupOptionHit = result?.matchBasis === "group_option";
       // eslint-disable-next-line no-await-in-loop
       const { data, error } = await ctx.supabaseAdmin.rpc(finiteWindow
         ? "mi_commit_naver_shopping_finite_worker_result"
@@ -851,9 +894,15 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         p_checked_at: checkedAt,
         p_next_check_at: nextRankCheckAt(new Date(checkedAt)),
         p_snapshot: snapshot,
-        p_product_id: result?.targetProductId || result?.item?.productId || tracker.product_id || null,
-        p_mall_name: result?.exactItem?.mallName || result?.item?.mallName || tracker.mall_name || null,
-        p_product_title: result?.exactItem?.title || result?.item?.title || tracker.product_title || null,
+        p_product_id: groupOptionHit
+          ? (tracker.product_id || null)
+          : (result?.targetProductId || result?.item?.productId || tracker.product_id || null),
+        p_mall_name: groupOptionHit
+          ? (tracker.mall_name || null)
+          : (result?.exactItem?.mallName || result?.item?.mallName || tracker.mall_name || null),
+        p_product_title: groupOptionHit
+          ? (tracker.product_title || null)
+          : (result?.exactItem?.title || result?.item?.title || tracker.product_title || null),
       });
       if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
       const status = String(data?.status || "").trim().toLowerCase();

@@ -12,7 +12,15 @@ const pathname = "/api/public/related-keywords";
 const privateBaseline = Object.freeze({
   css: "0a65adfc3365e0cc66f75a1060e3f043c505148294c3f2c6672890aba0defcfb",
   homeInline: ["99105621d423b52d0eee5e32459f4f11f567839e14452d3cde36d1f18a894f20", "f2fee52f1d35d9d62b113931d72a2062d374fbad946271a76fa0f702a6602039"],
-  clientInline: ["b6f74a7cf4a262b80453d38783bdab2b8531af0ba1fc310ae1234a49823e60bd"],
+  // 2026-10-23 N30 그룹상품(대표 승인): 광고주 카드에 '그룹상품 n개'·잡힌 옵션 줄·현재 알약 ' · 옵션' 표시를 더해
+  // 인라인 스크립트가 바뀌었다(반박 검토 반영 포함). 이전 값 b6f74a7cf4a262b80453d38783bdab2b8531af0ba1fc310ae1234a49823e60bd.
+  // vercel.json CSP 해시도 같이 바뀐다. 3차 수정(D2 예외: 관리자 안내 문구 분기 — 광고주 화면에는 안 보임)으로
+  // 다시 바뀌었다. 2차 값 50974bea9b316ebf32364f9107e519e5840e28bf5e69b811de764a9b5769115a.
+  // 4차 수정(스토어 확인 단순 규칙: 광고주 메시지에서 관리자용 꼬리 빼기·관리자 안내 문구)으로 또 바뀌었다.
+  // 3차 값 2014316a30fa71ee220b78f3c5a3dafb2436719a953e4b2b065514623e07fd8c.
+  // 5차 수정(규칙 C'·E': 관리자 안내 문구·'다른 스토어로 보여 뺀 번호' 줄에 번호 — 광고주 화면에는 안 보임)으로 또
+  // 바뀌었다. 4차 값 ce8c478877e5c80da84422729d4dbcdfd634e877ce8fd935f5339144cd7f79dc.
+  clientInline: ["20c86c95a026a1cd46329d6e3e8c3e8c71cda0d9d1a03d6f3eed3e3fb17a5870"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

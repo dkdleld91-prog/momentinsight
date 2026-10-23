@@ -23,6 +23,21 @@ import {
   rankProductUrlRejection,
 } from "../rank-target-url.mjs";
 import {
+  forgetOptionColumnMissing,
+  groupOptionSnapshotFields,
+  groupOptionSuggestionCounts,
+  isOptionColumnMissingError,
+  normalizeStoredOptionProductIds,
+  OPTION_PRODUCT_IDS_MAX,
+  OPTION_SAME_PRODUCT_TRACKERS_MAX,
+  optionColumnRecentlyMissing,
+  parseOptionProductInput,
+  planOptionGroupUpdate,
+  rememberOptionColumnMissing,
+  siblingOptionSuggestions,
+  trackerOptionEligibility,
+} from "../naver-rank-option-group.mjs";
+import {
   buildRankTarget,
   classifyNaverProductType,
   extractProductId,
@@ -561,6 +576,13 @@ function trustedProductRankSnapshot(snapshot, trackerProductId = "") {
   return hasDirectCatalogSellerEvidence(item, trackerProductId);
 }
 
+// N30 그룹상품: 화면에 보일 옵션 번호 목록. 칸을 못 읽은 행(null·키 없음)은 '모름'이라 빈 목록으로 보인다.
+// 옵션으로 잡힌 지난 기록은 목록과 상관없이 숨기지 않는다(명세 §7.3·§15-4, 반박 검토 2026-10-23).
+function payloadOptionProductIds(row, eligibility) {
+  if (!Array.isArray(row?.option_product_ids) || !eligibility.eligible) return [];
+  return normalizeStoredOptionProductIds(row.option_product_ids, eligibility.primaryProductIds);
+}
+
 function displayProductRankItem(item, trackerProductId = "") {
   if (!item || typeof item !== "object" || Array.isArray(item)) return item || null;
   const exactTrackerProductId = normalizeText(trackerProductId);
@@ -578,8 +600,10 @@ function displayProductRankItem(item, trackerProductId = "") {
   return item;
 }
 
-export function trackerPayload(row, snapshots = [], keywordVolume = null) {
+export function trackerPayload(row, snapshots = [], keywordVolume = null, extras = {}) {
   const historyCutoff = Date.now() - PRODUCT_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  const optionEligibility = trackerOptionEligibility(row);
+  const optionProductIds = payloadOptionProductIds(row, optionEligibility);
   const rawRecentSnapshots = (snapshots || [])
     .filter((snapshot) => {
       const checkedAt = new Date(snapshot?.checked_at || snapshot?.checkedAt || 0).getTime();
@@ -593,6 +617,10 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
     && !trustedProductRankSnapshot(rawRecentSnapshots[0], row.product_id)
   );
   const latestTrackingItem = displayProductRankItem(recentSnapshots[0]?.item, row.product_id) || {};
+  const latestOptionGroup = latestTrackingItem.optionGroup && typeof latestTrackingItem.optionGroup === "object"
+    ? latestTrackingItem.optionGroup
+    : {};
+  const latestGroupOption = latestTrackingItem.matchBasis === "group_option";
   const trustedRanks = recentSnapshots.map((snapshot) => positiveRank(snapshot?.rank)).filter(Boolean);
   const hasTrustedSnapshot = recentSnapshots.length > 0;
   const checkCount = nonNegativeCount(row.check_count);
@@ -639,6 +667,20 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
     neverFound: checkCount >= 3 && foundCount === 0,
     foundRate: checkCount > 0 ? Math.round((foundCount / checkCount) * 100) / 100 : null,
     lastFoundAt: lastFoundAtFromSnapshots(snapshots),
+    // N30 그룹상품(2026-10-23). 옵션 목록을 모르면(칸 없음) 빈 목록이다.
+    optionProductIds,
+    optionProductCount: optionProductIds.length,
+    optionEditable: optionEligibility.eligible === true,
+    currentMatchBasis: normalizeText(latestTrackingItem.matchBasis),
+    currentMatchedOptionProductId: latestGroupOption
+      ? (normalizeText(latestTrackingItem.matchedOptionProductId) || null)
+      : null,
+    currentMatchedOptionTitle: latestGroupOption
+      ? (normalizeText(latestOptionGroup.matchedOptionTitle) || null)
+      : null,
+    currentOptionMallCheck: latestGroupOption ? (normalizeText(latestOptionGroup.mallCheck) || null) : null,
+    currentOptionTitleCheck: latestGroupOption ? (normalizeText(latestOptionGroup.titleCheck) || null) : null,
+    groupOptionSuggestionCount: Number(extras?.groupOptionSuggestionCount || 0),
   };
 }
 
@@ -664,7 +706,17 @@ function lastFoundAtFromSnapshots(snapshots = []) {
 
 // 2026-09-25: 목록 응답이 3.1 MB 까지 커졌다. 화면이 옛 기록에서 읽는 상품 정보는 원부/상품 기준 표시와
 // 제목·몰·링크뿐이라, 가장 최신 기록만 전체 상품 정보를 싣고 나머지는 이 여섯 칸만 싣는다.
-const SNAPSHOT_COMPACT_ITEM_KEYS = ["trackingRankSource", "trackingRankSourceLabel", "title", "productId", "mallName", "link"];
+// 2026-10-23: 날짜 칸에 '옵션'을 표시하려고 그룹상품 판정 두 칸을 더한다(옵션 없는 행에는 없는 키).
+const SNAPSHOT_COMPACT_ITEM_KEYS = [
+  "trackingRankSource",
+  "trackingRankSourceLabel",
+  "title",
+  "productId",
+  "mallName",
+  "link",
+  "matchBasis",
+  "matchedOptionProductId",
+];
 
 function compactSnapshotItem(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return item || null;
@@ -947,14 +999,27 @@ export async function loadSnapshots(ctx, trackerIds, requestedLimit = PRODUCT_RA
   return grouped;
 }
 
+// 그룹 이름과 N30 그룹상품 번호(option_product_ids)를 한 번에 읽는다. 옵션 칸이 아직 없으면
+// (대표 SQL 전·되돌리기 SQL 뒤·칸 없음 10분 기억 중) 옛 조회로 한 번 더 읽고 옵션은 null(=모름)이다.
+// 빈 목록([])으로 바꾸지 않는다 — '모름'과 '비어 있음'을 섞지 않기 위해서다(반박 검토 2026-10-23).
+// 옵션 칸 검사를 그룹 칸 검사보다 먼저 한다 — isMissingRankGroupColumn 은 "does not exist" 를 넓게
+// 잡아 그룹 이름까지 잃는다.
 async function loadTrackerGroups(ctx, trackerIds) {
   const ids = Array.from(new Set((trackerIds || []).filter(Boolean)));
   if (!ids.length) return new Map();
 
-  const { data, error } = await ctx.supabaseAdmin
+  const query = (columns) => ctx.supabaseAdmin
     .from("naver_rank_trackers")
-    .select("id, group_name")
+    .select(columns)
     .in("id", ids);
+  const skipOptions = optionColumnRecentlyMissing();
+  let optionColumnReady = !skipOptions;
+  let { data, error } = await query(skipOptions ? "id, group_name" : "id, group_name, option_product_ids");
+  if (error && !skipOptions && isOptionColumnMissingError(error)) {
+    rememberOptionColumnMissing("rank-tracker-groups");
+    optionColumnReady = false;
+    ({ data, error } = await query("id, group_name"));
+  }
 
   if (error) {
     if (isMissingRankGroupColumn(error)) return new Map();
@@ -963,7 +1028,12 @@ async function loadTrackerGroups(ctx, trackerIds) {
 
   const groups = new Map();
   (data || []).forEach((row) => {
-    groups.set(row.id, normalizeRankGroupName(row.group_name));
+    groups.set(row.id, {
+      groupName: normalizeRankGroupName(row.group_name),
+      optionProductIds: optionColumnReady && Array.isArray(row.option_product_ids)
+        ? row.option_product_ids.map((id) => String(id))
+        : null,
+    });
   });
   return groups;
 }
@@ -972,10 +1042,17 @@ async function attachTrackerGroups(ctx, rows) {
   const sourceRows = rows || [];
   if (!sourceRows.length) return sourceRows;
   const groups = await loadTrackerGroups(ctx, sourceRows.map((row) => row.id));
-  return sourceRows.map((row) => ({
-    ...row,
-    group_name: groups.get(row.id) || normalizeRankGroupName(row.group_name),
-  }));
+  return sourceRows.map((row) => {
+    const details = groups.get(row.id);
+    return {
+      ...row,
+      group_name: details?.groupName || normalizeRankGroupName(row.group_name),
+      // 칸을 못 읽었으면 null(모름) 그대로. 이 행은 화면 응답용이고 DB 에 다시 쓰지 않는다.
+      option_product_ids: Array.isArray(row.option_product_ids)
+        ? row.option_product_ids
+        : (Array.isArray(details?.optionProductIds) ? details.optionProductIds : null),
+    };
+  });
 }
 
 async function attachTrackerGroup(ctx, row) {
@@ -1320,6 +1397,8 @@ async function listTrackers(request, ctx) {
     { owner: access.owner === true },
   ));
   const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
+  // N30 그룹상품: 같은 그룹 다른 추적에만 있는 번호 개수(카드 '가져오기' 알림). 읽은 행만 쓴다.
+  const groupOptionSuggestions = groupOptionSuggestionCounts(rows);
   const totalMs = Date.now() - listStartedAt;
   if (totalMs >= TRACKER_LIST_SLOW_LOG_MS) {
     // 2026-09-13: 목록 요청이 브라우저 제한(30초)에 걸리는 원인을 Vercel 로그에서 단계별로 읽기 위한 한 줄.
@@ -1348,7 +1427,12 @@ async function listTrackers(request, ctx) {
     complete: !hasMore && rows.length === count,
     workerStatus,
     ...(access.owner ? { workerOperations } : {}),
-    trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [], keywordVolumes.get(normalizeKeywordCompare(row.keyword)))),
+    trackers: rows.map((row) => trackerPayload(
+      row,
+      snapshots.get(row.id) || [],
+      keywordVolumes.get(normalizeKeywordCompare(row.keyword)),
+      { groupOptionSuggestionCount: groupOptionSuggestions.get(row.id) || 0 },
+    )),
   });
 }
 
@@ -1389,6 +1473,8 @@ export function buildProductRankSnapshotRecord(tracker, checkedAt, result, messa
       exactProductKind: result.exactProductKind || null,
       rankSelectionBasis: result.rankSelectionBasis,
     } : {}),
+    // N30 그룹상품(2026-10-23): 옵션 판정을 한 행에만 붙는다. 없으면 빈 객체 — 지금과 같은 행.
+    ...groupOptionSnapshotFields(result),
   };
   return {
     tracker_id: tracker.id,
@@ -1781,6 +1867,15 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
       const identityError = new Error("shopping_rank_target_identity_invalid");
       identityError.code = "SHOPPING_RANK_TARGET_IDENTITY_INVALID";
       throw identityError;
+    }
+    if (Array.isArray(tracker.option_product_ids) && tracker.option_product_ids.length) {
+      // N30 그룹상품 옵션은 로컬 워커 submit 경로에서만 본다. 이 서버 즉시 경로는 대표 번호만 본다
+      // (운영 hybrid 모드에서는 이 경로가 30일 기록을 만들지 않는다). 모드가 바뀌면 드러나게 남긴다.
+      console.warn(JSON.stringify({
+        level: "warn",
+        event: "naver_rank_option_server_path_primary_only",
+        optionCount: tracker.option_product_ids.length,
+      }));
     }
     const verifiedRelatedCatalogId = await loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt);
     const lookupResult = await findShoppingRankImpl(env, {
@@ -2835,6 +2930,312 @@ export async function controlShoppingWorker(request, ctx, body, access) {
   }, rejected ? 409 : 200);
 }
 
+// ───────────────────── N30 그룹상품 번호 편집 (2026-10-23, 관리자 화면 전용) ─────────────────────
+// 읽기·미리 보기·저장 모두 네이버 요청 0, 수집 순서(next_check_at·임대)와 깨우기에 손대지 않는다.
+// 저장은 option_product_ids 한 칸만 바꾼다. 오류는 모두 4xx(5xx 는 공용 문구 봉인 대상).
+const OPTION_TRACKER_COLUMNS = "id, agency_code, keyword, status, product_url, product_id, mall_name, product_title";
+const OPTION_EDIT_MODES = new Set(["read", "preview", "save"]);
+const OPTION_TRACKER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+function optionEditForbidden(request, access) {
+  const role = String(request.headers.get("x-mi-session-role") || "").trim().toLowerCase();
+  // 광고주와 연결된 운영팀 세션은 requireRankAccess 에서 admin:false 로 나와 광고주와 구분되지
+  // 않는다. 세션 게이트가 덮어쓰는 역할 머리글로 가른다. 세션 없는 요청은 관리자 코드만 허용.
+  if (role) return !["owner", "team"].includes(role);
+  return access?.admin !== true;
+}
+
+async function readOptionTrackerRows(build) {
+  const withOptions = await build(`${OPTION_TRACKER_COLUMNS}, option_product_ids`);
+  if (!withOptions.error) return { data: withOptions.data, columnReady: true };
+  if (!isOptionColumnMissingError(withOptions.error)) throw withOptions.error;
+  rememberOptionColumnMissing("rank-tracker-options");
+  const legacy = await build(OPTION_TRACKER_COLUMNS);
+  if (legacy.error) throw legacy.error;
+  return { data: legacy.data, columnReady: false };
+}
+
+// 함께 바꿀 대상은 같은 대표 번호(product_id) 추적만 읽는다(명세 §8.3-4). 같은 그룹의 다른 옵션을 대표로
+// 쓴 추적과 이 대표 번호를 옵션으로 가진 추적은 '가져오기' 후보 번호만 만든다(쓰지 않음).
+async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds, columnReady) {
+  const limit = OPTION_SAME_PRODUCT_TRACKERS_MAX + 2;
+  const scoped = (columns) => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select(columns)
+    .in("agency_code", scope)
+    .in("status", ["active", "paused"]);
+  const sameProduct = await readOptionTrackerRows((columns) => scoped(columns)
+    .eq("product_id", primaryProductId)
+    .limit(limit));
+  const suggestionRows = [];
+  if (columnReady && sameProduct.columnReady) {
+    const readSuggestionRows = async (build) => {
+      const { data, error } = await build(scoped(`${OPTION_TRACKER_COLUMNS}, option_product_ids`)).limit(limit);
+      if (error && !isOptionColumnMissingError(error)) throw error;
+      if (!error) suggestionRows.push(...(data || []));
+    };
+    if (optionIds.length) await readSuggestionRows((query) => query.in("product_id", optionIds));
+    await readSuggestionRows((query) => query.contains("option_product_ids", [primaryProductId]));
+  }
+  return { sameProduct: sameProduct.data || [], suggestionRows, columnReady: sameProduct.columnReady };
+}
+
+function optionEditError(request, status, code, message, extra = {}) {
+  return json(request, { ok: false, code, message, ...extra }, status);
+}
+
+function optionTargetGroups(targets) {
+  const groups = [];
+  const byKey = new Map();
+  for (const target of targets) {
+    const key = `${target.primaryProductId}|${target.after.join(",")}`;
+    if (!byKey.has(key)) {
+      const group = { productId: target.primaryProductId, after: target.after, ids: [] };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    byKey.get(key).ids.push(target.id);
+  }
+  return groups;
+}
+
+async function handleTrackerOptions(request, ctx, body, access) {
+  if (optionEditForbidden(request, access)) {
+    return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+  }
+  const trackerId = normalizeText(body.trackerId || body.id).toLowerCase();
+  if (!OPTION_TRACKER_ID_PATTERN.test(trackerId)) {
+    return optionEditError(request, 400, "RANK_OPTION_TRACKER_REQUIRED", "trackerId가 필요합니다.");
+  }
+  const mode = normalizeText(body.mode || "read").toLowerCase();
+  if (!OPTION_EDIT_MODES.has(mode)) {
+    return optionEditError(request, 400, "RANK_OPTION_MODE_INVALID", "지원하지 않는 그룹상품 번호 작업입니다.");
+  }
+  const scope = agencyCodeScope(access.agencyCode);
+  const self = await readOptionTrackerRows((columns) => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select(columns)
+    .eq("id", trackerId)
+    .in("agency_code", scope)
+    .maybeSingle());
+  const tracker = self.data;
+  if (!tracker) {
+    return optionEditError(request, 404, "RANK_OPTION_TRACKER_NOT_FOUND", "추적 항목을 찾을 수 없습니다.");
+  }
+  if (self.columnReady) forgetOptionColumnMissing();
+  const eligibility = trackerOptionEligibility(tracker);
+  if (eligibility.reason === "catalog_tracker") {
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_CATALOG_TRACKER",
+      "원부(가격비교) 추적에는 그룹상품 번호를 붙일 수 없습니다. 원부 순위는 원부 번호로 따로 추적하세요.",
+    );
+  }
+  if (!eligibility.eligible) {
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_PRIMARY_INVALID",
+      "대표 상품번호를 확인할 수 없는 추적에는 그룹상품 번호를 붙일 수 없습니다. 상품 URL·상품번호를 확인해주세요.",
+    );
+  }
+  const currentIds = self.columnReady
+    ? normalizeStoredOptionProductIds(tracker.option_product_ids, eligibility.primaryProductIds)
+    : [];
+  const applyToSameProduct = body.applyToSameProduct === true;
+
+  let parsed = null;
+  let optionIds = currentIds;
+  if (mode !== "read") {
+    parsed = parseOptionProductInput(typeof body.optionInput === "string" ? body.optionInput : "", {
+      primaryProductIds: eligibility.primaryProductIds,
+      primaryProductUrl: tracker.product_url,
+    });
+    if (parsed.error) {
+      return optionEditError(
+        request,
+        400,
+        "RANK_OPTION_INPUT_TOO_LONG",
+        "붙여 넣은 글이 너무 깁니다. 한 번에 2만 자·60칸까지 넣을 수 있습니다.",
+        { parsed },
+      );
+    }
+    if (parsed.overLimit) {
+      return optionEditError(
+        request,
+        400,
+        "RANK_OPTION_LIMIT",
+        `그룹상품 번호는 최대 ${OPTION_PRODUCT_IDS_MAX}개까지 넣을 수 있습니다.`,
+        { parsed },
+      );
+    }
+    optionIds = parsed.optionProductIds;
+  }
+
+  const candidates = await loadOptionGroupCandidates(ctx, scope, eligibility.primaryProductId, optionIds, self.columnReady);
+  const plan = planOptionGroupUpdate({
+    tracker,
+    optionProductIds: optionIds,
+    candidates: candidates.sameProduct,
+    applyToSameProduct,
+    columnReady: self.columnReady,
+  });
+  if (applyToSameProduct && plan.siblings.length > OPTION_SAME_PRODUCT_TRACKERS_MAX) {
+    return optionEditError(
+      request,
+      400,
+      "RANK_OPTION_TOO_MANY_TRACKERS",
+      `함께 바꿀 추적이 ${OPTION_SAME_PRODUCT_TRACKERS_MAX}개를 넘습니다. '다른 키워드 추적에도 적용'을 끄고 저장해주세요.`,
+    );
+  }
+  const siblingGroups = await loadTrackerGroups(ctx, plan.siblings.map((sibling) => sibling.id));
+  const suggestions = siblingOptionSuggestions(tracker, [...candidates.sameProduct, ...candidates.suggestionRows], optionIds);
+  const sameProduct = {
+    trackers: plan.siblings.map((sibling) => ({
+      id: sibling.id,
+      keyword: sibling.keyword,
+      status: sibling.status,
+      groupName: siblingGroups.get(sibling.id)?.groupName || DEFAULT_RANK_GROUP,
+      primaryProductId: sibling.primaryProductId,
+      relation: sibling.relation,
+      optionProductCount: sibling.before.length,
+      beforeOptionProductIds: sibling.before,
+      afterOptionProductIds: sibling.after,
+      addedCount: sibling.addedCount,
+      removedCount: sibling.removedCount,
+    })),
+    siblingOptionProductIds: suggestions,
+    shrinkingTrackerCount: plan.siblings.filter((sibling) => sibling.removedCount > 0).length,
+    limit: OPTION_SAME_PRODUCT_TRACKERS_MAX,
+  };
+  const targetTrackerIds = plan.targets.map((target) => target.id);
+  const common = {
+    columnReady: self.columnReady,
+    tracker: {
+      id: tracker.id,
+      keyword: tracker.keyword,
+      primaryProductId: eligibility.primaryProductId,
+      productUrl: tracker.product_url || "",
+      optionProductIds: currentIds,
+    },
+    parsed,
+    sameProduct,
+    applyToSameProduct,
+    willUpdateCount: plan.targets.length,
+    targetTrackerIds,
+    removedOptionProductIds: mode === "read" ? [] : plan.removedOptionProductIds,
+    limit: OPTION_PRODUCT_IDS_MAX,
+  };
+
+  if (mode === "read") {
+    return json(request, { ok: true, mode, ...common, message: `그룹상품 번호 ${currentIds.length}개` });
+  }
+  if (mode === "preview") {
+    const rejectedLabel = parsed.rejected.length ? ` · 받지 않은 칸 ${parsed.rejected.length}개` : "";
+    return json(request, {
+      ok: true,
+      mode,
+      ...common,
+      message: `번호 ${optionIds.length}개 · 함께 바뀌는 추적 ${plan.targets.length}개${rejectedLabel}`,
+    });
+  }
+
+  // save
+  if (parsed.rejected.length) {
+    return optionEditError(
+      request,
+      400,
+      "RANK_OPTION_INPUT_REJECTED",
+      "받지 않은 칸이 있어 저장하지 않았습니다. 미리 보기에서 빨간 칸을 지운 뒤 다시 저장해주세요.",
+      { parsed },
+    );
+  }
+  if (!self.columnReady) {
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_NOT_READY",
+      "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.",
+    );
+  }
+  if (Array.isArray(body.expectedTrackerIds)) {
+    const expected = [...new Set(body.expectedTrackerIds.map((id) => normalizeText(id).toLowerCase()))].sort();
+    const actual = [...new Set(targetTrackerIds.map((id) => String(id).toLowerCase()))].sort();
+    if (expected.join(",") !== actual.join(",")) {
+      return optionEditError(
+        request,
+        409,
+        "RANK_OPTION_TARGETS_CHANGED",
+        "미리 보기 뒤에 함께 바뀌는 추적이 달라졌습니다. 다시 미리 보기 해주세요.",
+        { targetTrackerIds },
+      );
+    }
+  }
+
+  const updatedTrackerIds = [];
+  for (const target of optionTargetGroups(plan.targets)) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .update({ option_product_ids: target.after })
+      .in("id", target.ids)
+      .in("agency_code", scope)
+      .eq("product_id", target.productId)
+      .select("id");
+    if (error) {
+      if (updatedTrackerIds.length) {
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "naver_rank_tracker_options_partial",
+          updatedCount: updatedTrackerIds.length,
+          targetCount: plan.targets.length,
+        }));
+        return optionEditError(
+          request,
+          409,
+          "RANK_OPTION_PARTIAL",
+          `추적 ${plan.targets.length}개 중 ${updatedTrackerIds.length}개만 저장했습니다. 같은 내용으로 다시 저장해주세요.`,
+          { updatedTrackerIds },
+        );
+      }
+      // CHECK 위반(23514)을 칸 없음 판정보다 먼저 거른다 — 제약 이름에 option_product_ids 가 들어 있어
+      // 칸 없음으로 잘못 보면 이 함수 인스턴스의 워커 submit 이 10분 동안 옵션을 무시한다.
+      if (String(error.code || "") === "23514") {
+        return optionEditError(request, 409, "RANK_OPTION_INVALID", "그룹상품 번호 형식을 DB 가 받지 않았습니다. 다시 미리 보기 해주세요.");
+      }
+      if (isOptionColumnMissingError(error)) {
+        rememberOptionColumnMissing("rank-tracker-options-save");
+        return optionEditError(
+          request,
+          409,
+          "RANK_OPTION_NOT_READY",
+          "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.",
+        );
+      }
+      throw error;
+    }
+    updatedTrackerIds.push(...(data || []).map((row) => row.id));
+  }
+  console.log(JSON.stringify({
+    level: "info",
+    event: "naver_rank_tracker_options_saved",
+    trackerCount: updatedTrackerIds.length,
+    optionCount: optionIds.length,
+  }));
+  return json(request, {
+    ok: true,
+    mode,
+    updatedCount: updatedTrackerIds.length,
+    updatedTrackerIds,
+    optionProductIds: optionIds,
+    removedOptionProductIds: plan.removedOptionProductIds,
+    message: optionIds.length
+      ? `그룹상품 번호 ${optionIds.length}개를 추적 ${updatedTrackerIds.length}개에 저장했습니다. 다음 순위 확인부터 적용됩니다.`
+      : `그룹상품 번호를 지웠습니다(추적 ${updatedTrackerIds.length}개). 다음 순위 확인부터 대표 상품번호만 찾습니다.`,
+  });
+}
+
 async function handlePost(request, ctx) {
   const body = await request.json().catch(() => ({}));
   const action = normalizeText(body.action || "create");
@@ -2863,6 +3264,7 @@ async function handlePost(request, ctx) {
   if (action === "group") return updateTrackerGroup(request, ctx, body);
   if (action === "move") return moveTracker(request, ctx, body);
   if (action === "reorder") return reorderTrackers(request, ctx, body);
+  if (action === "options") return handleTrackerOptions(request, ctx, body, access);
 
   return json(request, { ok: false, message: "지원하지 않는 작업입니다." }, 400);
 }

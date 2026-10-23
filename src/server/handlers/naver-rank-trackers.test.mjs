@@ -5221,7 +5221,21 @@ test("tracker payload keeps its existing fields in order and appends the not-fou
   ];
   const keys = Object.keys(trackerPayload(trackerRow(), []));
   assert.deepEqual(keys.slice(0, before.length), before);
-  assert.deepEqual(keys.slice(before.length), ["neverFound", "foundRate", "lastFoundAt"]);
+  assert.deepEqual(keys.slice(before.length), [
+    "neverFound",
+    "foundRate",
+    "lastFoundAt",
+    // N30 그룹상품(2026-10-23) — 기존 칸 뒤에만 붙인다.
+    "optionProductIds",
+    "optionProductCount",
+    "optionEditable",
+    "currentMatchBasis",
+    "currentMatchedOptionProductId",
+    "currentMatchedOptionTitle",
+    "currentOptionMallCheck",
+    "currentOptionTitleCheck",
+    "groupOptionSuggestionCount",
+  ]);
 });
 
 test("목록 응답은 가장 최신 기록만 전체 상품 정보를 싣고 옛 기록은 화면이 쓰는 여섯 칸만 싣는다", () => {

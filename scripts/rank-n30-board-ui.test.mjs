@@ -216,12 +216,18 @@ const CARD_FUNCTIONS = [
   "rankTrackerCatalogHint",
   "rankTrackerActionNote",
   "rankTrackerChangeLabel",
+  // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부.
+  "rankOptionEditAvailable",
+  "rankTrackerOptionState",
+  "renderRankOptionOpsPills",
+  "renderRankOptionHitLine",
   "renderRankTrackerCard",
   "cloneRankCardForExport",
   "cloneRankTrackerCardForShare",
 ];
 
 const CARD_STUBS = `
+  var secureSession = { role: "owner" };
   var RANK_CHRONIC_ISOLATION_LABEL = "수집 방식 점검 중";
   function rankTrackerChronicIsolated() { return false; }
   function rankTrackerTitle(tracker) { return tracker.productTitle || "상품"; }

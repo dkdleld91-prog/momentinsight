@@ -2835,6 +2835,71 @@
       word-break: break-all;
     }
 
+    /* N 30일 그룹상품 시작 (대표 요청 2026-10-23): 카드의 '그룹상품 n개' 알약·잡힌 옵션 줄·날짜 칸 '옵션' 표시.
+       색은 var(--mi-*) 토큰만 쓴다. 새 표시는 모두 공유 이미지에서 빠진다(data-rank-export-omit). */
+    #mi-clean .mi-rank-ops-row .mi-rank-option-pill {
+      border-color: var(--mi-gold);
+      color: var(--mi-navy-2);
+      background: var(--mi-gold-soft);
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-rank-option-hit {
+      display: flex;
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 4px 8px;
+      align-items: center;
+      padding: 6px 12px 8px;
+      border-bottom: 1px solid var(--mi-gold-soft);
+      color: var(--mi-navy-2);
+      background: var(--mi-grey-50);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    #mi-clean .mi-rank-option-hit > span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    #mi-clean .mi-rank-option-hit > span + span::before {
+      content: "·";
+      margin-right: 8px;
+      color: var(--mi-muted);
+      font-weight: 700;
+    }
+
+    #mi-clean .mi-rank-option-hit .mi-rank-option-hit-label {
+      color: var(--mi-navy);
+      font-weight: 900;
+    }
+
+    #mi-clean .mi-rank-option-hit .mi-rank-option-hit-title {
+      flex: 1 1 160px;
+      overflow: hidden;
+      color: var(--mi-muted);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-option-hit .is-warn {
+      color: var(--mi-warn);
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-rank-day-slots .mi-rank-slot-option {
+      color: var(--mi-blue);
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-rank-row-actions .mi-rank-pill-option {
+      font-style: normal;
+    }
+    /* N 30일 그룹상품 끝 */
+
     #mi-clean .mi-rank-ops-row .mi-rank-ops-message {
       max-width: min(420px, 100%);
       overflow: hidden;
@@ -10137,7 +10202,8 @@
         });
         if (snapshot && snapshot.item) {
           compact.item = {};
-          ["trackingRankSource", "trackingRankSourceLabel", "title", "productId", "mallName", "link"].forEach(function (key) {
+          // 그룹상품(2026-10-23): matchBasis·matchedOptionProductId·optionGroup 도 남긴다(날짜 칸 '옵션'·잡힌 옵션 줄).
+          ["trackingRankSource", "trackingRankSourceLabel", "title", "productId", "mallName", "link", "matchBasis", "matchedOptionProductId", "optionGroup"].forEach(function (key) {
             if (snapshot.item[key] !== undefined) compact.item[key] = snapshot.item[key];
           });
         }
@@ -10688,7 +10754,11 @@
         var rank = snapshot && snapshot.rank ? rankText(snapshot.rank) : "-";
         var source = rankSnapshotSourceLabel(snapshot, true);
         var sourceLabel = source && source !== "상품" ? source : "순위";
-        return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + '</small><b>' + escapeHtml(rank) + '</b></span>';
+        // 그룹상품(2026-10-23): 옵션 상품번호로 잡힌 측정은 화면에만 ' · 옵션' 을 붙인다(data-rank-export-omit 라 공유 이미지에서 빠짐).
+        var optionMark = snapshot && snapshot.rank && snapshot.item && snapshot.item.matchBasis === "group_option"
+          ? '<i data-rank-export-omit class="mi-rank-slot-option" title="그룹상품 옵션 상품번호로 잡힌 순위"> · 옵션</i>'
+          : "";
+        return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + optionMark + '</small><b>' + escapeHtml(rank) + '</b></span>';
       }
 
       // 받은 N 30일 측정 목록이 잘렸을 수 있는지: 마지막 정상 순위 캐시가 개수를 줄여 저장했거나(snapshotsTruncated),
@@ -11256,6 +11326,141 @@
         };
       }
 
+      // N 30일 그룹상품(대표 요청 2026-10-23): 스마트스토어 그룹상품은 검색 결과에 카드 한 장으로 나오고, 카드에는 그때
+      // 대표 옵션의 상품번호가 붙는다. 추적에 같은 그룹의 다른 옵션 상품번호를 붙여 두면 서버(로컬 작업기 결과 판정)가
+      // 그중 하나로 잡힌 카드 위치도 순위로 본다(대표 번호와 함께 보이면 더 높은 순위). 화면은 서버가 준 값(trackerPayload 의
+      // optionProductIds·optionEditable·currentMatchBasis·currentMatchedOption*·currentOption*Check·
+      // groupOptionSuggestionCount 와 최신 측정 item.optionGroup)만 보여 주고 다시 판정하지 않는다. 새 표시는 모두
+      // data-rank-export-omit 이라 공유 이미지에서 빠진다(대표 결정 2026-10-17 과 같은 규칙). 번호도 옵션 기록도 없는
+      // 카드는 예전과 같은 HTML 이다(관리자 화면만 서버가 편집 가능하다고 준 추적에 '그룹상품 번호 넣기' 버튼이 붙는다).
+      function rankOptionEditAvailable() {
+        // 광고주 화면: 그룹상품 번호는 보기만 한다(등록·수정은 관리자 화면에서만).
+        return false;
+      }
+
+      // 카드 한 장의 그룹상품 상태. 목록 응답의 추적 칸을 먼저 쓰고, 없으면 최신 측정 item(matchBasis·
+      // matchedOptionProductId·optionGroup)을 본다. 편집 버튼은 관리자 화면에서만, 서버가 optionEditable:true 를 준
+      // (=대표 상품번호가 확인된 상품 기준) 추적에만 붙는다. 원부(가격비교) 추적은 서버가 false 를 주고 저장도 409 로 막는다.
+      function rankTrackerOptionState(tracker) {
+        var safe = tracker || {};
+        var latest = (safe.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        var group = item.optionGroup && typeof item.optionGroup === "object" ? item.optionGroup : {};
+        var ids = Array.isArray(safe.optionProductIds) ? safe.optionProductIds.filter(function (id) {
+          return String(id || "").trim();
+        }) : [];
+        var count = Number.isSafeInteger(safe.optionProductCount) && safe.optionProductCount >= 0 ? safe.optionProductCount : ids.length;
+        var basis = typeof safe.currentMatchBasis === "string" ? safe.currentMatchBasis : String(item.matchBasis || "");
+        var hit = basis === "group_option";
+        var admin = rankOptionEditAvailable();
+        var editable = admin && safe.optionEditable === true && safe.status !== "completed";
+        var suggestionCount = Number.isSafeInteger(safe.groupOptionSuggestionCount) && safe.groupOptionSuggestionCount > 0 ? safe.groupOptionSuggestionCount : 0;
+        var cardCount = Number(group.cardCount || 0);
+        var otherCardCount = Number(group.otherCardCount || 0);
+        var mismatchIds = Array.isArray(group.mallMismatchProductIds) ? group.mallMismatchProductIds.map(function (id) {
+          return String(id || "").trim();
+        }).filter(function (id) {
+          return /^[0-9]{5,20}$/.test(id);
+        }) : [];
+        var mismatch = Number(group.mallMismatchCount || 0) || mismatchIds.length;
+        return {
+          count: count,
+          hit: hit,
+          matchedId: String(safe.currentMatchedOptionProductId || (hit ? item.matchedOptionProductId : "") || ""),
+          matchedTitle: String(safe.currentMatchedOptionTitle || (hit ? group.matchedOptionTitle : "") || ""),
+          admin: admin,
+          editable: editable,
+          suggestionCount: editable ? suggestionCount : 0,
+          mallUnverified: hit && String(safe.currentOptionMallCheck || group.mallCheck || "") === "unverified",
+          titleLowOverlap: hit && String(safe.currentOptionTitleCheck || group.titleCheck || "") === "low_overlap",
+          cardCount: hit && cardCount > 1 ? cardCount : 0,
+          otherCardCount: basis === "primary" && otherCardCount > 0 ? otherCardCount : 0,
+          otherCardBestRank: Number(group.otherCardBestRank || 0),
+          primaryRank: hit && Number(group.primaryProductRank) > 0 ? Number(group.primaryProductRank) : 0,
+          primaryCatalog: String(group.primaryRankSource || "") === "related_catalog",
+          mallMismatchCount: mismatch > 0 ? mismatch : 0,
+          mallMismatchIds: mismatch > 0 ? mismatchIds : []
+        };
+      }
+
+      // 운영줄의 '그룹상품 n개' 알약(번호가 있을 때)과 관리자 편집 버튼. 둘 다 공유 이미지에서 빠진다(버튼은 복제에서
+      // 지워지고, 알약은 data-rank-export-omit). 같은 그룹의 다른 추적에만 있는 번호가 있으면 버튼이 '가져오기'를 권한다.
+      function renderRankOptionOpsPills(tracker, state) {
+        var html = "";
+        if (state.count > 0) {
+          html += '<span data-rank-export-omit class="mi-rank-option-pill" title="' +
+            escapeHtml("대표 상품번호와 함께 같은 그룹상품의 다른 옵션 상품번호 " + state.count + "개도 찾습니다") + '">' +
+            escapeHtml("그룹상품 " + state.count + "개") + '</span>';
+        }
+        if (state.editable) {
+          var suggest = state.suggestionCount;
+          var label = state.count > 0
+            ? "그룹상품 번호" + (suggest ? " +" + suggest : "")
+            : (suggest ? "그룹상품 번호 가져오기" : "그룹상품 번호 넣기");
+          var hint = suggest
+            ? "같은 그룹상품의 다른 키워드 추적에만 있는 번호가 " + suggest + "개 있습니다. 눌러서 확인하고 가져오세요."
+            : "같은 그룹상품의 다른 옵션 상품번호를 넣고 고칩니다.";
+          html += '<button class="mi-rank-option-edit' + (suggest ? " is-suggest" : "") + '" type="button" aria-haspopup="dialog" data-rank-option-edit="' +
+            escapeHtml(tracker.id) + '" data-rank-option-keyword="' + escapeHtml(tracker.keyword) + '" data-rank-option-primary="' +
+            escapeHtml(tracker.productId) + '" title="' + escapeHtml(hint) + '">' + escapeHtml(label) + '</button>';
+        }
+        return html;
+      }
+
+      // 운영줄 아래 '잡힌 옵션' 줄: 최신 순위가 그룹상품 옵션 번호로 잡혔을 때 어느 번호·어느 카드였는지 보인다.
+      // 관리자 화면은 서버가 남긴 확인 사항(스토어 확인 없이 기록·제목 차이·여러 카드·다른 스토어로 뺀 번호)도 붙인다.
+      function renderRankOptionHitLine(state) {
+        var notes = [];
+        if (state.admin) {
+          if (state.mallUnverified) {
+            notes.push({ text: "스토어 확인 없이 기록", title: "스토어를 확인하지 못한 옵션 카드가 가장 높아(대표 상품번호보다 높거나 대표 상품번호가 결과에 없음) 그 순위를 확인 없이 기록했습니다. 같은 스토어 그룹상품 번호인지 확인해주세요." });
+          }
+          if (state.titleLowOverlap) {
+            notes.push({ text: "제목이 추적 상품과 많이 다름 · 확인", title: "잡힌 카드 제목이 추적 상품 제목과 많이 다릅니다. 같은 그룹상품 번호인지 확인해주세요." });
+          }
+          if (state.cardCount) {
+            notes.push({
+              text: "서로 다른 카드 " + state.cardCount + "장에서 잡힘 · 확인",
+              title: "그룹상품은 카드 한 장으로 나옵니다. 넣은 번호가 서로 다른 카드에서 잡혀 가장 높은 순위를 기록했습니다."
+            });
+          }
+          if (state.primaryRank) {
+            notes.push({
+              text: "대표 상품번호 " + (state.primaryCatalog ? "관련 원부 " : "") + state.primaryRank + "위보다 높아 옵션 순위로 기록 · 확인",
+              title: "대표 상품번호도 " + (state.primaryCatalog ? "관련 원부로 " : "") + state.primaryRank + "위에 보였지만, 넣은 번호의 카드가 더 높아 그 순위를 기록했습니다. 그룹상품은 카드 한 장으로 나오므로 같은 그룹상품 번호인지 확인해주세요."
+            });
+          }
+          if (state.otherCardCount) {
+            notes.push({
+              text: "그룹상품 번호가 다른 카드 " + state.otherCardCount + "장에서도 잡힘 · 확인",
+              title: "대표 상품번호 순위가 더 높거나 같아 그대로 기록했습니다. 넣은 번호가 다른 카드" + (state.otherCardBestRank ? "(가장 높은 " + state.otherCardBestRank + "위)" : "") + "에서도 보여 잘못 넣은 번호일 수 있습니다."
+            });
+          }
+          if (state.mallMismatchCount) {
+            var mismatchShown = state.mallMismatchIds.slice(0, 3).join(", ") + (state.mallMismatchIds.length > 3 ? " 외 " + (state.mallMismatchIds.length - 3) + "개" : "");
+            notes.push({
+              text: "다른 스토어로 보여 뺀 번호 " + state.mallMismatchCount + "개" + (mismatchShown ? " · " + mismatchShown : ""),
+              title: "스토어가 추적과 달라 순위에 넣지 않은 번호입니다" + (state.mallMismatchIds.length ? ": " + state.mallMismatchIds.join(", ") : "") + ". 대표 순위로 기록한 날은 메시지에 넣지 않고 이 줄에만 남깁니다. 같은 스토어 그룹상품 번호가 맞는지 확인해주세요."
+            });
+          }
+        }
+        if (!state.hit && !notes.length) return "";
+        var parts = [];
+        if (state.hit) {
+          parts.push('<span class="mi-rank-option-hit-label">잡힌 옵션</span>');
+          if (state.matchedId) parts.push('<span>상품번호 ' + escapeHtml(state.matchedId) + '</span>');
+          if (state.matchedTitle) {
+            parts.push('<span class="mi-rank-option-hit-title" title="' + escapeHtml(state.matchedTitle) + '">' + escapeHtml(state.matchedTitle) + '</span>');
+          }
+        } else {
+          parts.push('<span class="mi-rank-option-hit-label">그룹상품 확인</span>');
+        }
+        notes.forEach(function (note) {
+          parts.push('<span class="is-warn" title="' + escapeHtml(note.title) + '">' + escapeHtml(note.text) + '</span>');
+        });
+        return '<div class="mi-rank-option-hit" data-rank-option-hit data-rank-export-omit>' + parts.join("") + '</div>';
+      }
+
       function renderRankTrackerCard(tracker, selectedSet) {
         var title = rankTrackerTitle(tracker);
         var mallName = rankTrackerMallName(tracker);
@@ -11266,12 +11471,21 @@
         var catalogHint = rankTrackerCatalogHint(tracker);
         var actionNote = rankTrackerActionNote(tracker);
         var currentSource = rankTrackerCurrentSourceLabel(tracker);
+        var optionState = rankTrackerOptionState(tracker);
+        // 그룹상품 기록 문장의 관리자용 꼬리(서버 GROUP_OPTION_UNVERIFIED_TAIL)는 관리자 세션 화면에서만 보인다. 광고주
+        // 화면 '메시지'에는 꼬리를 뺀 문장을 보인다(2차 수정 #10 원칙, 관리자 카드 줄에는 '스토어 확인 없이 기록').
+        if (!optionState.admin && typeof lastMessage === "string") lastMessage = lastMessage.split(" 스토어를 확인하지 못해 확인 없이 기록했습니다.").join("");
+        // 그룹상품(명세 §9.2-2): 최신 순위가 옵션 번호로 잡혔으면 화면 알약은 '현재 37위 · 옵션'. ' · 옵션' 은
+        // data-rank-export-omit 라 공유 이미지에는 '현재 37위' 만 남는다(대표 결정 D5).
+        var currentOption = optionState.hit && Boolean(tracker.currentRank);
+        if (currentOption) currentSource = "";
         var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
           '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary"><div class="mi-rank-track-controls"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
           escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
           escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '</div></div><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
-          escapeHtml(rankText(tracker.currentRank) + (currentSource ? " · " + currentSource : "")) + '</span><span class="mi-rank-pill">최고 ' +
+          escapeHtml(rankText(tracker.currentRank) + (currentSource ? " · " + currentSource : "")) +
+          (currentOption ? '<i data-rank-export-omit class="mi-rank-pill-option" title="그룹상품 옵션 상품번호로 잡힌 순위"> · 옵션</i>' : '') + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
           escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span data-rank-export-omit class="' +
@@ -11281,12 +11495,13 @@
           escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
           escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span data-rank-export-omit>그룹 ' +
           escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
-          escapeHtml(tracker.id) + '">그룹 변경</button><span data-rank-export-omit>최근 ' +
+          escapeHtml(tracker.id) + '">그룹 변경</button>' + renderRankOptionOpsPills(tracker, optionState) + '<span data-rank-export-omit>최근 ' +
           escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span data-rank-export-omit>다음 ' +
           escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span data-rank-export-omit class="mi-rank-action-note ' +
           escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span data-rank-export-omit class="mi-rank-ops-message" title="' +
           escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
           (catalogHint ? '<div class="mi-rank-catalog-hint" data-rank-catalog-hint data-rank-export-omit>' + escapeHtml(catalogHint.note) + '</div>' : '') +
+          renderRankOptionHitLine(optionState) +
           renderTrackerDailyBoard(tracker) + '</section>';
       }
 

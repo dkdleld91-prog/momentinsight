@@ -95,6 +95,7 @@ function applyHealth(context, health) {
 // 샌드박스
 // ─────────────────────────────────────────────────────────────
 const CARD_STUBS = `
+  var secureSession = { role: "owner" };
   function rankTrackerTitle(tracker) { return tracker.title || "상품"; }
   function rankTrackerMallName() { return ""; }
   function rankTrackerAverageRank() { return 0; }
@@ -133,6 +134,11 @@ function cardSandbox(source, label) {
     htmlFunction(source, "rankTrackerNeedsAttention", label),
     htmlFunction(source, "rankTrackerInsight", label),
     htmlFunction(source, "rankTrackerCatalogHint", label),
+    // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부.
+    htmlFunction(source, "rankOptionEditAvailable", label),
+    htmlFunction(source, "rankTrackerOptionState", label),
+    htmlFunction(source, "renderRankOptionOpsPills", label),
+    htmlFunction(source, "renderRankOptionHitLine", label),
     htmlFunction(source, "renderRankTrackerCard", label),
     CARD_STUBS,
   ].join("\n\n"), context);

@@ -2,7 +2,7 @@
 // chrome.scripting.executeScript 의 func 로 넘겨 확장이 연 시크릿 탭에서만 돈다(기본 ISOLATED 세계).
 // 그래서 두 함수 모두 자기완결이다: 이 파일 밖의 값·import·전역 상수를 쓰지 않는다(테스트가 node:vm 으로 확인).
 // 읽기 규칙은 수집기 tools/coupang-rank-collector/lib/extract.mjs EXTRACT_SOURCE 와 같다(선택자·광고 표식·제목 200자).
-// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜(경로·q·정렬·쪽 번호·목록 크기) 표시.
+// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜(경로·쿼리 값 전부) 표시.
 // 하지 않는 것: 누르기·입력·포커스 옮기기·주소 바꾸기·브라우저 표식 숨기기. 스크롤은 수집기와 같은 범위만 한다.
 
 // 페이지가 다 불러와졌는지(주 문서 load = readyState complete)를 본다. 화면을 바꾸지 않는다.
@@ -44,26 +44,32 @@ export async function miCoupangMeasure(options) {
   const jitter = () => gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1));
 
   const blockPattern = /Access Denied|permission to access|비정상적인 접근|자동입력 방지|captcha|사용권한이 없습니다|사용권한이 제한된/i;
-  // 주소 바뀜 = 경로가 바뀜, 검색어(q)가 바뀜, 또는 목록의 순서·범위를 바꾸는 값(정렬 sorter·쪽 번호 page·목록 크기 listSize)이 바뀜.
-  // 같은 쪽 안 이동(pushState)으로 목록만 갈아 끼워도 잡는다. 쿠팡 기본값(sorter=scoreDesc·page=1)은 값이 없는 것과 같고,
-  // 목록 크기는 생기기만 해도 바뀐 것이다(기본값 미확인). 이 표는 lib/protocol.js LIST_PARAM_DEFAULTS 와 같다(테스트).
-  // 쿠팡 쪽 스크립트가 주소 꼬리에 추적 값(&channel= 등)만 붙이는 것은 사람이 옮긴 것이 아니므로 보지 않는다
-  // (q 가 바뀐 목록은 서버 M2 query_mismatch 가 따로 잡는다).
-  const listDefaults = { sorter: "scoreDesc", page: "1", listSize: "" };
+  // 주소 바뀜 = 경로가 바뀜, 또는 쿼리 값이 이름을 가리지 않고(q·정렬·쪽 번호·목록 크기·로켓배송·브랜드·가격대·분류·filter 등)
+  // 하나라도 생기거나·없어지거나·바뀜. 기준은 이 함수가 시작할 때(= 확장의 측정 시작 때) 주소다. 같은 쪽 안 이동(pushState)으로
+  // 목록만 갈아 끼워도 잡는다. 무시하는 이름은 쿠팡 추적 꼬리로 근거가 확인된 것(ignoredParams)뿐이고 지금은 없다 —
+  // 쿠팡이 측정 중에 스스로 값을 붙이면 이동으로 보아 순위를 기록하지 않는다(안전한 쪽 실패, user_navigated).
+  // 빈 값 = 값 없음, 쪽 번호·목록 크기는 숫자로 맞추고(page=01 = page=1), 쿠팡 기본값(sorter=scoreDesc·page=1)은 값 없음과 같다.
+  // 이름은 대소문자를 가리고, (이름, 값) 쌍을 정렬해 순서와 무관하게 비교한다.
+  // 이 세 표와 규칙은 lib/protocol.js searchParamsKey 와 같다(테스트). q 가 바뀐 목록은 서버 M2 query_mismatch 도 따로 잡는다.
+  const ignoredParams = [];
+  const paramDefaults = { sorter: "scoreDesc", page: "1" };
+  const numericParams = ["page", "listSize"];
   const addressKey = () => {
-    const parts = [String(location.pathname || "")];
+    const pairs = [];
     try {
-      const params = new URLSearchParams(String(location.search || ""));
-      parts.push(params.get("q"));
-      Object.keys(listDefaults).forEach((name) => {
-        const raw = params.get(name);
-        const value = raw === null ? "" : String(raw).trim();
-        parts.push(value === "" ? listDefaults[name] : value);
-      });
+      for (const [name, raw] of new URLSearchParams(String(location.search || ""))) {
+        if (ignoredParams.includes(name)) continue;
+        let value = String(raw);
+        if (value === "") continue;
+        if (numericParams.includes(name) && /^[0-9]+$/.test(value)) value = value.replace(/^0+(?=[0-9])/, "");
+        if (Object.prototype.hasOwnProperty.call(paramDefaults, name) && paramDefaults[name] === value) continue;
+        pairs.push([name, value]);
+      }
     } catch {
-      parts.push(null);
+      return JSON.stringify([String(location.pathname || ""), null]);
     }
-    return JSON.stringify(parts);
+    pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+    return JSON.stringify([String(location.pathname || ""), pairs]);
   };
   const startAddress = addressKey();
   let wasHidden = document.visibilityState === "hidden";

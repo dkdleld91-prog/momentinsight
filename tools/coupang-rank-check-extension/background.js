@@ -19,7 +19,7 @@ import {
   EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
   READ_GAP_MS, RESULT_RESEND_MS, SCROLL_COUNT, SCROLL_GAP_MS, SCROLL_PIXELS, SEARCH_HOST, SEARCH_PATH, SERVER_ORIGIN_PATTERN,
   SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
-  LIST_PARAM_DEFAULTS, browserLabel, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, sameListParams, searchAddressOf, searchUrl,
+  browserLabel, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, searchAddressOf, searchKeyOf, searchUrl,
   splitAddress, verifyClaim,
 } from "./lib/protocol.js";
 import { miCoupangMeasure, miCoupangProbe } from "./lib/measure.js";
@@ -58,12 +58,13 @@ class StopError extends Error {
   }
 }
 
-// 주소가 서버가 준 검색어의 쿠팡 검색 1쪽이고, 목록의 순서·범위를 바꾸는 값(정렬·쪽 번호·목록 크기)이 측정 시작 때와 같은지.
-// 쿠팡이 붙이는 추적 꼬리(channel 등)는 사람의 이동이 아니라 보지 않는다(lib/protocol.js LIST_PARAM_DEFAULTS 설명).
-export function isSearchAddress(url, keyword, baseline = LIST_PARAM_DEFAULTS) {
+// 주소가 서버가 준 검색어의 쿠팡 검색 1쪽이고, 쿼리 값 전부(근거로 확인된 쿠팡 추적 꼬리만 빼고 — 지금은 없음)가
+// 측정 시작 때와 같은지(baselineKey = 그때 주소의 searchParamsKey, 없으면 확장이 연 ?q= 주소). 규칙은 lib/protocol.js searchParamsKey 설명.
+export function isSearchAddress(url, keyword, baselineKey = null) {
   const address = searchAddressOf(url);
   if (!address) return false;
-  return address.host === SEARCH_HOST && address.path === SEARCH_PATH && address.q === keyword && sameListParams(address.list, baseline);
+  if (address.host !== SEARCH_HOST || address.path !== SEARCH_PATH || address.q !== keyword) return false;
+  return address.key === (typeof baselineKey === "string" ? baselineKey : searchKeyOf(keyword));
 }
 
 export function createBackground(chromeApi, deps = {}) {
@@ -363,8 +364,8 @@ export function createBackground(chromeApi, deps = {}) {
     let tabId = null;
     let keyword = null;
     let measuring = false;
-    // 측정 시작 때 탭 주소의 목록 값(정렬·쪽 번호·목록 크기). 쿠팡이 불러오는 동안 기본값을 붙였어도 그 뒤 '바뀜'만 본다.
-    let listBaseline = LIST_PARAM_DEFAULTS;
+    // 측정 시작 때 탭 주소의 쿼리 값(searchParamsKey). 쿠팡이 불러오는 동안 값을 붙였어도 그 뒤 '바뀜'만 본다.
+    let baselineKey = null;
     let navigatedDuringMeasure = false;
     let navigationIssued = false;
     let navigationStarted = false;
@@ -390,12 +391,12 @@ export function createBackground(chromeApi, deps = {}) {
     const onTabRemoved = (id) => {
       if (tabId !== null && id === tabId) stop("window_closed");
     };
-    // 측정 중 주소 바뀜: 새 주소가 보이면 경로·검색어(q)·목록 값(정렬·쪽 번호·목록 크기)을 비교하고(쿠팡이 붙이는 추적 꼬리는 무시),
-    // 주소 없이 다시 불러오기 시작하면(새로고침·권한 밖 주소로 이동) 바뀐 것으로 본다.
+    // 측정 중 주소 바뀜: 새 주소가 보이면 경로·쿼리 값 전부(q·정렬·쪽 번호·거르기 등, 근거로 확인된 추적 꼬리만 빼고 — 지금은 없음)를
+    // 측정 시작 때와 비교하고, 주소 없이 다시 불러오기 시작하면(새로고침·권한 밖 주소로 이동) 바뀐 것으로 본다.
     const onTabUpdated = (id, info) => {
       if (tabId === null || id !== tabId || !measuring || !info) return;
       if (typeof info.url === "string") {
-        if (!isSearchAddress(info.url, keyword, listBaseline)) navigatedDuringMeasure = true;
+        if (!isSearchAddress(info.url, keyword, baselineKey)) navigatedDuringMeasure = true;
         return;
       }
       if (info.status === "loading") navigatedDuringMeasure = true;
@@ -416,11 +417,11 @@ export function createBackground(chromeApi, deps = {}) {
         tabId = id;
         keyword = searchKeyword;
       },
-      // 측정 시작 때(value=true) 탭 주소가 같은 검색어의 쿠팡 검색 1쪽이면 그 목록 값을 기준으로 삼는다(아니면 기본값).
+      // 측정 시작 때(value=true) 탭 주소가 같은 검색어의 쿠팡 검색 1쪽이면 그 쿼리 값을 기준으로 삼는다(아니면 확장이 연 ?q= 주소).
       setMeasuring(value, startUrl) {
         if (value === true) {
           const start = searchAddressOf(startUrl);
-          listBaseline = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start.list : LIST_PARAM_DEFAULTS;
+          baselineKey = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start.key : searchKeyOf(keyword);
         }
         measuring = value;
       },
@@ -579,7 +580,7 @@ export function createBackground(chromeApi, deps = {}) {
         if (firstPage.status === "blocked") return { page: firstPage };
       }
       let results;
-      // 측정 시작 때의 탭 주소를 기준으로 그 뒤 주소 바뀜(경로·q·정렬·쪽 번호·목록 크기)을 본다. 쪽 함수도 자기 시작 때와 비교한다.
+      // 측정 시작 때의 탭 주소를 기준으로 그 뒤 주소 바뀜(경로·쿼리 값 전부)을 본다. 쪽 함수도 자기 시작 때와 비교한다.
       const startAddress = await tabAddress(tabId);
       run.setMeasuring(true, startAddress.url);
       try {

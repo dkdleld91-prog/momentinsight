@@ -1192,6 +1192,16 @@
   // 상태 줄 하나(spec-manual §7.3 표 + 반박 검토 반영). 위에서부터 처음 맞는 것을 쓴다.
   // input: { server, now(서버 시각으로 보정한 ms), hello, run, stopDetail, ownPending, ownLost, userAgent }
   // ownLost: 이 화면의 방금 확인이 확장 응답 없이 끝났다(서버는 그 확인을 150초 동안 '진행 중'으로 센다).
+  // 서버가 '진행 중'이라고 센 확인이 이 요청(claimId)인지. 서버 요약이 그 확인의 요청 id(busyClaimId)를 줄 때만 안다:
+  // 같으면 true, 다르면 false, 주지 않으면 null(모름). 요청한 사람으로 가리는 길은 없다 — 이 화면에는 '나'를 알아볼 값이 없다.
+  // [사실] 지금 서버 요약(SQL coupang_rank_manual_summary → manualPayload)은 busyClaimId 도, 요청한 사람도 주지 않는다 → 늘 null.
+  var MANUAL_CLAIM_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function manualBusyMine(server, claimId) {
+    var busyClaimId = server && typeof server.busyClaimId === "string" ? server.busyClaimId : "";
+    if (!MANUAL_CLAIM_ID_PATTERN.test(busyClaimId) || typeof claimId !== "string" || !claimId) return null;
+    return busyClaimId.toLowerCase() === claimId.toLowerCase();
+  }
+
   // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state }
   function manualView(input) {
     var options = input || {};
@@ -1223,11 +1233,18 @@
       case "hours": return make(false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
       case "busy": {
         var busyLeft = Date.parse(server.busyUntil) - now;
-        // 이 화면이 방금 결과를 서버에 보내지 못했다(연결 실패·로그인 풀림·5xx). 서버는 그 확인을 잠시 '진행 중'으로 센다 — 다른 사람이 아니다.
+        // 이 화면이 방금 결과를 서버에 보내지 못했고(연결 실패·로그인 풀림·5xx), 서버가 '진행 중'이라고 센 확인이 바로 그 요청이다
+        // (서버 요약의 busyClaimId 가 같을 때만 — manualBusyMine).
         if (options.ownUnsent) {
           return make(false, "지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다. 이 화면을 열어 두면 잠시 뒤" +
             (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + ")" : "") +
             " 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).", "is-warn", { countdown: true });
+        }
+        // 보내지 못한 결과는 있지만 '진행 중' 확인이 누구 것인지 서버가 알려 주지 않았다 — 본인 확인이라고도, 다른 사람이라고도 하지 않는다.
+        if (options.unsentMaybe) {
+          return make(false, "지금 확인: 진행 중인 확인이 있습니다" +
+            (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + " 뒤 끝남)" : "") +
+            ". 이 화면이 서버에 보내지 못한 결과는 화면을 열어 두면 잠시 뒤 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).", "is-warn", { countdown: true });
         }
         if (options.ownLost) {
           return make(false, "지금 확인: 방금 확인이 확장 응답 없이 끝났습니다" +
@@ -3603,30 +3620,45 @@
       return age >= 0 && age < MANUAL_LOST_BUSY_MS;
     }
 
-    // 이 화면이 방금 결과(manual-record)를 서버에 보내지 못했는지(연결 실패·로그인 풀림·5xx). 서버는 결과를 받기 전까지
-    // 그 확인을 '진행 중'(확인 뒤 150초·확인 요청 기한 60초)으로 센다. 보내지 못한 뒤 150초 안의 '진행 중'은 이 확인이다.
+    // 이 화면이 결과(manual-record)를 서버에 보내지 못한 요청을 claimId 로 기억한다(연결 실패·로그인 풀림·5xx).
+    // at 은 그 요청을 처음 보내지 못한 시각이고, 같은 요청을 다시 보내다 또 실패해도 바꾸지 않는다.
     // 결과를 끝내 보내면(settleManualRecord 의 끝난 답) 지운다.
-    function ownUnsentActive() {
+    function rememberUnsent(claimId) {
+      var manual = state.manual;
+      if (manual.unsent && manual.unsent.claimId === claimId) return;
+      manual.unsent = { claimId: claimId, at: Date.now() };
+    }
+
+    // 서버가 '진행 중'이라고 할 때 보내지 못한 결과에 맞는 문구: "own"(서버가 준 진행 중 요청 id 가 이 요청) ·
+    // "maybe"(서버가 누구 것인지 알려 주지 않았고, 처음 보내지 못한 뒤 150초 안이라 이 요청일 수도 있음) · ""(해당 없음).
+    // 서버는 확인 뒤 150초까지만 그 확인을 '진행 중'으로 세고 보내기 실패는 확인 뒤에 오므로, 처음 실패 뒤 150초가 지나면
+    // 이 요청은 더는 '진행 중'이 아니다 → 다른 확인(일반 문구). 시각만 보고 본인 확인이라고 하지는 않는다(2026-10-23 재검사 2차).
+    function unsentBusyView() {
       var unsent = state.manual.unsent;
-      if (!unsent) return false;
+      if (!unsent) return "";
+      var mine = manualBusyMine(state.manual.server, unsent.claimId);
+      if (mine !== null) return mine ? "own" : "";
       var age = Date.now() - Number(unsent.at || 0);
-      return age >= 0 && age < MANUAL_LOST_BUSY_MS;
+      return age >= 0 && age < MANUAL_LOST_BUSY_MS ? "maybe" : "";
     }
 
     function currentManualView() {
       var manual = state.manual;
       var busy = Boolean(manual.server && manual.server.state === "busy");
-      var ownUnsent = busy ? ownUnsentActive() : false;
-      var ownLost = busy && !ownUnsent ? ownLostActive() : false;
+      var unsentView = busy ? unsentBusyView() : "";
+      var ownUnsent = unsentView === "own";
+      var unsentMaybe = unsentView === "maybe";
+      var ownLost = busy && !unsentView ? ownLostActive() : false;
       return manualView({
         server: manual.server,
         now: manualNow(),
         hello: manual.hello,
         run: manual.run,
         stopDetail: manual.stopDetail,
-        ownPending: busy && !ownLost && !ownUnsent ? ownPendingActive() : false,
+        ownPending: busy && !ownLost && !unsentView ? ownPendingActive() : false,
         ownLost: ownLost,
         ownUnsent: ownUnsent,
+        unsentMaybe: unsentMaybe,
         userAgent: userAgentText()
       });
     }
@@ -3867,8 +3899,8 @@
       } else {
         // 방금 보내지 못했다. 화면을 다시 열거나 탭이 다시 보일 때(30초 뒤부터) 저절로 다시 보낸다.
         manual.resumeTriedAt[claim.claimId] = Date.now();
-        // 서버가 그동안 이 확인을 '진행 중'으로 세는 사이 상태 줄이 '다른 확인'이라고 하지 않게 기억한다.
-        manual.unsent = { claimId: claim.claimId, at: Date.now() };
+        // 서버가 그동안 이 확인을 '진행 중'으로 세는 사이 상태 줄이 '다른 확인'이라고 단정하지 않게 요청 id 로 기억한다.
+        rememberUnsent(claim.claimId);
       }
       var outcome = manualRecordText(recorded, parsed, claim.keyword, manual.server);
       if (outcome.stopped) {
@@ -3979,7 +4011,7 @@
         var resent = await postManualRecord(earlier.body, scope, owner);
         if (owner !== state) return;
         if (!manualRecordFinal(resent)) {
-          manual.unsent = { claimId: earlier.claim.claimId, at: Date.now() };
+          rememberUnsent(earlier.claim.claimId);
           finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false);
           return;
         }
@@ -4520,6 +4552,7 @@
       templateText: templateText,
       // ① 지금 확인
       manualView: manualView,
+      manualBusyMine: manualBusyMine,
       manualProjected: manualProjected,
       manualPreflightText: manualPreflightText,
       manualRecordText: manualRecordText,

@@ -147,38 +147,56 @@ export function searchUrl(keyword) {
   return `${SEARCH_URL_PREFIX}${encodeURIComponent(keyword)}`;
 }
 
-// ── 측정 중 주소 바뀜 판정(2026-10-23 재검사 반영) ──
-// 쿠팡 검색 목록의 순서·범위를 바꾸는 주소 값: 정렬(sorter)·쪽 번호(page)·목록 크기(listSize). 측정 중 이 값이 바뀌면
-// 같은 쪽 안 이동(pushState)이어도 사람이 옮긴 것으로 본다(바뀐 목록으로 순위를 내지 않게).
-// 쿠팡 기본값(정렬 scoreDesc = 쿠팡 랭킹순, 1쪽)은 값이 없는 것과 같다[추정: 기본값 이름은 실제 크롬 실측 전].
-// 목록 크기는 기본값을 몰라 새로 생기기만 해도 바뀐 것으로 본다(틀린 순위 대신 '기록 안 함' 쪽).
-// 그 밖의 꼬리(channel·traceId 등 쿠팡이 붙이는 추적 값)는 보지 않는다.
-// lib/measure.js 쪽 함수에도 같은 표가 있다(쪽 함수는 자기완결이라 import 하지 못한다 — 테스트가 같은지 본다).
-export const LIST_PARAM_DEFAULTS = Object.freeze({ sorter: "scoreDesc", page: "1", listSize: "" });
-export const LIST_PARAMS = Object.freeze(Object.keys(LIST_PARAM_DEFAULTS));
+// ── 측정 중 주소 바뀜 판정(2026-10-23 재검사 2차 반영) ──
+// 기준은 측정 시작 때 탭 주소다. 그 뒤 경로가 바뀌거나, 쿼리 값이 이름을 가리지 않고(q·정렬·쪽 번호·목록 크기·로켓배송·
+// 브랜드·가격대·분류·filter 등) 하나라도 생기거나·없어지거나·바뀌면 사람이 옮긴 것으로 본다. 같은 쪽 안 이동(pushState)으로
+// 목록만 갈아 끼워도 잡는다(바뀐 목록으로 순위를 내지 않게). 전에는 아는 값(sorter·page·listSize)만 봐서 거르기 값이 바뀐 목록이 ok 였다.
+// 무시하는 이름은 쿠팡 추적 꼬리로 근거가 확인된 것(IGNORED_SEARCH_PARAMS)뿐이고, 지금은 없다:
+//  [사실] 저장소·수집기 기록에 쿠팡이 검색 주소에 추적 값을 붙인 예가 없다(2026-10-16~17 시험 수집기 증거 15건의 최종 주소는 모두
+//  `?q=` 하나뿐 — 모두 차단 화면 회차라 정상 화면의 주소 기록은 없다).
+//  sourceType·rank·searchRank·itemsCount·searchId 는 상품 링크의 값이라 검색 주소와 무관하다. channel·traceId 는 근거가 없어 넣지 않았다.
+//  그래서 쿠팡이 측정 중에 스스로 값을 붙이면 그 확인은 user_navigated(순위 기록 안 함·그날 중지 아님)로 끝난다 — 틀린 순위 대신
+//  '기록 안 함'으로 끝나는 안전한 쪽 실패다. 근거가 생기면(대표 첫 시험) 이 표와 lib/measure.js 표에 함께 넣는다.
+// 같은 값의 다른 모양은 맞춰 비교한다: 빈 값 = 값 없음, 쪽 번호·목록 크기는 숫자로(page=01 = page=1),
+// 쿠팡 기본값(sorter=scoreDesc·page=1)은 값 없음과 같다[추정: 기본값 이름은 실측 전]. 값의 앞뒤 공백은 그대로 비교한다.
+// 이름은 대소문자를 가린다(Sorter 는 sorter 와 다른 값이라 생기면 이동). 순서·같은 이름 여러 개는 (이름, 값) 쌍을 정렬해 비교한다.
+// q 의 '+' 와 '%20' 은 같은 글자로 풀린다(URLSearchParams). 주소 끝 #… 은 쿼리가 아니라 보지 않는다.
+// lib/measure.js 쪽 함수에도 같은 표·규칙이 있다(쪽 함수는 자기완결이라 import 하지 못한다 — 테스트가 표와 판정이 같은지 본다).
+export const IGNORED_SEARCH_PARAMS = Object.freeze([]);
+export const SEARCH_PARAM_DEFAULTS = Object.freeze({ sorter: "scoreDesc", page: "1" });
+export const NUMERIC_SEARCH_PARAMS = Object.freeze(["page", "listSize"]);
 
-export function listParamsOf(searchParams) {
-  const out = {};
-  for (const name of LIST_PARAMS) {
-    const raw = searchParams && typeof searchParams.get === "function" ? searchParams.get(name) : null;
-    const value = raw === null || raw === undefined ? "" : String(raw).trim();
-    out[name] = value === "" ? LIST_PARAM_DEFAULTS[name] : value;
+// 쿼리 → 비교용 문자열(위 규칙으로 맞춘 (이름, 값) 쌍을 정렬한 JSON).
+export function searchParamsKey(searchParams) {
+  const pairs = [];
+  if (searchParams && typeof searchParams[Symbol.iterator] === "function") {
+    for (const [name, raw] of searchParams) {
+      if (IGNORED_SEARCH_PARAMS.includes(name)) continue;
+      let value = String(raw);
+      if (value === "") continue;
+      if (NUMERIC_SEARCH_PARAMS.includes(name) && /^[0-9]+$/.test(value)) value = value.replace(/^0+(?=[0-9])/, "");
+      if (Object.prototype.hasOwnProperty.call(SEARCH_PARAM_DEFAULTS, name) && SEARCH_PARAM_DEFAULTS[name] === value) continue;
+      pairs.push([name, value]);
+    }
   }
-  return out;
+  pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  return JSON.stringify(pairs);
 }
 
-export function sameListParams(left, right) {
-  return LIST_PARAMS.every((name) => (left || LIST_PARAM_DEFAULTS)[name] === (right || LIST_PARAM_DEFAULTS)[name]);
-}
-
-// 주소 → { host, path, q, list }(목록 값은 기본값으로 채운 것). 주소가 아니면 null.
+// 주소 → { host, path, q, key }(key = searchParamsKey). 주소가 아니면 null.
 export function searchAddressOf(url) {
   try {
     const parsed = new URL(String(url || ""));
-    return { host: parsed.host.toLowerCase(), path: parsed.pathname, q: parsed.searchParams.get("q"), list: listParamsOf(parsed.searchParams) };
+    return { host: parsed.host.toLowerCase(), path: parsed.pathname, q: parsed.searchParams.get("q"), key: searchParamsKey(parsed.searchParams) };
   } catch {
     return null;
   }
+}
+
+// 확장이 여는 주소(검색어 하나, ?q=)의 비교용 문자열. 측정 시작 때 주소가 그 검색어의 검색 1쪽이 아니면 이것을 기준으로 쓴다.
+export function searchKeyOf(keyword) {
+  const address = searchAddressOf(searchUrl(String(keyword ?? "")));
+  return address ? address.key : "[]";
 }
 
 // 보낸 쪽: insight.momentlabs.co.kr 의 관리자 화면(/admin·/admin.html) 최상위 프레임의 탭만. manifest matches(/admin*)와 겹쳐 한 번 더 본다.

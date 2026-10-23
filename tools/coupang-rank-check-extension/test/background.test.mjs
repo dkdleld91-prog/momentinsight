@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createBackground, isSearchAddress, startBackground } from "../background.js";
-import { searchUrl } from "../lib/protocol.js";
+import { searchAddressOf, searchUrl } from "../lib/protocol.js";
 import {
   ADMIN_SENDER, CHROME_UA, CLAIM_ID, CLAIM_ID_2, CLAIM_ID_3, CLAIM_TOKEN, FAST_TIMING, SERVER_KEYWORD,
   checkMessage, defaultVerify, makeFakeChrome, makeFakeFetch, rawPage, send, sleep,
@@ -689,10 +689,11 @@ test("120초 상한인데 권한 밖으로 보내져 읽지 못하면 page_unrea
   assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
 });
 
-test("측정 중 쿠팡이 주소 꼬리만 바꾸면(같은 경로·같은 q) 사람의 이동이 아니다, q 가 바뀌면 이동(user_navigated)", async () => {
+test("측정 중 쿠팡이 주소에 값을 붙이면(근거 없는 추적 값 channel·traceId 포함) 이동(user_navigated, 그날 중지 아님), q 가 바뀌어도 이동, #… 만 바뀌면 이동 아님", async () => {
   const cases = [
-    [(tab) => `${tab.url}&channel=user&traceId=abc`, "page_load_failed"],
+    [(tab) => `${tab.url}&channel=user&traceId=abc`, "user_navigated"],
     [() => searchUrl("다른 검색어"), "user_navigated"],
+    [(tab) => `${tab.url}#top`, "page_load_failed"],
   ];
   for (const [nextUrl, expected] of cases) {
     let fakeRef;
@@ -715,25 +716,36 @@ test("측정 중 쿠팡이 주소 꼬리만 바꾸면(같은 경로·같은 q) �
   }
 });
 
-// 2026-10-23 재검사 r6: 경로·q 만 보던 탓에 정렬·쪽 번호가 바뀐 목록도 이동이 아니었다.
-test("측정 중 주소의 정렬·쪽 번호·목록 크기가 바뀌면 이동(user_navigated), 쿠팡 기본값(1쪽·랭킹순)·추적 꼬리만이면 이동 아님", async () => {
+// 2026-10-23 재검사 r6·2차 r1: 경로·q 만, 그다음 sorter·page·listSize 만 보던 탓에 정렬·쪽 번호·거르기 값이 바뀐 목록도 이동이 아니었다.
+test("측정 중 주소의 쿼리 값(정렬·쪽 번호·목록 크기·거르기)이 하나라도 바뀌면 이동(user_navigated), 기본값·빈 값·숫자 모양만 다르면 이동 아님", async () => {
   const cases = [
     [(url) => `${url}&sorter=saleCountDesc`, "user_navigated", null],
     [(url) => `${url}&page=2`, "user_navigated", null],
     [(url) => `${url}&listSize=72`, "user_navigated", null],
-    [(url) => `${url}&page=1&sorter=scoreDesc&channel=user`, "page_load_failed", null],
-    // 측정 시작 때 이미 붙어 있던 목록 값은 기준이다: 그 뒤 추적 꼬리만 붙으면 이동 아님, 값이 바뀌면 이동
-    [(url) => `${url}&traceId=abc`, "page_load_failed", (url) => `${url}&listSize=36`],
-    [(url) => url.replace("listSize=36", "listSize=72"), "user_navigated", (url) => `${url}&listSize=36`],
+    [(url) => `${url}&rocketAll=true`, "user_navigated", null],
+    [(url) => `${url}&brand=1234`, "user_navigated", null],
+    [(url) => `${url}&minPrice=1000&maxPrice=5000`, "user_navigated", null],
+    [(url) => `${url}&component=194176`, "user_navigated", null],
+    [(url) => `${url}&filter=1`, "user_navigated", null],
+    [(url) => `${url}&page=1&sorter=scoreDesc&brand=`, "page_load_failed", null],
+    [(url) => `${url}&page=01`, "page_load_failed", null],
+    // 측정 시작 때 이미 붙어 있던 값은 기준이다: 그대로면(숫자 모양만 다름) 이동 아님, 값이 바뀌거나 빠지면 이동
+    [(url) => url.replace("listSize=36", "listSize=036"), "page_load_failed", (url) => `${url}&listSize=36&rocketAll=true`],
+    [(url) => url.replace("listSize=36", "listSize=72"), "user_navigated", (url) => `${url}&listSize=36&rocketAll=true`],
+    [(url) => url.replace("&rocketAll=true", ""), "user_navigated", (url) => `${url}&listSize=36&rocketAll=true`],
+    [(url) => { const parsed = new URL(url); parsed.search = "?rocketAll=true&" + [...parsed.searchParams].filter(([name]) => name !== "rocketAll").map(([name, value]) => `${name}=${encodeURIComponent(value)}`).join("&"); return parsed.toString(); },
+      "page_load_failed", (url) => `${url}&listSize=36&rocketAll=true`],
   ];
-  for (const [nextUrl, expected, loadedUrl] of cases) {
+  for (const [index, [nextUrl, expected, loadedUrl]] of cases.entries()) {
     let fakeRef;
+    let seen = "";
     const { fake, background } = setup({
       chrome: {
         scenario: {
           ...(loadedUrl ? { finalUrl: loadedUrl } : {}),
           measure: ({ tab }) => {
             const url = nextUrl(tab.url);
+            seen = `${tab.url} → ${url}`;
             tab.url = url;
             fakeRef.events.tabsOnUpdated.emit(tab.id, { url });
             throw new Error("Frame with ID 0 is showing error page");
@@ -743,17 +755,22 @@ test("측정 중 주소의 정렬·쪽 번호·목록 크기가 바뀌면 이동
     });
     fakeRef = fake;
     const reply = await send(background, checkMessage());
-    assert.equal(reply.page.errorCode, expected, `${nextUrl("U")} ${loadedUrl ? "(불러온 주소에 listSize=36)" : ""}`);
+    assert.equal(reply.page.errorCode, expected, `${index}: ${seen}`);
     assert.equal(reply.stopSignal, false);
   }
 });
 
-test("isSearchAddress: 같은 검색어의 검색 1쪽 + 목록 값이 기준과 같을 때만 참", () => {
+test("isSearchAddress: 같은 검색어의 검색 1쪽 + 쿼리 값 전부가 기준과 같을 때만 참(기준 없으면 확장이 연 ?q= 주소)", () => {
   const url = searchUrl(SERVER_KEYWORD);
   assert.equal(isSearchAddress(url, SERVER_KEYWORD), true);
-  assert.equal(isSearchAddress(`${url}&channel=user&page=1&sorter=scoreDesc`, SERVER_KEYWORD), true);
-  for (const tail of ["&page=2", "&sorter=latestAsc", "&listSize=60"]) assert.equal(isSearchAddress(`${url}${tail}`, SERVER_KEYWORD), false, tail);
-  assert.equal(isSearchAddress(`${url}&listSize=60`, SERVER_KEYWORD, { sorter: "scoreDesc", page: "1", listSize: "60" }), true);
+  assert.equal(isSearchAddress(`${url}&page=1&sorter=scoreDesc&page=`, SERVER_KEYWORD), true);
+  assert.equal(isSearchAddress(`${url}&page=001`, SERVER_KEYWORD), true);
+  for (const tail of ["&page=2", "&sorter=latestAsc", "&listSize=60", "&channel=user", "&traceId=abc", "&rocketAll=true", "&Sorter=scoreDesc"]) {
+    assert.equal(isSearchAddress(`${url}${tail}`, SERVER_KEYWORD), false, tail);
+  }
+  const baseline = searchAddressOf(`${url}&listSize=60&channel=user`).key;
+  assert.equal(isSearchAddress(`${url}&channel=user&listSize=60`, SERVER_KEYWORD, baseline), true);
+  assert.equal(isSearchAddress(`${url}&listSize=60`, SERVER_KEYWORD, baseline), false);
   assert.equal(isSearchAddress(searchUrl("다른 검색어"), SERVER_KEYWORD), false);
   assert.equal(isSearchAddress("https://www.coupang.com/vp/products/1", SERVER_KEYWORD), false);
   assert.equal(isSearchAddress("not a url", SERVER_KEYWORD), false);

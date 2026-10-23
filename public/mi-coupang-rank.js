@@ -26,6 +26,8 @@
   var RANK_TOP = 50;
   var COUPANG_SEARCH_URL = "https://www.coupang.com/np/search?q=";
   var OWNER_POLL_MS = 60000;
+  // 연결 코드를 만든 뒤 이 시간 안에는 자동 수집이 꺼져 있어도 60초마다 수집기 상태를 다시 받는다(새 수집기 연결 확인).
+  var OWNER_TOKEN_POLL_MS = 30 * 60 * 1000;
   // 화면 열기(show)가 짧은 간격으로 두 번 오면(메뉴 클릭의 setScreen + hashchange, 세션 동기화의
   // scope-changed + auth-ready) 같은 범위 목록·수집기 상태를 다시 받지 않는 시간.
   var LIST_REUSE_MS = 2000;
@@ -92,11 +94,27 @@
   // 수집기가 정상으로 도는 상태. 이때만 요약칸 작은 글에 'N개 운영 · N개 대기 · N개 확인'을 쓴다.
   var NORMAL_STATES = { ok: true, idle_hours: true };
 
-  var STATUS_DEFAULT = "키워드와 쿠팡 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.";
+  // 첫 기록 전 안내. 공유 이미지(광고주용)는 이 문구 그대로, 화면 카드는 지금 방식에 맞춘 문구(firstBoardHint)를 쓴다.
   var FIRST_BOARD_TEXT = "첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.";
   var NO_RECENT_BOARD_TEXT = "최근 30일 측정 기록이 없습니다.";
-  var LOADED_TEXT = "등록된 쿠팡 순위 추적을 불러왔습니다.";
   var TITLE_PENDING_HINT = "상품명은 검색 1쪽에서 이 상품을 찾은 뒤 채워집니다";
+  // 등록 줄 아래 안내(옛 '일반 50위 이내' 칩·카드 머리 규칙 상자를 한 줄로).
+  var FORM_HINT_TEXT = "상품 페이지 주소창의 주소(또는 상품번호) · 일반 상품 50위까지 기록 · 같은 상품이면 옵션이 달라도 인정";
+  // 지금 확인 상태판의 한 줄 설명(바로 확인 가능·간격 기다리는 중일 때). 숫자는 옆 칸이 보인다.
+  var MANUAL_BOARD_DESCRIPTION = "카드의 '지금 확인'을 누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열고 닫습니다.";
+  // 빈 날 칸 설명. 원인을 하나로 단정하지 않는다(지금 확인 이전 날·꺼진 날·시간 밖·그날 중지·자동 수집이 멈춘 날이 섞여 있다).
+  var EMPTY_DAY_TEXT = "그날 기록 없음(지금 확인을 누르지 않았거나, 꺼짐·시간 밖·그날 중지·자동 수집 멈춤이었을 수 있습니다)";
+  // 자동 수집을 쓰지 않는 상태(수집기 0대·수집 꺼짐·SQL 전). 이때는 자동추적 칸과 카드 '다음' 알약을 숨긴다.
+  var AUTO_IDLE_STATES = { not_connected: true, disabled: true, setup_required: true };
+  // 자동 수집이 '기록 중'이라고 말해도 되는 상태(정상·갱신 대기·시간 밖). 켜 둔 뒤의 경보(review·budget·cooldown·outdated·offline)는
+  // 자동추적 칸을 보이되 '기록 중'이라고 하지 않는다. 모르는 상태 이름도 '기록 중'에서 뺀다(2026-10-23 재검사).
+  var AUTO_RECORDING_STATES = { ok: true, delayed: true, idle_hours: true };
+  var AUTO_ALARM_STATES = { review: true, budget: true, cooldown: true, outdated: true, offline: true };
+  // 진행 중에 '지금 확인 끄기'를 눌렀을 때 상태판에 덧붙이는 말. 끄기는 새 확인만 막는다: 확장이 서버 확인(verify)을 받은 뒤면
+  // 결과를 끝까지 기록하고, 그 전이면 서버가 그 확인을 닫아 검색 없이 끝난다(SQL coupang_rank_manual_verify).
+  var MANUAL_RUN_OFF_TEXT = "지금 확인을 껐지만, 이미 시작한 이 확인은 끝까지 마치고 결과를 기록합니다(시크릿 창이 열리기 전이었다면 검색하지 않고 끝납니다).";
+  // 선택 항목 정리 결과 한 줄을 휴대폰 아래 막대에 남겨 두는 시간(선택이 0개가 되어 막대가 접혀도).
+  var BULK_NOTE_FLOAT_MS = 6000;
 
   var ATTENTION_TEXT = {
     drop10: "10위 이상 하락",
@@ -105,18 +123,24 @@
     unsupported: "쿠팡이 검색 결과가 아닌 쪽으로 보냄"
   };
 
+  // 등록 결과의 첫 기록 안내. queued 는 지금 방식(지금 확인·자동 수집·둘 다 꺼짐)에 따라 firstCheckText 가 고른다.
   var FIRST_CHECK_TEXT = {
-    recorded: "오늘 측정으로 바로 기록했습니다",
-    queued: "다음 수집 때(수집기가 켜져 있을 때) 첫 순위가 기록됩니다"
+    recorded: "오늘 같은 키워드를 확인한 기록으로 바로 채웠습니다",
+    queued: "다음 수집 때(수집기가 켜져 있을 때) 첫 순위가 기록됩니다",
+    manual: "새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다",
+    off: "'지금 확인'을 켠 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다",
+    stalled: "자동 수집이 멈췄거나 확인이 필요한 상태라 첫 순위가 언제 기록될지 알 수 없습니다(자동추적 칸 참고)"
   };
 
+  // 상태 필터. '오늘 안 함'(대표 결정 2026-10-23)은 일시중지가 아니면서 오늘 칸이 없는 추적이다(checkedToday).
   var FILTER_STATUSES = [
     ["all", "전체"],
     ["attention", "확인 필요"],
     ["up", "상승"],
     ["down", "하락"],
     ["out", "50위 밖"],
-    ["paused", "일시중지"]
+    ["paused", "일시중지"],
+    ["today-none", "오늘 안 함"]
   ];
 
   var RUN_STATUS_TEXT = {
@@ -225,7 +249,7 @@
     COUPANG_RANK_TRACKERS_FAILED: "서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요.",
     // ① 지금 확인(spec-manual §6.2). 원인을 모르는 경우는 단정하지 않는다.
     COUPANG_MANUAL_SETUP_REQUIRED: "지금 확인용 대표 SQL 실행 전입니다.",
-    COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(수집기 관리 → 지금 확인 켜기).",
+    COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(위 '지금 확인' 상태판 → 지금 확인 켜기).",
     COUPANG_MANUAL_BUDGET: "저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).",
     COUPANG_MANUAL_STOPPED: "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 지금 확인을 멈췄습니다. 내일 다시 됩니다.",
     COUPANG_MANUAL_COOLDOWN: "쿠팡 차단 감지로 쉬는 중입니다.",
@@ -244,8 +268,15 @@
     COUPANG_MANUAL_CLAIM_EXPIRED: "확인 요청 기한(10분)이 지나 결과를 저장하지 않았습니다.",
     COUPANG_MANUAL_RECORD_INVALID: "확인 결과 형식이 맞지 않아 저장하지 못했습니다.",
     // 지금 확인 ↔ 자동 수집이 함께 켜지지 않게(자동 수집이 아직 지금 확인의 간격·그날 중지를 보지 않는다)
-    COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). 먼저 '수집 끄기'를 눌러 주세요.",
-    COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요."
+    COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다. 먼저 아래 '자동 수집' 칸에서 '수집 끄기'를 누르세요.",
+    // 서버 거절 사유(reason)를 모르는 경우의 문구. 사유가 오면 COLLECTOR_CONFLICT_REASON_TEXT 를 쓴다.
+    COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요."
+  };
+
+  // 자동 수집 켜기 거절 사유(handler manualAutoConflict 의 reason) → 짧은 문구.
+  var COLLECTOR_CONFLICT_REASON_TEXT = {
+    manual_enabled: "지금 확인이 켜져 있어 자동 수집을 켜지 않았습니다. 먼저 위 상태판에서 '지금 확인 끄기'를 누르세요.",
+    manual_stopped_today: "오늘은 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. 내일 다시 켜 주세요."
   };
 
   // ── 순수 도우미 ───────────────────────────────────────────────
@@ -385,18 +416,12 @@
     }
   }
 
-  // 칸의 작은 글. 실패·이동은 측정 자체의 결과라 '측정', 결과 없음은 '검색', 그 밖은 N30 처럼 '순위'.
+  // 칸의 작은 글(공유 이미지에서만 쓴다. 화면 칸은 2026-10-23 부터 작은 글 없이 값만). 실패·이동은 '측정', 결과 없음은 '검색', 그 밖은 '순위'.
   function cellLabel(cell) {
     var status = cell && cell.s;
     if (status === "failed" || status === "unsupported") return "측정";
     if (status === "noresult") return "검색";
     return "순위";
-  }
-
-  // 순위가 없는 칸(N30 의 연회색 '-' 칸과 같은 취급).
-  function cellIsEmpty(cell) {
-    var status = cell && cell.s;
-    return !cell || status === "out" || status === "short" || status === "noresult" || (status === "found" && !isNum(cell.r));
   }
 
   // 날짜 줄 범위: 서버 days30(오늘부터 거꾸로) 가운데 등록일 이후만. 등록일을 모르면 30칸 모두.
@@ -425,7 +450,7 @@
   function cellTooltip(cell, d, createdDay) {
     if (!cell) {
       if (createdDay && d && String(d) < String(createdDay)) return "";
-      return "측정 없음(수집기 꺼짐·시간대 밖·일시중지·쉬는 중)";
+      return EMPTY_DAY_TEXT;
     }
     switch (cell.s) {
       case "found": {
@@ -447,6 +472,66 @@
   function cellTone(cell, d, createdDay) {
     if (!cell) return createdDay && d && String(d) < String(createdDay) ? "is-before" : "is-empty";
     return "is-" + (cell.s === "noresult" ? "noresult" : String(cell.s || "empty"));
+  }
+
+  // 화면 날짜 칸 모양(C30 만, 대표 결정 2026-10-23): 안 잰 날(-) · 잰 결과 순위 밖(50위 밖·없음·결과 없음) · 실패·이동 · 순위.
+  function dayKind(cell) {
+    if (!cell) return "is-none";
+    var status = cell.s;
+    if (status === "failed" || status === "unsupported") return "is-fail";
+    if (status === "out" || status === "short" || status === "noresult") return "is-out";
+    if (status === "found" && isNum(cell.r)) return "is-found";
+    return "is-none";
+  }
+
+  // 칸을 눌렀을 때 카드 아래 한 줄. 일시중지 기간의 빈 날만 '일시중지 중'으로 단정하고, 그 밖의 빈 날은 가능한 이유를 나열한다.
+  function dayDetailText(cell, d, tracker) {
+    var info = tracker || {};
+    var label = dayLabel(d) + " · " + (cellText(cell, d, info.createdDay) || "-");
+    if (!cell) {
+      var pausedDay = String(info.pausedDay || "");
+      if (info.status === "paused" && pausedDay && String(d) >= pausedDay) return label + " — 일시중지 중이라 확인하지 않았습니다";
+      return label + " — " + EMPTY_DAY_TEXT;
+    }
+    var detail = cellTooltip(cell, d, info.createdDay);
+    if (cell.s === "failed") detail += ". 자세한 사유는 '측정 기록'에서 봅니다";
+    return label + " — " + detail;
+  }
+
+  // '오늘 확인' 판정은 이 함수 하나다(카드 알약 · '오늘 안 함' 필터 · 상태판 '오늘 확인한 상품'이 같이 쓴다).
+  // 기준 날짜는 브라우저 날짜가 아니라 서버 응답의 todayKst 다. 실패한 날도 그날 칸이 생기므로 '오늘 확인함'으로 센다.
+  function todayCellOf(tracker, todayKst) {
+    var day = String(todayKst || "");
+    if (!day || !tracker || !Array.isArray(tracker.days)) return null;
+    for (var index = 0; index < tracker.days.length; index += 1) {
+      var cell = tracker.days[index];
+      if (cell && cell.d === day) return cell;
+    }
+    return null;
+  }
+
+  function checkedToday(tracker, todayKst) {
+    return Boolean(todayCellOf(tracker, todayKst));
+  }
+
+  // 카드 운영줄의 '오늘' 알약. 일시중지면 마지막 확인만 보인다. todayKst 를 모르면 null(옛 '최근' 알약을 쓴다).
+  function todayPill(tracker, todayKst) {
+    if (!todayKst || !tracker) return null;
+    var cell = todayCellOf(tracker, todayKst);
+    if (cell && tracker.status !== "paused") {
+      var at = cell.t ? " " + cell.t : "";
+      if (cell.s === "failed") return { text: "오늘 실패" + at, tone: "is-warn" };
+      if (cell.s === "unsupported") return { text: "오늘 이동" + at, tone: "is-warn" };
+      return { text: "오늘" + at + " 확인", tone: "is-today" };
+    }
+    var last = null;
+    (Array.isArray(tracker.days) ? tracker.days : []).forEach(function (item) {
+      if (item && item.d && (!last || String(item.d) > String(last.d))) last = item;
+    });
+    var lastText = last ? String(last.d).slice(5) + (last.t ? " " + last.t : "") : "";
+    if (tracker.status === "paused") return lastText ? { text: "마지막 확인 " + lastText, tone: "" } : null;
+    if (!last) return { text: "아직 확인 전", tone: "" };
+    return { text: "오늘 아직 · 마지막 " + lastText, tone: "" };
   }
 
   function currentBadge(tracker) {
@@ -552,7 +637,8 @@
     return text;
   }
 
-  function filterMatches(tracker, filter) {
+  // todayKst: 서버 응답의 오늘(KST). '오늘 안 함' 필터에만 쓴다(모르면 그 필터에는 아무것도 걸리지 않는다).
+  function filterMatches(tracker, filter, todayKst) {
     var options = filter || {};
     var status = options.status || "all";
     if (!tracker) return false;
@@ -572,13 +658,21 @@
     if (status === "down") return trend === "down" || trend === "exit";
     if (status === "out") return outOfTop(tracker);
     if (status === "paused") return tracker.status === "paused";
+    if (status === "today-none") return Boolean(todayKst) && tracker.status !== "paused" && !checkedToday(tracker, todayKst);
     return true;
   }
 
+  // 등록 줄 오른쪽 한도 알약: 이 계정 추적 수만. 여러 계정이 나눠 쓰는 전체 고유 키워드 한도는 '자동 수집' 칸 용량 줄에 둔다.
   function limitText(limit) {
     if (!limit) return "";
     var show = function (value) { return isNum(value) ? String(value) : "-"; };
-    return "사용 " + show(limit.used) + " / " + show(limit.max) + " · 전체 " + show(limit.globalUsed) + " / " + show(limit.globalMax);
+    return "추적 " + show(limit.used) + " / " + show(limit.max) + "개";
+  }
+
+  function globalLimitText(limit) {
+    if (!limit || (!isNum(limit.globalUsed) && !isNum(limit.globalMax))) return "";
+    var show = function (value) { return isNum(value) ? String(value) : "-"; };
+    return "전체 고유 키워드 " + show(limit.globalUsed) + " / " + show(limit.globalMax) + "개(모든 계정 합)";
   }
 
   // 용량 경고(H1): 전체 고유 키워드가 지금 설정으로 제때 잴 수 있는 수를 넘으면 경고한다.
@@ -707,6 +801,7 @@
     if (code === "COUPANG_SETTINGS_INVALID") return "설정 값이 범위를 벗어났습니다" + (body.field ? "(" + settingLabel(body.field) + ")" : "") + ".";
     if (code === "COUPANG_RAISE_NOT_ALLOWED") return "지금은 속도를 올릴 수 없습니다: " + raiseReasonText(body.reasons);
     if (code === "COUPANG_MANUAL_RECORD_INVALID" && body.field) return "확인 결과 형식이 맞지 않아 저장하지 못했습니다(칸 " + String(body.field).slice(0, 40) + ").";
+    if (code === "COUPANG_COLLECTOR_MANUAL_CONFLICT" && COLLECTOR_CONFLICT_REASON_TEXT[body.reason]) return COLLECTOR_CONFLICT_REASON_TEXT[body.reason];
     if (ERROR_TEXT[code]) return ERROR_TEXT[code];
     return String(body.message || "요청을 처리하지 못했습니다. 잠시 뒤 다시 시도하세요.");
   }
@@ -774,12 +869,6 @@
     if (has("activeFromHour") && next.activeFromHour < base.activeFromHour) return true;
     if (has("activeToHour") && next.activeToHour > base.activeToHour) return true;
     return false;
-  }
-
-  function templateText(checksPerDay) {
-    var count = isNum(checksPerDay) ? checksPerDay : "n";
-    return "쿠팡 순위는 로그인하지 않은 검색 1쪽에서 광고를 뺀 일반 상품 순서입니다. 하루 " + count +
-      "회 측정하고, 그날 마지막 측정을 기록합니다. '50위 밖'은 1쪽 일반 상품 1~50위 안에 없다는 뜻입니다.";
   }
 
   function megabytes(bytes) {
@@ -1210,7 +1299,8 @@
     if (phase === "claim") return "지금 확인: 서버에 확인 요청을 받는 중입니다…";
     if (phase === "record") return run.resumed ? "지금 확인: 앞서 보내지 못한 확인 결과를 서버에 보내는 중입니다…" : "지금 확인: 결과를 서버에 기록하는 중입니다…";
     if (run && run.slow) return "지금 확인: 확장 응답이 늦습니다. 최대 9분까지 기다립니다. 이 화면을 닫지 마세요.";
-    return "확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다(약 20초, 확장이 저절로 닫습니다). 열린 창을 직접 닫거나, 창 안을 누르거나, 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요.";
+    // 금지 네 가지(창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기)는 줄이지 않는다. 결과는 이 화면이 서버에 보낸다.
+    return "확인 중입니다… 새 시크릿 창이 약 20초 열렸다 저절로 닫힙니다. 그 창을 닫거나 누르거나 내리지(가리지) 말고, 이 화면도 닫지 마세요.";
   }
 
   // 상태 줄 하나(spec-manual §7.3 표 + 반박 검토 반영). 위에서부터 처음 맞는 것을 쓴다.
@@ -1226,70 +1316,244 @@
     return busyClaimId.toLowerCase() === claimId.toLowerCase();
   }
 
-  // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state }
+  // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state, kind }
+  // kind: 상태판 알약을 고르는 갈래(off · setup_required · stopped · run · hello_pending · hello_block · budget · review · cooldown · hours ·
+  // own_unsent · unsent_maybe · own_lost · own_pending · busy_other · daily_cap · gap · ext_busy · incognito · ready · unknown). 판정 순서는 그대로다.
   function manualView(input) {
     var options = input || {};
     var server = options.server;
-    var hidden = { visible: false, enabled: false, text: "", tone: "", banner: false, countdown: false, guide: false, state: "" };
+    var hidden = { visible: false, enabled: false, text: "", tone: "", banner: false, countdown: false, guide: false, state: "", kind: "" };
     if (!server || typeof server !== "object") return hidden;
     var serverState = String(server.state || "");
-    if (!serverState || serverState === "off" || serverState === "setup_required") return Object.assign(hidden, { state: serverState });
+    if (!serverState || serverState === "setup_required") return Object.assign(hidden, { state: serverState, kind: "setup_required" });
+    if (serverState === "off") {
+      // 진행 중에 껐다: 그 확인은 끝까지 간다(끄기는 새 확인만 막는다). 끝날 때까지 경고 네 가지를 그대로 보인다(2026-10-23 재검사).
+      if (options.run) {
+        return { visible: true, enabled: false, text: manualRunText(options.run) + " " + MANUAL_RUN_OFF_TEXT, tone: "", banner: false, countdown: false, guide: false, state: "off", kind: "run" };
+      }
+      return Object.assign(hidden, { state: "off", kind: "off" });
+    }
     var now = isNum(options.now) ? options.now : Date.now();
     var projected = manualProjected(server, now);
-    var make = function (enabled, text, tone, extra) {
-      return Object.assign({ visible: true, enabled: enabled, text: text, tone: tone || "", banner: false, countdown: false, guide: false, state: projected.state }, extra || {});
+    var make = function (kind, enabled, text, tone, extra) {
+      return Object.assign({ visible: true, enabled: enabled, text: text, tone: tone || "", banner: false, countdown: false, guide: false, state: projected.state, kind: kind }, extra || {});
     };
     var hours = projected.hours;
     // 그날 중지는 가장 중요한 알림이라 확장 상태보다 먼저 띠로 보인다(확장이 없어도 보여야 한다).
-    if (projected.state === "stopped") return make(false, manualStopText(server, options.stopDetail), "is-warn", { banner: true });
-    if (options.run) return make(false, manualRunText(options.run), "");
+    if (projected.state === "stopped") return make("stopped", false, manualStopText(server, options.stopDetail), "is-warn", { banner: true });
+    if (options.run) return make("run", false, manualRunText(options.run), "");
     var hello = options.hello;
-    if (!hello || hello.status === "pending") return make(false, "지금 확인: 이 크롬의 확장을 확인하는 중입니다…", "");
+    if (!hello || hello.status === "pending") return make("hello_pending", false, "지금 확인: 이 크롬의 확장을 확인하는 중입니다…", "");
     var block = manualHelloBlock(hello, server, options.userAgent);
-    if (block) return make(false, block.text, "is-warn", { guide: block.guide === true });
+    if (block) return make("hello_block", false, block.text, "is-warn", { guide: block.guide === true });
     switch (projected.state) {
-      case "budget": return make(false, "지금 확인: 저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).", "is-warn");
-      case "review": return make(false, "지금 확인: 대표 확인이 필요한 상태라 멈춰 있습니다.", "is-warn");
+      case "budget": return make("budget", false, "지금 확인: 저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).", "is-warn");
+      case "review": return make("review", false, "지금 확인: 대표 확인이 필요한 상태라 멈춰 있습니다.", "is-warn");
       case "cooldown": {
         var until = server.cooldownUntil ? shortAt(server.cooldownUntil) : "";
-        return make(false, "지금 확인: 쿠팡 차단 감지로 쉬는 중입니다" + (until && until !== "-" ? "(~" + until + ")" : "") + ".", "is-warn");
+        return make("cooldown", false, "지금 확인: 쿠팡 차단 감지로 쉬는 중입니다" + (until && until !== "-" ? "(~" + until + ")" : "") + ".", "is-warn");
       }
-      case "hours": return make(false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
+      case "hours": return make("hours", false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
       case "busy": {
         var busyLeft = Date.parse(server.busyUntil) - now;
         // 이 화면이 방금 결과를 서버에 보내지 못했고(연결 실패·로그인 풀림·5xx), 서버가 '진행 중'이라고 센 확인이 바로 그 요청이다
         // (서버 요약의 busyClaimId 가 같을 때만 — manualBusyMine).
         if (options.ownUnsent) {
-          return make(false, "지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다. 이 화면을 열어 두면 잠시 뒤" +
+          return make("own_unsent", false, "지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다. 이 화면을 열어 두면 잠시 뒤" +
             (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + ")" : "") +
             " 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).", "is-warn", { countdown: true });
         }
         // 보내지 못한 결과는 있지만 '진행 중' 확인이 누구 것인지 서버가 알려 주지 않았다 — 본인 확인이라고도, 다른 사람이라고도 하지 않는다.
         if (options.unsentMaybe) {
-          return make(false, "지금 확인: 진행 중인 확인이 있습니다" +
+          return make("unsent_maybe", false, "지금 확인: 진행 중인 확인이 있습니다" +
             (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + " 뒤 끝남)" : "") +
             ". 이 화면이 서버에 보내지 못한 결과는 화면을 열어 두면 잠시 뒤 저절로 다시 보냅니다. 안 되면 버튼이 켜질 때 다시 눌러 주세요(앞 결과부터 보냅니다).", "is-warn", { countdown: true });
         }
         if (options.ownLost) {
-          return make(false, "지금 확인: 방금 확인이 확장 응답 없이 끝났습니다" +
+          return make("own_lost", false, "지금 확인: 방금 확인이 확장 응답 없이 끝났습니다" +
             (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + " 뒤 다시 누를 수 있습니다)" : "") + ".", "is-warn", { countdown: true });
         }
-        return make(false, options.ownPending ? "지금 확인: 방금 누른 확인이 아직 진행 중입니다. 이 화면을 닫지 마세요." : "지금 확인: 다른 확인이 진행 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
+        if (options.ownPending) return make("own_pending", false, "지금 확인: 방금 누른 확인이 아직 진행 중입니다. 이 화면을 닫지 마세요.", "");
+        // 다른 확인: 카드 버튼 글자가 남은 시간('약 N분 NN초 뒤')이라 1초마다 다시 센다.
+        return make("busy_other", false, "지금 확인: 다른 확인이 진행 중입니다. 잠시 뒤 다시 눌러 주세요.", "", { countdown: true });
       }
-      case "daily_cap": return make(false, "지금 확인: 오늘 " + projected.max + "번을 모두 썼습니다. 내일 " + pad2(hours.from) + "시부터 다시 됩니다.", "");
+      case "daily_cap": return make("daily_cap", false, "지금 확인: 오늘 " + projected.max + "번을 모두 썼습니다. 내일 " + pad2(hours.from) + "시부터 다시 됩니다.", "");
       case "gap":
-        return make(false, "다음 확인은 " + countdownText(projected.remainingMs) + " 뒤에 할 수 있습니다(검색 사이 " + manualGapMinutes(server) + "분 · 오늘 " + projected.used + "/" + projected.max + "번).", "", { countdown: true });
+        return make("gap", false, "다음 확인은 " + countdownText(projected.remainingMs) + " 뒤에 할 수 있습니다(검색 사이 " + manualGapMinutes(server) + "분 · 오늘 " + projected.used + "/" + projected.max + "번).", "", { countdown: true });
       default:
         break;
     }
-    if (hello.busy) return make(false, "지금 확인: 확장이 다른 확인을 하는 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
+    if (hello.busy) return make("ext_busy", false, "지금 확인: 확장이 다른 확인을 하는 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
     // 다른 시크릿 창은 누를 때 확장에 다시 묻는다(닫았으면 그대로 진행). 그래서 버튼은 켜 둔다.
-    if (hello.incognitoWindowOpen === true) return make(true, manualIncognitoText(hello), "is-warn");
+    if (hello.incognitoWindowOpen === true) return make("incognito", true, manualIncognitoText(hello), "is-warn");
     if (projected.state === "ready") {
-      return make(true, "지금 확인: 오늘 " + projected.used + "/" + projected.max + "번 · " + hours.text + " · 검색 사이 " + manualGapMinutes(server) +
+      return make("ready", true, "지금 확인: 오늘 " + projected.used + "/" + projected.max + "번 · " + hours.text + " · 검색 사이 " + manualGapMinutes(server) +
         "분 · 누르면 새 시크릿 창이 잠깐 열렸다 닫힙니다.", "");
     }
-    return make(false, "지금 확인: 상태를 알 수 없습니다(" + (manualSafeCode(projected.state) || "?") + "). 화면을 새로고침해 주세요.", "is-warn");
+    return make("unknown", false, "지금 확인: 상태를 알 수 없습니다(" + (manualSafeCode(projected.state) || "?") + "). 화면을 새로고침해 주세요.", "is-warn");
+  }
+
+  // 시간 밖일 때 다음에 열리는 시각(서버 시각 기준). 아직 시작 전이면 오늘, 지났으면 내일.
+  function manualNextOpenText(hours, now) {
+    var hour = kstHourAt(now);
+    var head = hour !== null && hour < hours.from ? "오늘 " : "내일 ";
+    return head + pad2(hours.from) + ":00";
+  }
+
+  // 상태판 알약(manualView 의 모든 갈래 + 꺼짐). 하루 상한·간격은 서버 숫자로 따로 만든다. 모르는 갈래는 '확인 필요(코드 …)'.
+  var MANUAL_PILL = {
+    off: ["꺼짐", "is-muted"],
+    stopped: ["오늘은 멈춤", "is-warn"],
+    run: ["확인 중", "is-wait"],
+    hello_pending: ["확장 확인 중", "is-muted"],
+    hello_block: ["확장 확인 필요", "is-warn"],
+    budget: ["용량 상한으로 멈춤", "is-warn"],
+    review: ["대표 확인 필요", "is-warn"],
+    cooldown: ["쉬는 중", "is-warn"],
+    hours: ["시간 밖", "is-muted"],
+    own_unsent: ["결과 보내지 못함", "is-warn"],
+    unsent_maybe: ["보내지 못한 결과 있음", "is-warn"],
+    own_lost: ["응답 없이 끝남", "is-warn"],
+    own_pending: ["확인 중", "is-wait"],
+    busy_other: ["다른 확인 진행 중", "is-wait"],
+    ext_busy: ["확장 작업 중", "is-wait"],
+    incognito: ["다른 시크릿 창 열림", "is-warn"],
+    ready: ["바로 확인 가능", "is-ok"]
+  };
+
+  // 꺼짐(off) 한 줄: 자동 수집이 실제로 기록 중일 때만 '기록 중'이라고 한다. 켜 둔 뒤의 경보·모르는 상태는 단정하지 않고 자동추적 칸으로 보낸다.
+  // autoState: "recording"(ok·delayed·idle_hours) · "alarm"(review·budget·cooldown·outdated·offline) · "unknown"(모르는 이름) · ""(자동 수집 안 씀)
+  function manualOffLine(autoState, autoCode) {
+    var tail = "(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.";
+    if (autoState === "recording") return "자동 수집으로 기록 중입니다" + tail;
+    if (autoState === "alarm") return "자동 수집이 켜져 있지만 멈췄거나 확인이 필요한 상태입니다. 아래 자동추적 칸의 경보를 확인하세요" + tail;
+    if (autoState === "unknown") return "자동 수집 상태를 알 수 없습니다(코드 " + (manualSafeCode(autoCode) || "?") + "). 아래 자동추적 칸을 확인하세요" + tail;
+    return "꺼져 있어 지금은 새 순위를 기록하지 않습니다. 카드의 '지금 확인' 버튼도 숨겨져 있습니다.";
+  }
+
+  // '지금 확인' 상태판(목록 맨 위, N30 요약칸 자리). 서버 manual 칸과 받은 추적 목록(오늘 칸)만으로 센다(서버 변경 없음).
+  // input: { view(manualView 결과), server, now(서버 시각으로 보정한 ms), trackers, todayKst, autoState, autoCode }
+  // (옛 입력 autoActive: true 는 autoState "recording" 과 같다)
+  function manualBoardModel(input) {
+    var options = input || {};
+    var view = options.view || {};
+    var server = options.server || {};
+    var now = isNum(options.now) ? options.now : Date.now();
+    var kind = view.kind || (server.state === "off" ? "off" : "unknown");
+    var projected = manualProjected(server, now);
+    var hours = projected.hours;
+    var pillEntry = kind === "daily_cap"
+      ? ["오늘 " + projected.max + "번 다 씀", "is-muted"]
+      : (kind === "gap" ? [manualGapMinutes(server) + "분 간격 기다리는 중", "is-wait"] : MANUAL_PILL[kind]);
+    if (!pillEntry) pillEntry = ["확인 필요(코드 " + (manualSafeCode(projected.state || server.state) || "?") + ")", "is-warn"];
+    var line;
+    if (kind === "ready" || kind === "gap") line = MANUAL_BOARD_DESCRIPTION;
+    else if (kind === "off") {
+      var autoState = typeof options.autoState === "string" ? options.autoState : (options.autoActive ? "recording" : "");
+      line = manualOffLine(autoState, options.autoCode);
+    } else line = String(view.text || "").replace(/^지금 확인:\s*/, "");
+    var busyLeft = Date.parse(server.busyUntil) - now;
+    var next;
+    if (kind === "gap") next = { value: countdownText(projected.remainingMs) + " 뒤", tone: "is-wait" };
+    else if (kind === "ready" || kind === "incognito") next = { value: "지금 가능", tone: "is-ok" };
+    else if (kind === "run" || kind === "own_pending") next = { value: "확인 중", tone: "is-wait" };
+    else if (kind === "busy_other" || kind === "own_unsent" || kind === "unsent_maybe" || kind === "own_lost") {
+      next = { value: isFinite(busyLeft) && busyLeft > 0 ? "약 " + countdownText(busyLeft) + " 뒤" : "잠시 뒤", tone: "is-wait" };
+    } else if (kind === "hours") next = { value: manualNextOpenText(hours, now), tone: "" };
+    else if (kind === "daily_cap" || kind === "stopped") next = { value: "내일 " + pad2(hours.from) + ":00", tone: "" };
+    else if (kind === "off") next = { value: "꺼짐", tone: "" };
+    else if (kind === "cooldown") next = { value: server.cooldownUntil && shortAt(server.cooldownUntil) !== "-" ? "~" + shortAt(server.cooldownUntil) : "멈춤", tone: "is-warn" };
+    else if (kind === "budget" || kind === "review") next = { value: "멈춤", tone: "is-warn" };
+    else if (kind === "ext_busy") next = { value: "잠시 뒤", tone: "is-wait" };
+    else if (kind === "hello_block") next = { value: "확장 확인 필요", tone: "is-warn" };
+    else next = { value: "-", tone: "" };
+    var list = (Array.isArray(options.trackers) ? options.trackers : []).filter(Boolean);
+    var active = list.filter(function (tracker) { return tracker.status !== "paused"; });
+    var paused = list.length - active.length;
+    var todayKst = String(options.todayKst || "");
+    var done = todayKst ? active.filter(function (tracker) { return checkedToday(tracker, todayKst); }).length : 0;
+    var pending = todayKst ? active.length - done : 0;
+    var note = !todayKst ? "오늘 날짜를 받지 못했습니다" : (!active.length ? "확인할 활성 추적이 없습니다" : (pending ? "" : "모두 확인했습니다"));
+    if (todayKst && paused) note += (note ? " · " : "") + "일시중지 " + paused + "개 빼고";
+    // 횟수가 다시 차는 때: 시작 시각 전(이른 아침)이면 오늘, 아니면 내일(옆 '다음 확인'과 같은 판정, 서버 시각 기준).
+    var hourNow = kstHourAt(now);
+    var refill = hourNow !== null && hourNow < hours.from
+      ? "오늘 " + pad2(hours.from) + "시부터 " + projected.max + "번"
+      : "내일 " + pad2(hours.from) + "시에 다시 " + projected.max + "번";
+    return {
+      kind: kind,
+      pill: { text: pillEntry[0], tone: pillEntry[1] },
+      line: line,
+      lineTone: view.tone === "is-warn" ? "is-warn" : "",
+      banner: view.banner === true,
+      bannerText: view.banner === true ? String(view.text || "") : "",
+      guide: view.guide === true,
+      jump: kind === "budget" || kind === "review" || kind === "cooldown",
+      // 버튼은 서버 상태를 따른다(진행 중에 꺼서 상태판이 '확인 중'을 보이는 동안에도 '켜기').
+      toggle: kind === "off" || server.state === "off" ? "enable" : "disable",
+      metrics: {
+        next: { label: "다음 확인", value: next.value, note: "검색 사이 " + manualGapMinutes(server) + "분", tone: next.tone },
+        used: { label: "오늘 쓴 횟수", value: projected.used + " / " + projected.max + "번", note: hours.text + " · " + refill, tone: "" },
+        today: { label: "오늘 확인한 상품", value: todayKst ? done + " / " + active.length + "개" : "-", note: note, pending: pending, paused: paused, tone: "" }
+      }
+    };
+  }
+
+  // 카드 '지금 확인' 버튼 글자(버튼 글자가 곧 상태다 — 마우스를 올리지 않아도 왜 못 누르는지 보인다). mine = 이 카드를 확인하는 중.
+  // 켜진 버튼(ready·다른 시크릿 창)과 다른 카드를 확인하는 동안(run)·모르는 상태만 '지금 확인'이다.
+  function manualButtonLabel(view, mine, server, now) {
+    if (mine) return "확인 중…";
+    var info = view || {};
+    var at = isNum(now) ? now : Date.now();
+    var projected = manualProjected(server || {}, at);
+    switch (info.kind) {
+      case "gap": return countdownText(projected.remainingMs) + " 뒤";
+      case "daily_cap":
+      case "stopped": return "내일 " + pad2(projected.hours.from) + ":00";
+      case "hours": return manualNextOpenText(projected.hours, at);
+      case "busy_other":
+      case "own_lost":
+      case "own_unsent":
+      case "unsent_maybe": {
+        var left = Date.parse(server && server.busyUntil) - at;
+        return isFinite(left) && left > 0 ? "약 " + countdownText(left) + " 뒤" : "잠시 뒤";
+      }
+      case "own_pending": return "확인 중…";
+      case "ext_busy": return "잠시 뒤";
+      case "hello_pending": return "확장 확인 중";
+      case "hello_block": return "확장 확인 필요";
+      case "budget":
+      case "review":
+      case "cooldown": return "멈춤";
+      default: return "지금 확인";
+    }
+  }
+
+  // 누른 카드 운영줄 첫 칸의 짧은 결과(앞에 '방금 확인 HH:MM · '를 붙여 보인다 — 확인을 시작하지 않았으면(notStarted) '방금 누름 HH:MM · ').
+  // 자세한 문구는 상태판 '직전 확인' 줄에 늘 남는다. outcome = manualRecordText 결과.
+  function manualCardNote(outcome, recorded, parsed) {
+    var prefix = "";
+    var result = recorded || {};
+    var payload = result.payload || {};
+    var check = parsed || { outcome: "lost" };
+    var warn = function (text) { return { text: prefix + text, tone: "is-warn" }; };
+    if (outcome && outcome.stopped) return warn("차단으로 보여 오늘 멈춤");
+    if (result.transport || result.httpStatus === 401 || payload.code === "SESSION_REQUIRED" || payload.code === "COUPANG_SESSION_REQUIRED" ||
+      (!payload.code && payload.ok !== true && result.httpStatus >= 500)) return warn("결과를 서버에 보내지 못함(위 상태판 참고)");
+    if (check.outcome === "not_started") return { text: prefix + "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true };
+    if (check.outcome !== "measured") return warn("확장 응답 없음 · 검색 여부 모름");
+    if (payload.ok !== true) return warn("저장하지 못함(위 상태판 참고)");
+    var matched = isNum(payload.matched) && payload.matched > 1 ? " · 같은 키워드 " + payload.matched + "개 함께" : "";
+    var tracker = payload.tracker || null;
+    if (payload.status === "ok") {
+      var text = "기록함";
+      if (tracker && tracker.result === "found" && isNum(tracker.rank)) text = "일반 " + tracker.rank + "위로 기록";
+      else if (tracker && tracker.result === "out") text = RANK_TOP + "위 밖으로 기록";
+      else if (tracker && tracker.result === "short") text = "'없음'으로 기록";
+      return { text: prefix + text + matched, tone: "is-ok" };
+    }
+    if (payload.status === "noresult") return { text: prefix + "'결과 없음'으로 기록" + matched, tone: "is-ok" };
+    return warn("실패: 순위를 기록하지 않음(사유는 위 '직전 확인')");
   }
 
   // claim 거절 문구(쿠팡 검색 전). result = { payload, transport, httpStatus }
@@ -1583,6 +1847,9 @@
     var seqCounter = 0;
     // ① 지금 확인 간격 초 세기(1초). 화면이 보이고 간격 대기일 때만 돈다.
     var manualTimer = 0;
+    // 휴대폰 아래 막대 높이 지켜보기(ResizeObserver)와 창 크기 바뀜(날짜 줄 흐림 다시 맞추기) 타이머.
+    var dockObserver = null;
+    var resizeTimer = 0;
 
     function freshState() {
       return {
@@ -1598,18 +1865,34 @@
         listKey: "",
         listFlight: 0,
         listDoneAt: 0,
-        listNote: { text: "", tone: "" },
+        listNote: { text: "", tone: "", detail: "" },
         status: { text: "", tone: "" },
+        // 선택 항목 정리 막대 안 결과 한 줄(막대가 한 줄로 접혀도 보인다). bulkNoteAt = 그 글을 쓴 시각(휴대폰 아래 막대에 잠시 남길 때).
+        bulkNote: { text: "", tone: "" },
+        bulkNoteAt: 0,
+        // 휴대폰 아래 막대(선택 항목 정리)를 펼쳤는지. 선택이 0개가 되면 접는다.
+        bulkExpanded: false,
+        // 카드 한 장의 결과(지금 확인·일시중지 등). 가장 최근 것 하나만 그 카드 운영줄 첫 칸에 보인다(화면 안에서만 기억).
+        cardNote: null,
+        // 방금 결과를 보인 카드: 상태 필터('오늘 안 함' 등)에서 빠져도 필터·검색·그룹을 바꾸기 전까지 목록에 남긴다.
+        sticky: new Set(),
+        // 펼친 날짜 칸(추적 id → 날짜). 목록을 다시 그려도 유지한다.
+        dayDetails: {},
+        // 날짜 줄의 키보드 위치(추적 id → 날짜, roving tabindex). 다시 그려도 그 칸이 탭 정지다.
+        dayFocus: {},
+        // 다시 그릴 때 되돌릴 포커스 자리(누른 버튼이 잠시 꺼져 카드에 맡겨 둔 경우). renderList 가 쓴다.
+        pendingFocus: null,
         selected: new Set(),
         filter: { query: "", group: "", status: "all" },
         collapsed: new Set(),
         runs: {},
         editingGroupId: "",
         busy: false,
-        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 },
+        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, tokenAt: 0, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 },
         // ① 지금 확인. server 는 목록 GET 의 manual 칸(총관리자만, 캐시에 남기지 않음), offsetMs 는 서버 시각 - 내 시계.
+        // note 는 켜기·끄기 결과(상태판 안 한 줄), extNote 는 확장 상태 다시 보기 결과('내 크롬 확장' 칸 안 한 줄).
         manual: { server: null, offsetMs: 0, hello: null, helloFlight: null, run: null, result: null, stopDetail: "", busyRefreshFor: "", toggling: false,
-          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null, unsent: null }
+          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null, unsent: null, note: { text: "", tone: "" }, extNote: { text: "", tone: "" }, announced: "", announcedWarn: "" }
       };
     }
 
@@ -1702,7 +1985,8 @@
         });
         payload = await readJson(response);
       } catch (error) {
-        payload = { ok: false, message: "요청을 보내지 못했습니다: " + (error && error.message || "연결 실패") };
+        // 브라우저 영어 오류(Failed to fetch 등)는 화면에 그대로 보이지 않는다(원문은 detail 에만 둔다).
+        payload = { ok: false, message: "서버에 연결하지 못했습니다(인터넷 연결 확인). 잠시 뒤 다시 시도하세요.", detail: String(error && error.message || "") };
       }
       if (!sameScope(scope)) return { ok: false, stale: true, message: "요청 중 대상 광고주가 바뀌어 결과를 버렸습니다." };
       return payload;
@@ -1812,14 +2096,15 @@
         } catch (error) {
           if (!stillCurrent(seq, scope)) return;
           state.loading = false;
-          state.listNote = { text: "목록을 받지 못했습니다(" + (error && error.message || "연결 실패") + "). 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn" };
+          // 원문(브라우저 영어 오류)은 마우스를 올리면 보이는 title 에만 둔다.
+          state.listNote = { text: "서버에 연결하지 못해 목록을 받지 못했습니다(인터넷 연결 확인). 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn", detail: String(error && error.message || "") };
           renderAll();
           return;
         }
         var payload = await readJson(response);
         if (!stillCurrent(seq, scope)) return;
         state.loading = false;
-        if (applyListPayload(payload, scope, opts.afterWrite === true, opts.announce === true)) {
+        if (applyListPayload(payload, scope, opts.afterWrite === true)) {
           state.listDoneAt = Date.now();
           ensureManualHello();
         }
@@ -1837,8 +2122,8 @@
     }
 
     // 받은 응답을 화면 상태에 반영한다. 정상 응답(설정 필요·전체 목록·500개 초과 일부 목록)이면 true 를
-    // 돌려준다 — 그때만 2초 합치기 창을 연다. announce(화면 열기)면 N30 처럼 상태줄에 불러온 결과를 알린다.
-    function applyListPayload(payload, scope, afterWrite, announce) {
+    // 돌려준다 — 그때만 2초 합치기 창을 연다. 목록을 불러왔다는 알림은 두지 않는다(맨 위 상태줄은 할 말이 있을 때만).
+    function applyListPayload(payload, scope, afterWrite) {
       // ① 지금 확인 칸(총관리자에게만 온다)은 목록과 따로 둔다. 캐시(sessionStorage)에 남기지 않는다.
       var manualInfo = takeManualInfo(payload);
       if (payload && payload.ok === true && payload.setupRequired === true) {
@@ -1898,8 +2183,6 @@
       pruneSelection();
       setManualServer(manualInfo);
       writeCache(scope, payload);
-      // N30 목록 조회와 같은 알림: 추적이 있으면 '불러왔습니다'(초록), 없으면 기본 안내문. 등록 줄이 있는 화면에서만.
-      if (announce && canWrite()) state.status = payload.trackers.length ? { text: LOADED_TEXT, tone: "is-ok" } : { text: "", tone: "" };
       renderAll();
       return true;
     }
@@ -1908,6 +2191,9 @@
       var ids = new Set(trackers().map(function (tracker) { return tracker.id; }));
       Array.from(state.selected).forEach(function (id) { if (!ids.has(id)) state.selected.delete(id); });
       Object.keys(state.runs).forEach(function (id) { if (!ids.has(id)) delete state.runs[id]; });
+      Object.keys(state.dayDetails).forEach(function (id) { if (!ids.has(id)) delete state.dayDetails[id]; });
+      Array.from(state.sticky).forEach(function (id) { if (!ids.has(id)) state.sticky.delete(id); });
+      if (state.cardNote && !ids.has(state.cardNote.trackerId)) state.cardNote = null;
       if (state.editingGroupId && !ids.has(state.editingGroupId)) state.editingGroupId = "";
     }
 
@@ -1921,8 +2207,39 @@
       return null;
     }
 
+    // 서버 응답의 오늘(KST). 없으면 days30 의 첫 날(오늘). 둘 다 없으면 ''(오늘 판정을 하지 않는다).
+    function todayKstValue() {
+      var payload = state.payload;
+      if (!payload) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(payload.todayKst || ""))) return String(payload.todayKst);
+      return Array.isArray(payload.days30) && payload.days30.length ? String(payload.days30[0] || "") : "";
+    }
+
+    // 상태 필터에 맞는 추적 + 방금 결과를 보인 카드(sticky: 상태 필터만 건너뛰고 검색·그룹은 그대로 본다).
     function visibleTrackers() {
-      return trackers().filter(function (tracker) { return filterMatches(tracker, state.filter); });
+      var todayKst = todayKstValue();
+      var loose = { query: state.filter.query, group: state.filter.group, status: "all" };
+      return trackers().filter(function (tracker) {
+        if (filterMatches(tracker, state.filter, todayKst)) return true;
+        return state.sticky.has(tracker.id) && filterMatches(tracker, loose, todayKst);
+      });
+    }
+
+    function clearSticky() {
+      state.sticky.clear();
+    }
+
+    // 상태 버튼마다 붙는 개수(검색·그룹은 지금 값 그대로, 상태만 바꿔 센다).
+    function filterCounts() {
+      var todayKst = todayKstValue();
+      var base = { query: state.filter.query, group: state.filter.group, status: "all" };
+      var matched = trackers().filter(function (tracker) { return filterMatches(tracker, base, todayKst); });
+      var counts = {};
+      FILTER_STATUSES.forEach(function (entry) {
+        var filter = { status: entry[0] };
+        counts[entry[0]] = entry[0] === "all" ? matched.length : matched.filter(function (tracker) { return filterMatches(tracker, filter, todayKst); }).length;
+      });
+      return counts;
     }
 
     // 고를 수 있는 그룹 이름: 기본 그룹을 뺀 이름을 가나다순으로(N30 rankGroupNamesForCard 와 같은 규칙).
@@ -1945,6 +2262,22 @@
       return state.payload && state.payload.collector ? state.payload.collector : null;
     }
 
+    // 자동 수집이 돌거나 돌 수 있는 상태인지(수집기 0대·수집 꺼짐·SQL 전이 아님). 목록 응답에는 enabled 가 없어 상태 이름으로만 가린다.
+    // review·budget·outdated·offline 처럼 켜 둔 뒤의 경보도 '돈다' 쪽이다(경보를 숨기지 않는다).
+    function autoActive() {
+      var name = collectorStateName();
+      return Boolean(name) && !AUTO_IDLE_STATES[name];
+    }
+
+    // '기록 중'이라고 말해도 되는지는 autoActive 와 따로 가린다(①자동추적 칸을 보일지 ≠ ②자동 수집이 기록하고 있다고 말할지).
+    // "recording" · "alarm"(켜 둔 뒤의 경보) · "unknown"(모르는 상태 이름) · ""(자동 수집 안 씀).
+    function autoMode() {
+      var name = collectorStateName();
+      if (!name || AUTO_IDLE_STATES[name]) return "";
+      if (AUTO_RECORDING_STATES[name]) return "recording";
+      return AUTO_ALARM_STATES[name] ? "alarm" : "unknown";
+    }
+
     function checksPerDay() {
       var info = collectorInfo();
       if (info && isNum(info.checksPerDay)) return info.checksPerDay;
@@ -1954,25 +2287,18 @@
 
     // ── 뼈대 ──
 
-    // N30 화면(admin.html 네이버 30일 순위의 상품 카드)과 같은 틀: 큰 카드 하나 안에 카드 머리 → 등록 줄 → 상태줄 →
-    // 목록 제목 → 필터 줄 → 도움말 → 요약칸 → 선택 항목 정리 → 그룹. 보조 구역(사용 방법·안내 문구·
-    // 총관리자 수집기 관리)은 큰 카드 아래에 둔다. data-coupang-rank-* 훅 이름은 그대로다.
+    // 큰 카드 하나 안에 등록 줄(+안내 한 줄·한도) → 상태줄(할 말이 있을 때만) → 목록 패널. 목록 패널은 제목·개수 → 목록 알림 →
+    // '지금 확인' 상태판(N30 요약칸 자리) → (자동 수집이 돌 때만) 자동추적 칸 → 필터 줄 → 선택 항목 정리 → 그룹·카드 순서다.
+    // 보조 칸(사용 방법 · 내 크롬 확장 · 자동 수집)은 큰 카드 아래 한 상자에 접힌 줄로 둔다. 화면 머리는 admin.html 의 한 겹뿐이다
+    // (C30 만 N30 과 다름, 대표 결정 2026-10-23). data-coupang-rank-* 훅 이름은 그대로다.
     function ensureShell() {
       if (shell && host.contains(shell.main)) return shell;
       host.classList.add("mi-coupang-rank-root");
       host.replaceChildren();
       shell = {};
       shell.main = el("article", { className: "mi-card mi-card-pad mi-rank-card mi-coupang-rank-main" });
-      shell.limit = el("span", { className: "mi-coupang-rank-limit", "data-coupang-rank-limit": true, hidden: true });
-      shell.main.appendChild(el("div", { className: "mi-card-head mi-coupang-rank-head" }, [
-        el("div", {}, [
-          el("span", { className: "mi-kicker", text: "쿠팡 일반 순위" }),
-          el("h2", { text: "30일 순위 추적을 시작합니다." }),
-          el("p", { text: "쿠팡 검색 1쪽에서 광고를 뺀 일반 상품 순위와 광고 순번을 함께 관리합니다." }),
-          el("p", { className: "mi-code-status mi-coupang-rank-rule", text: "비로그인 검색 1쪽 · 광고 제외 일반 순위 · 같은 상품이면 옵션이 달라도 인정합니다." })
-        ]),
-        shell.limit
-      ]));
+      shell.limit = el("span", { className: "mi-coupang-rank-limit", "data-coupang-rank-limit": true, hidden: true,
+        title: "이 계정이 추적할 수 있는 상품 수입니다. 여러 계정이 나눠 쓰는 전체 한도는 아래 '자동 수집' 칸에 있습니다." });
       shell.form = el("div", { className: "mi-coupang-rank-form", "data-coupang-rank-form": true, hidden: true });
       shell.status = el("p", { className: "mi-code-status mi-coupang-rank-status", "data-coupang-rank-status": true, "aria-live": "polite", hidden: true });
       shell.capacity = el("p", { className: "mi-coupang-rank-capacity", "data-coupang-rank-capacity": true, hidden: true });
@@ -1981,18 +2307,57 @@
       shell.main.appendChild(shell.status);
       shell.main.appendChild(shell.capacity);
       shell.main.appendChild(el("div", { className: "mi-rank-grid mi-coupang-rank-grid" }, [shell.board]));
-      shell.guide = el("details", { className: "mi-card mi-coupang-rank-guide", "data-coupang-rank-guide": true });
-      shell.template = el("section", { className: "mi-card mi-card-pad mi-coupang-rank-template", "data-coupang-rank-template": true, hidden: true });
-      shell.owner = el("details", { className: "mi-card mi-coupang-rank-owner", "data-coupang-rank-owner": true, hidden: true });
+      // 카드 한 장 동작(일시중지·다시 시작·그룹 저장)의 성공 결과를 화면 읽기 프로그램에 알리는 자리(카드 알약은 다시 그릴 때 새로 생겨 읽히지 않는다).
+      shell.srLive = el("p", { className: "mi-coupang-rank-sr", "aria-live": "polite", "data-coupang-rank-sr-live": true });
+      shell.main.appendChild(shell.srLive);
+      shell.aux = el("section", { className: "mi-card mi-coupang-rank-aux", "data-coupang-rank-aux": true, "aria-label": "사용 방법 · 내 크롬 확장 · 자동 수집" });
+      shell.guide = el("details", { className: "mi-coupang-rank-guide", "data-coupang-rank-guide": true });
+      shell.ext = el("details", { className: "mi-coupang-rank-ext", "data-coupang-rank-ext": true, hidden: true });
+      shell.owner = el("details", { className: "mi-coupang-rank-owner", "data-coupang-rank-owner": true, hidden: true });
+      shell.aux.appendChild(shell.guide);
+      shell.aux.appendChild(shell.ext);
+      shell.aux.appendChild(shell.owner);
       host.appendChild(shell.main);
-      host.appendChild(shell.guide);
-      host.appendChild(shell.template);
-      host.appendChild(shell.owner);
+      host.appendChild(shell.aux);
       buildForm();
       buildBoard();
+      buildExtFrame();
       buildOwnerFrame();
-      buildTemplate();
+      watchDock();
       return shell;
+    }
+
+    // 휴대폰 아래 막대(선택 항목 정리)의 높이만큼 화면 맨 아래 여백을 늘린다(막대가 마지막 칸·보조 상자를 가리지 않게).
+    // 넓은 화면에서는 막대가 제자리(display: contents)라 높이가 0 이다.
+    function watchDock() {
+      if (dockObserver) {
+        try { dockObserver.disconnect(); } catch (error) {}
+        dockObserver = null;
+      }
+      if (typeof ResizeObserver !== "function" || !shell || !shell.bulkDock) return;
+      try {
+        dockObserver = new ResizeObserver(function () { syncDockSpace(); });
+        dockObserver.observe(shell.bulkDock);
+      } catch (error) {
+        dockObserver = null;
+      }
+    }
+
+    function syncDockSpace() {
+      if (!shell || !shell.bulkDock || !host.style || typeof host.style.setProperty !== "function") return;
+      var height = 0;
+      if (!shell.bulk.hidden && shell.bulkDock.classList.contains("is-shown") && typeof shell.bulkDock.getBoundingClientRect === "function") {
+        var rect = shell.bulkDock.getBoundingClientRect();
+        height = rect && isNum(rect.height) ? Math.ceil(rect.height) : 0;
+      }
+      host.style.setProperty("--mi-coupang-rank-dock-space", height + "px");
+      host.classList.toggle("is-docked", height > 0);
+    }
+
+    function announce(text) {
+      if (!shell || !shell.srLive || !text) return;
+      // 같은 글을 다시 써도 바뀐 것으로 알도록 끝 공백을 번갈아 붙인다.
+      shell.srLive.textContent = shell.srLive.textContent === text ? text + " " : text;
     }
 
     function setStatus(text, tone) {
@@ -2000,15 +2365,53 @@
       renderStatus();
     }
 
-    // 상태줄은 N30 처럼 등록 줄 바로 아래에 늘 보인다(등록 줄이 보일 때). 결과 문구가 없으면 기본 안내문으로 돌아간다.
-    // 등록 줄이 없는 화면(읽기 전용·설정 전·대상 없음)에서는 결과 문구가 있을 때만 보인다.
+    // 맨 위 상태줄은 할 말이 있을 때만 보인다(등록 결과·화면 오류·실패). 목록을 불러왔다는 알림·기본 안내문은 두지 않는다.
     function renderStatus() {
       if (!shell) return;
-      var text = state.status.text || (shell.form.hidden ? "" : STATUS_DEFAULT);
+      var text = state.status.text;
       shell.status.textContent = text;
       shell.status.hidden = !text;
       shell.status.classList.remove("is-ok", "is-warn");
-      if (state.status.text && state.status.tone) shell.status.classList.add(state.status.tone);
+      if (text && state.status.tone) shell.status.classList.add(state.status.tone);
+    }
+
+    // 결과 한 줄은 두 곳에 쓴다: 막대 안 줄(aria-live, 넓은 화면) + 휴대폰 아래 막대 안 줄(같은 글, 화면 읽기에는 한 번만).
+    // 휴대폰에서 선택이 0개가 되어(삭제·그룹 옮김) 아래 막대가 접혀도 결과 줄은 BULK_NOTE_FLOAT_MS 동안 화면 아래에 남는다.
+    function setBulkNote(text, tone) {
+      state.bulkNote = { text: text || "", tone: tone || "" };
+      state.bulkNoteAt = text ? Date.now() : 0;
+      if (!shell) return;
+      renderBulkBar();
+      if (!text) return;
+      var owner = state;
+      var at = state.bulkNoteAt;
+      setTimeout(function () {
+        if (owner !== state || state.destroyed || !shell || state.bulkNoteAt !== at) return;
+        renderBulkBar();
+      }, BULK_NOTE_FLOAT_MS + 100);
+    }
+
+    function bulkNoteFloating() {
+      return Boolean(state.bulkNote.text) && Date.now() - (state.bulkNoteAt || 0) < BULK_NOTE_FLOAT_MS;
+    }
+
+    function renderBulkNote() {
+      if (!shell) return;
+      var note = state.bulkNote;
+      var className = "mi-coupang-rank-bulk-note" + (note.tone ? " " + note.tone : "");
+      shell.bulkNote.textContent = note.text;
+      shell.bulkNote.hidden = !note.text;
+      shell.bulkNote.className = className;
+      shell.bulkDockNote.textContent = note.text;
+      shell.bulkDockNote.hidden = !note.text;
+      shell.bulkDockNote.className = "mi-coupang-rank-bulk-dock-note" + (note.tone ? " " + note.tone : "");
+    }
+
+    // 카드 한 장의 결과. 다시 그릴 때 그 카드 운영줄 첫 칸에 보이고, 상태 필터에서 빠져도 목록에 남긴다(sticky).
+    function setCardNote(id, text, tone) {
+      if (!id || !text) return;
+      state.cardNote = { trackerId: id, text: text, tone: tone || "" };
+      state.sticky.add(id);
     }
 
     function renderAll() {
@@ -2025,15 +2428,21 @@
       renderManual();
       renderManualOwner();
       renderGuide();
-      renderTemplate();
     }
 
-    // ── 1. 자동추적 요약칸(N30 .mi-rank-auto-center 와 같은 칸, 목록 맨 위) ──
+    // ── 1. 자동추적 요약칸(N30 .mi-rank-auto-center 와 같은 칸). 자동 수집이 돌 때만 지금 확인 상태판 아래에 보인다. ──
+    // 조건은 거꾸로 쓴다: 수집기 0대·수집 꺼짐·SQL 전이 아니면 보인다(켜 둔 뒤의 경보 review·budget·outdated 를 숨기지 않게).
+    // 지금 확인 상태판이 없는 화면(읽기 전용·서버 manual 칸 없음)은 예전처럼 늘 보인다.
+    function stripVisible() {
+      if (!currentScope()) return false;
+      if (readonlyView() || state.setupRequired) return true;
+      if (!state.payload) return deps.mode !== "admin";
+      return autoActive() || !manualBoardVisible();
+    }
 
     function renderStrip() {
-      var scope = currentScope();
       shell.strip.replaceChildren();
-      if (!scope) {
+      if (!stripVisible()) {
         shell.strip.hidden = true;
         return;
       }
@@ -2055,7 +2464,7 @@
       })));
     }
 
-    // ── 2. 등록 줄(N30 .mi-rank-form 과 같은 5칸: 키워드·URL·그룹·고정 범위·버튼) ──
+    // ── 2. 등록 줄(키워드·URL·그룹·버튼 4칸) + 안내 한 줄·한도 알약 ──
 
     function buildForm() {
       var form = el("form", { className: "mi-rank-form mi-coupang-rank-create", "data-coupang-rank-create-form": true, novalidate: true });
@@ -2070,9 +2479,12 @@
       form.appendChild(shell.productUrl);
       form.appendChild(shell.groupInput);
       form.appendChild(shell.groupList);
-      form.appendChild(el("span", { className: "mi-rank-fixed-range", "aria-label": "조회 범위 일반 50위 이내", text: "일반 50위 이내" }));
       form.appendChild(shell.createButton);
       shell.form.appendChild(form);
+      shell.form.appendChild(el("div", { className: "mi-coupang-rank-form-foot" }, [
+        el("p", { className: "mi-coupang-rank-form-hint", text: FORM_HINT_TEXT }),
+        shell.limit
+      ]));
     }
 
     function renderForm() {
@@ -2097,6 +2509,17 @@
       shell.groupList.replaceChildren();
       groupNames().forEach(function (name) { shell.groupList.appendChild(el("option", { value: name })); });
       shell.createButton.disabled = state.busy || !state.payload || cleanup;
+    }
+
+    // 등록 결과의 첫 기록 안내. 서버 firstCheck(recorded/queued)는 그대로 쓰고, queued 의 말만 지금 방식에 맞춘다.
+    function firstCheckText(code) {
+      if (code === "recorded") return FIRST_CHECK_TEXT.recorded + ".";
+      if (code !== "queued") return "";
+      if (manualVisible()) return FIRST_CHECK_TEXT.manual + ".";
+      var mode = autoMode();
+      if (mode === "recording") return FIRST_CHECK_TEXT.queued + ".";
+      if (mode) return FIRST_CHECK_TEXT.stalled + ".";
+      return FIRST_CHECK_TEXT.off + ".";
     }
 
     async function submitCreate() {
@@ -2135,12 +2558,17 @@
         renderForm();
         return;
       }
-      if (result.tracker && result.tracker.id) mergeTracker(result.tracker);
+      var createdId = result.tracker && result.tracker.id ? String(result.tracker.id) : "";
+      if (createdId) {
+        mergeTracker(result.tracker);
+        // 상태 필터에 걸려도 새 카드를 보이게 한다(그 자리로 옮겨 강조한다).
+        state.sticky.add(createdId);
+      }
       if (result.limit && state.payload) state.payload.limit = result.limit;
       var message;
       if (result.alreadyTracking) message = "이미 추적 중입니다";
-      else if (result.resumed) message = "일시중지했던 추적을 다시 시작했습니다. " + (FIRST_CHECK_TEXT[result.firstCheck] || "");
-      else message = "등록했습니다. " + (FIRST_CHECK_TEXT[result.firstCheck] || "");
+      else if (result.resumed) message = "일시중지했던 추적을 다시 시작했습니다. " + firstCheckText(result.firstCheck);
+      else message = "등록했습니다. " + firstCheckText(result.firstCheck);
       if (!result.alreadyTracking) {
         shell.keyword.value = "";
         shell.productUrl.value = "";
@@ -2149,6 +2577,23 @@
       var scope = currentScope();
       if (state.payload && scope) writeCache(scope, state.payload);
       renderAll();
+      if (createdId) revealCard(createdId);
+    }
+
+    // 등록한(또는 이미 있던) 카드로 옮기고 2초 동안 테두리로 강조한다. 접힌 그룹이면 그리지 않았으므로 옮기지 않는다.
+    function revealCard(id) {
+      if (!shell || !id) return;
+      var card = shell.list.querySelector('[data-coupang-rank-card][data-coupang-rank-id="' + String(id).replace(/["\\]/g, "") + '"]');
+      if (!card) return;
+      card.classList.add("is-new");
+      try {
+        if (typeof card.scrollIntoView === "function") card.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch (error) {}
+      var owner = state;
+      setTimeout(function () {
+        if (owner !== state) return;
+        card.classList.remove("is-new");
+      }, 2000);
     }
 
     function mergeTracker(tracker) {
@@ -2169,111 +2614,189 @@
       });
     }
 
-    // ── 3·4. 필터 줄과 선택 항목 정리(N30 과 같은 문구·같은 순서) ──
+    // ── 3. 목록 패널: 제목·개수 · 지금 확인 상태판 · 필터 줄 · 선택 항목 정리 ──
 
     function buildBoard() {
+      shell.filterCount = el("span", { className: "mi-coupang-rank-count", "data-coupang-rank-filter-count": true });
+      shell.boardHead = el("div", { className: "mi-coupang-rank-board-head" }, [el("h3", { text: "상품별 일별 순위" }), shell.filterCount]);
+
       shell.filterBar = el("div", { className: "mi-rank-filterbar mi-coupang-rank-filterbar", "data-coupang-rank-filter": true });
       shell.search = el("input", { className: "mi-input", type: "search", placeholder: "키워드, 상품명, 상품번호 검색", "aria-label": "쿠팡 순위 추적 검색", "data-coupang-rank-filter-search": true });
       shell.groupFilter = el("select", { className: "mi-input", "aria-label": "쿠팡 순위 추적 그룹 필터", "data-coupang-rank-filter-group": true });
       shell.groupFilterWrap = el("label", { className: "mi-rank-group-filter" }, [el("span", { text: "그룹" }), shell.groupFilter]);
-      shell.statusButtons = el("div", { className: "mi-rank-filter-actions", role: "group", "aria-label": "쿠팡 순위 추적 상태 필터" });
+      shell.statusButtons = el("div", { className: "mi-rank-filter-actions mi-coupang-rank-filter-actions", role: "group", "aria-label": "쿠팡 순위 추적 상태 필터" });
+      shell.statusCounts = {};
       FILTER_STATUSES.forEach(function (entry) {
-        shell.statusButtons.appendChild(el("button", { className: "mi-rank-filter-button", type: "button", "data-coupang-rank-filter-status": entry[0], text: entry[1] }));
+        if (entry[0] === "today-none") shell.statusButtons.appendChild(el("span", { className: "mi-coupang-rank-filter-sep", "aria-hidden": "true" }));
+        var count = el("em", { className: "mi-coupang-rank-filter-num" });
+        shell.statusCounts[entry[0]] = count;
+        shell.statusButtons.appendChild(el("button", { className: "mi-rank-filter-button", type: "button", "data-coupang-rank-filter-status": entry[0] }, [entry[1] + " ", count]));
       });
-      shell.filterCount = el("span", { className: "mi-rank-filter-count", "data-coupang-rank-filter-count": true });
       shell.filterBar.appendChild(shell.search);
       shell.filterBar.appendChild(shell.groupFilterWrap);
       shell.filterBar.appendChild(shell.statusButtons);
-      shell.filterBar.appendChild(shell.filterCount);
 
-      shell.filterHelp = el("p", { className: "mi-rank-filter-help", text: "전체 그룹은 모든 추적을 보여주고, 그룹을 선택하면 해당 그룹만 정리해서 볼 수 있습니다. 하루 칸에 마우스를 올리면 그날 기록이 보입니다." });
-
-      // 선택 항목 정리: N30 renderRankBulkBar 와 같은 제목·문구·공통 버튼 순서
-      // [그룹명 입력][그룹 생성/적용][그룹 해제][선택 해제] 뒤에 C30 전용(일시중지·다시 시작·삭제·표시 항목 전체 선택),
-      // 마지막에 [선택 이미지 저장]. '전체 순위 갱신'은 쿠팡 차단을 막으려고 두지 않는다.
-      // 동작 칸은 N30 .mi-rank-bulk-actions(6칸 grid) 대신 C30 칸(flex wrap)을 쓴다.
+      // 선택 항목 정리: [제목 · n개 선택 | 보이는 항목 전체 선택] 아래 한 칸에 '안내 글'과 '동작 줄'을 겹쳐 두고 고르면 바꿔 보인다.
+      // 두 내용이 같은 칸을 쓰므로 카드를 체크하는 순간 막대 높이가 바뀌지 않는다(목록이 밀리지 않음, 2026-10-23 재검사).
+      // 휴대폰(900px 이하)에서는 동작 줄을 화면 아래 막대(dock)에 띄운다: 접힌 한 줄('n개 선택 · 정리 열기') → 누르면 펼침.
+      // 동작 8개·action 값·삭제 확인 창은 그대로이고, 위험한 '선택 삭제'는 맨 끝에 떨어뜨린다. 결과는 막대 안 한 줄(bulkNote)과
+      // 휴대폰 아래 막대 안 한 줄(bulkDockNote)에 보인다.
       shell.bulk = el("div", { className: "mi-rank-bulk-bar mi-coupang-rank-bulk", "data-coupang-rank-bulk": true });
-      shell.bulkCount = el("span", { "data-coupang-rank-selected-count": true, text: "항목 선택 후 적용" });
-      shell.bulkHint = el("small", { text: "" });
+      shell.bulkCount = el("span", { className: "mi-coupang-rank-bulk-count", "data-coupang-rank-selected-count": true, hidden: true });
+      shell.bulkHint = el("small", { className: "mi-coupang-rank-bulk-hint" });
+      shell.bulkSheetHint = el("small", { className: "mi-coupang-rank-bulk-sheet-hint", text: "아래 막대에서 정리합니다" });
+      shell.bulkSelectVisible = button("보이는 항목 전체 선택", "select-visible", { className: "mi-button subtle mi-coupang-rank-bulk-select" });
       shell.bulkGroupInput = el("input", { className: "mi-input", type: "text", maxlength: String(GROUP_MAX), autocomplete: "off", list: shell.groupListId, placeholder: "그룹명 선택 또는 입력", "aria-label": "선택 항목 이동 그룹", "data-coupang-rank-bulk-group-input": true });
       shell.bulkGroupWrap = el("span", { className: "mi-coupang-rank-bulk-group" }, [
         shell.bulkGroupInput,
-        button("그룹 생성/적용", "bulk-group", { className: "mi-button", "data-coupang-rank-write": true }),
+        button("그룹으로 옮기기", "bulk-group", { className: "mi-button", "data-coupang-rank-write": true }),
         button("그룹 해제", "bulk-ungroup", { className: "mi-button subtle", "data-coupang-rank-write": true })
       ]);
-      var bulkActions = el("div", { className: "mi-coupang-rank-bulk-actions" }, [
+      // 휴대폰 아래 막대 머리: 'n개 선택'과 펼치기 단추(넓은 화면에서는 숨김 — 동작 줄이 막대 안에 바로 보인다).
+      var actionsId = "mi-coupang-rank-bulk-actions-" + Math.random().toString(36).slice(2, 10);
+      shell.bulkSheetCount = el("strong", { className: "mi-coupang-rank-bulk-sheet-count", "aria-hidden": "true" });
+      shell.bulkSheetToggle = button("정리 열기 ▴", "bulk-sheet-toggle", { className: "mi-button subtle mi-coupang-rank-bulk-sheet-toggle", "aria-expanded": "false", "aria-controls": actionsId });
+      shell.bulkActions = el("div", { className: "mi-coupang-rank-bulk-actions", id: actionsId, "data-coupang-rank-bulk-actions": true, "aria-hidden": "true" }, [
         shell.bulkGroupWrap,
-        button("선택 해제", "clear-selection", { className: "mi-button subtle" }),
-        button("일시중지", "bulk-pause", { className: "mi-button subtle", "data-coupang-rank-write": true }),
-        button("다시 시작", "bulk-resume", { className: "mi-button subtle", "data-coupang-rank-write": true }),
-        button("삭제", "bulk-delete", { className: "mi-button subtle mi-coupang-rank-danger", "data-coupang-rank-write": true }),
-        button("표시 항목 전체 선택", "select-visible", { className: "mi-button subtle" }),
-        button("선택 이미지 저장", "bulk-export", { className: "mi-rank-share-image" })
+        el("span", { className: "mi-coupang-rank-bulk-set" }, [
+          button("일시중지", "bulk-pause", { className: "mi-button subtle", "data-coupang-rank-write": true }),
+          button("다시 시작", "bulk-resume", { className: "mi-button subtle", "data-coupang-rank-write": true })
+        ]),
+        el("span", { className: "mi-coupang-rank-bulk-set" }, [
+          button("선택 이미지 저장", "bulk-export", { className: "mi-rank-share-image" }),
+          button("선택 해제", "clear-selection", { className: "mi-button subtle" })
+        ]),
+        button("선택 삭제", "bulk-delete", { className: "mi-button subtle mi-coupang-rank-danger mi-coupang-rank-bulk-delete", "data-coupang-rank-write": true })
       ]);
-      shell.bulk.appendChild(el("div", { className: "mi-rank-bulk-title" }, [
+      shell.bulkNote = el("p", { className: "mi-coupang-rank-bulk-note", "data-coupang-rank-bulk-note": true, "aria-live": "polite", hidden: true });
+      // 아래 막대 안 결과 줄은 같은 글이라 화면 읽기에는 숨긴다(위 bulkNote 가 aria-live 로 한 번 읽는다).
+      shell.bulkDockNote = el("p", { className: "mi-coupang-rank-bulk-dock-note", "data-coupang-rank-bulk-dock-note": true, "aria-hidden": "true", hidden: true });
+      shell.bulkDock = el("div", { className: "mi-coupang-rank-bulk-dock", "data-coupang-rank-bulk-dock": true }, [
+        el("div", { className: "mi-coupang-rank-bulk-dock-head" }, [shell.bulkSheetCount, shell.bulkSheetToggle]),
+        shell.bulkDockNote,
+        shell.bulkActions
+      ]);
+      shell.bulk.appendChild(el("div", { className: "mi-rank-bulk-title mi-coupang-rank-bulk-title" }, [
         el("strong", { text: "선택 항목 정리" }),
-        shell.bulkCount,
-        shell.bulkHint
+        shell.bulkCount
       ]));
-      shell.bulk.appendChild(bulkActions);
+      shell.bulk.appendChild(shell.bulkSelectVisible);
+      shell.bulk.appendChild(el("div", { className: "mi-coupang-rank-bulk-stack" }, [
+        el("div", { className: "mi-coupang-rank-bulk-msg" }, [shell.bulkHint, shell.bulkSheetHint]),
+        shell.bulkDock
+      ]));
+      shell.bulk.appendChild(shell.bulkNote);
 
       shell.listNote = el("p", { className: "mi-coupang-rank-list-note", "data-coupang-rank-list-note": true, "aria-live": "polite", hidden: true });
       shell.strip = el("div", { className: "mi-rank-auto-center mi-coupang-rank-auto", "data-coupang-rank-strip": true, role: "status", hidden: true });
       shell.list = el("div", { className: "mi-coupang-rank-list", "data-coupang-rank-list": true });
-      shell.board.appendChild(el("h3", { text: "상품별 일별 순위" }));
-      shell.board.appendChild(shell.filterBar);
-      shell.board.appendChild(shell.filterHelp);
-      // ① 지금 확인 상태(요약칸 바로 아래, 화면당 하나). 그날 중지면 상태 줄 대신 경고 띠를 보인다.
-      shell.manualBox = el("div", { className: "mi-coupang-rank-manual", "data-coupang-rank-manual-box": true, hidden: true });
-      shell.manualBanner = el("div", { className: "mi-coupang-rank-manual-banner is-warn", role: "alert", "data-coupang-rank-manual-banner": true, hidden: true });
-      shell.manualLine = el("p", { className: "mi-code-status mi-coupang-rank-manual-line", "data-coupang-rank-manual-line": true, "aria-live": "polite" });
-      shell.manualGuideButton = button("설치 안내 열기", "manual-guide-open", { className: "mi-link-button mi-coupang-rank-manual-guide-open", hidden: true });
-      shell.manualResult = el("p", { className: "mi-coupang-rank-manual-result", "data-coupang-rank-manual-result": true, "aria-live": "polite", hidden: true });
-      shell.manualBox.appendChild(shell.manualBanner);
-      shell.manualBox.appendChild(el("div", { className: "mi-coupang-rank-manual-row" }, [shell.manualLine, shell.manualGuideButton]));
-      shell.manualBox.appendChild(shell.manualResult);
+      buildManualBoard();
+      shell.board.appendChild(shell.boardHead);
       shell.board.appendChild(shell.listNote);
-      shell.board.appendChild(shell.strip);
       shell.board.appendChild(shell.manualBox);
+      shell.board.appendChild(shell.strip);
+      shell.board.appendChild(shell.filterBar);
       shell.board.appendChild(shell.bulk);
       shell.board.appendChild(shell.list);
+    }
+
+    // ① 지금 확인 상태판(N30 .mi-rank-auto-center 와 같은 자리·같은 칸 모양): [상태 알약 · 제목 · 한 줄] [다음 확인 · 오늘 쓴 횟수 ·
+    // 오늘 확인한 상품] [끄기/켜기]. 아래 넓은 줄에 그날 중지 띠(role=alert) · 켜기/끄기 결과 · 직전 확인 결과를 둔다.
+    // 1초 초 세기는 aria-live 밖(칸·버튼 글자)에서만 바뀌고, 화면 읽기 프로그램에는 상태 알약이 바뀔 때만 알린다.
+    function buildManualBoard() {
+      shell.manualBox = el("div", { className: "mi-rank-auto-center mi-coupang-rank-manual", "data-coupang-rank-manual-box": true, role: "group", "aria-label": "지금 확인 상태", hidden: true });
+      shell.manualPill = el("span", { className: "mi-rank-auto-status mi-coupang-rank-manual-pill", "data-coupang-rank-manual-state": true });
+      shell.manualLine = el("small", { className: "mi-coupang-rank-manual-line", "data-coupang-rank-manual-line": true });
+      shell.manualBox.appendChild(el("div", { className: "mi-rank-auto-head mi-coupang-rank-manual-head" }, [shell.manualPill, el("strong", { text: "지금 확인" }), shell.manualLine]));
+      shell.manualMetrics = {};
+      var metrics = el("div", { className: "mi-rank-auto-metrics mi-coupang-rank-manual-metrics" });
+      ["next", "used", "today"].forEach(function (key) {
+        var node = { box: el("div", { className: "mi-rank-auto-metric", "data-coupang-rank-manual-metric": key }), label: el("span"), value: el("strong"), note: el("small") };
+        node.box.appendChild(node.label);
+        node.box.appendChild(node.value);
+        node.box.appendChild(node.note);
+        shell.manualMetrics[key] = node;
+        metrics.appendChild(node.box);
+      });
+      shell.manualBox.appendChild(metrics);
+      shell.manualToggle = el("button", { type: "button", className: "mi-button subtle", "data-coupang-rank-action": "manual-disable", "data-coupang-rank-manual-toggle": true, text: "지금 확인 끄기" });
+      shell.manualToggleHint = el("small", { className: "mi-coupang-rank-manual-hint" });
+      shell.manualGuideButton = button("설치 안내 열기", "manual-guide-open", { className: "mi-button subtle mi-coupang-rank-manual-guide-open", hidden: true });
+      shell.manualJump = button("자동 수집 칸에서 해제하기", "owner-jump", { className: "mi-button subtle", "data-coupang-rank-manual-jump": true, hidden: true });
+      shell.manualBox.appendChild(el("div", { className: "mi-coupang-rank-manual-side" }, [shell.manualToggle, shell.manualToggleHint, shell.manualGuideButton, shell.manualJump]));
+      shell.manualBanner = el("div", { className: "mi-coupang-rank-manual-banner is-warn", role: "alert", "data-coupang-rank-manual-banner": true, hidden: true });
+      shell.manualNote = el("p", { className: "mi-coupang-rank-manual-note", "data-coupang-rank-manual-note": true, "aria-live": "polite", hidden: true });
+      shell.manualResult = el("p", { className: "mi-coupang-rank-manual-result", "data-coupang-rank-manual-result": true, "aria-live": "polite", hidden: true });
+      shell.manualAnnounce = el("span", { className: "mi-coupang-rank-sr", "aria-live": "polite", "data-coupang-rank-manual-announce": true });
+      shell.manualBox.appendChild(shell.manualBanner);
+      shell.manualBox.appendChild(shell.manualNote);
+      shell.manualBox.appendChild(shell.manualResult);
+      shell.manualBox.appendChild(shell.manualAnnounce);
     }
 
     function renderFilterBar() {
       var hasData = Boolean(state.payload) && !state.setupRequired;
       shell.filterBar.hidden = !hasData;
-      shell.filterHelp.hidden = !hasData;
+      shell.filterCount.hidden = !hasData;
       if (!hasData) return;
       var names = groupNames();
       if (state.filter.group && names.indexOf(state.filter.group) < 0) state.filter.group = "";
+      var todayKst = todayKstValue();
+      if (state.filter.status === "today-none" && !todayKst) state.filter.status = "all";
       shell.groupFilter.replaceChildren(el("option", { value: "", text: "전체 그룹" }));
       names.forEach(function (name) { shell.groupFilter.appendChild(el("option", { value: name, text: name })); });
       shell.groupFilter.value = state.filter.group;
       shell.groupFilterWrap.classList.toggle("is-filtered", Boolean(state.filter.group));
       if (shell.search.value !== state.filter.query && document.activeElement !== shell.search) shell.search.value = state.filter.query;
+      var counts = filterCounts();
       Array.prototype.forEach.call(shell.statusButtons.querySelectorAll("[data-coupang-rank-filter-status]"), function (node) {
-        var active = node.getAttribute("data-coupang-rank-filter-status") === state.filter.status;
+        var key = node.getAttribute("data-coupang-rank-filter-status");
+        var active = key === state.filter.status;
         node.classList.toggle("is-active", active);
         node.setAttribute("aria-pressed", active ? "true" : "false");
+        if (key === "today-none") node.hidden = !todayKst;
+        if (shell.statusCounts[key]) setText(shell.statusCounts[key], String(counts[key] || 0));
       });
+      var sep = shell.statusButtons.querySelector(".mi-coupang-rank-filter-sep");
+      if (sep) sep.hidden = !todayKst;
+      var shown = visibleTrackers().length;
       shell.filterCount.textContent = cleanupMode()
-        ? visibleTrackers().length + "개 표시 / 받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개)"
-        : visibleTrackers().length + "개 표시 / 전체 " + trackers().length + "개";
+        ? "받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개) 중 " + shown + "개 표시"
+        : trackers().length + "개 중 " + shown + "개 표시";
     }
 
     function renderBulkBar() {
       var hasData = Boolean(state.payload) && !state.setupRequired && trackers().length > 0;
       shell.bulk.hidden = !hasData;
-      if (!hasData) return;
+      if (!hasData) {
+        syncDockSpace();
+        return;
+      }
       var count = state.selected.size;
+      var open = count > 0;
       var writable = canWrite();
       var cleanup = cleanupMode();
-      shell.bulkCount.textContent = count ? count + "개 선택" : "항목 선택 후 적용";
-      shell.bulkHint.textContent = !writable
-        ? "체크한 항목을 한 장의 이미지로 저장할 수 있습니다."
-        : (cleanup
-          ? "정리용 화면이라 선택 항목의 일시중지·삭제만 됩니다."
-          : "그룹명을 입력하거나 목록에서 선택하면 새 그룹 생성과 이동을 한 번에 처리합니다.");
+      if (!open) state.bulkExpanded = false;
+      shell.bulk.classList.toggle("is-open", open);
+      // 정리용 화면은 펼쳤을 때 안내 글 자리를 동작 줄이 쓰므로 제한을 'n개 선택' 옆에 붙인다.
+      var countText = open ? count + "개 선택" + (cleanup ? " · 일시중지·삭제만" : "") : "";
+      shell.bulkCount.textContent = countText;
+      shell.bulkSheetCount.textContent = countText;
+      shell.bulkCount.hidden = !open;
+      // 안내 글은 접혀도 펼쳐도 같은 글을 둔다(겹친 칸의 높이를 지킨다). 펼치면 CSS 가 감추고 동작 줄을 보인다.
+      shell.bulkHint.textContent = cleanup
+        ? "정리용 화면이라 선택 항목의 일시중지·삭제만 됩니다."
+        : (writable
+          ? "카드를 체크하면 그룹 옮기기 · 일시중지 · 삭제 · 이미지 저장을 한 번에 할 수 있습니다."
+          : "카드를 체크하면 한 장의 이미지로 저장할 수 있습니다.");
+      shell.bulkActions.setAttribute("aria-hidden", open ? "false" : "true");
+      // 휴대폰 아래 막대: 고르면 보이고(접힌 한 줄), 결과 한 줄이 있으면 선택이 0개여도 잠시 남는다. 펼침은 단추로.
+      var expanded = open && state.bulkExpanded === true;
+      shell.bulkDock.classList.toggle("is-shown", open || bulkNoteFloating());
+      shell.bulkDock.classList.toggle("is-expanded", expanded);
+      setText(shell.bulkSheetToggle, expanded ? "접기 ▾" : "정리 열기 ▴");
+      shell.bulkSheetToggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      shell.bulkSheetToggle.hidden = !open;
       Array.prototype.forEach.call(shell.bulk.querySelectorAll("[data-coupang-rank-write]"), function (node) {
         // 정리용 화면에서는 일시중지·삭제만 보인다.
         var action = String(node.getAttribute("data-coupang-rank-action") || "").replace(/^bulk-/, "");
@@ -2286,6 +2809,12 @@
       Array.prototype.forEach.call(shell.bulk.querySelectorAll('[data-coupang-rank-action="clear-selection"], [data-coupang-rank-action="bulk-export"]'), function (node) {
         node.disabled = state.busy || count === 0;
       });
+      Array.prototype.forEach.call(shell.bulk.querySelectorAll(".mi-coupang-rank-bulk-set"), function (set) {
+        set.hidden = Array.prototype.every.call(set.children, function (child) { return child.hidden; });
+      });
+      shell.bulkSelectVisible.disabled = state.busy;
+      renderBulkNote();
+      syncDockSpace();
     }
 
     function renderListNote() {
@@ -2296,6 +2825,8 @@
       shell.listNote.textContent = text;
       shell.listNote.hidden = !text;
       shell.listNote.className = "mi-coupang-rank-list-note" + (note.tone ? " " + note.tone : "");
+      if (note.text && note.detail) shell.listNote.setAttribute("title", note.detail);
+      else shell.listNote.removeAttribute("title");
     }
 
     // ── 5. 그룹 구역 + 카드 ──
@@ -2304,7 +2835,155 @@
       return el("div", { className: "mi-rank-state", text: text });
     }
 
+    // 카드마다 같은 값을 다시 계산하지 않게 renderList 한 번에 한 번 센다(지금 확인 상태·같은 키워드 수·오늘·자동 수집).
+    var cardContext = null;
+
+    function keywordKeyOf(tracker) {
+      return String(tracker && (tracker.keywordKey || tracker.keyword) || "").trim().toLowerCase();
+    }
+
+    function makeCardContext() {
+      var counts = {};
+      trackers().forEach(function (tracker) {
+        if (tracker.status !== "active") return;
+        var key = keywordKeyOf(tracker);
+        if (key) counts[key] = (counts[key] || 0) + 1;
+      });
+      var showManual = manualVisible();
+      return {
+        manual: showManual,
+        view: showManual ? currentManualView() : null,
+        keywordCounts: counts,
+        todayKst: todayKstValue(),
+        auto: autoActive() || readonlyView()
+      };
+    }
+
+    // 목록은 다시 그릴 때 통째로 새로 만든다. 그리기 전에 키보드 포커스 자리를 기억해 같은 버튼(없거나 꺼졌으면 그 카드)으로 되돌린다.
+    // 꺼진 버튼 대신 카드에 맡겨 둔 자리(pendingFocus)는 버튼이 다시 켜져 그려질 때 원래 버튼으로 돌아간다.
     function renderList() {
+      var focus = captureListFocus();
+      drawList();
+      restoreListFocus(focus);
+      syncDayFades();
+    }
+
+    var FOCUS_ALIAS = { pause: "resume", resume: "pause", "group-save": "group-edit", "group-cancel": "group-edit" };
+
+    function findByAttr(root, attr, value, test) {
+      var nodes = root.querySelectorAll("[" + attr + "]");
+      for (var index = 0; index < nodes.length; index += 1) {
+        if (value !== null && nodes[index].getAttribute(attr) !== value) continue;
+        if (test && !test(nodes[index])) continue;
+        return nodes[index];
+      }
+      return null;
+    }
+
+    function cardNode(id) {
+      if (!shell || !id) return null;
+      return findByAttr(shell.list, "data-coupang-rank-card", null, function (node) { return node.getAttribute("data-coupang-rank-id") === id; });
+    }
+
+    function focusKey(node) {
+      var card = node.closest ? node.closest("[data-coupang-rank-card]") : null;
+      var cardId = card ? String(card.getAttribute("data-coupang-rank-id") || "") : "";
+      if (node === card) return { kind: "card", id: cardId };
+      if (node.hasAttribute("data-coupang-rank-select")) return { kind: "select", value: node.getAttribute("data-coupang-rank-select") };
+      if (node.hasAttribute("data-coupang-rank-group-select")) return { kind: "group-select", value: node.getAttribute("data-coupang-rank-group-select") };
+      var action = node.getAttribute("data-coupang-rank-action");
+      if (action) {
+        return { kind: "action", action: action, id: String(node.getAttribute("data-coupang-rank-id") || cardId), day: String(node.getAttribute("data-coupang-rank-day") || ""),
+          group: node.getAttribute("data-coupang-rank-group-name") };
+      }
+      if (node.classList && node.classList.contains("mi-rank-keyword-name")) return { kind: "link", cls: "mi-rank-keyword-name", id: cardId };
+      if (node.classList && node.classList.contains("mi-rank-product-title")) return { kind: "link", cls: "mi-rank-product-title", id: cardId };
+      return cardId ? { kind: "card", id: cardId } : null;
+    }
+
+    function captureListFocus() {
+      var active = typeof document !== "undefined" && document ? document.activeElement : null;
+      if (!shell || !active || active === shell.list || typeof active.getAttribute !== "function" || !shell.list.contains(active)) return null;
+      var key = focusKey(active);
+      if (key && key.kind === "card" && state.pendingFocus && state.pendingFocus.id === key.id) return state.pendingFocus;
+      return key;
+    }
+
+    function findFocusTarget(key) {
+      if (key.kind === "select") return findByAttr(shell.list, "data-coupang-rank-select", key.value);
+      if (key.kind === "group-select") return findByAttr(shell.list, "data-coupang-rank-group-select", key.value);
+      var card = cardNode(key.id);
+      if (key.kind === "card") return card;
+      if (key.kind === "link") return card ? card.querySelector("." + key.cls) || card : null;
+      if (key.kind !== "action") return null;
+      var root = card || shell.list;
+      var match = function (action) {
+        return findByAttr(root, "data-coupang-rank-action", action, function (node) {
+          var id = node.getAttribute("data-coupang-rank-id");
+          if (key.id && id !== null && id !== key.id) return false;
+          if (key.group !== null && key.group !== undefined && node.getAttribute("data-coupang-rank-group-name") !== key.group) return false;
+          if (key.day && node.getAttribute("data-coupang-rank-day") !== key.day) return false;
+          return true;
+        });
+      };
+      var found = match(key.action) || (FOCUS_ALIAS[key.action] ? match(FOCUS_ALIAS[key.action]) : null);
+      // 그 날짜 칸이 없어졌으면 그 줄의 탭 정지 칸으로
+      if (!found && key.action === "day-detail" && card) found = findByAttr(card, "data-coupang-rank-day", null, function (node) { return node.getAttribute("tabindex") === "0"; });
+      return found || card;
+    }
+
+    function focusNode(node) {
+      if (!node || typeof node.focus !== "function") return;
+      try {
+        node.focus({ preventScroll: true });
+      } catch (error) {
+        try { node.focus(); } catch (ignored) {}
+      }
+    }
+
+    // 누른 버튼이 잠시 꺼지면(확인 중·처리 중) 포커스를 그 카드에 맡긴다(몸통으로 사라지지 않게).
+    function parkFocusOnCard(card, key) {
+      if (!card) return;
+      card.setAttribute("tabindex", "-1");
+      state.pendingFocus = key || null;
+      focusNode(card);
+    }
+
+    function restoreListFocus(key) {
+      if (!key || !shell) return;
+      var target = findFocusTarget(key);
+      if (!target) {
+        state.pendingFocus = null;
+        return;
+      }
+      var card = target.closest ? target.closest("[data-coupang-rank-card]") : null;
+      if (target.disabled === true || (target === card && key.kind !== "card")) {
+        parkFocusOnCard(card, key);
+        return;
+      }
+      if (target === card) card.setAttribute("tabindex", "-1");
+      state.pendingFocus = null;
+      focusNode(target);
+    }
+
+    // 날짜 줄 오른쪽 끝 흐림은 옆으로 더 있을 때만(넘침이 있고 끝까지 밀지 않았을 때). 읽기를 먼저 모두 하고 쓴다.
+    function dayFadeWanted(wrap) {
+      var grid = wrap.querySelector(".mi-rank-day-grid");
+      if (!grid) return false;
+      var width = Number(grid.scrollWidth) || 0;
+      var client = Number(grid.clientWidth) || 0;
+      var left = Math.abs(Number(grid.scrollLeft) || 0);
+      return client > 0 && width - client > 1 && left + client < width - 1;
+    }
+
+    function syncDayFades() {
+      if (!shell) return;
+      var wraps = shell.list.querySelectorAll(".mi-coupang-rank-days-scroll");
+      var wanted = Array.prototype.map.call(wraps, dayFadeWanted);
+      Array.prototype.forEach.call(wraps, function (wrap, index) { wrap.classList.toggle("has-more", wanted[index]); });
+    }
+
+    function drawList() {
       shell.list.replaceChildren();
       var scope = currentScope();
       if (!scope) {
@@ -2321,7 +3000,9 @@
       }
       var all = trackers();
       if (!all.length) {
-        shell.list.appendChild(stateBox("추적 등록 후 상품별 일별 순위판이 생성됩니다."));
+        shell.list.appendChild(stateBox(canWrite()
+          ? "아직 등록한 상품이 없습니다. 위에 키워드와 쿠팡 상품 주소를 넣고 '순위 추적'을 누르세요."
+          : "추적 등록 후 상품별 일별 순위판이 생성됩니다."));
         return;
       }
       var visible = visibleTrackers();
@@ -2339,10 +3020,15 @@
         }
         byName[name].push(tracker);
       });
+      cardContext = makeCardContext();
       var groupList = el("div", { className: "mi-rank-group-list" });
-      groups.forEach(function (name) {
-        groupList.appendChild(renderGroup(name, byName[name]));
-      });
+      try {
+        groups.forEach(function (name) {
+          groupList.appendChild(renderGroup(name, byName[name]));
+        });
+      } finally {
+        cardContext = null;
+      }
       shell.list.appendChild(groupList);
     }
 
@@ -2351,7 +3037,7 @@
       return picked && picked < items.length ? "전체 선택 (" + picked + "/" + items.length + ")" : "전체 선택";
     }
 
-    // 그룹 머리: N30 renderRankHistory 와 같은 글('전체 선택 (n/m)' · '미분류' · 'N개 추적 · 현재 최고 N위').
+    // 그룹 머리: N30 renderRankHistory 와 같은 틀('전체 선택 (n/m)' · '미분류' · 'N개 추적 · 지금 최고 N위').
     // 서버 값과 data 속성은 '기본 그룹' 그대로 두고 보이는 이름만 '미분류'로 쓴다.
     function renderGroup(name, items) {
       var collapsed = state.collapsed.has(name);
@@ -2376,7 +3062,7 @@
           el("span", {}, [
             el("span", { className: "mi-rank-group-title" }, [
               shown,
-              el("span", { className: "mi-rank-group-meta", text: items.length + "개 추적" + (best ? " · 현재 최고 " + best + "위" : "") })
+              el("span", { className: "mi-rank-group-meta", text: items.length + "개 추적" + (best ? " · 지금 최고 " + best + "위" : "") })
             ])
           ]),
           el("span", { className: "mi-rank-group-toggle", text: collapsed ? "펼치기" : "접기" })
@@ -2410,6 +3096,7 @@
       });
     }
 
+    // 키워드는 쿠팡 검색으로 열리는 링크다(링크임이 보이게 '↗'를 붙인다).
     function keywordNode(tracker) {
       var label = String(tracker.keyword || "").trim() || "-";
       var url = keywordSearchUrl(tracker.keyword);
@@ -2419,16 +3106,17 @@
         href: url,
         target: "_blank",
         rel: "noopener noreferrer",
-        title: label + " 쿠팡 검색으로 열기(로그인 상태면 순서가 다를 수 있음)",
-        text: label
-      });
+        title: label + " 쿠팡 검색으로 열기(로그인 상태면 순서가 다를 수 있음)"
+      }, [label, el("span", { className: "mi-coupang-rank-ext-mark", "aria-hidden": "true", text: "↗" })]);
     }
 
-    // 카드: N30 renderRankTrackerCard 와 같은 뼈대·클래스(admin.html 인라인 CSS 가 그대로 적용된다).
-    // 1행 [선택][키워드][상품정보 · 번호][상품명] | [현재][최고][일시중지/다시 시작][삭제]
-    // 2행 운영줄 알약: 상태 · 판정 · (다른 옵션) · 전회 대비 · 7일 평균 · 광고 · 그룹 · [그룹 변경] · [측정 기록] · 최근 · 다음
-    // 3행 날짜 줄(N30 하루 칸). 끌기 손잡이·검색량·갱신 버튼은 없다(쿠팡은 정해진 간격으로만 잰다).
+    // 카드: N30 renderRankTrackerCard 와 같은 3행 뼈대·클래스(admin.html 인라인 CSS 가 그대로 적용된다). C30 만 다른 점(대표 결정 2026-10-23):
+    // 1행 [선택(체크칸)][키워드↗][상품번호 …][상품명] | [현재][30일 최고][지금 확인(주 버튼)] · [일시중지/다시 시작][삭제]
+    // 2행 운영줄: (방금 결과) · (일시중지 · MM-DD부터) · 판정 · (다른 옵션) · 전회 대비(이탈 판정이 있으면 생략) · 7일 평균 · (광고 N번째) ·
+    //     오늘 표시 · (자동 수집이 돌 때만 '다음') · [그룹 변경][측정 기록]
+    // 3행 날짜 줄(칸을 누르면 그날 기록 한 줄). 늘 같은 '상태 운영중'·'그룹 X'·'광고 -'는 두지 않는다(그룹은 그룹 머리에 있다).
     function renderCard(tracker) {
+      var context = cardContext || makeCardContext();
       var summary = tracker.summary || {};
       var current = tracker.current || null;
       var paused = tracker.status === "paused";
@@ -2439,29 +3127,36 @@
       check.checked = state.selected.has(tracker.id);
 
       var actions = [
-        pill("현재 " + currentText(tracker), "mi-rank-pill"),
-        pill("최고 " + (isNum(summary.best30) ? summary.best30 + "위" : "-"), "mi-rank-pill", { title: "최근 30일 하루 칸 가운데 가장 높은 순위" })
+        el("span", { className: "mi-rank-pill mi-coupang-rank-current" + (outOfTop(tracker) ? " is-out" : "") }, ["현재 ", el("b", { text: currentText(tracker) })]),
+        el("span", { className: "mi-rank-pill mi-coupang-rank-best", title: "최근 30일 하루 칸 가운데 가장 높은 순위" }, ["30일 최고 ", el("b", { text: isNum(summary.best30) ? summary.best30 + "위" : "-" })])
       ];
       if (writable) {
-        // 정리용 화면에서는 다시 시작을 그리지 않는다(일시중지·삭제만). N30 '갱신' 자리에 일시중지를 둔다.
+        var tools = [];
+        // 정리용 화면에서는 다시 시작을 그리지 않는다(일시중지·삭제만).
         if (paused) {
-          if (!cleanup) actions.push(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+          if (!cleanup) tools.push(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         } else {
-          // ① 지금 확인: N30 '갱신' 자리(일시중지 앞). 총관리자·지금 확인 켜짐·활성 추적·정리용 아님일 때만.
-          if (!cleanup && manualVisible()) actions.push(manualCardButton(tracker, currentManualView()));
-          actions.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+          // ① 지금 확인: 총관리자·지금 확인 켜짐·활성 추적·정리용 아님일 때만. 같은 키워드 카드는 한 번에 함께 기록된다.
+          if (!cleanup && context.manual) {
+            actions.push(manualCardButton(tracker, context.view, context.todayKst));
+            var same = context.keywordCounts[keywordKeyOf(tracker)] || 0;
+            if (same > 1) actions.push(el("small", { className: "mi-coupang-rank-same-kw", title: "같은 키워드 카드는 한 번 누르면 모두 기록됩니다(하루 횟수도 1번만 씁니다)", text: "같은 키워드 " + same + "개 함께 기록" }));
+          }
+          tools.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         }
-        actions.push(button("삭제", "delete", { className: "mi-link-button is-danger", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        tools.push(button("삭제", "delete", { className: "mi-link-button is-danger", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+        actions.push(el("div", { className: "mi-coupang-rank-card-tools" }, tools));
       }
 
       var head = el("div", { className: "mi-rank-track-row-head" }, [
         el("div", { className: "mi-rank-track-main" }, [
           el("div", { className: "mi-rank-track-primary" }, [
             el("div", { className: "mi-rank-track-controls" }, [
-              el("label", { className: "mi-rank-select" }, [check, el("span", { text: "선택" })])
+              // 글자는 시각적으로만 숨기고 label 은 그대로 둔다(누르는 자리를 줄이지 않는다).
+              el("label", { className: "mi-rank-select" }, [check, el("span", { className: "mi-coupang-rank-sr", text: "선택" })])
             ]),
             keywordNode(tracker),
-            el("span", { className: "mi-rank-product-info", text: "상품정보 · " + (tracker.productId || "-") }),
+            el("span", { className: "mi-rank-product-info", title: "상품번호 " + (tracker.productId || "-"), text: "상품번호 " + (tracker.productId || "-") }),
             productTitleNode(tracker)
           ])
         ]),
@@ -2469,55 +3164,146 @@
       ]);
 
       var days30 = state.payload && state.payload.days30;
-      var nextText = nextCheckText(tracker, collectorState, Date.now(), readonlyView() ? "readonly" : "admin");
-      var statusText = paused
-        ? "상태 중지" + (tracker.pausedDay ? " · " + String(tracker.pausedDay).slice(5) + "부터" : "")
-        : "상태 운영중";
-      // N30 rankTrackerStatusClass 처럼 '다음'이 '대기'일 때만 파란 대기색(수집기가 멈췄거나 응답이 없으면 '대기'가 아니다).
-      var ops = [pill(statusText, nextText === "대기" ? "is-wait" : null, { "data-coupang-rank-state-pill": true })];
+      var ops = [];
+      var note = state.cardNote && state.cardNote.trackerId === tracker.id ? state.cardNote : null;
+      if (note) ops.push(pill(note.text, "mi-coupang-rank-card-note" + (note.tone ? " " + note.tone : ""), { "data-coupang-rank-card-note": true }));
+      if (paused) ops.push(pill("일시중지" + (tracker.pausedDay ? " · " + String(tracker.pausedDay).slice(5) + "부터" : ""), "mi-coupang-rank-paused-pill", { "data-coupang-rank-state-pill": true }));
       verdictPills(tracker, days30).forEach(function (verdict) {
         ops.push(pill(verdict.text, "mi-rank-insight-pill " + verdict.tone));
       });
       if (current && current.sameOption === false) ops.push(pill("다른 옵션으로 노출", "mi-rank-insight-pill is-warn", { title: "같은 상품의 다른 옵션이 검색 결과에 나왔습니다(순위는 인정)" }));
-      ops.push(pill(changeText(summary), null, { title: "같은 시간대 회차끼리 비교" }));
+      // 이탈은 한 번만: 판정 알약이 이미 '50위 밖으로 이탈'이면 같은 뜻의 '전회 대비 50위 밖 이탈'은 두지 않는다.
+      var reasons = Array.isArray(summary.attentionReasons) ? summary.attentionReasons : [];
+      if (!(summary.trend === "exit" && reasons.indexOf("exit") >= 0)) ops.push(pill(changeText(summary), null, { title: "같은 시간대 회차끼리 비교" }));
       ops.push(pill(avg7Text(summary), null, { title: "최근 7일 가운데 50위 안에 든 날만 평균" }));
-      ops.push(pill("광고 " + (current && isNum(current.adOrder) ? current.adOrder + "번째" : "-"), null, { title: "광고 순번은 참고용입니다(순위는 광고를 뺀 일반 상품 순서)" }));
-      ops.push(pill("그룹 " + groupDisplayName(tracker.groupName)));
-      if (writable && !cleanup) ops.push(button("그룹 변경", "group-edit", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+      if (current && isNum(current.adOrder)) ops.push(pill("광고 " + current.adOrder + "번째", null, { title: "광고 순번은 참고용입니다(순위는 광고를 뺀 일반 상품 순서)" }));
+      var today = todayPill(tracker, context.todayKst);
+      if (today) ops.push(pill(today.text, "mi-coupang-rank-today" + (today.tone ? " " + today.tone : ""), { "data-coupang-rank-today": true }));
+      else ops.push(pill("최근 " + (current && current.checkedAt ? shortAt(current.checkedAt) : "-")));
+      // '다음'은 자동 수집이 돌 때만(읽기 전용은 예전처럼 늘). 지금 확인만 쓸 때는 늘 '정지'라 소음이다.
+      if (context.auto) {
+        var nextText = nextCheckText(tracker, collectorState, Date.now(), readonlyView() ? "readonly" : "admin");
+        ops.push(pill("다음 " + nextText, nextText === "대기" ? "is-wait" : null, { "data-coupang-rank-next": true }));
+      }
       var runs = state.runs[tracker.id];
-      ops.push(button(runs && runs.open ? "측정 기록 닫기" : "측정 기록", "runs", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, "aria-expanded": runs && runs.open ? "true" : "false" }));
-      ops.push(pill("최근 " + (current && current.checkedAt ? shortAt(current.checkedAt) : "-")));
-      ops.push(pill("다음 " + nextText, null, { "data-coupang-rank-next": true }));
+      var opsButtons = [];
+      if (writable && !cleanup) opsButtons.push(button("그룹 변경", "group-edit", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
+      opsButtons.push(button(runs && runs.open ? "측정 기록 닫기" : "측정 기록", "runs", { className: "mi-rank-group-edit", "data-coupang-rank-id": tracker.id, "aria-expanded": runs && runs.open ? "true" : "false" }));
+      ops.push(el("div", { className: "mi-coupang-rank-ops-buttons" }, opsButtons));
 
       var card = el("section", { className: "mi-rank-tracker-card mi-coupang-rank-card" + (paused ? " is-paused" : ""), "data-coupang-rank-card": true, "data-coupang-rank-id": tracker.id });
       card.appendChild(head);
       card.appendChild(el("div", { className: "mi-rank-ops-row" }, ops));
-      card.appendChild(renderDays(tracker, days30));
+      card.appendChild(renderDays(tracker, days30, context.todayKst));
       if (state.editingGroupId === tracker.id) card.appendChild(renderGroupEditor(tracker));
       if (runs && runs.open) card.appendChild(renderRuns(tracker));
       return card;
     }
 
-    // 날짜 줄: N30 renderTrackerDailyBoard 와 같은 칸(MM-DD(요) + 작은 글 '순위' + 굵은 값). 등록한 날부터 오늘까지
-    // 이어서 보여 준다(서버 days30 덕분에 '측정 없음(-)'과 '50위 밖'을 나눠 쓸 수 있다). 기록이 하나도 없으면 N30 과 같은 안내 상자.
-    function renderDays(tracker, days30) {
+    // 첫 기록 전 안내(화면 카드). 무엇을 누르면 기록되는지 지금 방식대로 쓴다. 공유 이미지·읽기 전용은 FIRST_BOARD_TEXT 그대로.
+    function firstBoardHint() {
+      if (readonlyView()) return FIRST_BOARD_TEXT;
+      if (manualVisible()) return "아직 순위 기록이 없습니다. 이 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다(검색 1번).";
+      var mode = autoMode();
+      if (mode === "recording") return "아직 순위 기록이 없습니다. 다음 자동 수집 때 첫 순위가 기록됩니다.";
+      if (mode) return "아직 순위 기록이 없습니다. 자동 수집이 멈췄거나 확인이 필요한 상태라 언제 기록될지 알 수 없습니다(위 자동추적 칸 참고).";
+      if (manualBoardVisible()) return "아직 순위 기록이 없습니다. 위 상태판에서 '지금 확인'을 켜면 이 카드에서 첫 순위를 기록할 수 있습니다.";
+      return FIRST_BOARD_TEXT;
+    }
+
+    // 날짜 줄: 오늘부터 왼쪽, 등록한 날까지. 칸마다 날짜와 값만(작은 글 없음). 안 잰 날은 회색 칸 '-', 잰 결과(50위 밖·없음·결과 없음)는
+    // 흰 칸 진한 글, 실패·이동은 주황, 오늘 칸은 위쪽 남색 줄. 칸은 버튼이고 누르면(마우스·터치·Enter) 카드 아래 한 줄에 그날 기록이 나온다.
+    // 키보드는 줄마다 탭 정지 하나(roving tabindex) + 화살표·Home·End 로 옮긴다. 펼친 날은 state.dayDetails 에 남아 다시 그려도 유지된다.
+    function renderDays(tracker, days30, todayKst) {
       var empty = emptyBoardText(tracker, days30);
-      if (empty) return el("div", { className: "mi-rank-state mi-coupang-rank-board-empty", text: empty });
+      if (empty) return el("div", { className: "mi-rank-state mi-coupang-rank-board-empty", text: empty === FIRST_BOARD_TEXT ? firstBoardHint() : empty });
       var range = boardDays(tracker, days30);
-      var grid = el("div", { className: "mi-rank-day-grid", role: "list", "aria-label": "일별 순위" });
+      var selected = String(state.dayDetails[tracker.id] || "");
+      if (selected && range.dates.indexOf(selected) < 0) selected = "";
+      // 탭 정지: 화살표로 옮겨 둔 칸 → 펼친 날 → 오늘(맨 왼쪽) 순서(다시 그려도 키보드 위치를 잃지 않는다).
+      var remembered = String(state.dayFocus[tracker.id] || "");
+      if (remembered && range.dates.indexOf(remembered) < 0) remembered = "";
+      var focusDay = remembered || selected || range.dates[0] || "";
+      var grid = el("div", { className: "mi-rank-day-grid", role: "list", "aria-label": "일별 순위(칸을 누르면 그날 기록, 화살표로 옮김)" });
       range.dates.forEach(function (d) {
         var cell = range.byDay[d] || null;
         var weekend = dayClass(d);
-        var warn = cell && (cell.s === "failed" || cell.s === "unsupported");
-        var slotClass = cellIsEmpty(cell) ? "is-empty" : (warn ? "mi-coupang-rank-slot-warn" : null);
-        grid.appendChild(el("div", { className: "mi-rank-day-card" + (weekend ? " " + weekend : ""), role: "listitem", title: cellTooltip(cell, d, tracker.createdDay) || null }, [
-          el("strong", { text: dayLabel(d) }),
-          el("div", { className: "mi-rank-day-slots" }, [
-            el("span", { className: slotClass }, [el("small", { text: cellLabel(cell) }), el("b", { text: cellText(cell, d, tracker.createdDay) })])
+        var isToday = Boolean(todayKst) && d === todayKst;
+        var classes = ["mi-rank-day-card", "mi-coupang-rank-day", dayKind(cell)];
+        if (weekend) classes.push(weekend);
+        if (isToday) classes.push("is-today");
+        if (d === selected) classes.push("is-selected");
+        var value = cellText(cell, d, tracker.createdDay) || "-";
+        grid.appendChild(el("div", { className: classes.join(" "), role: "listitem", title: cellTooltip(cell, d, tracker.createdDay) || null }, [
+          el("button", {
+            type: "button",
+            className: "mi-coupang-rank-day-button",
+            "data-coupang-rank-action": "day-detail",
+            "data-coupang-rank-id": tracker.id,
+            "data-coupang-rank-day": d,
+            tabindex: d === focusDay ? "0" : "-1",
+            "aria-pressed": d === selected ? "true" : "false",
+            "aria-label": dayLabel(d) + (isToday ? "(오늘)" : "") + " " + value
+          }, [
+            el("strong", { text: isToday ? "오늘 " + String(d).slice(5) : dayLabel(d) }),
+            el("b", { text: value })
           ])
         ]));
       });
-      return grid;
+      var detail = el("p", {
+        className: "mi-coupang-rank-day-detail",
+        "data-coupang-rank-day-detail": tracker.id,
+        "aria-live": "polite",
+        hidden: !selected,
+        text: selected ? dayDetailText(range.byDay[selected] || null, selected, tracker) : ""
+      });
+      return el("div", { className: "mi-coupang-rank-days" }, [el("div", { className: "mi-coupang-rank-days-scroll" }, [grid]), detail]);
+    }
+
+    // 날짜 칸 누름: 목록을 다시 그리지 않고 그 카드만 바꾼다(키보드 위치를 잃지 않게).
+    function toggleDayDetail(node) {
+      var id = node.getAttribute("data-coupang-rank-id") || "";
+      var d = node.getAttribute("data-coupang-rank-day") || "";
+      var tracker = findTracker(id);
+      if (!tracker || !d) return;
+      var closing = state.dayDetails[id] === d;
+      if (closing) delete state.dayDetails[id];
+      else state.dayDetails[id] = d;
+      state.dayFocus[id] = d;
+      var card = node.closest ? node.closest("[data-coupang-rank-card]") : null;
+      if (!card) return;
+      Array.prototype.forEach.call(card.querySelectorAll("[data-coupang-rank-day]"), function (dayButton) {
+        var on = !closing && dayButton.getAttribute("data-coupang-rank-day") === d;
+        dayButton.setAttribute("aria-pressed", on ? "true" : "false");
+        dayButton.setAttribute("tabindex", dayButton === node ? "0" : "-1");
+        if (dayButton.parentNode && dayButton.parentNode.classList) dayButton.parentNode.classList.toggle("is-selected", on);
+      });
+      var detail = card.querySelector("[data-coupang-rank-day-detail]");
+      if (!detail) return;
+      var range = boardDays(tracker, state.payload && state.payload.days30);
+      detail.textContent = closing ? "" : dayDetailText(range.byDay[d] || null, d, tracker);
+      detail.hidden = closing;
+    }
+
+    function moveDayFocus(target, key) {
+      var grid = target.closest ? target.closest(".mi-rank-day-grid") : null;
+      if (!grid) return false;
+      var buttons = grid.querySelectorAll("[data-coupang-rank-day]");
+      var index = Array.prototype.indexOf.call(buttons, target);
+      if (index < 0) return false;
+      var next = key === "Home" ? 0 : (key === "End" ? buttons.length - 1 : index + (key === "ArrowRight" ? 1 : -1));
+      if (next < 0 || next >= buttons.length || next === index) return false;
+      Array.prototype.forEach.call(buttons, function (dayButton, position) { dayButton.setAttribute("tabindex", position === next ? "0" : "-1"); });
+      var nextButton = buttons[next];
+      var trackerId = nextButton.getAttribute("data-coupang-rank-id") || "";
+      if (trackerId) state.dayFocus[trackerId] = nextButton.getAttribute("data-coupang-rank-day") || "";
+      if (typeof nextButton.focus === "function") nextButton.focus();
+      // 칸 전체가 줄 안(오른쪽 흐림 밖)에 오게 옮긴다(CSS scroll-padding 이 흐림 폭만큼 비워 둔다).
+      var cell = nextButton.parentNode;
+      if (cell && typeof cell.scrollIntoView === "function") {
+        try { cell.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch (error) {}
+      }
+      return true;
     }
 
     function renderGroupEditor(tracker) {
@@ -2529,6 +3315,15 @@
         button("저장", "group-save", { className: "mi-button", "data-coupang-rank-id": tracker.id, disabled: state.busy }),
         button("취소", "group-cancel", { "data-coupang-rank-id": tracker.id })
       ]);
+    }
+
+    // 측정 기록의 실패 사유: 아는 코드는 쉬운 말로, 원래 코드는 뒤에 작게(문의할 때 필요). 모르는 코드는 '기타 오류(코드 …)'.
+    function failureReasonText(code) {
+      var raw = String(code == null ? "" : code).slice(0, 60);
+      if (!raw) return "";
+      var safe = manualSafeCode(raw);
+      if (safe && MANUAL_CODE_TEXT[safe]) return MANUAL_CODE_TEXT[safe] + " (코드 " + safe + ")";
+      return "기타 오류(코드 " + raw + ")";
     }
 
     function renderRuns(tracker) {
@@ -2546,8 +3341,8 @@
       var data = entry.data || {};
       var snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
       var failures = Array.isArray(data.failures) ? data.failures : [];
-      box.appendChild(el("h4", { text: "최근 30일 측정 " + snapshots.length + "건" }));
-      if (!snapshots.length) box.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "아직 측정이 없습니다." }));
+      box.appendChild(el("h4", { text: "최근 30일 기록 " + snapshots.length + "건" }));
+      if (!snapshots.length) box.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "아직 기록이 없습니다." }));
       else {
         var list = el("ul", { className: "mi-coupang-rank-run-list" });
         snapshots.forEach(function (snapshot) {
@@ -2566,7 +3361,7 @@
         var failList = el("ul", { className: "mi-coupang-rank-run-list" });
         failures.forEach(function (failure) {
           var parts = [kstStamp(failure.claimedAt, todayKst), RUN_STATUS_TEXT[failure.status] || String(failure.status || "")];
-          if (failure.errorCode) parts.push(String(failure.errorCode));
+          if (failure.errorCode) parts.push(failureReasonText(failure.errorCode));
           if (isNum(failure.slot)) parts.push("칸 " + (failure.slot + 1));
           failList.appendChild(el("li", { text: parts.join(" · ") }));
         });
@@ -2588,7 +3383,7 @@
         try {
           payload = await getView("view=runs&trackerId=" + encodeURIComponent(id), scope);
         } catch (error) {
-          payload = { ok: false, message: "측정 기록을 받지 못했습니다(" + (error && error.message || "연결 실패") + ")." };
+          payload = { ok: false, message: "서버에 연결하지 못해 측정 기록을 받지 못했습니다(인터넷 연결 확인)." };
         }
         if (state.destroyed || !sameScope(scope) || state.runs[id] !== entry) return;
         entry.loading = false;
@@ -2611,11 +3406,30 @@
     }
 
     // options.okText(total): 성공 문구(없으면 동작별 기본 문구). options.after(total): 모두 성공했을 때 목록을 다시 받기 전에 부른다.
+    // options.origin: "bulk"(선택 항목 정리 막대) · "card"(카드 한 장의 버튼, options.cardId). 결과는 누른 자리에 보인다 —
+    // 막대 안 한 줄(막대가 한 줄로 접혀도 보임) 또는 그 카드 운영줄 첫 칸. 카드에서 지운 결과(카드가 사라짐)와 모든 실패(한도·오류)는
+    // 화면 위 상태줄에도 남긴다.
     async function runBulk(action, ids, extra, options) {
       var opts = options || {};
+      var origin = opts.origin === "card" ? "card" : "bulk";
+      var report = function (text, tone) {
+        var toStatus = tone === "is-warn" || (origin === "card" && action === "delete");
+        if (origin === "card" && opts.cardId && action !== "delete") {
+          setCardNote(opts.cardId, text, tone);
+          // 카드 알약은 다시 그릴 때 새로 생겨 읽히지 않으므로 화면 읽기 자리에도 쓴다(상태줄에 쓰는 실패는 그쪽이 읽는다).
+          if (!toStatus) announce(text);
+        }
+        if (origin === "bulk") setBulkNote(text, tone);
+        if (toStatus) setStatus(text, tone);
+      };
       if (!canWrite() || state.busy || !ids.length) return;
+      // 앞선 동작이 남긴 결과(맨 위 상태줄의 등록 결과 · 막대 안 결과 줄)는 다음 동작을 시작할 때 지운다.
+      if (state.status.text) setStatus("", "");
+      if (state.bulkNote.text) setBulkNote("", "");
       if (cleanupMode() && !cleanupAllows(action)) {
-        setStatus("추적이 " + LIST_LIMIT + "개를 넘어 정리하는 동안에는 일시중지·삭제만 할 수 있습니다.", "is-warn");
+        report("추적이 " + LIST_LIMIT + "개를 넘어 정리하는 동안에는 일시중지·삭제만 할 수 있습니다.", "is-warn");
+        // 카드 결과는 그 카드에 보이도록 다시 그린다(막대 결과는 setBulkNote 가 바로 그린다).
+        if (origin === "card") renderList();
         return;
       }
       state.busy = true;
@@ -2646,16 +3460,20 @@
       if (action === "delete") ids.forEach(function (id) { state.selected.delete(id); });
       var labels = { pause: "일시중지했습니다", resume: "다시 시작했습니다", delete: "삭제했습니다", group: "그룹을 옮겼습니다" };
       if (failure) {
-        setStatus((total ? total + "개는 처리했지만 " : "") + errorText(failure), "is-warn");
+        report((total ? total + "개는 처리했지만 " : "") + errorText(failure), "is-warn");
       } else if (stopped) {
         var name = (findTracker(stopped.id) || {}).keyword || "한 항목";
         var stopText = stopped.code ? errorText({ code: stopped.code, limit: stopped.limit, count: stopped.count }) : "한도에 걸렸습니다.";
-        setStatus(total + "개를 다시 시작했고, '" + name + "'에서 멈췄습니다. " + stopText, "is-warn");
+        report(total + "개를 다시 시작했고, '" + name + "'에서 멈췄습니다. " + stopText, "is-warn");
       } else {
         if (typeof opts.after === "function") opts.after(total);
-        setStatus(typeof opts.okText === "function" ? opts.okText(total) : total + "개 " + labels[action] + ".", total ? "is-ok" : "is-warn");
+        report(typeof opts.okText === "function" ? opts.okText(total) : total + "개 " + labels[action] + ".", total ? "is-ok" : "is-warn");
       }
       await loadList({ afterWrite: true });
+      // 모두 지워 목록이 비면 선택 항목 정리 막대(결과 줄 포함)가 숨는다 → 결과를 맨 위 상태줄로 옮겨 쓴다.
+      if (!state.destroyed && origin === "bulk" && state.bulkNote.text && state.payload && !state.setupRequired && !trackers().length && state.status.text !== state.bulkNote.text) {
+        setStatus(state.bulkNote.text, state.bulkNote.tone);
+      }
     }
 
     function startGroupEdit(id) {
@@ -2676,6 +3494,8 @@
       }
       state.editingGroupId = "";
       runBulk("group", [id], { groupName: name }, {
+        origin: "card",
+        cardId: id,
         okText: function (total) {
           if (!total) return "그룹을 바꾸지 못했습니다. 목록을 다시 받아 확인해주세요.";
           return name ? "그룹을 " + name + "(으)로 바꿨습니다." : "그룹을 해제했습니다(" + UNGROUPED_LABEL + ").";
@@ -2683,18 +3503,18 @@
       });
     }
 
-    // N30 '그룹 생성/적용'과 같은 흐름: 적용 뒤 선택·그룹 필터·입력을 비우고 전체 그룹으로 돌아온다.
+    // '그룹으로 옮기기'(N30 '그룹 생성/적용'과 같은 흐름): 적용 뒤 선택·그룹 필터·입력을 비우고 전체 그룹으로 돌아온다.
     function bulkGroup() {
       var raw = String(shell.bulkGroupInput.value || "").trim();
       var name = normalizeGroupInput(raw);
       var ids = selectedIdsInOrder();
       if (!raw) {
-        setStatus("만들거나 이동할 그룹명을 입력해주세요.", "is-warn");
+        setBulkNote("만들거나 이동할 그룹명을 입력해주세요.", "is-warn");
         shell.bulkGroupInput.focus();
         return;
       }
       if (!ids.length) {
-        setStatus("그룹에 넣을 추적 항목을 먼저 체크해주세요.", "is-warn");
+        setBulkNote("그룹에 넣을 추적 항목을 먼저 체크해주세요.", "is-warn");
         return;
       }
       if (!name) {
@@ -2703,7 +3523,7 @@
         return;
       }
       if (Array.from(name).length > GROUP_MAX) {
-        setStatus(ERROR_TEXT.COUPANG_GROUP_INVALID, "is-warn");
+        setBulkNote(ERROR_TEXT.COUPANG_GROUP_INVALID, "is-warn");
         return;
       }
       runBulk("group", ids, { groupName: name }, {
@@ -2716,7 +3536,7 @@
     function bulkUngroup() {
       var ids = selectedIdsInOrder();
       if (!ids.length) {
-        setStatus("그룹 해제할 추적 항목을 먼저 체크해주세요.", "is-warn");
+        setBulkNote("그룹 해제할 추적 항목을 먼저 체크해주세요.", "is-warn");
         return;
       }
       runBulk("group", ids, { groupName: "" }, {
@@ -2731,10 +3551,10 @@
       shell.bulkGroupInput.value = "";
     }
 
-    function deleteIds(ids) {
+    function deleteIds(ids, options) {
       if (!ids.length) return;
       if (!confirmAction(ids.length + "개와 30일 기록이 지워집니다. 삭제할까요?\n(멈추기만 하려면 '일시중지'를 쓰세요. 일시중지는 기록을 보존합니다.)")) return;
-      runBulk("delete", ids);
+      runBulk("delete", ids, null, options);
     }
 
     // ── 선택 이미지 저장(§8.5) ──
@@ -2742,7 +3562,8 @@
     // 광고주에게 보내는 이미지라 운영줄의 내부용 알약(상태·판정·광고·그룹·측정 기록·최근·다음)은 넣지 않는다
     // (대표 결정 2026-10-17, N30 이미지와 같은 항목). 남기는 것은 '현재'·'최고'·'전회 대비'·'7일 평균'과 날짜 줄이다.
     // 알약 순서는 C30 화면 카드 운영줄·N30 이미지와 같게 '전회 대비' 다음 '7일 평균'.
-    // 문구·날짜 범위는 화면 카드와 같다(등록한 날부터 오늘까지, 측정 없는 날은 '-', '오늘' 표시 없음).
+    // 날짜 범위는 화면 카드와 같다(등록한 날부터 오늘까지, 측정 없는 날은 '-'). 공유 이미지는 구성을 바꾸지 않는다(대표 결정 2026-10-23):
+    // 화면 카드의 '오늘' 표시·작은 글 뺀 칸·'30일 최고'·'상품번호' 글은 넣지 않고 예전 모양 그대로다.
 
     function inlineCell(cell, d, createdDay) {
       var tone = cellTone(cell, d, createdDay);
@@ -2814,7 +3635,7 @@
     async function exportSelected(selectedTrackers) {
       var tools = deps.exportTools;
       if (!tools || typeof tools.ensureStage !== "function" || typeof tools.serialize !== "function" || typeof tools.toBlob !== "function" || typeof tools.showReady !== "function") {
-        setStatus("이미지 저장 도구가 연결되지 않았습니다.", "is-warn");
+        setBulkNote("이미지 저장 도구가 연결되지 않았습니다.", "is-warn");
         return;
       }
       var rootId = (host.closest("#mi-admin, #mi-clean") || { id: "mi-admin" }).id;
@@ -2824,7 +3645,7 @@
       var height = Math.max(420, Math.ceil(rendered.sheet.scrollHeight || 420));
       if (height > EXPORT_MAX_HEIGHT) {
         rendered.stage.replaceChildren();
-        setStatus("선택 항목이 너무 많습니다. 20개 이하로 나눠 저장해주세요.", "is-warn");
+        setBulkNote("선택 항목이 너무 많습니다. 20개 이하로 나눠 저장해주세요.", "is-warn");
         return;
       }
       var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '"><foreignObject width="100%" height="100%">' +
@@ -2834,11 +3655,11 @@
         var link = tools.showReady(host, exported.blob, exportFileName(selectedTrackers, exported.ext), selectedTrackers.length);
         if (link) link.click();
         // N30 과 같은 안내 문구(admin.html 이미지 저장: 'N개 순위 항목의 공유 이미지(PNG)가 준비되었습니다.').
-        setStatus(selectedTrackers.length + "개 순위 항목의 공유 이미지(" + String(exported.ext).toUpperCase() + ")가 준비되었습니다.", "is-ok");
+        setBulkNote(selectedTrackers.length + "개 순위 항목의 공유 이미지(" + String(exported.ext).toUpperCase() + ")가 준비되었습니다.", "is-ok");
       } catch (error) {
         var fallback = tools.showReady(host, new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), exportFileName(selectedTrackers, "svg"), selectedTrackers.length);
         if (fallback) fallback.click();
-        setStatus("이미지 변환이 막혀 SVG 파일로 준비했습니다. 크롬 브라우저에서 다시 시도해주세요.", "is-warn");
+        setBulkNote("이미지 변환이 막혀 SVG 파일로 준비했습니다. 크롬 브라우저에서 다시 시도해주세요.", "is-warn");
       } finally {
         rendered.stage.replaceChildren();
       }
@@ -2847,15 +3668,18 @@
     function exportSelection() {
       var selectedTrackers = trackers().filter(function (tracker) { return state.selected.has(tracker.id); });
       if (!selectedTrackers.length) {
-        setStatus("이미지로 저장할 항목을 먼저 체크해주세요.", "is-warn");
+        setBulkNote("이미지로 저장할 항목을 먼저 체크해주세요.", "is-warn");
         return Promise.resolve();
       }
       return exportSelected(selectedTrackers).catch(function (error) {
-        setStatus("이미지를 만들지 못했습니다: " + (error && error.message || "알 수 없는 오류"), "is-warn");
+        var failed = "이미지를 만들지 못했습니다: " + (error && error.message || "알 수 없는 오류");
+        setBulkNote(failed, "is-warn");
+        setStatus(failed, "is-warn");
       });
     }
 
-    // ── 6. 사용 방법 ──
+    // ── 6. 사용 방법(보조 상자의 첫 줄, 접힘) ──
+    // 지금 방식(지금 확인)으로 쓰고, 숫자는 서버 manual 칸 값으로 채운다. 지금 확인 칸이 없는 화면(읽기 전용 등)은 자동 수집 설명을 쓴다.
 
     function renderGuide() {
       var scope = currentScope();
@@ -2864,69 +3688,82 @@
       var info = collectorInfo() || {};
       var n = checksPerDay();
       var hours = hoursText(info.activeFromHour, info.activeToHour) || "08~23시";
+      var server = state.manual.server;
+      var manualOn = Boolean(server) && server.state !== "setup_required" && deps.mode === "admin" && isOwnerSession();
       var wasOpen = shell.guide.open;
       shell.guide.replaceChildren();
-      shell.guide.appendChild(el("summary", {}, [el("strong", { text: "사용 방법" }), el("span", { text: "등록 · 읽는 법 · 멈추기 · 수집 시간" })]));
-      var items = [
-        "등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다.",
-        "첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다.",
-        "읽는 법: N위 = 일반 순위, 50위 밖 = 1쪽 일반 상품 1~50위 안에 없음(51위 이후 포함), 없음 = 일반 상품이 50개보다 적고 그 안에 없음, 결과 없음 = 검색 결과 없음, 실패 = 그날 측정이 모두 실패, 이동 = 쿠팡이 검색 결과가 아닌 쪽으로 보냄, - = 측정 없음. 하루 칸은 그날 마지막 회차의 성공값이고, 등록한 날부터 칸이 생깁니다.",
-        "멈추기·다시 시작은 기록을 보존하고, 삭제는 30일 기록도 함께 지웁니다.",
-        "수집 시간: 수집기 PC가 켜져 있을 때, 하루 " + (isNum(n) ? n : "n") + "회, " + hours + "에 잽니다.",
-        "즉시 갱신 버튼은 없습니다. 쿠팡 차단을 막으려고 정해진 간격으로만 잽니다.",
-        "광고 순번은 참고용입니다. 순위는 광고를 뺀 일반 상품 순서입니다.",
-        "상승·하락(전회 대비)은 같은 시간대 회차끼리 비교합니다(하루 횟수를 바꾼 날은 비교할 짝이 없어 '전회 데이터 대기'로 보일 수 있습니다)."
-      ];
+      shell.guide.appendChild(el("summary", {}, [
+        el("strong", { text: "사용 방법" }),
+        el("span", { className: "mi-coupang-rank-aux-sub", text: manualOn ? "지금 확인 · 칸 읽는 법 · 필터 · 멈추기와 삭제" : "등록 · 읽는 법 · 멈추기 · 수집 시간" })
+      ]));
+      var autoLine = "자동 수집: 수집기 PC가 켜져 있을 때, 하루 " + (isNum(n) ? n : "n") + "회, " + hours + "에 잽니다.";
+      var items = [];
+      if (manualOn) {
+        var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
+        var manualHoursText = manualHours(server);
+        items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(검색 사이 " + manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHoursText.text +
+          "). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHoursText.from) + "시부터 다시 됩니다.");
+        items.push("같은 키워드 카드는 한 번 누르면 함께 기록됩니다(하루 횟수도 1번만 씁니다). 그래서 같은 키워드 카드를 따로 누를 필요가 없습니다.");
+        items.push("등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다. 등록한 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다.");
+      } else {
+        items.push("등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다.");
+        items.push("첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다.");
+        items.push(autoLine);
+      }
+      items.push("칸 읽는 법: N위 = 일반 순위, 50위 밖 = 1쪽 일반 상품 1~50위 안에 없음(51위 이후 포함), 없음 = 일반 상품이 50개보다 적고 그 안에 없음, 결과 없음 = 검색 결과 없음, 실패 = 그날 확인이 모두 실패, 이동 = 쿠팡이 검색 결과가 아닌 쪽으로 보냄, - = 그날 기록 없음(회색 칸). 하루 칸은 그날 마지막 확인의 성공값이고, 등록한 날부터 칸이 생깁니다.");
+      items.push("칸을 누르면(키보드는 화살표로 옮기고 Enter) 그날 기록이 카드 아래 한 줄에 보입니다. 다시 누르면 닫힙니다.");
+      items.push("필터: 전체 그룹은 모든 추적을, 그룹을 고르면 그 그룹만 보여 줍니다. '오늘 안 함'은 일시중지가 아니면서 오늘 아직 확인하지 않은 상품입니다.");
+      items.push("일시중지·다시 시작은 기록을 보존하고, 삭제는 30일 기록도 함께 지웁니다.");
+      items.push("광고 순번은 참고용입니다. 순위는 광고를 뺀 일반 상품 순서입니다.");
+      items.push("상승·하락(전회 대비)은 같은 시간대 회차끼리 비교합니다(하루 횟수를 바꾼 날은 비교할 짝이 없어 '전회 데이터 대기'로 보일 수 있습니다).");
+      if (manualOn) {
+        items.push(autoActive()
+          ? autoLine + " 지금 확인과 자동 수집은 함께 켜지지 않습니다."
+          : "자동 수집(수집기 PC로 하루 여러 번 자동으로 재는 방식)은 대표 결정(2026-10-17)으로 보류 중입니다. 같은 회선의 윙·광고센터를 보호하려는 결정이고, 설정·연결 코드·설치 줄은 맨 아래 '자동 수집' 칸에 그대로 있습니다.");
+      }
       shell.guide.appendChild(el("ol", { className: "mi-coupang-rank-guide-list" }, items.map(function (text) { return el("li", { text: text }); })));
       shell.guide.open = wasOpen;
     }
 
-    // ── 7. 복붙 템플릿 ──
+    // ── 보조 상자: '내 크롬 확장' 줄(지금 확인 확장의 상태·내려받기·확장 ID·설치 안내) ──
+    // 설치 안내 열기는 이 줄만 연다(자동 수집 칸을 펼치지 않으므로 수집기 상태 요청도 따라가지 않는다).
 
-    function buildTemplate() {
-      shell.templateText = el("textarea", { className: "mi-input mi-coupang-rank-template-text", rows: "3", "aria-label": "광고주 안내 문구", "data-coupang-rank-template-text": true, placeholder: "'광고주 안내 문구 복사'를 누르면 여기에 문구가 채워집니다." });
-      shell.template.appendChild(el("div", { className: "mi-coupang-rank-form-head" }, [
-        el("h3", { text: "광고주 안내 문구" }),
-        button("광고주 안내 문구 복사", "template-fill", { className: "mi-button" })
-      ]));
-      shell.template.appendChild(el("p", { className: "mi-coupang-rank-help", text: "누르면 아래 입력란을 채우고 복사합니다. 어디에도 자동으로 저장되지 않으니, 보낼 곳에 직접 붙여 넣으세요." }));
-      shell.template.appendChild(shell.templateText);
+    function buildExtFrame() {
+      shell.extState = el("span", { className: "mi-coupang-rank-owner-state", "data-coupang-rank-owner-manual-state": true });
+      shell.extSummaryText = el("span", { className: "mi-coupang-rank-aux-sub" });
+      shell.ext.appendChild(el("summary", {}, [el("strong", { text: "내 크롬 확장" }), shell.extState, shell.extSummaryText]));
+      shell.extNote = el("p", { className: "mi-code-status mi-coupang-rank-ext-note", "data-coupang-rank-ext-note": true, "aria-live": "polite", hidden: true });
+      shell.ownerManualSection = el("div", { className: "mi-coupang-rank-owner-section mi-coupang-rank-manual-owner", "data-coupang-rank-owner-section": "manual" });
+      shell.manualGuide = el("details", { className: "mi-coupang-rank-manual-guide", "data-coupang-rank-manual-guide": true });
+      shell.ext.appendChild(el("div", { className: "mi-coupang-rank-owner-body mi-coupang-rank-ext-body" }, [shell.ownerManualSection]));
     }
 
-    function renderTemplate() {
-      shell.template.hidden = !(currentScope() && canWrite() && !state.setupRequired);
+    function setExtNote(text, tone) {
+      state.manual.extNote = { text: text || "", tone: tone || "" };
+      renderExtNote();
     }
 
-    function copyText(text, okMessage) {
-      var done = function (copied) {
-        setStatus(copied ? okMessage : "자동 복사가 막혔습니다. 입력란의 글을 직접 선택해 복사하세요.", copied ? "is-ok" : "is-warn");
-      };
-      try {
-        if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-          navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
-          return;
-        }
-      } catch (error) {}
-      done(false);
+    function renderExtNote() {
+      if (!shell) return;
+      var note = state.manual.extNote;
+      shell.extNote.textContent = note.text;
+      shell.extNote.hidden = !note.text;
+      shell.extNote.classList.remove("is-ok", "is-warn");
+      if (note.tone) shell.extNote.classList.add(note.tone);
     }
 
-    function fillTemplate() {
-      var text = templateText(checksPerDay());
-      shell.templateText.value = text;
-      copyText(text, "문구를 입력란에 채우고 복사했습니다. 보낼 곳에 붙여 넣으세요.");
-    }
-
-    // ── 총관리자 수집기 패널(§8.4) ──
+    // ── 보조 상자: '자동 수집' 줄(옛 '수집기 관리', §8.4). 대표 결정(2026-10-17)으로 보류 중이지만 기능은 모두 그대로 둔다. ──
 
     function buildOwnerFrame() {
-      shell.ownerSummaryState = el("span", { className: "mi-coupang-rank-owner-state" });
-      shell.ownerManualState = el("span", { className: "mi-coupang-rank-owner-state", "data-coupang-rank-owner-manual-state": true, hidden: true });
+      shell.ownerSummaryState = el("span", { className: "mi-coupang-rank-owner-state", "data-coupang-rank-owner-summary-state": true });
+      shell.ownerSummaryText = el("span", { className: "mi-coupang-rank-aux-sub" });
       shell.owner.appendChild(el("summary", {}, [
-        el("strong", { text: "수집기 관리" }),
-        el("span", { className: "mi-badge", text: "총관리자 전용" }),
+        el("strong", { text: "자동 수집" }),
         shell.ownerSummaryState,
-        shell.ownerManualState
+        shell.ownerSummaryText
       ]));
+      // 보류 안내 문장은 지금 확인 상태에 따라 renderOwnerVisibility 가 고른다(상태판과 다른 말을 하지 않게).
+      shell.ownerHold = el("p", { className: "mi-coupang-rank-owner-hold", "data-coupang-rank-owner-hold": true, hidden: true });
       shell.ownerNote = el("p", { className: "mi-code-status mi-coupang-rank-owner-note", "data-coupang-rank-owner-status": true, "aria-live": "polite", hidden: true });
       shell.ownerStatusSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "status" });
       shell.ownerSettingsSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "settings" });
@@ -2935,17 +3772,14 @@
       shell.ownerTokenBox = el("div", { className: "mi-coupang-rank-token-box", "data-coupang-rank-token-box": true, hidden: true });
       shell.ownerLinesSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "lines" });
       shell.ownerStatsSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "stats" });
-      // ① 지금 확인(내 크롬) 구역: 켜기·끄기·확장 상태·확장 ID·zip 내려받기·설치 안내(접이식). 수집기 상태와 따로 그린다.
-      shell.ownerManualSection = el("div", { className: "mi-coupang-rank-owner-section mi-coupang-rank-manual-owner", "data-coupang-rank-owner-section": "manual", hidden: true });
-      shell.manualGuide = el("details", { className: "mi-coupang-rank-manual-guide", "data-coupang-rank-manual-guide": true });
       var body = el("div", { className: "mi-coupang-rank-owner-body" }, [
+        shell.ownerHold,
         el("ol", { className: "mi-coupang-rank-owner-steps" }, [
           el("li", { text: "아래 '연결 코드'에서 새 연결 코드를 만들고, 수집기 PC에서 설치 줄을 실행해 코드를 붙여 넣습니다." }),
           el("li", { text: "연결이 확인되면 '수집 켜기'를 누릅니다. 꺼져 있으면 아무것도 수집하지 않습니다." }),
           el("li", { text: "멈추기는 '수집 끄기'(즉시). 완전히 지우려면 제거 줄을 실행하고 연결 코드를 폐기합니다." }),
           el("li", { text: "속도 올리기는 48시간 동안 차단·빈 쪽이 0이고 성공이 48회 이상일 때 한 단계씩만 됩니다(서버가 막습니다)." })
         ]),
-        shell.ownerManualSection,
         shell.ownerNote,
         shell.ownerStatusSection,
         shell.ownerSettingsSection,
@@ -2958,6 +3792,7 @@
       shell.owner.appendChild(body);
     }
 
+    // 자동 수집 패널 안의 문구 자리(자동 수집 동작 결과에만 쓴다. 지금 확인 켜기·끄기·확장 상태는 누른 자리 옆에 쓴다).
     function setOwnerNote(text, tone) {
       state.owner.note = { text: text || "", tone: tone || "" };
       if (!shell) return;
@@ -2965,6 +3800,18 @@
       shell.ownerNote.hidden = !state.owner.note.text;
       shell.ownerNote.classList.remove("is-ok", "is-warn");
       if (state.owner.note.tone) shell.ownerNote.classList.add(state.owner.note.tone);
+    }
+
+    // 접힌 머리는 목록 응답의 collector.state 로만 채운다(따로 요청하지 않는다). not_connected = 수집기 0대, disabled = 꺼짐.
+    function ownerSummary() {
+      var name = collectorStateName();
+      if (!name) return { pill: "", tone: "", text: "", idle: false };
+      if (name === "setup_required") return { pill: "SQL 전", tone: "is-muted", text: "대표 SQL 실행 전입니다", idle: false };
+      if (name === "not_connected") return { pill: "보류 중", tone: "is-muted", text: "수집기 0대 · 설정·연결 코드·설치 줄은 그대로 있습니다", idle: true };
+      if (name === "disabled") return { pill: "보류 중", tone: "is-muted", text: "수집 꺼짐 · 설정·연결 코드·설치 줄은 그대로 있습니다", idle: true };
+      var strip = stripText(collectorInfo(), "admin");
+      if (name === "ok" || name === "idle_hours") return { pill: "켜짐", tone: "is-ok", text: strip.text, idle: false };
+      return { pill: "켜짐 · 확인 필요", tone: "is-warn", text: strip.text, idle: false };
     }
 
     function renderOwnerVisibility() {
@@ -2976,10 +3823,26 @@
         state.owner.freshToken = null;
         return;
       }
-      var data = state.owner.data;
-      var settings = data && data.settings;
-      shell.ownerSummaryState.textContent = settings ? (settings.enabled ? "수집 켜짐" : "수집 꺼짐") : (state.owner.open ? "" : "펼치면 상태를 받습니다");
-      shell.ownerSummaryState.className = "mi-coupang-rank-owner-state" + (settings ? (settings.enabled ? " is-ok" : " is-muted") : "");
+      var summary = ownerSummary();
+      shell.ownerSummaryState.textContent = summary.pill;
+      shell.ownerSummaryState.className = "mi-coupang-rank-owner-state" + (summary.tone ? " " + summary.tone : "");
+      shell.ownerSummaryText.textContent = summary.text;
+      shell.ownerHold.hidden = !summary.idle;
+      if (summary.idle) setText(shell.ownerHold, ownerHoldText());
+    }
+
+    // 자동 수집 보류 안내: 지금 확인이 켜져 있으면 '지금 확인으로만 기록', 꺼져 있으면 '지금은 기록하지 않음'(상태판의 '꺼짐'과 같은 말).
+    function ownerHoldText() {
+      var server = state.manual.server;
+      var manualState = server && typeof server.state === "string" ? server.state : "";
+      var head = "자동 수집은 꺼져 있습니다(보류 중). ";
+      if (manualState && manualState !== "off" && manualState !== "setup_required") {
+        return head + "지금은 카드의 '지금 확인'으로만 기록합니다. 다시 켜려면 먼저 위 상태판의 '지금 확인 끄기'를 누르고, 연결 코드를 만들어 수집기를 설치한 뒤 '수집 켜기'를 누릅니다.";
+      }
+      if (manualState === "off") {
+        return head + "지금 확인도 꺼져 있어 지금은 새 순위를 기록하지 않습니다. 기록하려면 위 상태판에서 '지금 확인 켜기'를 누르거나, 연결 코드를 만들어 수집기를 설치한 뒤 '수집 켜기'를 누릅니다.";
+      }
+      return head + "다시 켜려면 연결 코드를 만들어 수집기를 설치한 뒤 '수집 켜기'를 누릅니다.";
     }
 
     function stopOwnerPoll() {
@@ -2987,6 +3850,16 @@
         clearInterval(state.owner.timer);
         state.owner.timer = 0;
       }
+    }
+
+    // 60초 다시 받기는 '패널이 열려 있고, 수집이 켜져 있거나 연결 코드를 만든 뒤 30분 안'일 때만 요청한다(새 수집기 연결을 기다리는 동안).
+    // 꺼져 있으면 펼칠 때 1번과 '새로 받기'로만 받는다(집계 DB 조회를 줄인다).
+    function ownerPollWanted() {
+      var data = state.owner.data;
+      if (data && data.settings && data.settings.enabled === true) return true;
+      var tokenAge = Date.now() - Number(state.owner.tokenAt || 0);
+      if (state.owner.tokenAt && tokenAge >= 0 && tokenAge < OWNER_TOKEN_POLL_MS) return true;
+      return autoActive();
     }
 
     function onOwnerToggle() {
@@ -3000,6 +3873,7 @@
             return;
           }
           if ((typeof document !== "undefined" && document.hidden) || !isHostVisible()) return;
+          if (!ownerPollWanted()) return;
           loadOwner();
         }, OWNER_POLL_MS);
       } else {
@@ -3008,6 +3882,18 @@
         state.owner.freshToken = null;
         renderTokenBox();
       }
+    }
+
+    // 상태판의 '자동 수집 칸에서 해제하기'(쉬는 중·대표 확인·용량 상한): 자동 수집 줄을 열고 그 자리로 옮긴다.
+    // 펼치면 브라우저가 toggle 을 보내 상태를 받는다(onOwnerToggle).
+    function openOwnerPanel() {
+      if (!shell || shell.owner.hidden) return;
+      if (!shell.owner.open) shell.owner.open = true;
+      var panel = shell.owner;
+      setTimeout(function () {
+        if (state.destroyed || !panel || typeof panel.scrollIntoView !== "function") return;
+        try { panel.scrollIntoView({ block: "start" }); } catch (error) {}
+      }, 150);
     }
 
     async function loadOwner() {
@@ -3041,6 +3927,20 @@
       }
       renderOwnerVisibility();
       renderOwnerBody();
+    }
+
+    // 자동 수집 켜기를 서버가 거절할 사유(handler manualAutoConflict · COUPANG_NO_COLLECTOR)를 화면이 받은 값으로 미리 본다.
+    // 서버 검사는 그대로라, 화면이 놓쳐도 서버가 마지막에 막는다. 막을 이유가 없으면 "".
+    function collectorEnableBlock(data) {
+      var server = state.manual.server;
+      if (server && server.state !== "setup_required" && (server.enabled === true || (server.state && server.state !== "off"))) {
+        return "지금 확인이 켜져 있어 켤 수 없습니다(먼저 위 상태판의 '지금 확인 끄기').";
+      }
+      var today = todayKstValue();
+      if (server && server.stoppedDay && today && String(server.stoppedDay) === today) return "오늘은 지금 확인이 차단으로 멈춘 날이라 내일 켤 수 있습니다.";
+      var collectors = data && Array.isArray(data.collectors) ? data.collectors.filter(function (row) { return row && !row.revokedAt; }) : null;
+      if (collectorStateName() === "not_connected" || (collectors && !collectors.length)) return "연결된 수집기가 없어 켤 수 없습니다(아래 '연결 코드'부터).";
+      return "";
     }
 
     function sectionBusy(section) {
@@ -3093,12 +3993,15 @@
       section.appendChild(ownerHeading("상태"));
       section.appendChild(el("ul", { className: "mi-coupang-rank-owner-lines" }, lines.map(function (line) { return el("li", { text: line }); })));
       var canClear = Boolean(cooling || settings.needsOwnerReview || settings.budgetBlocked);
+      // '수집 켜기'는 보조 버튼 모양이다(보류 중인 기능이 가장 권하는 동작처럼 보이지 않게). 서버가 거절할 것이 분명하면 미리 막고 이유를 쓴다.
+      var enableBlock = settings.enabled === true ? "" : collectorEnableBlock(data);
       section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, [
-        button("수집 켜기", "collector-enable", { className: "mi-button", disabled: settings.enabled === true || state.busy }),
+        button("수집 켜기", "collector-enable", { disabled: settings.enabled === true || state.busy || Boolean(enableBlock) }),
         button("수집 끄기", "collector-disable", { disabled: settings.enabled !== true || state.busy }),
         button("쉬는 중 해제", "cooldown-clear", { className: "mi-link-button mi-coupang-rank-danger", disabled: !canClear || state.busy }),
         button("새로 받기", "owner-refresh", {})
       ]));
+      if (enableBlock) section.appendChild(el("p", { className: "mi-coupang-rank-muted", "data-coupang-rank-enable-block": true, text: enableBlock }));
 
       // 용량 줄(H1)
       var keywordsAtChecks = isNum(capacity.keywordsAtChecks) ? capacity.keywordsAtChecks : null;
@@ -3110,6 +4013,8 @@
         capacityLine,
         capacity.over ? el("strong", { text: " · 지연이 생깁니다" }) : null
       ]));
+      var globalLine = globalLimitText(state.payload && state.payload.limit);
+      if (globalLine) section.appendChild(el("p", { className: "mi-coupang-rank-capacity-line", text: globalLine }));
       if (fit !== null) {
         section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, [
           button("전체 한도를 " + fit + "으로 맞추기", "capacity-fit", { "data-coupang-rank-value": String(fit), disabled: fit === settings.globalKeywordLimit || state.busy })
@@ -3126,6 +4031,11 @@
       section.replaceChildren();
       section.removeAttribute("data-coupang-rank-dirty");
       section.appendChild(ownerHeading("설정"));
+      var manual = state.manual.server;
+      var manualPart = manual && manual.state !== "setup_required"
+        ? "(검색 사이 " + manualGapMinutes(manual) + "분 · 하루 " + (isNum(manual.maxPerDay) ? manual.maxPerDay : 30) + "번 · " + manualHours(manual).text + ")"
+        : "";
+      section.appendChild(el("p", { className: "mi-coupang-rank-muted", "data-coupang-rank-settings-scope": true, text: "이 설정은 자동 수집에만 적용됩니다. 지금 확인" + manualPart + "과는 따로입니다." }));
       var form = el("form", { className: "mi-coupang-rank-settings", "data-coupang-rank-settings-form": true, novalidate: true });
       SETTING_FIELDS.forEach(function (field) {
         var control;
@@ -3456,6 +4366,7 @@
       }
       var payload = await ownerPost({ action: "collector-token-create", label: label }, "'" + label + "' 연결 코드를 만들었습니다. 아래 코드는 지금 한 번만 보입니다.");
       if (payload && payload.ok && payload.token) {
+        state.owner.tokenAt = Date.now();
         state.owner.freshToken = { label: payload.label || label, token: payload.token, hint: payload.tokenHint || "" };
         renderTokenBox();
       }
@@ -3569,11 +4480,18 @@
       }
     }
 
-    // 버튼·상태 줄을 보일지(spec-manual §7.1): 관리자 화면 · 총관리자 · 쓰기 가능 · 서버 manual 칸이 켜짐.
+    // 카드 버튼·확장 확인을 쓸지(spec-manual §7.1): 관리자 화면 · 총관리자 · 쓰기 가능 · 서버 manual 칸이 켜짐.
     function manualVisible() {
       if (deps.mode !== "admin" || !isOwnerSession() || !canWrite() || state.setupRequired || !state.payload || !currentScope()) return false;
       var server = state.manual.server;
       return Boolean(server) && server.state !== "off" && server.state !== "setup_required";
+    }
+
+    // 상태판을 보일지: 위와 같되 꺼짐(off)이어도 보인다(꺼졌다는 사실과 '지금 확인 켜기'가 본문에 남게). SQL 전·서버 칸 없음이면 숨긴다.
+    function manualBoardVisible() {
+      if (deps.mode !== "admin" || !isOwnerSession() || !canWrite() || state.setupRequired || !state.payload || !currentScope()) return false;
+      var server = state.manual.server;
+      return Boolean(server) && typeof server.state === "string" && Boolean(server.state) && server.state !== "setup_required";
     }
 
     function manualExtensionId() {
@@ -3686,16 +4604,20 @@
 
     function manualButtonTitle(view) {
       if (view.enabled) return "누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 순위를 확인합니다";
+      if (view.kind === "busy_other") return "다른 확인이 끝나기를 기다리는 중입니다";
       if (view.countdown && view.state === "busy") return "방금 확인이 끝나기를 기다리는 중입니다";
       if (view.countdown) return "검색 사이 간격을 기다리는 중입니다";
-      return "지금은 확인할 수 없습니다(목록 위 '지금 확인' 줄 참고)";
+      return "지금은 확인할 수 없습니다(위 '지금 확인' 상태판 참고)";
     }
 
-    function manualCardButton(tracker, view) {
+    // 카드 '지금 확인'(주 버튼). 버튼 글자가 곧 상태다('지금 확인' / '1분 58초 뒤' / '확인 중…' / '내일 09:00').
+    // 오늘 이미 확인한 카드는 테두리 모양(is-done)으로 두어 남색 주 버튼이 '오늘 아직'인 카드에만 남게 한다.
+    function manualCardButton(tracker, view, todayKst) {
       var running = state.manual.run;
       var mine = Boolean(running && running.trackerId === tracker.id);
-      return button(mine ? "확인 중…" : "지금 확인", "manual-check", {
-        className: "mi-link-button mi-coupang-rank-manual-button",
+      var done = checkedToday(tracker, todayKst);
+      return button(manualButtonLabel(view, mine, state.manual.server, manualNow()), "manual-check", {
+        className: "mi-link-button mi-coupang-rank-manual-button" + (done ? " is-done" : "") + (mine ? " is-running" : ""),
         "data-coupang-rank-id": tracker.id,
         "data-coupang-rank-manual": true,
         title: manualButtonTitle(view),
@@ -3708,40 +4630,104 @@
     }
 
     function syncManualButtons(view) {
+      if (!shell) return;
       var running = state.manual.run;
+      var server = state.manual.server;
+      var now = manualNow();
+      var title = manualButtonTitle(view);
+      var active = typeof document !== "undefined" && document ? document.activeElement : null;
       Array.prototype.forEach.call(shell.list.querySelectorAll("[data-coupang-rank-manual]"), function (node) {
         var mine = Boolean(running && running.trackerId === node.getAttribute("data-coupang-rank-id"));
-        setText(node, mine ? "확인 중…" : "지금 확인");
-        node.disabled = !view.enabled || Boolean(running) || state.busy;
-        var title = manualButtonTitle(view);
+        setText(node, manualButtonLabel(view, mine, server, now));
+        var off = !view.enabled || Boolean(running) || state.busy;
+        // 키보드로 누른 버튼이 꺼지면 포커스가 몸통으로 사라진다 → 그 카드에 맡기고, 다시 그릴 때 버튼으로 돌린다.
+        if (off && !node.disabled && active === node) parkFocusOnCard(node.closest ? node.closest("[data-coupang-rank-card]") : null, focusKey(node));
+        node.disabled = off;
+        node.classList.toggle("is-running", mine);
         if (node.getAttribute("title") !== title) node.setAttribute("title", title);
       });
     }
 
+    // '오늘 확인한 상품' 칸의 아래 줄: 안 한 상품이 있으면 '안 한 상품 N개 보기'('오늘 안 함' 필터) 단추를 둔다.
+    function renderTodayNote(metric) {
+      var node = shell.manualMetrics.today.note;
+      var key = metric.pending + "|" + metric.note;
+      if (node.getAttribute("data-coupang-rank-note-key") === key) return;
+      node.setAttribute("data-coupang-rank-note-key", key);
+      node.replaceChildren();
+      if (metric.pending > 0) {
+        node.appendChild(button("안 한 상품 " + metric.pending + "개 보기", "filter-today-none", { className: "mi-coupang-rank-text-button", "data-coupang-rank-manual-today": true }));
+        if (metric.paused) node.appendChild(document.createTextNode(" · 일시중지 " + metric.paused + "개 빼고"));
+      } else if (metric.note) {
+        node.appendChild(document.createTextNode(metric.note));
+      }
+    }
+
+    // 지금 확인 상태판. 꺼져 있어도(off) 본문에 남겨 '꺼짐'과 '지금 확인 켜기'를 보인다. 서버 SQL 전·서버 칸 없음이면 숨긴다.
+    // 1초 초 세기(간격·진행 중)는 이 함수를 다시 부른다 — 글자만 바꾸고 목록은 다시 그리지 않는다.
     function renderManual() {
       if (!shell || state.destroyed) return;
       var box = shell.manualBox;
-      if (!manualVisible()) {
+      if (!manualBoardVisible()) {
         box.hidden = true;
         stopManualTicker();
         return;
       }
       var view = currentManualView();
+      var model = manualBoardModel({ view: view, server: state.manual.server, now: manualNow(), trackers: trackers(), todayKst: todayKstValue(), autoState: autoMode(), autoCode: collectorStateName() });
       box.hidden = false;
-      shell.manualBanner.hidden = !view.banner;
-      shell.manualLine.hidden = view.banner;
-      if (view.banner) setText(shell.manualBanner, view.text);
-      else setText(shell.manualLine, view.text);
-      shell.manualLine.classList.toggle("is-warn", view.tone === "is-warn");
-      shell.manualGuideButton.hidden = !view.guide;
+      box.setAttribute("data-coupang-rank-manual-kind", model.kind);
+      setText(shell.manualPill, model.pill.text);
+      shell.manualPill.className = "mi-rank-auto-status mi-coupang-rank-manual-pill" + (model.pill.tone ? " " + model.pill.tone : "");
+      shell.manualLine.hidden = model.banner;
+      setText(shell.manualLine, model.banner ? "" : model.line);
+      shell.manualLine.classList.toggle("is-warn", model.lineTone === "is-warn");
+      shell.manualBanner.hidden = !model.banner;
+      setText(shell.manualBanner, model.bannerText);
+      ["next", "used", "today"].forEach(function (key) {
+        var metric = model.metrics[key];
+        var node = shell.manualMetrics[key];
+        setText(node.label, metric.label);
+        setText(node.value, metric.value);
+        var className = "mi-rank-auto-metric" + (metric.tone ? " " + metric.tone : "");
+        if (node.box.className !== className) node.box.className = className;
+        if (key !== "today") setText(node.note, metric.note);
+      });
+      renderTodayNote(model.metrics.today);
+      var enable = model.toggle === "enable";
+      shell.manualToggle.setAttribute("data-coupang-rank-action", enable ? "manual-enable" : "manual-disable");
+      setText(shell.manualToggle, enable ? "지금 확인 켜기" : "지금 확인 끄기");
+      var toggleClass = enable ? "mi-button" : "mi-button subtle";
+      if (shell.manualToggle.className !== toggleClass) shell.manualToggle.className = toggleClass;
+      shell.manualToggle.disabled = state.manual.toggling === true;
+      setText(shell.manualToggleHint, enable ? "켜기 전에 확인 창이 뜹니다" : "누르면 바로 멈춥니다");
+      shell.manualGuideButton.hidden = !model.guide;
+      shell.manualJump.hidden = !model.jump || shell.owner.hidden;
+      var note = state.manual.note;
+      shell.manualNote.hidden = !note.text;
+      setText(shell.manualNote, note.text);
+      shell.manualNote.classList.toggle("is-ok", note.tone === "is-ok");
+      shell.manualNote.classList.toggle("is-warn", note.tone === "is-warn");
+      // 직전 확인 결과는 늘 여기 한 줄에 남는다(누른 카드가 필터·접힌 그룹에 가려도, 보내지 못함처럼 할 일이 있는 결과도).
+      // 그날 중지 띠가 같은 말을 하고 있으면 겹쳐 보이지 않는다.
       var result = state.manual.result;
-      // 그날 중지 띠가 같은 말을 하고 있으면 직전 결과 줄은 겹쳐 보이지 않는다.
-      shell.manualResult.hidden = !result || (view.banner && result.stopped === true);
+      shell.manualResult.hidden = !result || (model.banner && result.stopped === true);
       if (result) {
         setText(shell.manualResult, "직전 확인" + (result.clock ? "(" + result.clock + ")" : "") + ": " + result.text);
         shell.manualResult.classList.toggle("is-ok", result.tone === "is-ok");
         shell.manualResult.classList.toggle("is-warn", result.tone === "is-warn");
       }
+      // 화면 읽기 프로그램에는 상태 알약이 바뀔 때만 알린다(초 세기는 알리지 않는다). 시크릿 창이 열리는 단계(check)와
+      // 응답이 늦을 때는 경고 문장(창을 닫거나 누르거나 내리지 말고, 이 화면도 닫지 말기)을 한 번 함께 읽는다.
+      var running = state.manual.run;
+      var warnPhase = model.kind === "run" && running && running.phase === "check" ? (running.slow ? "|slow" : "|check") : "";
+      var pillChanged = state.manual.announced !== model.pill.text;
+      var warnChanged = Boolean(warnPhase) && state.manual.announcedWarn !== warnPhase;
+      if (pillChanged || warnChanged) {
+        state.manual.announced = model.pill.text;
+        setText(shell.manualAnnounce, "지금 확인 상태: " + (warnPhase ? model.line : model.pill.text));
+      }
+      state.manual.announcedWarn = warnPhase;
       syncManualButtons(view);
       var visibleNow = !(typeof document !== "undefined" && document.hidden) && isHostVisible();
       if (view.countdown && visibleNow) startManualTicker();
@@ -3881,12 +4867,20 @@
       return attempt;
     }
 
-    function finishManualRun(text, tone, reload, stopped) {
+    // 결과는 두 곳에 보인다: 상태판의 '직전 확인' 한 줄(늘 — 누른 카드가 필터·접힌 그룹에 가려 있거나 추적 id 를 모르는 경우에도)과,
+    // 누른 카드 운영줄 첫 칸의 짧은 표시(card = { trackerId?, text, tone }). 맨 위 상태줄에는 겹쳐 쓰지 않는다.
+    // 누른 카드는 서버 응답의 tracker.trackerId 를 먼저, 없으면 이 화면이 누른 카드 id 를 쓴다. 상태 필터에서 빠져도 목록에 남긴다.
+    function finishManualRun(text, tone, reload, stopped, card) {
       var manual = state.manual;
+      var pressedId = manual.run && manual.run.trackerId || "";
       manual.run = null;
       manual.resuming = false;
-      manual.result = { text: text, tone: tone || "", stopped: stopped === true, clock: kstClock(new Date(manualNow()).toISOString()) };
-      setStatus(text, tone);
+      var clock = kstClock(new Date(manualNow()).toISOString());
+      manual.result = { text: text, tone: tone || "", stopped: stopped === true, clock: clock };
+      var targetId = card && card.trackerId || pressedId;
+      // 확인을 시작하지 않은 결과(간격·서버 거절·확장 막힘 등)는 '방금 확인'이 아니라 '방금 누름'으로 쓴다.
+      var head = card && card.notStarted === true ? "방금 누름" : "방금 확인";
+      if (card && card.text && targetId) setCardNote(targetId, head + (clock ? " " + clock : "") + " · " + card.text, card.tone || tone || "");
       renderAll();
       if (reload) loadList({ afterWrite: true });
     }
@@ -3931,7 +4925,10 @@
           manual.server = Object.assign({}, manual.server, { state: "stopped", stoppedDay: kstDayAt(manualNow()), stoppedAt: new Date(manualNow()).toISOString() });
         }
       }
-      finishManualRun((prefix || "") + outcome.text, outcome.tone, true, outcome.stopped === true);
+      var cardNote = manualCardNote(outcome, recorded, parsed);
+      var recordedId = payload.tracker && typeof payload.tracker.trackerId === "string" ? payload.tracker.trackerId : "";
+      cardNote.trackerId = recordedId || claim.trackerId || "";
+      finishManualRun((prefix || "") + outcome.text, outcome.tone, true, outcome.stopped === true, cardNote);
       return outcome;
     }
 
@@ -4012,13 +5009,16 @@
       manual.run = { trackerId: trackerId, keyword: keyword, phase: "hello", slow: false };
       manual.result = null;
       manual.lost = null;
+      manual.note = { text: "", tone: "" };
+      // 앞선 동작이 남긴 맨 위 상태줄(등록 결과 등)은 지운다. 이 확인의 결과는 상태판 '직전 확인' 줄에 쓴다.
+      if (state.status.text) setStatus("", "");
       renderManual();
       // 1. 누르기 직전에 확장 상태를 새로 묻는다. 막히면 서버 요청 없이 끝낸다(횟수도 쓰지 않는다).
       var hello = await refreshHello(true);
       if (owner !== state) return;
       var blocked = manualPreflightText(hello, manual.server, userAgentText());
       if (blocked) {
-        finishManualRun(blocked, "is-warn", false);
+        finishManualRun(blocked, "is-warn", false, false, { text: "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true });
         return;
       }
       // 2. 앞서 보내지 못한 결과(이 브라우저에 남긴 것 · 확장이 들고 있는 것)가 있으면 먼저 보낸다.
@@ -4033,7 +5033,8 @@
         if (owner !== state) return;
         if (!manualRecordFinal(resent)) {
           rememberUnsent(earlier.claim.claimId);
-          finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false);
+          finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false, false,
+            { text: "앞 결과를 먼저 보내야 해 시작하지 않음", tone: "is-warn", notStarted: true });
           return;
         }
         settleManualRecord(resent, earlier.parsed, earlier.claim, "앞서 끝나지 않은 확인 결과를 먼저 보냈습니다. 새 확인은 다시 눌러 주세요. ");
@@ -4047,7 +5048,7 @@
       var claim = claimed.payload || {};
       if (claim.manual) setManualServer(claim.manual);
       if (claim.ok !== true || typeof claim.claimId !== "string" || !claim.claimId || typeof claim.claimToken !== "string" || !claim.claimToken) {
-        finishManualRun(manualClaimRefusalText(claimed, manual.server), "is-warn", false);
+        finishManualRun(manualClaimRefusalText(claimed, manual.server), "is-warn", false, false, { text: "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true });
         return;
       }
       var record = { claimId: claim.claimId, claimToken: claim.claimToken, trackerId: trackerId, keyword: String(claim.keyword || keyword), savedAt: Date.now() };
@@ -4104,6 +5105,7 @@
       });
     }
 
+    // 상태판의 '지금 확인 끄기·켜기'. 결과·오류는 상태판 안 한 줄(aria-live)에 쓴다(자동 수집 패널 문구 자리와 섞지 않는다).
     async function manualToggle(enable) {
       var manual = state.manual;
       if (manual.toggling) return;
@@ -4115,8 +5117,9 @@
         if (!agreed) return;
       }
       manual.toggling = true;
+      manual.note = { text: enable ? "지금 확인을 켜는 중입니다…" : "지금 확인을 끄는 중입니다…", tone: "" };
       var owner = state;
-      // 끄기는 확인 창 없이 바로 숨긴다(비상 정지). 실패하면 목록을 다시 받아 서버 값으로 돌린다.
+      // 끄기는 확인 창 없이 바로 숨긴다(비상 정지). 실패하면 목록을 다시 받아 서버 값으로 돌리고, 그 이유를 상태판에 남긴다.
       if (!enable && manual.server) manual.server = Object.assign({}, manual.server, { state: "off", enabled: false });
       renderAll();
       var result = await postAction({ action: "settings-update", settings: { manualEnabled: enable } });
@@ -4124,19 +5127,23 @@
       manual.toggling = false;
       if (result.ok) {
         if (result.settings && state.owner.data) state.owner.data.settings = result.settings;
-        setOwnerNote(enable ? "지금 확인을 켰습니다. 카드마다 '지금 확인' 버튼이 보입니다." : "지금 확인을 껐습니다. 카드의 '지금 확인' 버튼이 사라지고, 서버도 새 확인을 받지 않습니다.", "is-ok");
+        manual.note = { text: enable ? "지금 확인을 켰습니다. 카드마다 '지금 확인' 버튼이 보입니다." : "지금 확인을 껐습니다. 카드의 '지금 확인' 버튼이 사라지고, 서버도 새 확인을 받지 않습니다.", tone: "is-ok" };
       } else if (!result.stale) {
-        setOwnerNote(errorText(result), "is-warn");
+        manual.note = { text: (enable ? "켜지 못했습니다: " : "끄지 못해 원래 상태로 돌렸습니다: ") + errorText(result), tone: "is-warn" };
+      } else {
+        manual.note = { text: "", tone: "" };
       }
       await loadList({ afterWrite: true });
+      if (owner === state) renderManual();
     }
 
+    // 상태판의 '설치 안내 열기': 보조 상자의 '내 크롬 확장' 줄과 그 안의 설치 안내만 열고 그 자리로 옮긴다.
     function openManualGuide() {
       if (!shell) return;
-      // 상세 칸을 열면 브라우저가 toggle 을 보내 총관리자 패널 상태도 받는다(onOwnerToggle).
-      if (!shell.owner.open) shell.owner.open = true;
+      if (shell.ext.hidden) return;
+      shell.ext.open = true;
       shell.manualGuide.open = true;
-      // 패널이 펼쳐지고 상태를 그린 뒤에 옮긴다(바로 부르면 브라우저가 펼침 중에 부드러운 스크롤을 멈춘다).
+      // 펼친 뒤에 옮긴다(바로 부르면 브라우저가 펼침 중에 부드러운 스크롤을 멈춘다).
       var guide = shell.manualGuide;
       setTimeout(function () {
         if (state.destroyed || !guide || typeof guide.scrollIntoView !== "function") return;
@@ -4159,43 +5166,49 @@
       guide.open = wasOpen;
     }
 
-    // 총관리자 패널 '지금 확인(내 크롬)' 구역(spec-manual §7.5). 서버 manual 칸이 있을 때만 보인다.
+    // 보조 상자 '내 크롬 확장' 줄(spec-manual §7.5). 서버 manual 칸이 있을 때만 보인다. 켜기·끄기는 상태판에 있다.
     function renderManualOwner() {
       if (!shell) return;
       var section = shell.ownerManualSection;
       var server = state.manual.server;
       var visible = deps.mode === "admin" && isOwnerSession() && Boolean(currentScope()) && Boolean(server);
-      section.hidden = !visible;
-      shell.ownerManualState.hidden = !visible;
-      if (!visible) return;
+      shell.ext.hidden = !visible;
+      if (!visible) {
+        if (shell.ext.open) shell.ext.open = false;
+        return;
+      }
       var stateName = String(server.state || "");
       var setup = stateName === "setup_required";
       var on = !setup && stateName !== "off";
-      shell.ownerManualState.textContent = setup ? "지금 확인 SQL 전" : (on ? "지금 확인 켜짐" : "지금 확인 꺼짐");
-      shell.ownerManualState.className = "mi-coupang-rank-owner-state" + (on ? " is-ok" : " is-muted");
+      var hello = state.manual.hello;
+      var block = hello && hello.status !== "pending" ? manualHelloBlock(hello, server, userAgentText()) : null;
+      var headPill;
+      if (setup) headPill = ["SQL 전", "is-muted"];
+      else if (!on) headPill = ["지금 확인 꺼짐", "is-muted"];
+      else if (!hello || hello.status === "pending") headPill = ["확인 중", "is-muted"];
+      else if (hello.status === "ok" && !block) headPill = ["정상", "is-ok"];
+      else headPill = ["확인 필요", "is-warn"];
+      shell.extState.textContent = headPill[0];
+      shell.extState.className = "mi-coupang-rank-owner-state " + headPill[1];
+      shell.extSummaryText.textContent = setup
+        ? "대표 SQL(지금 확인) 실행 전입니다"
+        : (on ? manualExtensionText(hello).replace(/^확장:\s*/, "") : "지금 확인이 꺼져 있어 확장에 묻지 않습니다") + " · 확장 내려받기 · 설치 안내";
       section.replaceChildren();
-      section.appendChild(ownerHeading("지금 확인(내 크롬)"));
       section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다. 예약·자동 반복·전체 확인은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 그날 중지는 서버가 지킵니다." }));
       var lines = [];
       if (setup) {
-        lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 켜기 버튼이 생깁니다.");
+        lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 위 상태판에 켜기 버튼이 생깁니다.");
       } else {
         var projected = manualProjected(server, manualNow());
-        lines.push((on ? "켜짐" : "꺼짐 — 켜면 총관리자 카드에 '지금 확인' 버튼이 보입니다") + " · 오늘 " + projected.used + "/" + projected.max + "번 · " +
+        lines.push((on ? "켜짐" : "꺼짐 — 위 '지금 확인' 상태판에서 켤 수 있습니다") + " · 오늘 " + projected.used + "/" + projected.max + "번 · " +
           projected.hours.text + " · 검색 사이 " + manualGapMinutes(server) + "분");
         if (projected.state === "stopped") lines.push(manualStopText(server, state.manual.stopDetail));
       }
-      lines.push(manualExtensionText(state.manual.hello));
+      lines.push(manualExtensionText(hello));
       section.appendChild(el("ul", { className: "mi-coupang-rank-owner-lines", "data-coupang-rank-manual-owner-lines": true }, lines.map(function (line) { return el("li", { text: line }); })));
-      var actions = [];
-      if (!setup) {
-        // 수집기 '수집 켜기·끄기'와 같은 모양(켜기는 주버튼, 끄기는 보조 버튼).
-        actions.push(on
-          ? button("지금 확인 끄기", "manual-disable", { disabled: state.manual.toggling })
-          : button("지금 확인 켜기", "manual-enable", { className: "mi-button", disabled: state.manual.toggling }));
-      }
-      actions.push(button("확장 상태 다시 보기", "manual-hello", {}));
-      section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, actions));
+      section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, [button("확장 상태 다시 보기", "manual-hello", {})]));
+      section.appendChild(shell.extNote);
+      renderExtNote();
       var id = manualExtensionId();
       var zip = manualZipPath();
       var file = zip ? zip.slice(zip.lastIndexOf("/") + 1) : "";
@@ -4213,15 +5226,21 @@
 
     // ── 이벤트 ──
 
+    // 필터·검색·그룹을 바꾸면 '방금 결과를 보인 카드'(sticky)도 놓아 준다.
+    function applyFilterChange() {
+      clearSticky();
+      renderFilterBar();
+      renderBulkBar();
+      renderList();
+    }
+
     function onClick(event) {
       var target = event.target;
       if (!target || !target.closest) return;
       var statusButton = target.closest("[data-coupang-rank-filter-status]");
       if (statusButton && host.contains(statusButton)) {
         state.filter.status = statusButton.getAttribute("data-coupang-rank-filter-status") || "all";
-        renderFilterBar();
-        renderBulkBar();
-        renderList();
+        applyFilterChange();
         return;
       }
       var node = target.closest("[data-coupang-rank-action]");
@@ -4246,6 +5265,10 @@
           renderBulkBar();
           renderList();
           return;
+        case "bulk-sheet-toggle":
+          state.bulkExpanded = !state.bulkExpanded;
+          renderBulkBar();
+          return;
         case "bulk-pause":
           runBulk("pause", selectedIdsInOrder());
           return;
@@ -4265,13 +5288,13 @@
           exportSelection();
           return;
         case "pause":
-          runBulk("pause", [id]);
+          runBulk("pause", [id], null, { origin: "card", cardId: id });
           return;
         case "resume":
-          runBulk("resume", [id]);
+          runBulk("resume", [id], null, { origin: "card", cardId: id });
           return;
         case "delete":
-          deleteIds([id]);
+          deleteIds([id], { origin: "card", cardId: id });
           return;
         case "group-edit":
           startGroupEdit(id);
@@ -4286,8 +5309,12 @@
         case "runs":
           toggleRuns(id);
           return;
-        case "template-fill":
-          fillTemplate();
+        case "day-detail":
+          toggleDayDetail(node);
+          return;
+        case "filter-today-none":
+          state.filter.status = "today-none";
+          applyFilterChange();
           return;
         case "manual-check":
           runManualCheck(id);
@@ -4299,8 +5326,9 @@
           manualToggle(false);
           return;
         case "manual-hello":
+          setExtNote("확장 상태를 다시 확인하는 중입니다…", "");
           refreshHello(true).then(function (hello) {
-            setOwnerNote("확장 상태를 다시 확인했습니다. " + manualExtensionText(hello), hello.status === "ok" && hello.incognitoAllowed === true ? "is-ok" : "is-warn");
+            setExtNote("확장 상태를 다시 확인했습니다. " + manualExtensionText(hello), hello.status === "ok" && hello.incognitoAllowed === true ? "is-ok" : "is-warn");
             renderManual();
             renderManualOwner();
             return resumeManualPending(hello);
@@ -4308,6 +5336,9 @@
           return;
         case "manual-guide-open":
           openManualGuide();
+          return;
+        case "owner-jump":
+          openOwnerPanel();
           return;
         default:
           ownerButton(action, node);
@@ -4338,9 +5369,7 @@
       }
       if (target.hasAttribute("data-coupang-rank-filter-group")) {
         state.filter.group = target.value || "";
-        renderFilterBar();
-        renderBulkBar();
-        renderList();
+        applyFilterChange();
         return;
       }
       markDirty(target);
@@ -4355,9 +5384,10 @@
     }
 
     function syncGroupChecks() {
+      var visible = visibleTrackers();
       Array.prototype.forEach.call(shell.list.querySelectorAll("[data-coupang-rank-group-select]"), function (check) {
         var name = check.getAttribute("data-coupang-rank-group-select");
-        var items = visibleTrackers().filter(function (tracker) { return String(tracker.groupName || DEFAULT_GROUP) === name; });
+        var items = visible.filter(function (tracker) { return String(tracker.groupName || DEFAULT_GROUP) === name; });
         var all = items.length > 0 && items.every(function (tracker) { return state.selected.has(tracker.id); });
         var some = items.some(function (tracker) { return state.selected.has(tracker.id); });
         check.checked = all;
@@ -4374,13 +5404,20 @@
         clearTimeout(searchTimer);
         searchTimer = setTimeout(function () {
           state.filter.query = target.value || "";
-          renderFilterBar();
-          renderBulkBar();
-          renderList();
+          applyFilterChange();
         }, 150);
         return;
       }
       markDirty(target);
+    }
+
+    // 날짜 줄: 탭 정지는 한 칸뿐이고 화살표(←→)·Home·End 로 칸을 옮긴다(roving tabindex). Enter·Space 는 버튼 기본 동작(누름)이다.
+    function onKeydown(event) {
+      var target = event && event.target;
+      if (!target || !target.hasAttribute || !target.hasAttribute("data-coupang-rank-day")) return;
+      var key = event.key;
+      if (key !== "ArrowRight" && key !== "ArrowLeft" && key !== "Home" && key !== "End") return;
+      if (moveDayFocus(target, key) && typeof event.preventDefault === "function") event.preventDefault();
     }
 
     function onSubmit(event) {
@@ -4397,14 +5434,35 @@
       if (shell && event.target === shell.owner) onOwnerToggle();
     }
 
+    // 날짜 줄을 옆으로 밀면 오른쪽 끝 흐림을 다시 맞춘다(scroll 은 올라오지 않아 붙잡기 단계로 듣는다).
+    function onScroll(event) {
+      var target = event && event.target;
+      if (!target || !target.classList || !target.classList.contains("mi-rank-day-grid")) return;
+      var wrap = target.parentNode;
+      if (wrap && wrap.classList && wrap.classList.contains("mi-coupang-rank-days-scroll")) wrap.classList.toggle("has-more", dayFadeWanted(wrap));
+    }
+
+    function onResize() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        if (state.destroyed || !shell) return;
+        syncDayFades();
+        syncDockSpace();
+      }, 150);
+    }
+
     host.addEventListener("click", onClick);
     host.addEventListener("change", onChange);
     host.addEventListener("input", onInput);
+    host.addEventListener("keydown", onKeydown);
     host.addEventListener("submit", onSubmit);
     host.addEventListener("toggle", onToggle, true);
+    host.addEventListener("scroll", onScroll, true);
     // ① 지금 확인: 탭이 다시 보이면 확장 상태를 다시 묻고(30초 캐시) 간격 초 세기를 다시 켠다.
     var visibilityTarget = typeof document !== "undefined" && document && typeof document.addEventListener === "function" ? document : null;
     if (visibilityTarget) visibilityTarget.addEventListener("visibilitychange", onManualVisibility);
+    var resizeTarget = typeof window !== "undefined" && window && typeof window.addEventListener === "function" ? window : null;
+    if (resizeTarget) resizeTarget.addEventListener("resize", onResize);
 
     if (observedRoot && typeof MutationObserver === "function") {
       observer = new MutationObserver(function () {
@@ -4416,7 +5474,8 @@
     }
 
     // ── 카드 '다음' 남은 시간 다시 계산(N30 은 60초 건강 신호마다 순위판을 다시 그린다) ──
-    // 목록을 다시 받지 않고, 그려 둔 카드의 '다음' 글자와 상태 알약의 대기색만 바꾼다(입력 중인 칸·열린 측정 기록을 건드리지 않게).
+    // 목록을 다시 받지 않고, 그려 둔 카드의 '다음' 글자와 대기색만 바꾼다(입력 중인 칸·열린 측정 기록을 건드리지 않게).
+    // '다음' 알약은 자동 수집이 돌 때만 있다(지금 확인만 쓸 때는 없음).
     // 탭이 숨었거나 화면이 안 보이면 건너뛴다.
 
     function refreshNextPills() {
@@ -4429,9 +5488,9 @@
         if (!tracker) return;
         var text = nextCheckText(tracker, collectorState, now, mode);
         var nextNode = card.querySelector("[data-coupang-rank-next]");
-        if (nextNode && nextNode.textContent !== "다음 " + text) nextNode.textContent = "다음 " + text;
-        var stateNode = card.querySelector("[data-coupang-rank-state-pill]");
-        if (stateNode) stateNode.classList.toggle("is-wait", text === "대기");
+        if (!nextNode) return;
+        if (nextNode.textContent !== "다음 " + text) nextNode.textContent = "다음 " + text;
+        nextNode.classList.toggle("is-wait", text === "대기");
       });
     }
 
@@ -4470,7 +5529,7 @@
         state.setupRequired = false;
         state.loading = false;
         state.selected.clear();
-        state.listNote = { text: "", tone: "" };
+        state.listNote = { text: "", tone: "", detail: "" };
         renderAll();
         return;
       }
@@ -4483,7 +5542,15 @@
         state.runs = {};
         state.editingGroupId = "";
         state.status = { text: "", tone: "" };
-        state.listNote = { text: "", tone: "" };
+        state.listNote = { text: "", tone: "", detail: "" };
+        state.bulkNote = { text: "", tone: "" };
+        state.bulkNoteAt = 0;
+        state.bulkExpanded = false;
+        state.cardNote = null;
+        state.sticky.clear();
+        state.dayDetails = {};
+        state.dayFocus = {};
+        state.pendingFocus = null;
         pruneCache(cacheKey(scope));
       }
       if (!state.payload) {
@@ -4497,7 +5564,7 @@
       ensureManualHello();
       // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 세션 동기화도 scope-changed 와
       // auth-ready 로 두 번 부른다. 같은 범위를 받는 중이거나 2초 안에 받았으면 다시 보내지 않는다.
-      loadList({ reuse: true, announce: true });
+      loadList({ reuse: true });
       startNextTicker();
       if (shell.owner.open && isOwnerSession() && !ownerReusable(scope)) loadOwner();
     }
@@ -4514,12 +5581,19 @@
       stopNextTicker();
       stopManualTicker();
       clearTimeout(searchTimer);
+      clearTimeout(resizeTimer);
+      if (dockObserver) {
+        try { dockObserver.disconnect(); } catch (error) {}
+        dockObserver = null;
+      }
       var destroyed = state.destroyed;
       state = freshState();
       state.destroyed = destroyed;
       pruneCache("");
       shell = null;
       host.replaceChildren();
+      host.classList.remove("is-docked");
+      if (host.style && typeof host.style.removeProperty === "function") host.style.removeProperty("--mi-coupang-rank-dock-space");
     }
 
     function destroy() {
@@ -4530,9 +5604,12 @@
       host.removeEventListener("click", onClick);
       host.removeEventListener("change", onChange);
       host.removeEventListener("input", onInput);
+      host.removeEventListener("keydown", onKeydown);
       host.removeEventListener("submit", onSubmit);
       host.removeEventListener("toggle", onToggle, true);
+      host.removeEventListener("scroll", onScroll, true);
       if (visibilityTarget && typeof visibilityTarget.removeEventListener === "function") visibilityTarget.removeEventListener("visibilitychange", onManualVisibility);
+      if (resizeTarget && typeof resizeTarget.removeEventListener === "function") resizeTarget.removeEventListener("resize", onResize);
       host.classList.remove("mi-coupang-rank-root");
     }
 
@@ -4556,6 +5633,11 @@
       shortAt: shortAt,
       remainText: remainText,
       cellLabel: cellLabel,
+      dayKind: dayKind,
+      dayDetailText: dayDetailText,
+      todayCellOf: todayCellOf,
+      checkedToday: checkedToday,
+      todayPill: todayPill,
       boardDays: boardDays,
       autoSummary: autoSummary,
       normalizeGroupInput: normalizeGroupInput,
@@ -4565,14 +5647,18 @@
       exportFileName: exportFileName,
       stripText: stripText,
       limitText: limitText,
+      globalLimitText: globalLimitText,
       dayLabel: dayLabel,
       errorText: errorText,
       raiseReasonText: raiseReasonText,
       settingsPatch: settingsPatch,
       isRaise: isRaise,
-      templateText: templateText,
       // ① 지금 확인
       manualView: manualView,
+      manualBoardModel: manualBoardModel,
+      manualOffLine: manualOffLine,
+      manualButtonLabel: manualButtonLabel,
+      manualCardNote: manualCardNote,
       manualBusyMine: manualBusyMine,
       manualProjected: manualProjected,
       manualPreflightText: manualPreflightText,

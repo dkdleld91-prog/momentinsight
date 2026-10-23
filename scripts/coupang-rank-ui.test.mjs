@@ -36,9 +36,10 @@ const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?!
 const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen="coupang-rank-tracking" data-coupang-rank-nav hidden>C 30일 순위</a>';
 const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>';
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
-// 캐시 꼬리표: ① 지금 확인(spec-manual §7.9)으로 c30-v2 → c30-v3.
-const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v3" />';
-const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v3"></script>';
+// 캐시 꼬리표: ① 지금 확인(spec-manual §7.9)으로 c30-v2 → c30-v3, 화면 디테일 고도화(대표 승인 2026-10-23)로 c30-v3 → c30-v4.
+// CSS·JS 를 함께 바꾸므로 두 꼬리표를 같이 올린다(새 JS + 옛 CSS 가 섞이지 않게).
+const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v4" />';
+const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v4"></script>';
 const GLUE_START = "      var coupangRankController = null;";
 const GLUE_END = "      var personalCalendarController = null;";
 
@@ -135,10 +136,19 @@ test("구역은 플레이스 구역 뒤·meta-ads 앞에 있고 data-coupang-ran
   assert.ok(adminSource.includes(`        </section>\n\n        ${SECTION_OPEN}`));
   assert.equal((adminSource.match(/<div data-coupang-rank-root><\/div>/g) || []).length, 1);
   assert.equal((adminSource.match(/data-coupang-rank-root/g) || []).length, 2, "마크업 1 + 연결 코드 셀렉터 1");
-  // 화면 머리는 N30 과 같은 문장형(kicker · h1 · 배지)이다.
+  // 화면 머리는 한 겹(kicker · h1 · 한 문장 + 오른쪽 대상 알약). '관리자 확인용' 배지와 큰 카드 머리는 없다(C30 만, 대표 결정 2026-10-23).
+  assert.ok(sectionSource.includes('<header class="mi-head mi-coupang-rank-screen-head"><div>'));
   assert.ok(sectionSource.includes("<h1>쿠팡 검색 일반 순위를 30일 기록합니다.</h1>"));
-  assert.ok(sectionSource.includes('<span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span>'));
-  assert.ok(sectionSource.includes("쿠팡 검색 1쪽에서 광고를 뺀 일반 상품 순위를 하루 단위로 기록합니다."));
+  // 머리 문장은 기록 방식(지금 확인·자동 수집)을 단정하지 않는다 — 지금 방식은 상태판이 말한다(2026-10-23 재검사).
+  assert.ok(sectionSource.includes("<p>쿠팡 검색 1쪽(로그인 안 한 상태)에서 광고를 뺀 일반 상품 순위를 하루 단위로 그날 칸에 기록합니다.</p>"));
+  assert.doesNotMatch(sectionSource, /누를 때만/u);
+  // 대상 알약 문구·마크업은 공용 스크립트 그대로(N30·N 플레이스와 같은 '대상 광고주 · …'), 자리만 오른쪽(배지 자리)으로 옮겼다.
+  assert.ok(sectionSource.includes('</div><span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span></header>'));
+  assert.doesNotMatch(sectionSource, /관리자 확인용|mi-badge|수집기 PC가 켜져 있을 때만 잽니다/u);
+  // N30 화면 머리는 그대로다(C30 만 바꾼다).
+  const n30Head = between(adminSource, '<section class="mi-view" data-mi-admin-view="naver-rank-tracking" id="mi-admin-naver-rank-tracking">', "</header>");
+  assert.ok(n30Head.includes('<span class="mi-badge">관리자 확인용</span>'));
+  assert.ok(n30Head.includes('<span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span>'));
 });
 
 test("CSS 는 캘린더 CSS 다음, 스크립트는 defer 없이 /mi-capture.js 앞에 있다", () => {
@@ -823,7 +833,7 @@ function trackerFixture(overrides = {}) {
 function listPayload(overrides = {}) {
   const trackers = overrides.trackers || [
     trackerFixture(),
-    trackerFixture({ id: "6c1f0000-0000-4000-8000-000000000002", keyword: "강화유리 필름", groupName: "필름", current: null, summary: { trend: "new", attention: false, attentionReasons: [] }, days: [] }),
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-000000000002", keyword: "강화유리 필름", keywordKey: "강화유리 필름", groupName: "필름", current: null, summary: { trend: "new", attention: false, attentionReasons: [] }, days: [] }),
   ];
   return {
     ok: true,
@@ -968,15 +978,26 @@ test("30일 판 칸 글자·작은 글·툴팁 표 전부(§8.3, N30 하루 칸 
     [{ d: "2026-10-12", s: "failed", f: 3 }, "실패", "측정", "3회 모두 실패"],
     [{ d: "2026-10-11", s: "unsupported" }, "이동", "측정", "쿠팡이 검색 결과가 아닌 쪽으로 보냈습니다"],
   ];
-  for (const [cell, text, label, tooltip] of rows) {
+  // 화면 칸 모양(C30 만, 2026-10-23): 순위 · 잰 결과 순위 밖(50위 밖·없음·결과 없음) · 실패/이동 · 안 잰 날
+  const kinds = ["is-found", "is-found", "is-out", "is-out", "is-out", "is-fail", "is-fail"];
+  rows.forEach(([cell, text, label, tooltip], index) => {
     assert.equal(internals.cellText(cell, cell.d, created), text, cell.s);
     assert.equal(internals.cellLabel(cell), label, cell.s);
     assert.equal(internals.cellTooltip(cell, cell.d, created), tooltip, cell.s);
-  }
+    assert.equal(internals.dayKind(cell), kinds[index], cell.s);
+  });
+  assert.equal(internals.dayKind(null), "is-none");
   assert.equal(internals.cellLabel(null), "순위");
-  // 행 없음 / 등록 전
+  // 행 없음 / 등록 전. 빈 날은 원인을 하나로 단정하지 않는다(지금 확인 이전 날·꺼진 날·시간 밖·그날 중지·자동 수집 멈춤).
   assert.equal(internals.cellText(null, "2026-10-12", created), "-");
-  assert.equal(internals.cellTooltip(null, "2026-10-12", created), "측정 없음(수집기 꺼짐·시간대 밖·일시중지·쉬는 중)");
+  assert.equal(internals.cellTooltip(null, "2026-10-12", created), "그날 기록 없음(지금 확인을 누르지 않았거나, 꺼짐·시간 밖·그날 중지·자동 수집 멈춤이었을 수 있습니다)");
+  assert.doesNotMatch(internals.cellTooltip(null, "2026-10-12", created), /^그날 '지금 확인'을 누르지 않아/u);
+  // 칸을 누르면 보이는 한 줄: 일시중지 기간의 빈 날만 '일시중지 중'으로 단정한다.
+  const pausedTracker = { createdDay: created, status: "paused", pausedDay: "2026-10-15" };
+  assert.equal(internals.dayDetailText(null, "2026-10-16", pausedTracker), "10-16(금) · - — 일시중지 중이라 확인하지 않았습니다");
+  assert.match(internals.dayDetailText(null, "2026-10-14", pausedTracker), /— 그날 기록 없음\(지금 확인을 누르지 않았거나/u);
+  assert.equal(internals.dayDetailText(rows[0][0], "2026-10-17", { createdDay: created }), "10-17(토) · 28위 — 11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위");
+  assert.match(internals.dayDetailText(rows[5][0], "2026-10-12", { createdDay: created }), /3회 모두 실패\. 자세한 사유는 '측정 기록'에서 봅니다$/u);
   assert.equal(internals.cellText(null, "2026-10-09", created), "");
   assert.equal(internals.cellTooltip(null, "2026-10-09", created), "");
   // 서버 DAY_RESULTS 의 모든 값에 글자가 있다.
@@ -1232,7 +1253,10 @@ test("파일명·캐시 키·용량 경고 문구", () => {
   assert.equal(internals.capacityText({ globalUsed: 70, capacity: 60 }, 2),
     "지금 설정으로는 하루 2번 키워드 약 60개까지 제때 잽니다(지금 70개). 더 등록하면 일부 키워드가 늦게 잡힙니다");
   assert.equal(internals.capacityText(null, 2), "");
-  assert.equal(internals.limitText({ used: 3, max: 100, globalUsed: 41, globalMax: 150 }), "사용 3 / 100 · 전체 41 / 150");
+  // 등록 줄 한도 알약은 이 계정 추적 수만. 여러 계정이 나눠 쓰는 전체 한도는 '자동 수집' 칸 용량 줄로 옮겼다.
+  assert.equal(internals.limitText({ used: 3, max: 100, globalUsed: 41, globalMax: 150 }), "추적 3 / 100개");
+  assert.equal(internals.globalLimitText({ used: 3, max: 100, globalUsed: 41, globalMax: 150 }), "전체 고유 키워드 41 / 150개(모든 계정 합)");
+  assert.equal(internals.globalLimitText(null), "");
 });
 
 test("확인 필요 사유·오류 문구가 계약 값 전부를 덮는다", () => {
@@ -1263,7 +1287,8 @@ test("설정 patch: 범위 오류·바뀐 칸만·속도 올림 판정", () => {
   assert.deepEqual(JSON.parse(JSON.stringify(bad.patch)), {});
   // 운영팀·광고주 공개 칸은 화면 설정에 없다(대표 결정 2026-10-23: 총관리자 전용). 값이 들어와도 patch 에 싣지 않는다.
   assert.deepEqual(JSON.parse(JSON.stringify(internals.settingsPatch(current, { minCollectorVersion: "1.0.1", teamAccessEnabled: true, clientViewEnabled: true }).patch)), { minCollectorVersion: "1.0.1" });
-  assert.match(internals.templateText(2), /^쿠팡 순위는 로그인하지 않은 검색 1쪽에서 광고를 뺀 일반 상품 순서입니다\. 하루 2회 측정하고/);
+  // 광고주 안내 문구(복붙 템플릿)는 대표 결정(2026-10-23)으로 지웠다.
+  assert.equal(internals.templateText, undefined);
 });
 
 // ── 화면 흐름 ─────────────────────────────────────────────────
@@ -1276,7 +1301,10 @@ test("대상이 없으면 '대상 광고주를 먼저 고르세요'만 보이고
   assert.equal(screen.calls.length, 0);
 });
 
-test("목록: N30 틀(큰 카드·요약칸·선택 항목 정리·그룹·카드·날짜 칸)·사용 방법·템플릿이 그려지고 캐시가 저장된다", async () => {
+// 모듈이 만든 요소의 첫 data-coupang-rank-* 속성 이름(없으면 class). 뼈대 순서를 볼 때 쓴다.
+const hookOf = (node) => [...node.attributes.keys()].find((name) => name.startsWith("data-coupang-rank-")) || node.className;
+
+test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법·자동 수집)·그룹·카드 3행·날짜 칸이 그려지고 캐시가 저장된다", async () => {
   const storage = makeStorage({ "miCoupangRank:v1:owner:other": "{}", "miRankTrackerLastGood:v1:x": "keep" });
   const screen = mountWith({ storage });
   screen.controller.show();
@@ -1286,44 +1314,68 @@ test("목록: N30 틀(큰 카드·요약칸·선택 항목 정리·그룹·카�
   assert.equal(screen.calls[0].init.method, "GET");
   assert.equal(screen.calls[0].init.timeoutMs, 30000);
   assert.equal(screen.calls[0].init.headers["x-mi-agency-code"], "mml93-a01");
-  // 뼈대: N30 처럼 큰 카드 하나(등록 줄·상태줄·목록) 아래에 사용 방법 → 안내 문구 → 총관리자 수집기 관리.
+  // 뼈대: 큰 카드 하나(등록 줄·상태줄·목록) + 아래 보조 상자 하나(접힌 줄: 사용 방법 · 내 크롬 확장 · 자동 수집). 큰 카드 머리는 없다.
   const sections = screen.host.children;
-  assert.deepEqual(sections.map((node) => node.tagName), ["ARTICLE", "DETAILS", "SECTION", "DETAILS"]);
+  assert.deepEqual(sections.map((node) => node.tagName), ["ARTICLE", "SECTION"]);
   const main = sections[0];
   assert.ok(main.classList.contains("mi-card") && main.classList.contains("mi-card-pad") && main.classList.contains("mi-rank-card"));
+  assert.equal(main.querySelectorAll(".mi-card-head").length, 0, "큰 카드 머리(꼬리표·제목·규칙 상자)는 화면 머리 한 겹으로 합쳤다");
   assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-form]")));
   assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-status]")));
   assert.ok(main.contains(screen.host.querySelector("[data-coupang-rank-board]")));
-  assert.ok(sections[1].hasAttribute("data-coupang-rank-guide") && sections[2].hasAttribute("data-coupang-rank-template") && sections[3].hasAttribute("data-coupang-rank-owner"));
+  const aux = sections[1];
+  assert.ok(aux.hasAttribute("data-coupang-rank-aux"));
+  assert.deepEqual(aux.children.map((node) => [node.tagName, hookOf(node)]), [["DETAILS", "data-coupang-rank-guide"], ["DETAILS", "data-coupang-rank-ext"], ["DETAILS", "data-coupang-rank-owner"]]);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-ext]").hidden, true, "서버 manual 칸이 없으면 '내 크롬 확장' 줄은 숨는다");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-template]"), null, "광고주 안내 문구 칸은 없다(대표 결정 2026-10-23)");
+  assert.ok(!screen.host.textContent.includes("광고주 안내 문구"));
   const board = screen.host.querySelector("[data-coupang-rank-board]");
-  assert.deepEqual(board.children.map((node) => node.tagName === "H3" ? node.textContent : node.getAttribute("class").split(" ")[0]),
-    ["상품별 일별 순위", "mi-rank-filterbar", "mi-rank-filter-help", "mi-coupang-rank-list-note", "mi-rank-auto-center", "mi-coupang-rank-manual", "mi-rank-bulk-bar", "mi-coupang-rank-list"]);
-  // ① 지금 확인 줄은 요약칸 바로 아래에 있고, 서버 manual 칸이 없으면 숨는다.
+  assert.deepEqual(board.children.map(hookOf),
+    ["mi-coupang-rank-board-head", "data-coupang-rank-list-note", "data-coupang-rank-manual-box", "data-coupang-rank-strip", "data-coupang-rank-filter", "data-coupang-rank-bulk", "data-coupang-rank-list"]);
+  assert.equal(board.children[0].querySelector("h3").textContent, "상품별 일별 순위");
+  // ① 지금 확인 상태판은 서버 manual 칸이 없으면 숨고, 자동 수집이 돌면(collector ok) 자동추적 칸이 보인다.
   assert.equal(board.querySelector("[data-coupang-rank-manual-box]").hidden, true);
-  // 등록 줄·상태줄(N30 문구)
+  // 등록 줄(입력 3칸 + 버튼) + 안내 한 줄 + 한도 알약. 버튼처럼 생긴 고정 칩 '일반 50위 이내'는 없다.
   assert.equal(screen.host.querySelector("[data-coupang-rank-keyword]").getAttribute("placeholder"), "키워드");
   assert.equal(screen.host.querySelector("[data-coupang-rank-product-url]").getAttribute("placeholder"), "쿠팡 상품 URL 붙여넣기");
   assert.equal(screen.host.querySelector("[data-coupang-rank-group-input]").getAttribute("placeholder"), "그룹(비우면 미분류)");
   assert.equal(screen.host.querySelector("[data-coupang-rank-create]").textContent, "순위 추적");
-  assert.ok(screen.host.querySelector("[data-coupang-rank-create-form]").classList.contains("mi-rank-form"));
+  const createForm = screen.host.querySelector("[data-coupang-rank-create-form]");
+  assert.ok(createForm.classList.contains("mi-rank-form"));
+  assert.deepEqual(createForm.children.map((node) => node.tagName), ["INPUT", "INPUT", "INPUT", "DATALIST", "BUTTON"]);
+  assert.ok(!screen.host.textContent.includes("일반 50위 이내"));
+  assert.equal(screen.host.querySelector(".mi-coupang-rank-form-hint").textContent, "상품 페이지 주소창의 주소(또는 상품번호) · 일반 상품 50위까지 기록 · 같은 상품이면 옵션이 달라도 인정");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-limit]").textContent, "추적 3 / 100개");
+  assert.ok(!screen.host.textContent.includes("전체 41 / 150"), "전체 한도는 자동 수집 칸으로 옮겼다");
+  // 맨 위 상태줄은 할 말이 있을 때만(불러옴 알림·기본 안내문 없음).
   const status = screen.host.querySelector("[data-coupang-rank-status]");
-  assert.equal(status.hidden, false, "상태줄은 늘 보인다");
-  // 화면을 열어 목록을 받으면 N30 처럼 '불러왔습니다'(초록)를 알린다.
-  assert.equal(status.textContent, "등록된 쿠팡 순위 추적을 불러왔습니다.");
-  assert.ok(status.classList.contains("is-ok"));
-  // 필터 줄: N30 문구, 그룹 목록은 '전체 그룹' + 기본 그룹을 뺀 이름
+  assert.equal(status.hidden, true);
+  assert.equal(status.textContent, "");
+  // 필터 줄: 버튼마다 개수, 끝에 '오늘 안 함'. 개수 글은 목록 제목 옆 평범한 글.
   assert.equal(screen.host.querySelector("[data-coupang-rank-filter-search]").getAttribute("placeholder"), "키워드, 상품명, 상품번호 검색");
   assert.deepEqual(screen.host.querySelector("[data-coupang-rank-filter-group]").children.map((option) => option.textContent), ["전체 그룹", "필름"]);
-  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-count]").textContent, "2개 표시 / 전체 2개");
-  // 선택 항목 정리(N30 제목·문구)
-  const bulkText = screen.host.querySelector("[data-coupang-rank-bulk]").textContent;
-  assert.ok(bulkText.startsWith("선택 항목 정리항목 선택 후 적용그룹명을 입력하거나 목록에서 선택하면"), bulkText);
-  assert.deepEqual(screen.host.querySelector("[data-coupang-rank-bulk]").querySelectorAll("button").map((node) => node.textContent),
-    ["그룹 생성/적용", "그룹 해제", "선택 해제", "일시중지", "다시 시작", "삭제", "표시 항목 전체 선택", "선택 이미지 저장"]);
-  // 그룹 머리(N30 문구: 전체 선택 · 미분류 · N개 추적 · 현재 최고 N위)
+  assert.deepEqual(screen.host.querySelectorAll("[data-coupang-rank-filter-status]").map((node) => node.textContent),
+    ["전체 2", "확인 필요 0", "상승 1", "하락 0", "50위 밖 0", "일시중지 0", "오늘 안 함 1"]);
+  assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="all"]').getAttribute("aria-pressed"), "true");
+  const count = screen.host.querySelector("[data-coupang-rank-filter-count]");
+  assert.equal(count.textContent, "2개 중 2개 표시");
+  assert.ok(board.children[0].contains(count), "개수는 목록 제목 줄에");
+  assert.equal(screen.host.querySelectorAll(".mi-rank-filter-help").length, 0, "도움말 한 줄은 사용 방법으로 옮겼다");
+  // 선택 항목 정리: 고르기 전에는 한 줄(안내 + '보이는 항목 전체 선택'), 동작 줄은 접혀 있다. '●'·동작 이름은 C30 만 바뀜.
+  const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
+  assert.equal(bulk.classList.contains("is-open"), false);
+  // 동작 줄은 안내 글과 같은 칸에 겹쳐 두고 감춘다(hidden 이 아니라 CSS visibility + aria-hidden — 체크해도 막대 높이가 그대로).
+  assert.equal(bulk.querySelector("[data-coupang-rank-bulk-actions]").getAttribute("aria-hidden"), "true");
+  assert.equal(bulk.querySelector("[data-coupang-rank-selected-count]").hidden, true);
+  assert.equal(bulk.querySelector(".mi-coupang-rank-bulk-hint").textContent, "카드를 체크하면 그룹 옮기기 · 일시중지 · 삭제 · 이미지 저장을 한 번에 할 수 있습니다.");
+  // '정리 열기 ▴'는 휴대폰 아래 막대 머리의 펼치기 단추(넓은 화면 CSS 는 숨김, 고르기 전에는 hidden).
+  assert.deepEqual(bulk.querySelectorAll("button").map((node) => node.textContent),
+    ["보이는 항목 전체 선택", "정리 열기 ▴", "그룹으로 옮기기", "그룹 해제", "일시중지", "다시 시작", "선택 이미지 저장", "선택 해제", "선택 삭제"]);
+  assert.equal(bulk.querySelector('[data-coupang-rank-action="bulk-sheet-toggle"]').hidden, true);
+  // 그룹 머리(N30 틀: 전체 선택 · 미분류 · N개 추적 · 지금 최고 N위)
   const groupHeads = screen.host.querySelectorAll("[data-coupang-rank-group]");
   assert.equal(groupHeads[0].getAttribute("data-coupang-rank-group"), "기본 그룹", "data 값은 서버 값 그대로");
-  assert.equal(groupHeads[0].querySelector(".mi-rank-group-head").textContent, "미분류1개 추적 · 현재 최고 28위접기");
+  assert.equal(groupHeads[0].querySelector(".mi-rank-group-head").textContent, "미분류1개 추적 · 지금 최고 28위접기");
   assert.equal(groupHeads[0].querySelector(".mi-rank-group-select").textContent, "전체 선택");
   assert.equal(groupHeads[1].querySelector(".mi-rank-group-head").textContent, "필름1개 추적접기");
   assert.ok(groupHeads[0].querySelector(".mi-rank-group-items").classList.contains("mi-rank-daily-list"));
@@ -1335,56 +1387,75 @@ test("목록: N30 틀(큰 카드·요약칸·선택 항목 정리·그룹·카�
   assert.equal(card.tagName, "SECTION");
   assert.ok(!card.hasAttribute("draggable"), "끌어서 순서 바꾸기는 없다");
   const text = card.textContent;
-  for (const expected of ["선택", "아이폰 18프로 사생활 보호 필름", "상품정보 · 8533720933", "아이쉘 360도 액정보호 풀커버 강화유리 사생활보호 필름, 2개",
-    "현재 28위", "최고 25위", "일시중지", "삭제", "상태 운영중", "상승 흐름", "전회 대비 3위 상승", "7일 평균 27.5위(50위 안 2일)", "광고 8번째", "그룹 미분류", "그룹 변경", "측정 기록",
-    `최근 ${internals.shortAt("2026-10-17T02:11:05.000Z")}`]) {
+  for (const expected of ["선택", "아이폰 18프로 사생활 보호 필름", "상품번호 8533720933", "아이쉘 360도 액정보호 풀커버 강화유리 사생활보호 필름, 2개",
+    "현재 28위", "30일 최고 25위", "일시중지", "삭제", "상승 흐름", "전회 대비 3위 상승", "7일 평균 27.5위(50위 안 2일)", "광고 8번째", "오늘 11:11 확인", "그룹 변경", "측정 기록"]) {
     assert.ok(text.includes(expected), expected);
   }
+  // 자동 수집이 돌 때는 '다음'이 보인다(지금 확인만 쓸 때는 없음).
   assert.match(text, /다음 (?:\d+분|\d+시간|\d+일|대기)/);
-  assert.equal(text.split("8533720933").length - 1, 1, "상품번호는 '상품정보 · 번호' 한 곳에만");
-  for (const old of ["30일 최고", "▲3", "추적 중", "상품번호 "]) assert.ok(!text.includes(old), old);
+  assert.equal(text.split("8533720933").length - 1, 1, "상품번호는 한 곳에만");
+  // 늘 같은 알약(상태 운영중 · 그룹 X · 광고 -)과 긴 '최근' 날짜는 두지 않는다.
+  for (const old of ["상태 운영중", "그룹 미분류", "광고 -", "최근 ", "상품정보 · ", "▲3", "추적 중"]) assert.ok(!text.includes(old), old);
+  // '선택' 글자는 화면 읽기용(체크칸 label 은 그대로라 누르는 자리는 줄지 않는다)
+  const selectLabel = card.querySelector(".mi-rank-select");
+  assert.ok(selectLabel.querySelector(".mi-coupang-rank-sr"));
+  assert.equal(selectLabel.querySelector("input").getAttribute("aria-label"), "아이폰 18프로 사생활 보호 필름 선택");
   const keywordLink = card.querySelector("a");
   assert.ok(keywordLink.classList.contains("mi-rank-keyword-name"));
+  assert.equal(keywordLink.textContent, "아이폰 18프로 사생활 보호 필름↗", "링크임이 보이게 ↗");
+  assert.equal(keywordLink.querySelector(".mi-coupang-rank-ext-mark").getAttribute("aria-hidden"), "true");
   assert.equal(keywordLink.getAttribute("href"), `https://www.coupang.com/np/search?q=${encodeURIComponent("아이폰 18프로 사생활 보호 필름")}`);
   assert.equal(keywordLink.getAttribute("target"), "_blank");
   assert.equal(keywordLink.getAttribute("rel"), "noopener noreferrer");
   const titleLink = card.querySelector("a.mi-rank-product-title");
   assert.equal(titleLink.getAttribute("href"), "https://www.coupang.com/vp/products/8533720933");
   assert.equal(titleLink.getAttribute("rel"), "noopener noreferrer");
-  // 1행 오른쪽: 현재·최고 알약 + 일시중지 + 삭제(N30 '갱신' 자리에 일시중지)
-  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "일시중지", "삭제"]);
-  // 날짜 줄: N30 칸 모양, 등록한 날(10-16)부터 오늘(10-17)까지만, '오늘' 표시 없음
+  // 1행 오른쪽: 현재(굵게) · 30일 최고 | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
+  const rowActions = card.querySelector(".mi-rank-row-actions");
+  assert.deepEqual(rowActions.children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "일시중지삭제"]);
+  assert.equal(rowActions.children[0].querySelector("b").textContent, "28위");
+  assert.ok(rowActions.children[2].classList.contains("mi-coupang-rank-card-tools"));
+  // 날짜 줄: 등록한 날(10-16)부터 오늘(10-17)까지, 오늘 칸은 '오늘 10-17', 칸마다 작은 글 없이 값만. 칸은 버튼이다.
   const dayCells = card.querySelectorAll(".mi-rank-day-card");
   assert.equal(dayCells.length, 2, "등록 전 빈칸을 그리지 않는다");
-  assert.ok(dayCells[0].classList.contains("is-sat"));
-  assert.ok(!dayCells[0].classList.contains("is-today") && !dayCells[0].textContent.includes("오늘"));
-  assert.equal(dayCells[0].querySelector("strong").textContent, "10-17(토)");
-  assert.equal(dayCells[0].querySelector("small").textContent, "순위");
+  assert.ok(dayCells[0].classList.contains("is-sat") && dayCells[0].classList.contains("is-today") && dayCells[0].classList.contains("is-found"));
+  assert.ok(!dayCells[1].classList.contains("is-today"));
+  assert.equal(dayCells[0].getAttribute("role"), "listitem");
+  assert.equal(dayCells[0].querySelector("strong").textContent, "오늘 10-17");
+  assert.equal(dayCells[1].querySelector("strong").textContent, "10-16(금)");
+  assert.equal(dayCells[0].querySelectorAll("small").length, 0, "칸마다 반복되던 작은 글 '순위'는 없다");
   assert.equal(dayCells[0].querySelector("b").textContent, "28위");
   assert.equal(dayCells[1].querySelector("b").textContent, "31위");
   assert.equal(dayCells[0].getAttribute("title"), "11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위");
-  // 측정 전 카드: 날짜 줄 대신 N30 과 같은 안내 상자
+  const dayButtons = card.querySelectorAll("[data-coupang-rank-day]");
+  assert.deepEqual(dayButtons.map((node) => [node.tagName, node.getAttribute("tabindex"), node.getAttribute("aria-pressed")]), [["BUTTON", "0", "false"], ["BUTTON", "-1", "false"]],
+    "날짜 줄의 탭 정지는 한 칸뿐(roving tabindex)");
+  assert.equal(card.querySelector(".mi-rank-day-grid").getAttribute("role"), "list");
+  assert.equal(card.querySelector("[data-coupang-rank-day-detail]").hidden, true);
+  // 측정 전 카드: 날짜 줄 대신 작은 안내 상자(무엇을 하면 기록되는지)
   const pending = cards[1];
   assert.equal(pending.querySelectorAll(".mi-rank-day-card").length, 0);
-  assert.equal(pending.querySelector(".mi-rank-state").textContent, "첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.");
-  for (const expected of ["현재 -", "최고 -", "전회 데이터 대기", "7일 평균 -", "광고 -", "그룹 필름", "최근 -"]) assert.ok(pending.textContent.includes(expected), expected);
-  assert.ok(!pending.textContent.includes("측정 전"));
+  assert.equal(pending.querySelector(".mi-rank-state").textContent, "아직 순위 기록이 없습니다. 다음 자동 수집 때 첫 순위가 기록됩니다.");
+  for (const expected of ["현재 -", "30일 최고 -", "전회 데이터 대기", "7일 평균 -", "아직 확인 전"]) assert.ok(pending.textContent.includes(expected), expected);
+  for (const old of ["측정 전", "광고 -", "그룹 필름", "최근 -"]) assert.ok(!pending.textContent.includes(old), old);
   assert.equal(pending.querySelectorAll(".mi-rank-insight-pill").length, 0, "지금 순위가 없으면 판정 알약을 두지 않는다");
-  // 자동추적 요약칸·한도·규칙·사용 방법·템플릿
+  // 자동추적 요약칸(자동 수집이 돌 때만, 지금 확인 상태판 아래)
   const strip = screen.host.querySelector("[data-coupang-rank-strip]");
+  assert.equal(strip.hidden, false);
   assert.ok(strip.classList.contains("mi-rank-auto-center"));
   assert.equal(strip.querySelector("[data-coupang-rank-strip-status]").textContent, "정상 운영");
   assert.ok(strip.textContent.includes("자동추적2개 운영 · 0개 대기 · 0개 확인"));
   assert.ok(strip.textContent.includes("최근 갱신") && strip.textContent.includes("다음 갱신") && strip.textContent.includes("하루 2회 자동 갱신 · 08~23시"));
-  assert.ok(screen.host.textContent.includes("사용 3 / 100 · 전체 41 / 150"));
-  assert.ok(screen.host.textContent.includes("비로그인 검색 1쪽 · 광고 제외 일반 순위 · 같은 상품이면 옵션이 달라도 인정"));
-  assert.ok(screen.host.textContent.includes("일반 50위 이내"));
   assert.equal(screen.host.querySelectorAll("[data-coupang-rank-group]").length, 2);
+  // 사용 방법(보조 상자의 첫 줄, 접힘). 지금 확인 칸이 없는 화면은 자동 수집 설명을 쓴다.
   const guide = screen.host.querySelector("[data-coupang-rank-guide]");
   assert.equal(guide.tagName, "DETAILS");
   assert.equal(guide.open, false);
-  assert.equal(guide.querySelectorAll("li").length, 8);
+  assert.equal(guide.querySelectorAll("li").length, 9);
   assert.ok(guide.textContent.includes("하루 2회, 08~23시"));
+  assert.ok(guide.textContent.includes("칸을 누르면(키보드는 화살표로 옮기고 Enter) 그날 기록이 카드 아래 한 줄에 보입니다"));
+  assert.ok(guide.textContent.includes("'오늘 안 함'은 일시중지가 아니면서 오늘 아직 확인하지 않은 상품입니다"));
+  assert.ok(!guide.textContent.includes("즉시 갱신 버튼은 없습니다"));
   assert.equal(screen.host.querySelector("[data-coupang-rank-owner]").hidden, false);
   // 캐시: 같은 접두사의 다른 범위 키는 지우고, N30 캐시는 건드리지 않는다.
   const saved = storage.dump();
@@ -1395,15 +1466,14 @@ test("목록: N30 틀(큰 카드·요약칸·선택 항목 정리·그룹·카�
   assert.ok(cached.savedAt > 0 && cached.payload.trackers.length === 2);
 });
 
-test("복붙 템플릿은 입력란만 채운다(저장 요청 없음)", async () => {
+test("광고주 안내 문구 칸·복사 동작은 없다(대표 결정 2026-10-23: 칸 삭제)", async () => {
   const screen = mountWith();
   screen.controller.show();
   await flush();
-  const before = screen.calls.length;
-  dispatch(screen.host.querySelector('[data-coupang-rank-action="template-fill"]'), "click");
-  await flush();
-  assert.equal(screen.calls.length, before);
-  assert.match(screen.host.querySelector("[data-coupang-rank-template-text]").value, /하루 2회 측정하고, 그날 마지막 측정을 기록합니다\. '50위 밖'은/);
+  assert.equal(screen.host.querySelectorAll('[data-coupang-rank-action="template-fill"]').length, 0);
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-template-text]").length, 0);
+  assert.doesNotMatch(moduleSource, /template-fill|templateText|광고주 안내 문구/u);
+  assert.doesNotMatch(cssSource, /mi-coupang-rank-template/u);
 });
 
 test("캐시로 먼저 그리고, 부분 목록(complete=false)이면 이전 목록을 유지한다", async () => {
@@ -1485,12 +1555,25 @@ test("readonly 모드는 쓰기 버튼·등록 폼·총관리자 패널이 없�
   assert.equal(screen.host.querySelector("[data-coupang-rank-limit]").hidden, true);
   assert.equal(screen.host.querySelector("[data-coupang-rank-status]").hidden, true);
   const card = screen.host.querySelector("[data-coupang-rank-card]");
-  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위"]);
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위"]);
   assert.equal(card.querySelectorAll('[data-coupang-rank-action="group-edit"]').length, 0);
   assert.equal(card.querySelectorAll('[data-coupang-rank-action="runs"]').length, 1, "측정 기록은 읽기 전용에서도 본다");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").hidden, true, "읽기 전용에는 지금 확인 상태판이 없다");
+  // 선택 항목 정리: 화면에 보이는 버튼만(조상 중 하나라도 숨으면 안 보임). 고르기 전에는 '보이는 항목 전체 선택'만, 고르면 이미지 저장·선택 해제.
   const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
-  assert.deepEqual(bulk.querySelectorAll("button").filter((node) => !node.hidden && !(node.parentNode && node.parentNode.hidden)).map((node) => node.textContent),
-    ["선택 해제", "표시 항목 전체 선택", "선택 이미지 저장"]);
+  // 겹친 칸에서 감춘 동작 줄(aria-hidden)과 휴대폰 전용 아래 막대 머리(넓은 화면 CSS 는 숨김)도 안 보이는 것으로 센다.
+  const shown = () => bulk.querySelectorAll("button").filter((node) => {
+    for (let current = node; current && current !== bulk; current = current.parentNode) {
+      if (current.hidden || current.getAttribute("aria-hidden") === "true" || current.classList.contains("mi-coupang-rank-bulk-dock-head")) return false;
+    }
+    return true;
+  }).map((node) => node.textContent);
+  assert.deepEqual(shown(), ["보이는 항목 전체 선택"]);
+  assert.equal(bulk.querySelector(".mi-coupang-rank-bulk-hint").textContent, "카드를 체크하면 한 장의 이미지로 저장할 수 있습니다.");
+  const check = screen.host.querySelector('[data-coupang-rank-select="6c1f0000-0000-4000-8000-000000000001"]');
+  check.checked = true;
+  dispatch(check, "change");
+  assert.deepEqual(shown(), ["보이는 항목 전체 선택", "선택 이미지 저장", "선택 해제"]);
 });
 
 test("삭제는 'n개와 30일 기록이 지워집니다' 확인을 거치고, 취소하면 요청하지 않는다", async () => {
@@ -1535,10 +1618,12 @@ test("등록: create 요청을 보내고 firstCheck 문구를 보여 준다", as
   await flush();
   const post = screen.calls.find((call) => call.init.method === "POST");
   assert.deepEqual(JSON.parse(post.init.body), { action: "create", keyword: "새 키워드", productUrl: "https://www.coupang.com/vp/products/123456" });
-  assert.ok(screen.host.textContent.includes("다음 수집 때(수집기가 켜져 있을 때) 첫 순위가 기록됩니다"));
-  assert.ok(screen.host.textContent.includes("사용 4 / 100 · 전체 42 / 150"));
+  // 이 목록은 자동 수집이 도는 상태(collector ok, 지금 확인 칸 없음)라 서버 firstCheck(queued) 문구를 그대로 쓴다.
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "등록했습니다. 다음 수집 때(수집기가 켜져 있을 때) 첫 순위가 기록됩니다.");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-limit]").textContent, "추적 4 / 100개");
   assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 3);
 });
+
 
 test("총관리자 패널: 열면 view=collector 를 받고 60초마다 다시 받으며, 속도 올림은 확인 뒤 confirmRaise 로 보낸다", async () => {
   const posts = [];
@@ -1706,44 +1791,48 @@ test("상품명이 아직 없으면 상품번호는 '상품정보 · 번호' 한
   assert.ok(sheetText.includes("상품정보 · 8533720933"));
 });
 
-test("수집이 꺼져 있으면 카드 '다음'은 '정지', 요약칸은 '수집 꺼짐'(엇갈림 없음)", async () => {
+test("자동 수집이 꺼져 있으면 카드에 '다음' 알약이 없고(늘 '정지'라 소음), 지금 확인 상태판이 없는 화면은 요약칸이 '수집 꺼짐'", async () => {
   const payload = listPayload({ collector: { state: "disabled", lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null } });
   payload.trackers.forEach((tracker) => { tracker.nextCheckState = "due"; tracker.nextCheckAt = "2026-10-17T01:00:00.000Z"; });
   const screen = mountWith({ payload });
   screen.controller.show();
   await flush();
   for (const card of screen.host.querySelectorAll("[data-coupang-rank-card]")) {
-    assert.ok(card.textContent.includes("다음 정지"), card.textContent);
-    assert.ok(!card.textContent.includes("다음 대기"));
-    // 수집이 멈췄으면 '대기'(파랑) 표시를 하지 않는다.
+    assert.equal(card.querySelectorAll("[data-coupang-rank-next]").length, 0, card.textContent);
+    assert.ok(!card.textContent.includes("다음 정지") && !card.textContent.includes("다음 대기"));
     assert.equal(card.querySelectorAll(".is-wait").length, 0);
   }
+  // 지금 확인 상태판이 없는 화면(서버 manual 칸 없음)은 예전처럼 자동추적 칸을 둔다(상태가 아무 데도 없지 않게).
   const strip = screen.host.querySelector("[data-coupang-rank-strip]");
+  assert.equal(strip.hidden, false);
   assert.equal(strip.querySelector("[data-coupang-rank-strip-status]").textContent, "수집 꺼짐");
   assert.ok(strip.textContent.includes("다음 갱신정지"));
 });
 
-test("수집이 돌고 대기 중인 카드는 상태 알약이 '대기'(is-wait) 색이다(N30 규칙)", async () => {
+test("자동 수집이 돌고 대기 중인 카드는 '다음 대기' 알약이 대기(is-wait) 색이다('상태 운영중' 알약은 없다)", async () => {
   const payload = listPayload();
   payload.trackers[0].nextCheckState = "due";
   const screen = mountWith({ payload });
   screen.controller.show();
   await flush();
   const card = screen.host.querySelector("[data-coupang-rank-card]");
-  assert.equal(card.querySelector(".is-wait").textContent, "상태 운영중");
-  assert.ok(card.textContent.includes("다음 대기"));
+  assert.equal(card.querySelector(".is-wait").textContent, "다음 대기");
+  assert.ok(!card.textContent.includes("상태 운영중"));
 });
 
-test("일시중지 카드: '상태 중지 · MM-DD부터', '다시 시작' 버튼, 다음 '-'", async () => {
+test("일시중지 카드: '일시중지 · MM-DD부터', 마지막 확인, '다시 시작' 버튼, 다음 '-'", async () => {
   const payload = listPayload({ trackers: [trackerFixture({ status: "paused", pausedAt: "2026-10-16T05:00:00.000Z", pausedDay: "2026-10-16", nextCheckState: "paused", nextCheckAt: null })] });
   const screen = mountWith({ payload });
   screen.controller.show();
   await flush();
   const card = screen.host.querySelector("[data-coupang-rank-card]");
   assert.ok(card.classList.contains("is-paused"));
-  assert.ok(card.textContent.includes("상태 중지 · 10-16부터"));
+  const ops = card.querySelector(".mi-rank-ops-row");
+  assert.equal(ops.children[0].textContent, "일시중지 · 10-16부터");
+  assert.ok(ops.textContent.includes("마지막 확인 10-17 11:11"), ops.textContent);
+  assert.ok(!ops.textContent.includes("오늘 아직"), "일시중지 카드는 '오늘 아직'으로 재촉하지 않는다");
   assert.ok(card.textContent.includes("다음 -"));
-  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "다시 시작", "삭제"]);
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "다시 시작삭제"]);
 });
 
 test("'다음'은 응답 없음·광고주 화면에서 요약칸과 같은 말을 쓴다", () => {
@@ -1793,7 +1882,7 @@ test("카드 '다음' 남은 시간은 60초마다 다시 계산한다(목록 �
   screen.controller.show();
   await flush();
   const nextText = () => screen.host.querySelector("[data-coupang-rank-next]").textContent;
-  const statePill = () => screen.host.querySelector("[data-coupang-rank-state-pill]");
+  const statePill = () => screen.host.querySelector("[data-coupang-rank-next]");
   assert.equal(nextText(), "다음 41분");
   assert.equal(statePill().classList.contains("is-wait"), false);
   const ticker = screen.intervals.find((entry) => entry.ms === 60000);
@@ -1857,7 +1946,10 @@ test("확인 필요 사유는 판정 자리 알약으로(따로 있던 경고 �
   const card = screen.host.querySelector("[data-coupang-rank-card]");
   const pills = card.querySelectorAll(".mi-rank-insight-pill");
   assert.deepEqual(pills.map((node) => [node.textContent, node.classList.contains("is-error")]), [["50위 밖으로 이탈", true]]);
-  assert.ok(card.textContent.includes("현재 50위 밖") && card.textContent.includes("전회 대비 50위 밖 이탈"));
+  // 이탈은 한 번만: 판정 알약이 '50위 밖으로 이탈'이면 같은 뜻의 '전회 대비 50위 밖 이탈'은 두지 않는다. '현재'는 빨간 테두리.
+  assert.ok(card.textContent.includes("현재 50위 밖"));
+  assert.ok(!card.textContent.includes("전회 대비 50위 밖 이탈"));
+  assert.ok(card.querySelector(".mi-coupang-rank-current").classList.contains("is-out"));
   assert.equal(card.querySelectorAll(".mi-coupang-rank-attention").length, 0);
   assert.equal(screen.host.querySelector("[data-coupang-rank-strip-status]").textContent, "확인 필요");
 });
@@ -1885,7 +1977,10 @@ test("50위 밖이 이어지는 카드: 판정 자리 '점검 필요'(빨강) ·
   assert.ok(metric.classList.contains("is-error"));
   dispatch(host.querySelector('[data-coupang-rank-filter-status="attention"]'), "click");
   assert.deepEqual(host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")), ["6c1f0000-0000-4000-8000-000000000003"]);
-  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "1개 표시 / 전체 2개");
+  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "2개 중 1개 표시");
+  // 대표 결정 2026-10-23: '점검 필요' 알약은 그대로 두고, '현재'도 빨간 테두리로 보인다.
+  assert.ok(card.querySelector(".mi-coupang-rank-current").classList.contains("is-out"));
+  assert.equal(host.querySelector('[data-coupang-rank-filter-status="attention"]').textContent, "확인 필요 1");
 });
 
 test("그룹 필터를 건 채 '선택 항목 정리' 그룹명 입력칸·카드 그룹 변경 칸의 change 는 그룹 필터를 풀지 않고, '그룹 생성/적용' 첫 클릭이 그대로 보낸다(N30 결함 확인, 대표 결정 2026-10-17)", async () => {
@@ -1929,7 +2024,14 @@ test("그룹 필터를 건 채 '선택 항목 정리' 그룹명 입력칸·카�
   dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
   await flush();
   assert.deepEqual(posts, [{ action: "group", ids: [filmId], groupName: "새 그룹" }], "첫 클릭 한 번에 보낸다");
-  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "1개 추적 항목을 새 그룹 그룹으로 넣고 전체 그룹으로 돌아왔습니다.");
+  // 결과는 누른 자리(선택 항목 정리 막대 안 한 줄)에. 선택을 비워 막대가 한 줄로 접혀도 결과 줄은 보인다.
+  const note = host.querySelector("[data-coupang-rank-bulk-note]");
+  assert.equal(note.textContent, "1개 추적 항목을 새 그룹 그룹으로 넣고 전체 그룹으로 돌아왔습니다.");
+  assert.equal(note.hidden, false);
+  assert.equal(note.getAttribute("aria-live"), "polite");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-actions]").getAttribute("aria-hidden"), "true", "선택을 비워 막대는 접혔다");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk]").classList.contains("is-open"), false);
+  assert.equal(host.querySelector("[data-coupang-rank-status]").hidden, true, "성공은 맨 위 상태줄에 겹쳐 쓰지 않는다");
 });
 
 test("'그룹 해제'는 group 동작에 빈 그룹 이름을 보내고, 적용 뒤 선택·그룹 필터를 비운다", async () => {
@@ -1960,8 +2062,8 @@ test("'그룹 해제'는 group 동작에 빈 그룹 이름을 보내고, 적용 
   dispatch(host.querySelector('[data-coupang-rank-action="bulk-ungroup"]'), "click");
   await flush();
   assert.deepEqual(posts, [{ action: "group", ids: ["6c1f0000-0000-4000-8000-000000000002"], groupName: "" }]);
-  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "1개 추적 항목을 그룹에서 해제했습니다.");
-  assert.equal(host.querySelector("[data-coupang-rank-selected-count]").textContent, "항목 선택 후 적용");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-note]").textContent, "1개 추적 항목을 그룹에서 해제했습니다.");
+  assert.equal(host.querySelector("[data-coupang-rank-selected-count]").hidden, true, "선택을 비우면 'n개 선택'이 사라지고 막대가 한 줄로 접힌다");
   assert.equal(host.querySelectorAll("[data-coupang-rank-card]").length, 2, "전체 그룹으로 돌아온다");
 });
 
@@ -1989,12 +2091,13 @@ test("'그룹 생성/적용': N30 과 같은 안내, '미분류'라고 적으면
   assert.equal(input.getAttribute("placeholder"), "그룹명 선택 또는 입력");
   dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
   await flush();
-  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "만들거나 이동할 그룹명을 입력해주세요.");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-note]").textContent, "만들거나 이동할 그룹명을 입력해주세요.");
+  assert.ok(host.querySelector("[data-coupang-rank-bulk-note]").classList.contains("is-warn"));
   input.value = "A 업체";
   dispatch(host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
   await flush();
   assert.deepEqual(posts.at(-1), { action: "group", ids: [TITLELESS_ID], groupName: "A 업체" });
-  assert.equal(host.querySelector("[data-coupang-rank-status]").textContent, "1개 추적 항목을 A 업체 그룹으로 넣고 전체 그룹으로 돌아왔습니다.");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-note]").textContent, "1개 추적 항목을 A 업체 그룹으로 넣고 전체 그룹으로 돌아왔습니다.");
   assert.equal(input.value, "", "적용 뒤 입력을 비운다");
   pick();
   input.value = "미분류";
@@ -2067,7 +2170,7 @@ test("빈 목록·필터 0개 문구는 N30 과 같다", async () => {
   const empty = mountWith({ payload: listPayload({ trackers: [] }) });
   empty.controller.show();
   await flush();
-  assert.equal(empty.host.querySelector("[data-coupang-rank-list]").textContent, "추적 등록 후 상품별 일별 순위판이 생성됩니다.");
+  assert.equal(empty.host.querySelector("[data-coupang-rank-list]").textContent, "아직 등록한 상품이 없습니다. 위에 키워드와 쿠팡 상품 주소를 넣고 '순위 추적'을 누르세요.");
   assert.equal(empty.host.querySelector("[data-coupang-rank-strip]").hidden, false, "추적이 0개여도 수집기 상태는 보인다");
   const screen = mountWith();
   screen.controller.show();
@@ -2233,7 +2336,7 @@ test("한 범위 추적이 500개를 넘으면(hasMore) 받은 500개를 경고�
   const capacity = host.querySelector("[data-coupang-rank-capacity]");
   assert.equal(capacity.hidden, false);
   assert.match(capacity.textContent, /등록할 수 없습니다/);
-  assert.match(host.querySelector("[data-coupang-rank-filter-count]").textContent, /500개 표시 \/ 받은 500개\(전체 501개\)/);
+  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "받은 500개(전체 501개) 중 500개 표시");
   // 일부 목록은 캐시하지 않는다.
   assert.equal(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), null);
   // 막힌 동작은 숨긴 버튼·제출 경로로 들어와도 보내지 않는다.
@@ -2515,6 +2618,15 @@ const settle = async () => {
 };
 
 const manualLine = (screen) => screen.host.querySelector("[data-coupang-rank-manual-line]");
+// 상태판 '직전 확인(HH:MM): …' 줄의 결과 문구(지금 확인 결과는 맨 위 상태줄이 아니라 상태판과 누른 카드에 보인다).
+const resultText = (screen) => screen.host.querySelector("[data-coupang-rank-manual-result]").textContent.replace(/^직전 확인\(\d{2}:\d{2}\): /u, "");
+const manualPill = (screen) => screen.host.querySelector("[data-coupang-rank-manual-state]").textContent;
+const manualMetric = (screen, key) => screen.host.querySelector(`[data-coupang-rank-manual-metric="${key}"]`).querySelector("strong").textContent;
+const cardNoteFor = (screen, id = TRACKER_ID) => {
+  const card = screen.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${id}"]`);
+  const note = card && card.querySelector("[data-coupang-rank-card-note]");
+  return note ? note.textContent : "";
+};
 const manualBanner = (screen) => screen.host.querySelector("[data-coupang-rank-manual-banner]");
 const manualResult = (screen) => screen.host.querySelector("[data-coupang-rank-manual-result]");
 const manualButtons = (screen) => screen.host.querySelectorAll("[data-coupang-rank-manual]");
@@ -2598,8 +2710,11 @@ test("지금 확인 상태 줄: 위에서부터 처음 맞는 것(spec-manual §
   assert.equal(view({ server: manualPayload({ state: "stopped", stoppedDay: "2026-10-22" }) }).banner, false);
   assert.equal(view({ server: manualPayload({ state: "stopped", stoppedDay: "2026-10-23" }), now: SERVER_NOW + 86400000 }).state, "ready");
   // 진행 중
-  // 2026-10-23 검토: 첫 읽기 전에 창을 닫으면 차단 신호를 잃을 수 있어 '직접 닫지 말라'를 함께 안내한다
-  assert.match(view({ run: { phase: "check" } }).text, /^확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다\(약 20초, 확장이 저절로 닫습니다\)\. 열린 창을 직접 닫거나, 창 안을 누르거나, 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요\.$/u);
+  // 2026-10-23 검토: 첫 읽기 전에 창을 닫으면 차단 신호를 잃을 수 있어 '직접 닫지 말라'를 함께 안내한다.
+  // 디테일 고도화(2026-10-23)로 문장은 짧게 했지만 금지 네 가지(창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기)는 그대로다.
+  const running = view({ run: { phase: "check" } }).text;
+  assert.equal(running, "확인 중입니다… 새 시크릿 창이 약 20초 열렸다 저절로 닫힙니다. 그 창을 닫거나 누르거나 내리지(가리지) 말고, 이 화면도 닫지 마세요.");
+  for (const warning of ["창을 닫거나", "누르거나", "내리지(가리지)", "이 화면도 닫지 마세요"]) assert.ok(running.includes(warning), warning);
   assert.match(view({ run: { phase: "check", slow: true } }).text, /확장 응답이 늦습니다\. 최대 9분까지 기다립니다/u);
   assert.match(view({ run: { phase: "record", resumed: true } }).text, /앞서 보내지 못한 확인 결과/u);
   // 확장 쪽 문제(창을 열기 전에 멈춤)
@@ -2887,7 +3002,7 @@ test("결과를 보내지 못한 뒤 서버가 누구 것인지 알려 주지 �
   assert.equal(screen.server.of("manual-record").length, 3, "같은 실행 안에서 3번 보내 봤지만 연결 실패");
   assert.match(manualResult(screen).textContent, /결과를 서버에 보내지 못했습니다\(인터넷 연결을 확인해 주세요\)/u);
   // 기록 뒤 목록 GET 의 manual 은 claim 때의 '진행 중'(60초) 그대로이고 요청 id 가 없다 — 본인이라고도, 다른 사람이라고도 하지 않는다
-  assert.match(manualLine(screen).textContent, /^지금 확인: 진행 중인 확인이 있습니다\(약 [^)]+ 뒤 끝남\)\. 이 화면이 서버에 보내지 못한 결과는/u);
+  assert.match(manualLine(screen).textContent, /^진행 중인 확인이 있습니다\(약 [^)]+ 뒤 끝남\)\. 이 화면이 서버에 보내지 못한 결과는/u);
   assert.doesNotMatch(manualLine(screen).textContent, /방금 확인 결과를 서버에 보내지 못했습니다|다른 확인이 진행 중/u);
   // 진행 중이 끝날 때(+2초) 목록을 다시 받으며 남긴 결과를 저절로 다시 보낸다(30초 간격 뒤) → 보냈으면 그 문구를 지운다
   online = true;
@@ -2899,11 +3014,11 @@ test("결과를 보내지 못한 뒤 서버가 누구 것인지 알려 주지 �
   assert.equal(screen.server.of("manual-record").length, 4);
   assert.equal(screen.local.getItem("miCoupangRankManual:v1:pending"), null);
   assert.doesNotMatch(manualLine(screen).textContent, /보내지 못한|보내지 못했습니다|다른 확인이 진행 중/u);
-  assert.match(screen.host.querySelector("[data-coupang-rank-status]").textContent, /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인 완료/u);
+  assert.match(resultText(screen), /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인 완료/u);
 });
 
 test("서버 요약의 진행 중 요청 id 가 이 요청이면 본인 문구, 다른 요청이면 '다른 확인'(시각과 무관)", async () => {
-  for (const [busyClaimId, expected] of [[CLAIM_ID, /^지금 확인: 방금 확인 결과를 서버에 보내지 못했습니다\. 이 화면을 열어 두면 잠시 뒤/u], [OTHER_CLAIM_ID, /^지금 확인: 다른 확인이 진행 중입니다\./u]]) {
+  for (const [busyClaimId, expected, pill] of [[CLAIM_ID, /^방금 확인 결과를 서버에 보내지 못했습니다\. 이 화면을 열어 두면 잠시 뒤/u, "결과 보내지 못함"], [OTHER_CLAIM_ID, /^다른 확인이 진행 중입니다\./u, "다른 확인 진행 중"]]) {
     const clock = { now: Date.now() };
     const screen = unsentScreen({ clock, claimManual: () => ({ ...manualPayload({ state: "busy", usedToday: 4, busyUntil: iso(SERVER_NOW + 60000) }), busyClaimId }) });
     screen.controller.show();
@@ -2912,6 +3027,7 @@ test("서버 요약의 진행 중 요청 id 가 이 요청이면 본인 문구, 
     await settle();
     assert.equal(screen.server.of("manual-record").length, 3);
     assert.match(manualLine(screen).textContent, expected, busyClaimId);
+    assert.equal(manualPill(screen), pill, busyClaimId);
   }
 });
 
@@ -2924,7 +3040,7 @@ test("내 결과를 계속 못 보내는 동안 다른 사람 확인이 진행 �
   dispatch(manualButtonFor(screen), "click");
   await settle();
   assert.equal(screen.server.of("manual-record").length, 3);
-  assert.match(manualLine(screen).textContent, /^지금 확인: 진행 중인 확인이 있습니다/u);
+  assert.match(manualLine(screen).textContent, /^진행 중인 확인이 있습니다/u);
   // 151초 뒤: 내 확인(확인 뒤 150초)은 서버에서 끝났고, 다른 사람의 열린 요청이 '진행 중'(요청 id 는 서버가 주지 않음)
   clock.now += 151000;
   screen.server.manual = manualPayload({ state: "busy", usedToday: 5, busyUntil: iso(SERVER_NOW + 151000 + 60000), serverTime: iso(SERVER_NOW + 151000) });
@@ -2933,7 +3049,7 @@ test("내 결과를 계속 못 보내는 동안 다른 사람 확인이 진행 �
   refresh[0].fn();
   await settle();
   assert.ok(screen.server.of("manual-record").length >= 4, "목록을 다시 받으며 남긴 결과를 다시 보내 봤다(또 실패)");
-  assert.match(manualLine(screen).textContent, /^지금 확인: 다른 확인이 진행 중입니다\./u);
+  assert.match(manualLine(screen).textContent, /^다른 확인이 진행 중입니다\./u);
   assert.doesNotMatch(manualLine(screen).textContent, /보내지 못했습니다|보내지 못한/u);
 });
 
@@ -2942,13 +3058,25 @@ test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지
   screen.controller.show();
   await settle();
   const cards = screen.host.querySelectorAll("[data-coupang-rank-card]");
-  assert.deepEqual(cards[0].querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "지금 확인", "일시중지", "삭제"]);
+  // 1행 오른쪽: 현재 · 30일 최고 · 지금 확인(주 버튼) | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
+  assert.deepEqual(cards[0].querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "지금 확인", "일시중지삭제"]);
   const buttonNode = manualButtonFor(screen);
   assert.equal(buttonNode.getAttribute("data-coupang-rank-action"), "manual-check");
   assert.equal(buttonNode.disabled, false);
+  assert.ok(buttonNode.classList.contains("mi-coupang-rank-manual-button"));
+  assert.ok(buttonNode.classList.contains("is-done"), "오늘(목록 todayKst 10-17) 이미 확인한 카드는 테두리 모양(보조)");
+  assert.ok(!manualButtonFor(screen, "6c1f0000-0000-4000-8000-000000000002").classList.contains("is-done"), "오늘 아직인 카드만 채운 주 버튼");
   assert.equal(manualButtons(screen).length, 2);
   assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").hidden, false);
-  assert.equal(manualLine(screen).textContent, "지금 확인: 오늘 3/30번 · 09~19시 · 검색 사이 3분 · 누르면 새 시크릿 창이 잠깐 열렸다 닫힙니다.");
+  // 상태판: 알약 · 한 줄 설명 · 칸 3개 · 끄기
+  assert.equal(manualPill(screen), "바로 확인 가능");
+  assert.equal(manualLine(screen).textContent, "카드의 '지금 확인'을 누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열고 닫습니다.");
+  assert.equal(manualMetric(screen, "next"), "지금 가능");
+  assert.equal(manualMetric(screen, "used"), "3 / 30번");
+  assert.equal(manualMetric(screen, "today"), "1 / 2개");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-toggle]").textContent, "지금 확인 끄기");
+  // 자동 수집이 돌지 않는 화면이 아니라(collector ok) 자동추적 칸도 함께 보인다(서버는 둘이 함께 켜지지 않게 막는다).
+  assert.equal(screen.host.querySelector("[data-coupang-rank-strip]").hidden, false);
   assert.equal(screen.bridge.of("mi-coupang-hello").length, 1, "화면을 열면 확장에 한 번 묻는다");
   assert.equal(screen.bridge.messages[0].id, EXT_ID);
   assert.equal(screen.bridge.of("mi-coupang-check").length, 0, "열기만 해서는 검색하지 않는다");
@@ -2958,19 +3086,27 @@ test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지
   paused.controller.show();
   await settle();
   assert.equal(manualButtons(paused).length, 0, "일시중지 추적에는 버튼이 없다");
-  assert.deepEqual(paused.host.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "다시 시작", "삭제"]);
+  assert.deepEqual(paused.host.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "다시 시작삭제"]);
+  // 꺼짐이면 카드 버튼은 숨기지만 상태판은 본문에 남아 '꺼짐'과 '지금 확인 켜기'를 보인다. SQL 전·서버 칸 없음이면 상태판도 숨긴다.
   const cases = [
-    ["지금 확인 꺼짐", { manual: manualPayload({ state: "off", enabled: false }) }],
-    ["대표 SQL 전", { manual: manualPayload({ state: "setup_required" }) }],
-    ["서버 manual 칸 없음", { manual: null }],
+    ["지금 확인 꺼짐", { manual: manualPayload({ state: "off", enabled: false }) }, false],
+    ["대표 SQL 전", { manual: manualPayload({ state: "setup_required" }) }, true],
+    ["서버 manual 칸 없음", { manual: null }, true],
   ];
-  for (const [name, options] of cases) {
+  for (const [name, options, boardHidden] of cases) {
     const other = mountManual(options);
     other.controller.show();
     await settle();
     assert.equal(manualButtons(other).length, 0, name);
-    assert.equal(other.host.querySelector("[data-coupang-rank-manual-box]").hidden, true, name);
+    assert.equal(other.host.querySelector("[data-coupang-rank-manual-box]").hidden, boardHidden, name);
     assert.equal(other.bridge.messages.length, 0, `${name}: 확장에 묻지 않는다`);
+    if (!boardHidden) {
+      assert.equal(manualPill(other), "꺼짐");
+      assert.equal(manualLine(other).textContent, "자동 수집으로 기록 중입니다(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.", "목록의 collector 가 ok(자동 수집이 도는 중)");
+      const toggle = other.host.querySelector("[data-coupang-rank-manual-toggle]");
+      assert.equal(toggle.textContent, "지금 확인 켜기");
+      assert.equal(toggle.getAttribute("data-coupang-rank-action"), "manual-enable");
+    }
   }
   const team = mountManual({ mount: { isOwner: false } });
   team.controller.show();
@@ -3015,13 +3151,20 @@ test("누르기 흐름: hello → manual-claim → check(claimId·claimToken·ke
   assert.equal(screen.server.posts.map((entry) => entry.body.action).join(","), "manual-claim,manual-record");
   assert.ok(screen.server.gets.length > getsBefore, "기록 뒤 목록을 다시 받는다");
   const expected = `확인 완료: '${KEYWORD}' 일반 12위(일반 50개 중). (오늘 4/30번 사용)`;
-  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, expected);
+  assert.equal(resultText(screen), expected);
   assert.match(manualResult(screen).textContent, new RegExp(`^직전 확인\\(\\d{2}:\\d{2}\\): ${expected.replace(/[().]/gu, "\\$&")}$`, "u"));
   assert.equal(screen.local.getItem("miCoupangRankManual:v1:pending"), null, "서버가 받으면 남겨 둔 결과를 지운다");
   assert.ok(!JSON.stringify(screen.storage.dump()).includes(CLAIM_TOKEN), "1회용 토큰은 목록 캐시에 남지 않는다");
-  // 목록 응답의 manual(간격)을 다시 받아 버튼은 꺼지고 남은 시간을 보인다
-  assert.match(manualLine(screen).textContent, /^다음 확인은 \d분 \d{2}초 뒤에 할 수 있습니다/u);
+  // 목록 응답의 manual(간격)을 다시 받아 버튼은 꺼지고, 남은 시간은 버튼 글자와 상태판 '다음 확인' 칸에 보인다
+  assert.equal(manualPill(screen), "3분 간격 기다리는 중");
+  assert.equal(manualLine(screen).textContent, "카드의 '지금 확인'을 누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열고 닫습니다.");
+  assert.match(manualMetric(screen, "next"), /^\d분 \d{2}초 뒤$/u);
   assert.equal(manualButtonFor(screen).disabled, true);
+  assert.match(manualButtonFor(screen).textContent, /^\d분 \d{2}초 뒤$/u);
+  // 결과는 누른 카드 운영줄 첫 칸에도 짧게(한 곳만, 맨 위 상태줄에는 겹쳐 쓰지 않는다)
+  assert.match(cardNoteFor(screen), /^방금 확인 \d{2}:\d{2} · 일반 12위로 기록$/u);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").hidden, true);
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card-note]").length, 1);
   // 확장에 check 를 보내는 곳은 startManualCheck 하나이고, 클릭 동작에서만 부른다(예약·반복·전체 확인 없음)
   assert.equal((moduleSource.match(/type: MANUAL_CHECK_TYPE/gu) || []).length, 1);
   assert.ok(functionBlock(moduleSource, "startManualCheck").includes("type: MANUAL_CHECK_TYPE"));
@@ -3052,7 +3195,7 @@ test("확장이 막히면 서버 요청 0번(횟수 안 씀), claim 이 거절�
   await settle();
   assert.equal(later.server.posts.length, 0);
   assert.equal(bridge.of("mi-coupang-check").length, 0);
-  assert.match(later.host.querySelector("[data-coupang-rank-status]").textContent, /다른 시크릿 창이 열려 있습니다.*쿠팡 검색은 하지 않았습니다\./u);
+  assert.match(resultText(later), /다른 시크릿 창이 열려 있습니다.*쿠팡 검색은 하지 않았습니다\./u);
   // 확장이 사라짐(개발자 모드 꺼짐 등) → 서버 요청 없음
   const gone = fakeBridge();
   const vanished = mountManual({ bridge: gone });
@@ -3072,8 +3215,11 @@ test("확장이 막히면 서버 요청 0번(횟수 안 씀), claim 이 거절�
   await settle();
   assert.equal(refused.bridge.of("mi-coupang-check").length, 0);
   assert.equal(refused.server.of("manual-record").length, 0);
-  assert.equal(refused.host.querySelector("[data-coupang-rank-status]").textContent, "검색 사이 간격(3분)을 기다리는 중입니다(1분 40초 남음). 쿠팡 검색은 하지 않았습니다.");
-  assert.match(manualLine(refused).textContent, /^다음 확인은 1분 40초 뒤/u);
+  assert.equal(resultText(refused), "검색 사이 간격(3분)을 기다리는 중입니다(1분 40초 남음). 쿠팡 검색은 하지 않았습니다.");
+  assert.equal(manualMetric(refused, "next"), "1분 40초 뒤");
+  assert.equal(manualButtonFor(refused).textContent, "1분 40초 뒤");
+  // 확인을 시작하지 않았으므로 머리말은 '방금 확인'이 아니라 '방금 누름'(2026-10-23 재검사)
+  assert.match(cardNoteFor(refused), /^방금 누름 \d{2}:\d{2} · 시작하지 않음 · 쿠팡 검색 안 함$/u);
 });
 
 test("시작 못 함·응답 없음 보고 모양, 응답 없음 뒤에는 확장을 한 번 깨운다", async () => {
@@ -3084,7 +3230,7 @@ test("시작 못 함·응답 없음 보고 모양, 응답 없음 뒤에는 확�
   dispatch(manualButtonFor(notStarted), "click");
   await settle();
   assert.deepEqual(notStarted.server.of("manual-record")[0].body, { action: "manual-record", claimId: CLAIM_ID, claimToken: CLAIM_TOKEN, outcome: "not_started", outcomeCode: "host_access_withheld" });
-  assert.match(notStarted.host.querySelector("[data-coupang-rank-status]").textContent, /사이트 액세스'가 막혀 있어 시작하지 않았습니다\. 쿠팡 검색은 하지 않았습니다\. \(오늘 4\/30번 사용\)/u);
+  assert.match(resultText(notStarted), /사이트 액세스'가 막혀 있어 시작하지 않았습니다\. 쿠팡 검색은 하지 않았습니다\. \(오늘 4\/30번 사용\)/u);
 
   const lost = mountManual({ check: async () => ({ ok: false, code: "extension_no_response" }), record: { ok: true, accepted: false, outcome: "lost", manual: manualPayload({ usedToday: 4 }) } });
   lost.controller.show();
@@ -3094,7 +3240,7 @@ test("시작 못 함·응답 없음 보고 모양, 응답 없음 뒤에는 확�
   await settle();
   assert.deepEqual(lost.server.of("manual-record")[0].body, { action: "manual-record", claimId: CLAIM_ID, claimToken: CLAIM_TOKEN, outcome: "lost", outcomeCode: "extension_no_response" });
   assert.equal(lost.bridge.of("mi-coupang-hello").length, hellosBefore + 2, "누르기 직전 1번 + 응답 없음 뒤 깨우기 1번");
-  assert.match(lost.host.querySelector("[data-coupang-rank-status]").textContent, /검색이 됐는지는 확인하지 못했습니다/u);
+  assert.match(resultText(lost), /검색이 됐는지는 확인하지 못했습니다/u);
 
   const timeout = mountManual({ check: async () => ({ ok: false, code: "extension_timeout" }), record: { ok: true, accepted: false, outcome: "lost" } });
   timeout.controller.show();
@@ -3119,7 +3265,9 @@ test("진행 중에는 두 번 눌러도 claim 1번, 누른 카드는 '확인 �
   assert.equal(screen.bridge.of("mi-coupang-check").length, 1);
   assert.equal(manualButtonFor(screen).textContent, "확인 중…");
   assert.ok(manualButtons(screen).every((node) => node.disabled), "진행 중에는 모든 '지금 확인'이 꺼진다");
-  assert.match(manualLine(screen).textContent, /^확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다/u);
+  assert.match(manualLine(screen).textContent, /^확인 중입니다… 새 시크릿 창이 약 20초 열렸다 저절로 닫힙니다\. 그 창을 닫거나 누르거나 내리지\(가리지\) 말고, 이 화면도 닫지 마세요\.$/u);
+  assert.equal(manualPill(screen), "확인 중");
+  assert.equal(manualMetric(screen, "next"), "확인 중");
   const pending = JSON.parse(screen.local.getItem("miCoupangRankManual:v1:pending"));
   assert.equal(pending.claimId, CLAIM_ID, "결과를 받기 전에도 확인 번호를 남겨 둔다(새로고침 대비)");
   const slow = screen.timeouts.find((entry) => entry.ms === 150000);
@@ -3131,7 +3279,9 @@ test("진행 중에는 두 번 눌러도 claim 1번, 누른 카드는 '확인 �
   await settle();
   assert.equal(screen.server.of("manual-record").length, 1);
   assert.equal(slow.cleared, true);
-  assert.equal(manualButtonFor(screen).textContent, "지금 확인");
+  // 끝나면 '확인 중…'이 풀리고, 서버가 준 간격(3분)을 버튼 글자로 센다.
+  assert.match(manualButtonFor(screen).textContent, /^\d분 \d{2}초 뒤$/u);
+  assert.ok(!manualButtonFor(screen).classList.contains("is-running"));
 });
 
 test("확장이 본 차단은 서버 기록 경로로 가서 그날 중지가 걸린다(화면이 먼저 막지 않는다)", async () => {
@@ -3159,7 +3309,7 @@ test("확장이 본 차단은 서버 기록 경로로 가서 그날 중지가 �
   assert.equal(banner.textContent, "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 모두 멈췄습니다(12:00 · 쿠팡 응답 HTTP 403). 내일 09시부터 저절로 다시 됩니다.");
   assert.equal(manualLine(screen).hidden, true);
   assert.ok(manualButtons(screen).every((node) => node.disabled));
-  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "확인한 화면이 차단으로 보여(쿠팡 응답 HTTP 403) 오늘 '지금 확인'을 모두 멈췄습니다. 내일 09시부터 저절로 다시 됩니다.");
+  assert.equal(resultText(screen), "확인한 화면이 차단으로 보여(쿠팡 응답 HTTP 403) 오늘 '지금 확인'을 모두 멈췄습니다. 내일 09시부터 저절로 다시 됩니다.");
   // 서버가 받은 차단 결과는 확장에 '지워도 된다'(ack)를 보내 확장의 남은 결과·새 검색 막힘을 푼다
   assert.deepEqual(screen.bridge.of("mi-coupang-ack").map((entry) => entry.message), [{ type: "mi-coupang-ack", claimId: CLAIM_ID }]);
 });
@@ -3182,7 +3332,7 @@ test("결과를 보내지 못하면 2번 더 보내고, 끝내 못 보내면 남
   dispatch(manualButtonFor(screen), "click");
   await settle();
   assert.equal(server.of("manual-record").length, 3, "처음 1번 + 다시 2번");
-  const status = screen.host.querySelector("[data-coupang-rank-status]").textContent;
+  const status = resultText(screen);
   assert.match(status, /^결과를 서버에 보내지 못했습니다\(인터넷 연결을 확인해 주세요\)\. 이 화면을 10분 안에 다시 열면 저절로 다시 보냅니다\.$/u);
   assert.doesNotMatch(status, /Failed to fetch/u);
   const kept = JSON.parse(local.getItem("miCoupangRankManual:v1:pending"));
@@ -3197,7 +3347,7 @@ test("결과를 보내지 못하면 2번 더 보내고, 끝내 못 보내면 남
   assert.equal(server.of("manual-claim").length, 1, "남긴 결과를 보낼 때는 새 확인을 받지 않는다");
   assert.equal(local.getItem("miCoupangRankManual:v1:pending"), null);
   assert.equal(manualBanner(tab).hidden, false, "보낸 결과가 차단이면 그날 중지 띠");
-  assert.match(tab.host.querySelector("[data-coupang-rank-status]").textContent, /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인한 화면이 차단으로 보여/u);
+  assert.match(resultText(tab), /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인한 화면이 차단으로 보여/u);
 });
 
 test("누를 때 남은 결과가 있으면 그것을 먼저 보내고 새 확인은 하지 않는다", async () => {
@@ -3214,7 +3364,7 @@ test("누를 때 남은 결과가 있으면 그것을 먼저 보내고 새 확�
   assert.equal(screen.server.of("manual-record").length, 4);
   assert.equal(screen.server.of("manual-claim").length, 0);
   assert.equal(screen.bridge.of("mi-coupang-check").length, 0);
-  assert.match(screen.host.querySelector("[data-coupang-rank-status]").textContent, /^앞서 끝나지 않은 확인 결과를 먼저 보냈습니다\. 새 확인은 다시 눌러 주세요\./u);
+  assert.match(resultText(screen), /^앞서 끝나지 않은 확인 결과를 먼저 보냈습니다\. 새 확인은 다시 눌러 주세요\./u);
   assert.equal(local.getItem("miCoupangRankManual:v1:pending"), null);
 });
 
@@ -3230,7 +3380,7 @@ test("확장이 들고 있는 결과(hello.pending)를 보낸다: 탭을 닫았�
   assert.equal(sent[0].body.page.httpStatus, 403);
   assert.equal(otherTab.server.of("manual-claim").length, 0, "남은 결과를 보낼 때는 새 확인을 받지 않는다");
   assert.deepEqual(otherTab.bridge.of("mi-coupang-ack").map((entry) => entry.message), [{ type: "mi-coupang-ack", claimId: CLAIM_ID }]);
-  assert.match(otherTab.host.querySelector("[data-coupang-rank-status]").textContent, /^앞서 끝나지 않은 확인 결과를 보냈습니다\./u);
+  assert.match(resultText(otherTab), /^앞서 끝나지 않은 확인 결과를 보냈습니다\./u);
   // 같은 탭에 남긴 확인 번호 + 확장 결과(토큰은 이 브라우저 것을 쓴다)
   const pendingOnly = JSON.stringify({ claimId: CLAIM_ID, claimToken: CLAIM_TOKEN, trackerId: TRACKER_ID, keyword: KEYWORD, savedAt: Date.now() });
   const same = mountManual({ local: makeStorage({ "miCoupangRankManual:v1:pending": pendingOnly }), hello: { ok: true, reply: helloReply({ pending: { ...held(), claimToken: "" } }) } });
@@ -3282,17 +3432,27 @@ test("간격 초 세기는 서버 시각 기준(내 맥 시계가 10분 빨라�
   const screen = mountManual({ manual: manualPayload({ state: "gap", nextAt: iso(SERVER_NOW + 125000) }), mount: { clock } });
   screen.controller.show();
   await settle();
-  assert.equal(manualLine(screen).textContent, "다음 확인은 2분 05초 뒤에 할 수 있습니다(검색 사이 3분 · 오늘 3/30번).");
+  assert.equal(manualMetric(screen, "next"), "2분 05초 뒤");
+  assert.equal(manualButtonFor(screen).textContent, "2분 05초 뒤");
   const tickers = () => screen.intervals.filter((entry) => entry.ms === 1000);
   assert.equal(tickers().length, 1);
   const getsBefore = screen.server.gets.length;
   clock.now += 5000;
   tickers().at(-1).fn();
-  assert.equal(manualLine(screen).textContent, "다음 확인은 2분 00초 뒤에 할 수 있습니다(검색 사이 3분 · 오늘 3/30번).");
+  assert.equal(manualMetric(screen, "next"), "2분 00초 뒤");
+  assert.equal(manualButtonFor(screen).textContent, "2분 00초 뒤");
   assert.equal(manualButtonFor(screen).disabled, true);
+  // 초 세기는 화면 읽기 프로그램에 매초 알리지 않는다(알림 칸은 상태 알약이 바뀔 때만 바뀐다)
+  const announce = screen.host.querySelector("[data-coupang-rank-manual-announce]");
+  assert.equal(announce.textContent, "지금 확인 상태: 3분 간격 기다리는 중");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-line]").getAttribute("aria-live"), null);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").getAttribute("role"), "group", "상태판은 알림 칸(role=status)이 아니다");
   clock.now += 121000;
   tickers().at(-1).fn();
-  assert.equal(manualLine(screen).textContent, "지금 확인: 오늘 3/30번 · 09~19시 · 검색 사이 3분 · 누르면 새 시크릿 창이 잠깐 열렸다 닫힙니다.");
+  assert.equal(manualMetric(screen, "next"), "지금 가능");
+  assert.equal(manualPill(screen), "바로 확인 가능");
+  assert.equal(announce.textContent, "지금 확인 상태: 바로 확인 가능");
+  assert.equal(manualButtonFor(screen).textContent, "지금 확인");
   assert.equal(manualButtonFor(screen).disabled, false);
   assert.equal(screen.server.gets.length, getsBefore, "초 세기는 서버에 묻지 않는다");
   // 탭이 숨으면 타이머를 멈추고, 다시 보이면 다시 그린다
@@ -3324,23 +3484,24 @@ test("서버가 '다른 확인 진행 중'이면 끝날 시각 + 2초에 목록�
   assert.equal(screen.timeouts.filter((entry) => entry.ms >= 31000 && entry.ms <= 32500).length, 1, "같은 busyUntil 이면 다시 걸지 않는다");
 });
 
-test("총관리자 패널 '지금 확인(내 크롬)': 상태·켜기(확인 창)·끄기(바로)·확장 상태·ID·zip 내려받기·설치 안내(접이식)", async () => {
+test("'내 크롬 확장' 줄: 상태 알약·확장 상태·ID·zip 내려받기·설치 안내(접이식). 끄기(바로)·켜기(확인 창)는 상태판에서, 결과는 누른 자리 옆에", async () => {
   const screen = mountManual();
   screen.controller.show();
   await settle();
-  const details = screen.host.querySelector("[data-coupang-rank-owner]");
-  details.open = true;
-  dispatch(details, "toggle");
-  await settle();
-  const section = details.querySelector('[data-coupang-rank-owner-section="manual"]');
-  assert.equal(section.hidden, false);
-  const body = details.querySelector(".mi-coupang-rank-owner-body");
-  assert.equal(body.children[1], section, "수집기 안내 줄 다음, 상태 구역 앞");
-  assert.equal(details.querySelector("[data-coupang-rank-owner-manual-state]").textContent, "지금 확인 켜짐");
+  // 확장 칸은 자동 수집 칸과 따로 있다(자동 수집 칸을 펼치지 않아도 보이고, 펼쳐도 수집기 상태 요청을 따라 보내지 않는다).
+  const ext = screen.host.querySelector("[data-coupang-rank-ext]");
+  assert.equal(ext.tagName, "DETAILS");
+  assert.equal(ext.hidden, false);
+  assert.equal(ext.querySelector("summary").textContent, "내 크롬 확장정상설치됨 v1.0.0 · 시크릿 허용 켜짐 · 사이트 액세스 허용 · 확장 내려받기 · 설치 안내");
+  const owner = screen.host.querySelector("[data-coupang-rank-owner]");
+  assert.equal(owner.querySelector('[data-coupang-rank-owner-section="manual"]'), null, "자동 수집 칸 안에는 지금 확인 구역이 없다");
+  const section = ext.querySelector('[data-coupang-rank-owner-section="manual"]');
+  assert.equal(ext.querySelector("[data-coupang-rank-owner-manual-state]").textContent, "정상");
   assert.deepEqual(section.querySelector("[data-coupang-rank-manual-owner-lines]").children.map((node) => node.textContent), [
     "켜짐 · 오늘 3/30번 · 09~19시 · 검색 사이 3분",
     "확장: 설치됨 v1.0.0 · 시크릿 허용 켜짐 · 사이트 액세스 허용",
   ]);
+  assert.equal(section.querySelectorAll('[data-coupang-rank-action="manual-disable"]').length, 0, "켜기·끄기는 상태판 한 곳에만");
   assert.equal(section.querySelector("[data-coupang-rank-manual-id]").textContent, EXT_ID);
   const link = section.querySelector("[data-coupang-rank-manual-download]");
   assert.equal(link.tagName, "A");
@@ -3360,45 +3521,68 @@ test("총관리자 패널 '지금 확인(내 크롬)': 상태·켜기(확인 창
   const bold = guide.querySelectorAll("strong").map((node) => node.textContent);
   assert.ok(bold.some((text) => text.includes("Profile 3") && text.includes("Profile 5")));
   assert.ok(bold.includes("개발자 모드는 계속 켜 두세요. 끄면 이 확장도 바로 꺼집니다."));
-  // 확장 상태 다시 보기 → hello
+  // 확장 상태 다시 보기 → hello. 결과는 이 칸 안 한 줄(aria-live)에 쓴다(자동 수집 패널 문구 자리가 아니라).
   const hellos = screen.bridge.of("mi-coupang-hello").length;
   dispatch(section.querySelector('[data-coupang-rank-action="manual-hello"]'), "click");
   await settle();
   assert.equal(screen.bridge.of("mi-coupang-hello").length, hellos + 1);
-  assert.match(details.querySelector("[data-coupang-rank-owner-status]").textContent, /^확장 상태를 다시 확인했습니다\. 확장: 설치됨 v1\.0\.0/u);
-  // 끄기: 확인 창 없이 바로(비상 정지), 카드 버튼이 바로 사라진다
+  const extNote = ext.querySelector("[data-coupang-rank-ext-note]");
+  assert.equal(extNote.getAttribute("aria-live"), "polite");
+  assert.match(extNote.textContent, /^확장 상태를 다시 확인했습니다\. 확장: 설치됨 v1\.0\.0/u);
+  assert.equal(owner.querySelector("[data-coupang-rank-owner-status]").textContent, "");
+  assert.equal(countCalls(screen, "view=collector"), 0, "확장 칸은 수집기 상태를 따로 받지 않는다");
+  // 끄기: 상태판에서 확인 창 없이 바로(비상 정지), 카드 버튼이 바로 사라지고 상태판은 '꺼짐'으로 남는다.
   const confirms = screen.confirmCalls.length;
   screen.server.manual = manualPayload({ state: "off", enabled: false });
-  dispatch(details.querySelector('[data-coupang-rank-action="manual-disable"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="manual-disable"]'), "click");
   assert.equal(manualButtons(screen).length, 0, "응답을 기다리지 않고 숨긴다");
+  assert.equal(manualPill(screen), "꺼짐");
   await settle();
   assert.equal(screen.confirmCalls.length, confirms);
   assert.deepEqual(screen.server.of("settings-update").at(-1).body, { action: "settings-update", settings: { manualEnabled: false } });
-  assert.equal(details.querySelector("[data-coupang-rank-owner-manual-state]").textContent, "지금 확인 꺼짐");
-  assert.ok(details.textContent.includes("꺼짐 — 켜면 총관리자 카드에 '지금 확인' 버튼이 보입니다"));
+  const note = screen.host.querySelector("[data-coupang-rank-manual-note]");
+  assert.equal(note.textContent, "지금 확인을 껐습니다. 카드의 '지금 확인' 버튼이 사라지고, 서버도 새 확인을 받지 않습니다.");
+  assert.equal(note.getAttribute("aria-live"), "polite");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").hidden, false, "꺼져도 상태판은 본문에 남는다");
+  assert.equal(ext.querySelector("[data-coupang-rank-owner-manual-state]").textContent, "지금 확인 꺼짐");
+  assert.ok(ext.textContent.includes("꺼짐 — 위 '지금 확인' 상태판에서 켤 수 있습니다"));
   // 켜기: 확인 창(대표 결정값 문구) → 취소면 요청 없음
   const before = screen.server.of("settings-update").length;
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
-  dispatch(details.querySelector('[data-coupang-rank-action="manual-enable"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="manual-enable"]'), "click");
   await settle();
   assert.equal(screen.server.of("settings-update").length, before);
   assert.match(screen.confirmCalls.at(-1), /검색 사이 3분 · 하루 30번 · 09~19시, 차단으로 보이는 화면이 나오면 그날 중지/u);
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return true; };
   screen.server.manual = manualPayload();
-  dispatch(details.querySelector('[data-coupang-rank-action="manual-enable"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="manual-enable"]'), "click");
   await settle();
   assert.deepEqual(screen.server.of("settings-update").at(-1).body, { action: "settings-update", settings: { manualEnabled: true } });
   assert.equal(manualButtons(screen).length, 2);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-note]").textContent, "지금 확인을 켰습니다. 카드마다 '지금 확인' 버튼이 보입니다.");
 });
 
-test("총관리자 패널: SQL 전이면 켜기 단추 없음, 이상한 zip 경로·확장 ID 는 그리지 않는다, '설치 안내 열기'는 패널과 안내를 연다", async () => {
+test("끄기가 서버에서 거절되면 목록을 다시 받아 원래대로 돌리고, 그 이유를 상태판 안 한 줄에 남긴다", async () => {
+  const screen = mountManual({ settings: { __status: 500, payload: { ok: false, code: "COUPANG_RANK_TRACKERS_FAILED" } } });
+  screen.controller.show();
+  await settle();
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="manual-disable"]'), "click");
+  assert.equal(manualPill(screen), "꺼짐", "누르면 바로 숨긴다");
+  await settle();
+  assert.equal(manualPill(screen), "바로 확인 가능", "서버 값으로 돌아왔다");
+  assert.equal(manualButtons(screen).length, 2);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-note]").textContent, "끄지 못해 원래 상태로 돌렸습니다: 서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요.");
+});
+
+test("'내 크롬 확장' 줄: SQL 전이면 켜기 단추 없음, 이상한 zip 경로·확장 ID 는 그리지 않는다, '설치 안내 열기'는 이 줄과 안내만 연다", async () => {
   const setup = mountManual({ manual: manualPayload({ state: "setup_required" }) });
   setup.controller.show();
   await settle();
   const setupSection = setup.host.querySelector('[data-coupang-rank-owner-section="manual"]');
-  assert.equal(setupSection.hidden, false);
+  assert.equal(setup.host.querySelector("[data-coupang-rank-ext]").hidden, false);
   assert.ok(setupSection.textContent.includes("대표 SQL(지금 확인) 실행 전입니다"));
-  assert.equal(setupSection.querySelectorAll('[data-coupang-rank-action="manual-enable"]').length, 0);
+  assert.equal(setup.host.querySelectorAll('[data-coupang-rank-action="manual-enable"]').length, 0);
+  assert.equal(setup.host.querySelector("[data-coupang-rank-manual-box]").hidden, true, "SQL 전이면 상태판은 숨긴다");
   const odd = mountManual({ manual: manualPayload({ extensionZipPath: "https://example.com/x.zip", extensionId: "NOT-AN-ID" }) });
   odd.controller.show();
   await settle();
@@ -3408,12 +3592,18 @@ test("총관리자 패널: SQL 전이면 켜기 단추 없음, 이상한 zip 경
   assert.equal(oddSection.querySelector("[data-coupang-rank-manual-id]").textContent, "서버에서 받지 못함");
   assert.equal(odd.bridge.messages.length, 0, "확장 ID 가 없으면 아무 확장에도 묻지 않는다");
   assert.match(manualLine(odd).textContent, /확장 ID/u);
+  assert.equal(manualPill(odd), "확장 확인 필요");
   const missing = mountManual({ hello: { ok: false, code: "extension_no_response" } });
   missing.controller.show();
   await settle();
+  assert.equal(manualPill(missing), "확장 확인 필요");
+  assert.equal(missing.host.querySelector("[data-coupang-rank-owner-manual-state]").textContent, "확인 필요");
   dispatch(missing.host.querySelector('[data-coupang-rank-action="manual-guide-open"]'), "click");
-  assert.equal(missing.host.querySelector("[data-coupang-rank-owner]").open, true);
+  assert.equal(missing.host.querySelector("[data-coupang-rank-ext]").open, true);
   assert.equal(missing.host.querySelector("[data-coupang-rank-manual-guide]").open, true);
+  assert.equal(missing.host.querySelector("[data-coupang-rank-owner]").open, false, "자동 수집 칸은 펼치지 않는다");
+  await settle();
+  assert.equal(countCalls(missing, "view=collector"), 0, "설치 안내를 열어도 수집기 상태 요청이 따라가지 않는다");
 });
 
 test("기본 확장 다리: chrome.runtime.sendMessage(확장 ID, 메시지, 콜백), lastError 는 콜백 안에서 읽는다", async () => {
@@ -3438,7 +3628,8 @@ test("기본 확장 다리: chrome.runtime.sendMessage(확장 ID, 메시지, 콜
   const okScreen = mountWith({ fetch: fakeServer().respond, local: makeStorage(), chrome: { runtime: okRuntime }, userAgent: CHROME_UA });
   okScreen.controller.show();
   await settle();
-  assert.equal(manualLine(okScreen).textContent, "지금 확인: 오늘 3/30번 · 09~19시 · 검색 사이 3분 · 누르면 새 시크릿 창이 잠깐 열렸다 닫힙니다.");
+  assert.equal(manualPill(okScreen), "바로 확인 가능");
+  assert.equal(manualLine(okScreen).textContent, "카드의 '지금 확인'을 누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열고 닫습니다.");
   const none = mountWith({ fetch: fakeServer().respond, local: makeStorage(), userAgent: CHROME_UA });
   none.controller.show();
   await settle();
@@ -3492,4 +3683,767 @@ test("지금 확인 CSS: 새 선택자 짝·토큰 색·휴대폰 줄바꿈", ()
   for (const declaration of ["border: 1px solid var(--mi-warn);", "background: var(--mi-warn-bg);", "overflow-wrap: anywhere;"]) assert.ok(rule.includes(declaration), declaration);
   const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 720px)"));
   assert.ok(phone.includes("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-line,"));
+});
+
+// ── 화면 디테일 고도화(대표 승인 2026-10-23) ─────────────────────────
+
+test("등록 결과의 첫 기록 안내는 지금 방식(지금 확인 켜짐·자동 수집·둘 다 꺼짐)에 맞춘다", async () => {
+  const created = trackerFixture({ id: "6c1f0000-0000-4000-8000-000000000003", keyword: "새 키워드", current: null, days: [] });
+  const cases = [
+    [{ manual: manualPayload() }, "등록했습니다. 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다."],
+    [{ manual: manualPayload({ state: "off", enabled: false }), collector: { state: "not_connected" } }, "등록했습니다. '지금 확인'을 켠 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다."],
+    // 자동 수집이 실제로 기록 중일 때만 '다음 수집 때', 켜 둔 뒤의 경보면 언제 기록될지 단정하지 않는다(2026-10-23 재검사)
+    [{ manual: manualPayload({ state: "off", enabled: false }), collector: { state: "ok" } }, "등록했습니다. 다음 수집 때(수집기가 켜져 있을 때) 첫 순위가 기록됩니다."],
+    [{ manual: manualPayload({ state: "off", enabled: false }), collector: { state: "review" } }, "등록했습니다. 자동 수집이 멈췄거나 확인이 필요한 상태라 첫 순위가 언제 기록될지 알 수 없습니다(자동추적 칸 참고)."],
+  ];
+  for (const [overrides, expected] of cases) {
+    const screen = mountWith({
+      local: makeStorage(),
+      userAgent: CHROME_UA,
+      extensionBridge: fakeBridge(),
+      fetch: async (url, init) => {
+        if (init.method === "POST") return response({ ok: true, firstCheck: "queued", tracker: created });
+        return response(listPayload(overrides));
+      },
+    });
+    screen.controller.show();
+    await settle();
+    screen.host.querySelector("[data-coupang-rank-keyword]").value = "새 키워드";
+    screen.host.querySelector("[data-coupang-rank-product-url]").value = "https://www.coupang.com/vp/products/123456";
+    dispatch(screen.host.querySelector("[data-coupang-rank-create-form]"), "submit");
+    await settle();
+    assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, expected);
+    const newCard = screen.host.querySelector('[data-coupang-rank-card][data-coupang-rank-id="6c1f0000-0000-4000-8000-000000000003"]');
+    assert.ok(newCard, "새 카드가 목록에 있다");
+  }
+  // 오늘 같은 키워드를 이미 확인했으면 서버가 바로 채운다(recorded).
+  assert.ok(moduleSource.includes('recorded: "오늘 같은 키워드를 확인한 기록으로 바로 채웠습니다"'));
+});
+
+const boardOf = (input) => JSON.parse(JSON.stringify(internals.manualBoardModel({ now: SERVER_NOW, trackers: [], todayKst: "2026-10-23", autoActive: false, ...input })));
+
+test("상태판 알약은 manualView 의 모든 갈래를 덮고(꺼짐·용량·대표 확인·쉬는 중·보내지 못함·응답 없음·다른 창 등), 숫자는 서버 값으로 쓴다", () => {
+  const server = (overrides) => manualPayload({ busyUntil: iso(SERVER_NOW + 60000), stoppedDay: "2026-10-23", ...(overrides.state === "gap" ? { nextAt: iso(SERVER_NOW + 60000) } : {}), ...overrides });
+  const pillOf = (input) => boardOf({ server: input.server, view: view(input) }).pill;
+  // 서버 상태 전부(SQL 전은 상태판을 숨기므로 뺀다). 모르는 상태 문구('확인 필요(코드 …)')가 나오지 않는다.
+  for (const stateName of ["off", "budget", "stopped", "cooldown", "hours", "busy", "daily_cap", "gap", "ready"]) {
+    const input = { server: server({ state: stateName }), ...(stateName === "hours" ? { now: Date.parse("2026-10-23T11:00:00.000Z") } : {}) };
+    const pill = boardOf({ server: input.server, now: input.now, view: view(input) }).pill;
+    assert.ok(pill.text && !/확인 필요\(코드/u.test(pill.text), `${stateName}: ${pill.text}`);
+  }
+  if (Array.isArray(contract.MANUAL_STATES)) {
+    for (const stateName of contract.MANUAL_STATES.filter((name) => name !== "setup_required")) {
+      assert.doesNotMatch(pillOf({ server: server({ state: stateName }) }).text, /확인 필요\(코드/u, stateName);
+    }
+  }
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }) }), { text: "바로 확인 가능", tone: "is-ok" });
+  assert.deepEqual(pillOf({ server: server({ state: "gap" }) }), { text: "3분 간격 기다리는 중", tone: "is-wait" });
+  assert.deepEqual(pillOf({ server: server({ state: "off", enabled: false }) }), { text: "꺼짐", tone: "is-muted" });
+  assert.deepEqual(pillOf({ server: server({ state: "stopped" }) }), { text: "오늘은 멈춤", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "budget" }) }), { text: "용량 상한으로 멈춤", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "review" }) }), { text: "대표 확인 필요", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "cooldown" }) }), { text: "쉬는 중", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "daily_cap", usedToday: 30 }) }), { text: "오늘 30번 다 씀", tone: "is-muted" });
+  assert.deepEqual(pillOf({ server: server({ state: "busy" }) }), { text: "다른 확인 진행 중", tone: "is-wait" });
+  assert.deepEqual(pillOf({ server: server({ state: "busy" }), ownUnsent: true }), { text: "결과 보내지 못함", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "busy" }), unsentMaybe: true }), { text: "보내지 못한 결과 있음", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "busy" }), ownLost: true }), { text: "응답 없이 끝남", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "busy" }), ownPending: true }), { text: "확인 중", tone: "is-wait" });
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }), run: { phase: "check" } }), { text: "확인 중", tone: "is-wait" });
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }), hello: null }), { text: "확장 확인 중", tone: "is-muted" });
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }), hello: { status: "missing" } }), { text: "확장 확인 필요", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }), hello: helloOk({ busy: true }) }), { text: "확장 작업 중", tone: "is-wait" });
+  assert.deepEqual(pillOf({ server: server({ state: "ready" }), hello: helloOk({ incognitoWindowOpen: true }) }), { text: "다른 시크릿 창 열림", tone: "is-warn" });
+  assert.deepEqual(pillOf({ server: server({ state: "made_up" }) }), { text: "확인 필요(코드 made_up)", tone: "is-warn" });
+  // 숫자(간격·하루 상한·시간)는 서버 값으로 채운다(DB 에서 바뀔 수 있다).
+  const custom = manualPayload({ state: "gap", minGapSeconds: 240, maxPerDay: 20, usedToday: 7, fromHour: 10, toHour: 18, nextAt: iso(SERVER_NOW + 95000) });
+  const model = boardOf({ server: custom, view: view({ server: custom }) });
+  assert.equal(model.pill.text, "4분 간격 기다리는 중");
+  assert.deepEqual([model.metrics.next.value, model.metrics.next.note], ["1분 35초 뒤", "검색 사이 4분"]);
+  assert.deepEqual([model.metrics.used.value, model.metrics.used.note], ["7 / 20번", "10~18시 · 내일 10시에 다시 20번"]);
+  assert.equal(boardOf({ server: manualPayload({ state: "daily_cap", maxPerDay: 20, usedToday: 20 }), view: view({ server: manualPayload({ state: "daily_cap", maxPerDay: 20, usedToday: 20 }) }) }).pill.text, "오늘 20번 다 씀");
+  // 쉬는 중·대표 확인·용량 상한은 자동 수집 칸의 '쉬는 중 해제'로 안내한다(지금 확인이 막혀도 그 칸을 열 이유를 보인다).
+  for (const stateName of ["cooldown", "review", "budget"]) assert.equal(boardOf({ server: server({ state: stateName }), view: view({ server: server({ state: stateName }) }) }).jump, true, stateName);
+  assert.equal(boardOf({ server: server({ state: "ready" }), view: view({ server: server({ state: "ready" }) }) }).jump, false);
+  // 시간 밖: 다음에 열리는 시각(서버 시각 기준)
+  const late = Date.parse("2026-10-23T11:00:00.000Z"); // KST 20:00
+  assert.equal(boardOf({ server: server({ state: "hours" }), now: late, view: view({ server: server({ state: "hours" }), now: late }) }).metrics.next.value, "내일 09:00");
+  const early = Date.parse("2026-10-22T22:30:00.000Z"); // KST 07:30
+  assert.equal(boardOf({ server: server({ state: "hours", serverTime: iso(early) }), now: early, view: view({ server: server({ state: "hours", serverTime: iso(early) }), now: early }) }).metrics.next.value, "오늘 09:00");
+  // 꺼짐인데 자동 수집이 도는 중이면 '순위가 기록되지 않는다'고 하지 않는다(서버는 둘을 함께 켜지 않는다).
+  const off = server({ state: "off", enabled: false });
+  assert.equal(boardOf({ server: off, view: view({ server: off }), autoActive: true }).line, "자동 수집으로 기록 중입니다(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.");
+  assert.equal(boardOf({ server: off, view: view({ server: off }), autoActive: false }).line, "꺼져 있어 지금은 새 순위를 기록하지 않습니다. 카드의 '지금 확인' 버튼도 숨겨져 있습니다.");
+  // 켜 둔 뒤의 경보·모르는 상태에서는 '기록 중'이라고 하지 않는다(자동추적 칸으로 보낸다).
+  assert.equal(boardOf({ server: off, view: view({ server: off }), autoState: "recording" }).line, "자동 수집으로 기록 중입니다(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.");
+  assert.equal(boardOf({ server: off, view: view({ server: off }), autoState: "alarm" }).line,
+    "자동 수집이 켜져 있지만 멈췄거나 확인이 필요한 상태입니다. 아래 자동추적 칸의 경보를 확인하세요(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.");
+  assert.equal(boardOf({ server: off, view: view({ server: off }), autoState: "unknown", autoCode: "zzz_unknown" }).line,
+    "자동 수집 상태를 알 수 없습니다(코드 zzz_unknown). 아래 자동추적 칸을 확인하세요(지금 확인은 꺼짐). 카드의 '지금 확인' 버튼은 숨겨져 있습니다.");
+  assert.doesNotMatch(boardOf({ server: off, view: view({ server: off }), autoState: "" }).line, /기록되지 않습니다/u, "앞으로의 일만 말한다(진행 중이던 확인은 기록될 수 있다)");
+  assert.equal(boardOf({ server: off, view: view({ server: off }) }).toggle, "enable");
+  // 상태판 한 줄은 '지금 확인:' 머리말을 뺀다(제목이 이미 '지금 확인').
+  assert.equal(boardOf({ server: server({ state: "budget" }), view: view({ server: server({ state: "budget" }) }) }).line, "저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).");
+});
+
+test("카드 '지금 확인' 버튼 글자가 곧 상태다: 지금 확인 · N분 NN초 뒤 · 확인 중… · 내일/오늘 HH:00", () => {
+  const label = (server, extra = {}) => internals.manualButtonLabel(view({ server, ...extra }), extra.mine === true, server, extra.now ?? SERVER_NOW);
+  assert.equal(label(manualPayload()), "지금 확인");
+  assert.equal(label(manualPayload({ state: "gap", nextAt: iso(SERVER_NOW + 118000) })), "1분 58초 뒤");
+  assert.equal(label(manualPayload(), { mine: true }), "확인 중…");
+  assert.equal(label(manualPayload({ state: "daily_cap", usedToday: 30 })), "내일 09:00");
+  assert.equal(label(manualPayload({ state: "stopped", stoppedDay: "2026-10-23" })), "내일 09:00");
+  assert.equal(label(manualPayload({ state: "hours" }), { now: Date.parse("2026-10-23T11:00:00.000Z") }), "내일 09:00");
+});
+
+test("누른 카드의 짧은 결과(방금 확인 …)는 결과 갈래마다 맞는 말이고, 실패는 주황", () => {
+  const ok = (payload) => ({ payload: { ok: true, accepted: true, duplicate: false, stopped: false, ...payload }, httpStatus: 200 });
+  const measured = { outcome: "measured", page: measuredPage() };
+  const note = (recorded, parsed = measured) => JSON.parse(JSON.stringify(internals.manualCardNote(internals.manualRecordText(recorded, parsed, KEYWORD, manualPayload()), recorded, parsed)));
+  assert.deepEqual(note(ok({ status: "ok", matched: 1, tracker: { result: "found", rank: 12 } })), { text: "일반 12위로 기록", tone: "is-ok" });
+  assert.deepEqual(note(ok({ status: "ok", matched: 2, tracker: { result: "out" } })), { text: "50위 밖으로 기록 · 같은 키워드 2개 함께", tone: "is-ok" });
+  assert.deepEqual(note(ok({ status: "noresult", matched: 1 })), { text: "'결과 없음'으로 기록", tone: "is-ok" });
+  assert.deepEqual(note(ok({ status: "blocked", stopped: true })), { text: "차단으로 보여 오늘 멈춤", tone: "is-warn" });
+  assert.deepEqual(note(ok({ status: "partial" })), { text: "실패: 순위를 기록하지 않음(사유는 위 '직전 확인')", tone: "is-warn" });
+  assert.deepEqual(note({ payload: { ok: false }, transport: true, httpStatus: 0 }), { text: "결과를 서버에 보내지 못함(위 상태판 참고)", tone: "is-warn" });
+  assert.deepEqual(note(ok({ accepted: false, outcome: "not_started" }), { outcome: "not_started", code: "busy" }), { text: "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true });
+  assert.deepEqual(note(ok({ accepted: false, outcome: "lost" }), { outcome: "lost", code: "extension_no_response" }), { text: "확장 응답 없음 · 검색 여부 모름", tone: "is-warn" });
+});
+
+test("'오늘 확인' 판정은 한 함수(응답 todayKst 기준): 카드 알약 · '오늘 안 함' 필터·개수 · 상태판 '오늘 확인한 상품'이 같은 값을 쓴다", async () => {
+  const todayKst = "2026-10-17";
+  // ① 오늘 성공 ② 오늘 실패(실패도 그날 칸이 생긴다) ③ 어제까지만 ④ 일시중지(오늘 칸 없음) ⑤ 기록 없음
+  const trackers = [
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000a1", keyword: "가", keywordKey: "가" }),
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000a2", keyword: "나", keywordKey: "나", days: [{ d: todayKst, s: "failed", r: null, n: null, a: null, t: "16:31", c: 0, f: 2, b: null, k: 0 }, { d: "2026-10-16", s: "found", r: 9, n: 50, a: null, t: "10:05", c: 1, f: 0, b: 9, k: 0 }] }),
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000a3", keyword: "다", keywordKey: "다", days: [{ d: "2026-10-16", s: "found", r: 31, n: 50, a: null, t: "19:02", c: 1, f: 0, b: 31, k: 0 }] }),
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000a4", keyword: "라", keywordKey: "라", status: "paused", pausedDay: "2026-10-16", days: [{ d: "2026-10-15", s: "found", r: 5, n: 50, a: null, t: "09:00", c: 1, f: 0, b: 5, k: 0 }] }),
+    trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000a5", keyword: "마", keywordKey: "마", current: null, days: [], summary: { trend: "new", attention: false, attentionReasons: [] } }),
+  ];
+  // 순수 함수: 브라우저 날짜가 아니라 넘긴 todayKst 로만 판단한다.
+  assert.equal(internals.checkedToday(trackers[1], todayKst), true);
+  assert.equal(internals.checkedToday(trackers[1], "2026-10-18"), false);
+  assert.equal(internals.checkedToday(trackers[1], ""), false);
+  assert.equal(internals.todayCellOf(trackers[0], todayKst).t, "11:11");
+  const pillOf = (tracker) => JSON.parse(JSON.stringify(internals.todayPill(tracker, todayKst)));
+  assert.deepEqual(pillOf(trackers[0]), { text: "오늘 11:11 확인", tone: "is-today" });
+  assert.deepEqual(pillOf(trackers[1]), { text: "오늘 실패 16:31", tone: "is-warn" });
+  assert.deepEqual(pillOf(trackers[2]), { text: "오늘 아직 · 마지막 10-16 19:02", tone: "" });
+  assert.deepEqual(pillOf(trackers[3]), { text: "마지막 확인 10-15 09:00", tone: "" });
+  assert.deepEqual(pillOf(trackers[4]), { text: "아직 확인 전", tone: "" });
+  assert.equal(internals.todayPill(trackers[0], ""), null, "오늘 날짜를 모르면 단정하지 않는다");
+  assert.deepEqual(trackers.filter((tracker) => internals.filterMatches(tracker, { status: "today-none" }, todayKst)).map((tracker) => tracker.keyword), ["다", "마"]);
+  assert.equal(trackers.filter((tracker) => internals.filterMatches(tracker, { status: "today-none" }, "")).length, 0);
+  // 화면: 상태판 '오늘 확인한 상품' = 활성 4개 중 오늘 칸 있는 2개, '오늘 안 함 2', 링크 '안 한 상품 2개 보기'
+  const screen = mountManual({ listOverrides: { trackers, todayKst } });
+  screen.controller.show();
+  await settle();
+  assert.equal(manualMetric(screen, "today"), "2 / 4개");
+  assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]').textContent, "오늘 안 함 2");
+  const link = screen.host.querySelector("[data-coupang-rank-manual-today]");
+  assert.equal(link.textContent, "안 한 상품 2개 보기");
+  assert.ok(link.parentNode.textContent.includes("일시중지 1개 빼고"));
+  const failedCard = screen.host.querySelector('[data-coupang-rank-card][data-coupang-rank-id="6c1f0000-0000-4000-8000-0000000000a2"]');
+  const failedPill = failedCard.querySelector("[data-coupang-rank-today]");
+  assert.equal(failedPill.textContent, "오늘 실패 16:31");
+  assert.ok(failedPill.classList.contains("is-warn"));
+  dispatch(link, "click");
+  assert.deepEqual(screen.host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")),
+    ["6c1f0000-0000-4000-8000-0000000000a3", "6c1f0000-0000-4000-8000-0000000000a5"]);
+  assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]').getAttribute("aria-pressed"), "true");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-count]").textContent, "5개 중 2개 표시");
+});
+
+test("'오늘 안 함' 필터에서 누른 카드는 기록 뒤 목록을 다시 받아도 다음 필터 변경 전까지 남고, 그 카드에 '방금 확인'이 보인다", async () => {
+  const todayKst = "2026-10-17";
+  const pendingId = "6c1f0000-0000-4000-8000-000000000002";
+  const overrides = { todayKst, trackers: [trackerFixture(), trackerFixture({ id: pendingId, keyword: "강화유리 필름", keywordKey: "강화유리 필름", days: [] })] };
+  const screen = mountManual({
+    listOverrides: overrides,
+    record: (body, server) => {
+      // 기록 뒤 목록에서는 그 카드에 오늘 칸이 생긴다(필터 기준으로는 빠진다).
+      overrides.trackers = [trackerFixture(), trackerFixture({ id: pendingId, keyword: "강화유리 필름", keywordKey: "강화유리 필름", days: [{ d: todayKst, s: "found", r: 7, n: 50, a: null, t: "12:00", c: 1, f: 0, b: 7, k: 0 }] })];
+      server.manual = manualPayload({ state: "gap", usedToday: 4, nextAt: iso(SERVER_NOW + 180000) });
+      return { ok: true, accepted: true, duplicate: false, outcome: body.outcome, status: "ok", matched: 1, counted: true, stopped: false,
+        tracker: { trackerId: pendingId, result: "found", rank: 7, organicCount: 50, adOrder: null, checkedAt: iso(SERVER_NOW + 20000) }, manual: server.manual };
+    },
+  });
+  screen.controller.show();
+  await settle();
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]'), "click");
+  assert.deepEqual(screen.host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")), [pendingId]);
+  dispatch(manualButtonFor(screen, pendingId), "click");
+  await settle();
+  assert.deepEqual(screen.host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")), [pendingId], "방금 누른 카드는 남는다");
+  assert.match(cardNoteFor(screen, pendingId), /^방금 확인 \d{2}:\d{2} · 일반 7위로 기록$/u);
+  assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]').textContent, "오늘 안 함 0");
+  assert.match(resultText(screen), /^확인 완료: .+ 일반 7위/u, "상태판 '직전 확인' 줄에도 남는다");
+  // 필터를 바꾸면 놓아 준다.
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="all"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]'), "click");
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 0);
+  assert.match(resultText(screen), /일반 7위/u, "카드가 목록에 없어도 결과는 상태판에 그대로 보인다");
+});
+
+test("결과의 추적 id 를 모르면(다른 탭·확장이 들고 있던 결과) 카드 표시 없이 상태판 '직전 확인'에만 보인다", async () => {
+  const held = { claimId: CLAIM_ID, claimToken: CLAIM_TOKEN, stop: false, reply: { ...measuredReply(), claimId: CLAIM_ID, keyword: KEYWORD } };
+  const screen = mountManual({
+    hello: { ok: true, reply: helloReply({ pending: held }) },
+    record: (body, server) => ({ ok: true, accepted: true, duplicate: false, status: "ok", matched: 1, stopped: false, tracker: null, manual: server.manual }),
+  });
+  screen.controller.show();
+  await settle();
+  assert.match(resultText(screen), /^앞서 끝나지 않은 확인 결과를 보냈습니다\. 확인 완료/u);
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card-note]").length, 0);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-result]").getAttribute("aria-live"), "polite");
+});
+
+test("같은 키워드 카드가 2장 이상이면 '지금 확인' 옆에 '같은 키워드 N개 함께 기록'을 보인다(서버가 같은 keyword_key 를 함께 기록)", async () => {
+  const twin = trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000b2", productId: "9000000001", productUrl: "https://www.coupang.com/vp/products/9000000001", days: [] });
+  const screen = mountManual({ listOverrides: { trackers: [trackerFixture(), twin, trackerFixture({ id: "6c1f0000-0000-4000-8000-0000000000b3", keyword: "다른 말", keywordKey: "다른 말" })] } });
+  screen.controller.show();
+  await settle();
+  const sameOf = (id) => {
+    const card = screen.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${id}"]`);
+    const node = card.querySelector(".mi-coupang-rank-same-kw");
+    return node ? node.textContent : "";
+  };
+  assert.equal(sameOf(TRACKER_ID), "같은 키워드 2개 함께 기록");
+  assert.equal(sameOf("6c1f0000-0000-4000-8000-0000000000b2"), "같은 키워드 2개 함께 기록");
+  assert.equal(sameOf("6c1f0000-0000-4000-8000-0000000000b3"), "");
+  assert.ok(screen.host.querySelector("[data-coupang-rank-guide]").textContent.includes("같은 키워드 카드는 한 번 누르면 함께 기록됩니다"));
+});
+
+test("자동추적 칸 표시 조건: 지금 확인 상태판이 있으면 수집기 0대·꺼짐일 때 숨기고, 켜 둔 뒤의 경보(review·budget·outdated·offline)는 보인다", async () => {
+  const cases = [["not_connected", true], ["disabled", true], ["ok", false], ["idle_hours", false], ["review", false], ["budget", false], ["outdated", false], ["offline", false], ["cooldown", false], ["delayed", false]];
+  for (const [stateName, hidden] of cases) {
+    const screen = mountManual({ manual: manualPayload({ state: "off", enabled: false }), listOverrides: { collector: { state: stateName, lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null } } });
+    screen.controller.show();
+    await settle();
+    assert.equal(screen.host.querySelector("[data-coupang-rank-strip]").hidden, hidden, stateName);
+    assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").hidden, false, stateName);
+    // 카드 '다음' 알약도 같은 기준(자동 수집이 돌 때만)
+    assert.equal(screen.host.querySelectorAll("[data-coupang-rank-next]").length, hidden ? 0 : 2, stateName);
+    const line = manualLine(screen).textContent;
+    // '기록 중'은 정상·갱신 대기·시간 밖만. 경보(review·budget·cooldown·outdated·offline)는 자동추적 칸 경보로 보낸다(2026-10-23 재검사).
+    const recording = ["ok", "idle_hours", "delayed"].includes(stateName);
+    assert.equal(line.startsWith("자동 수집으로 기록 중입니다"), recording, `${stateName}: ${line}`);
+    if (!hidden && !recording) assert.ok(line.startsWith("자동 수집이 켜져 있지만 멈췄거나 확인이 필요한 상태입니다"), `${stateName}: ${line}`);
+    if (hidden) assert.ok(line.startsWith("꺼져 있어 지금은 새 순위를 기록하지 않습니다"), `${stateName}: ${line}`);
+  }
+  // 빈 기록판·등록 문구도 같은 판정을 쓴다(지금 확인 꺼짐 + 자동 수집 없음 → '켜면 기록할 수 있습니다').
+  const idle = mountManual({ manual: manualPayload({ state: "off", enabled: false }), listOverrides: { collector: { state: "not_connected" } } });
+  idle.controller.show();
+  await settle();
+  assert.equal(idle.host.querySelectorAll(".mi-coupang-rank-board-empty")[0].textContent,
+    "아직 순위 기록이 없습니다. 위 상태판에서 '지금 확인'을 켜면 이 카드에서 첫 순위를 기록할 수 있습니다.");
+  const on = mountManual();
+  on.controller.show();
+  await settle();
+  assert.equal(on.host.querySelectorAll(".mi-coupang-rank-board-empty")[0].textContent, "아직 순위 기록이 없습니다. 이 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다(검색 1번).");
+});
+
+function keydown(target, key) {
+  const path = [];
+  for (let node = target; node; node = node.parentNode) path.push(node);
+  const event = { type: "keydown", key, target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
+  for (const node of path) (node.listeners?.keydown || []).filter((entry) => !entry.capture).forEach((entry) => entry.fn(event));
+  return event;
+}
+
+test("날짜 칸: 누르면(마우스·터치·Enter) 카드 아래 한 줄에 그날 기록, 다시 그려도 유지, 줄마다 탭 정지 하나 + 화살표로 옮김", async () => {
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  const card = () => screen.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${TRACKER_ID}"]`);
+  const buttons = () => card().querySelectorAll("[data-coupang-rank-day]");
+  const detail = () => card().querySelector("[data-coupang-rank-day-detail]");
+  dispatch(buttons()[1], "click");
+  assert.equal(detail().hidden, false);
+  assert.equal(detail().textContent, "10-16(금) · 31위 — 19:02 일반 31위 · 하루 2회(실패 1) · 그날 최고 25위");
+  assert.equal(detail().getAttribute("aria-live"), "polite");
+  assert.deepEqual(buttons().map((node) => [node.getAttribute("aria-pressed"), node.getAttribute("tabindex")]), [["false", "-1"], ["true", "0"]]);
+  assert.ok(buttons()[1].parentNode.classList.contains("is-selected"));
+  // 목록을 다시 그려도(필터 바꿈 등) 펼친 날은 남는다.
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="all"]'), "click");
+  assert.equal(detail().hidden, false);
+  assert.equal(buttons()[1].getAttribute("tabindex"), "0", "펼친 날이 탭 정지");
+  // 화살표: ← 로 오늘 칸, Home·End
+  const moved = keydown(buttons()[1], "ArrowLeft");
+  assert.equal(moved.defaultPrevented, true);
+  assert.equal(screen.document.activeElement, buttons()[0]);
+  assert.deepEqual(buttons().map((node) => node.getAttribute("tabindex")), ["0", "-1"]);
+  assert.equal(keydown(buttons()[0], "ArrowLeft").defaultPrevented, false, "끝에서는 그대로");
+  keydown(buttons()[0], "End");
+  assert.equal(screen.document.activeElement, buttons()[1]);
+  assert.equal(keydown(buttons()[1], "Tab").defaultPrevented, false, "Tab 은 다음 카드로 그대로 나간다");
+  // 다시 누르면 닫힌다(목록을 다시 그리지 않아 키보드 위치를 잃지 않는다).
+  const before = buttons()[1];
+  dispatch(before, "click");
+  assert.equal(detail().hidden, true);
+  assert.equal(buttons()[1], before, "카드를 다시 그리지 않았다");
+});
+
+test("자동 수집 칸: 접힌 머리는 목록 응답의 collector.state 로만(따로 요청하지 않음), 보류 중이면 안내 한 줄, 60초 다시 받기는 켜짐·연결 코드 30분 안일 때만", async () => {
+  const idle = mountWith({ payload: listPayload({ collector: { state: "not_connected" } }) });
+  idle.controller.show();
+  await flush();
+  const owner = idle.host.querySelector("[data-coupang-rank-owner]");
+  assert.equal(owner.querySelector("summary").textContent, "자동 수집보류 중수집기 0대 · 설정·연결 코드·설치 줄은 그대로 있습니다");
+  assert.equal(owner.querySelector("[data-coupang-rank-owner-hold]").hidden, false);
+  assert.doesNotMatch(owner.querySelector("summary").textContent, /총관리자 전용|펼치면 상태를 받습니다|윙·광고센터/u, "머리에는 상태만(고정 사유 문장은 사용 방법으로)");
+  assert.equal(countCalls(idle, "view=collector"), 0);
+  owner.open = true;
+  dispatch(owner, "toggle");
+  await flush();
+  assert.equal(countCalls(idle, "view=collector"), 1, "펼칠 때 1번");
+  const tick = idle.intervals.filter((entry) => entry.ms === 60000).at(-1);
+  assert.ok(tick, "패널 타이머는 걸린다");
+  tick.fn();
+  await flush();
+  assert.equal(countCalls(idle, "view=collector"), 1, "꺼져 있으면 60초마다 다시 받지 않는다");
+  // '수집 켜기'는 보조 버튼이고, 수집기 0대면 이유와 함께 막는다. 설정 칸 위에는 적용 범위 한 줄.
+  const enable = owner.querySelector('[data-coupang-rank-action="collector-enable"]');
+  assert.equal(enable.disabled, true);
+  assert.ok(!enable.classList.contains("mi-button"));
+  assert.equal(owner.querySelector("[data-coupang-rank-enable-block]").textContent, "연결된 수집기가 없어 켤 수 없습니다(아래 '연결 코드'부터).");
+  assert.equal(owner.querySelector("[data-coupang-rank-settings-scope]").textContent, "이 설정은 자동 수집에만 적용됩니다. 지금 확인과는 따로입니다.");
+  assert.ok(owner.textContent.includes("전체 고유 키워드 41 / 150개(모든 계정 합)"));
+  idle.controller.destroy();
+
+  const running = mountWith({ payload: listPayload({ collector: { state: "ok", lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null } }) });
+  running.controller.show();
+  await flush();
+  assert.equal(running.host.querySelector("[data-coupang-rank-owner]").querySelector("[data-coupang-rank-owner-summary-state]").textContent, "켜짐");
+  assert.equal(running.host.querySelector("[data-coupang-rank-owner-hold]").hidden, true);
+  const panel = running.host.querySelector("[data-coupang-rank-owner]");
+  panel.open = true;
+  dispatch(panel, "toggle");
+  await flush();
+  const runningTick = running.intervals.filter((entry) => entry.ms === 60000).at(-1);
+  runningTick.fn();
+  await flush();
+  assert.equal(countCalls(running, "view=collector"), 2, "자동 수집이 돌면 60초마다 다시 받는다");
+  running.controller.destroy();
+});
+
+test("연결 코드를 만든 뒤 30분 안에는 자동 수집이 꺼져 있어도 60초마다 수집기 상태를 다시 받는다", async () => {
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") return response({ ok: true, id: "c2", label: "맥 미니", token: "mic1_" + "A".repeat(43), tokenHint: "AAAA" });
+      if (String(url).includes("view=collector")) return response(collectorPayload({ collectors: [] }));
+      return response(listPayload({ collector: { state: "not_connected" } }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const panel = screen.host.querySelector("[data-coupang-rank-owner]");
+  panel.open = true;
+  dispatch(panel, "toggle");
+  await flush();
+  const tick = screen.intervals.filter((entry) => entry.ms === 60000).at(-1);
+  const before = countCalls(screen, "view=collector");
+  tick.fn();
+  await flush();
+  assert.equal(countCalls(screen, "view=collector"), before, "코드 만들기 전: 다시 받지 않음");
+  panel.querySelector("[data-coupang-rank-token-label]").value = "맥 미니";
+  dispatch(panel.querySelector("[data-coupang-rank-token-form]"), "submit");
+  await flush();
+  const afterToken = countCalls(screen, "view=collector");
+  tick.fn();
+  await flush();
+  assert.equal(countCalls(screen, "view=collector"), afterToken + 1, "코드를 만든 뒤에는 다시 받는다");
+  screen.controller.destroy();
+});
+
+test("'수집 켜기'를 서버가 거절할 사유(지금 확인 켜짐·오늘 그날 중지)를 화면이 먼저 막고 이유를 쓴다, 거절 문구는 사유별로", async () => {
+  for (const [manual, expected] of [
+    [manualPayload(), "지금 확인이 켜져 있어 켤 수 없습니다(먼저 위 상태판의 '지금 확인 끄기')."],
+    [manualPayload({ state: "off", enabled: false, stoppedDay: "2026-10-17" }), "오늘은 지금 확인이 차단으로 멈춘 날이라 내일 켤 수 있습니다."],
+  ]) {
+    const screen = mountManual({ manual });
+    screen.controller.show();
+    await settle();
+    const owner = screen.host.querySelector("[data-coupang-rank-owner]");
+    owner.open = true;
+    dispatch(owner, "toggle");
+    await settle();
+    assert.equal(owner.querySelector('[data-coupang-rank-action="collector-enable"]').disabled, true);
+    assert.equal(owner.querySelector("[data-coupang-rank-enable-block]").textContent, expected);
+    assert.match(owner.querySelector("[data-coupang-rank-settings-scope]").textContent, /지금 확인\(검색 사이 3분 · 하루 30번 · 09~19시\)과는 따로입니다/u);
+    screen.controller.destroy();
+  }
+  assert.equal(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "manual_enabled" }), "지금 확인이 켜져 있어 자동 수집을 켜지 않았습니다. 먼저 위 상태판에서 '지금 확인 끄기'를 누르세요.");
+  assert.equal(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "manual_stopped_today" }), "오늘은 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. 내일 다시 켜 주세요.");
+  assert.match(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "settings_changed" }), /지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날/u);
+});
+
+test("카드 한 장 동작의 결과는 그 카드에, 실패는 맨 위 상태줄에도. 선택 삭제 결과는 막대가 한 줄로 접혀도 보인다", async () => {
+  let fail = false;
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        if (fail) return response({ ok: false, code: "COUPANG_RANK_TRACKERS_FAILED" }, 500);
+        return response({ ok: true, updated: body.ids.length, deleted: body.action === "delete" ? body.ids.length : 0 });
+      }
+      return response(listPayload());
+    },
+  });
+  screen.controller.show();
+  await flush();
+  dispatch(screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${TRACKER_ID}"]`), "click");
+  await flush();
+  const noteOf = (id) => screen.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${id}"]`).querySelector("[data-coupang-rank-card-note]");
+  assert.equal(noteOf(TRACKER_ID).textContent, "1개 일시중지했습니다.");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").hidden, true);
+  fail = true;
+  dispatch(screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${TRACKER_ID}"]`), "click");
+  await flush();
+  assert.equal(noteOf(TRACKER_ID).textContent, "서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요.");
+  assert.ok(noteOf(TRACKER_ID).classList.contains("is-warn"));
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요.");
+  fail = false;
+  for (const id of [TRACKER_ID, "6c1f0000-0000-4000-8000-000000000002"]) {
+    const check = screen.host.querySelector(`[data-coupang-rank-select="${id}"]`);
+    check.checked = true;
+    dispatch(check, "change");
+  }
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk]").classList.contains("is-open"), true);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-selected-count]").textContent, "2개 선택");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-delete"]'), "click");
+  await flush();
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-actions]").getAttribute("aria-hidden"), "true", "삭제 뒤 선택이 비어 막대가 접혔다");
+  const bulkNote = screen.host.querySelector("[data-coupang-rank-bulk-note]");
+  assert.equal(bulkNote.hidden, false);
+  assert.equal(bulkNote.textContent, "2개 삭제했습니다.");
+});
+
+test("목록 받기 연결 실패는 쉬운 말로, 브라우저 원문은 title 에만", async () => {
+  const screen = mountWith({ fetch: async () => { throw new Error("Failed to fetch"); } });
+  screen.controller.show();
+  await flush();
+  const note = screen.host.querySelector("[data-coupang-rank-list-note]");
+  assert.equal(note.textContent, "서버에 연결하지 못해 목록을 받지 못했습니다(인터넷 연결 확인). 화면의 이전 목록을 그대로 둡니다.");
+  assert.equal(note.getAttribute("title"), "Failed to fetch");
+  assert.doesNotMatch(note.textContent, /Failed|fetch/u);
+});
+
+test("C30 CSS 는 지금 너비 규칙(900px · 901~1180px · 901~1360px · 720px)만 쓰고, 색·포커스·비활성 규칙이 C30 범위 안에 있다", () => {
+  const medias = [...new Set([...cssSource.matchAll(/@media \(([^{]+)\)\s*\{/gu)].map((match) => match[1]))];
+  assert.deepEqual(medias.sort(), ["max-width: 720px", "max-width: 900px", "min-width: 901px) and (max-width: 1180px", "min-width: 901px) and (max-width: 1360px"].sort());
+  assert.doesNotMatch(cssSource, /760px/u);
+  assert.ok(cssSource.includes("#mi-admin .mi-coupang-rank-root button:focus-visible,"), "C30 안 버튼 포커스 테두리");
+  assert.ok(cssSource.includes("outline: 2px solid var(--mi-navy);"));
+  const disabled = cssSource.slice(cssSource.indexOf("#mi-admin .mi-coupang-rank-root .mi-link-button:disabled,"));
+  assert.ok(disabled.slice(0, disabled.indexOf("}")).includes("opacity: 1;"), "비활성은 흐림 대신 회색 바탕·진회색 글자");
+  // 오른쪽 아래 카카오 단추가 마지막 칸을 가리지 않게 C30 맨 아래 여백
+  const root = cssSource.slice(cssSource.indexOf("#mi-admin .mi-coupang-rank-root,"));
+  assert.ok(root.slice(0, root.indexOf("}")).includes("padding-bottom: 96px;"));
+  // N30 공용 클래스는 C30 범위 선택자로만 덮는다(인라인 공용 규칙 무변경).
+  assert.doesNotMatch(cssSource, /^#mi-(?:admin|clean) \.mi-rank-/mu);
+});
+
+// ── 2026-10-23 재검사 결함 수정(지금 확인 끄기·버튼 글자·결과 자리·포커스·막대·CSS) ─────────────────
+
+// 기록 뒤에도 서버 manual 을 그대로 돌려주는 기록 처리기(끈 뒤 끝난 확인 등).
+const recordKeepingManual = (body, server) => ({
+  ok: true, accepted: true, duplicate: false, outcome: body.outcome, status: "ok", errorCode: null, matched: 1, counted: true, stopped: false, stopCode: null, late: false,
+  tracker: { trackerId: TRACKER_ID, result: "found", rank: 12, organicCount: 50, adOrder: null, checkedAt: iso(SERVER_NOW + 20000) },
+  manual: server.manual,
+});
+
+test("진행 중에 '지금 확인 끄기'를 누르면 경고 네 가지는 끝날 때까지 남고 '끝까지 기록' 한 줄이 붙으며, 끝나면 결과가 보인다", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const screen = mountManual({ check: async () => { await gate; return { ok: true, reply: measuredReply() }; }, record: recordKeepingManual,
+    listOverrides: { collector: { state: "not_connected" } } });
+  screen.controller.show();
+  await settle();
+  dispatch(manualButtonFor(screen), "click");
+  await settle();
+  const warn = /그 창을 닫거나 누르거나 내리지\(가리지\) 말고, 이 화면도 닫지 마세요/u;
+  assert.equal(manualPill(screen), "확인 중");
+  assert.match(manualLine(screen).textContent, warn);
+  // 화면 읽기 프로그램에도 경고 문장을 한 번 읽힌다(초 세기 없음)
+  assert.match(screen.host.querySelector("[data-coupang-rank-manual-announce]").textContent, /이 화면도 닫지 마세요/u);
+  // 진행 중에 끈다(비상 정지는 막지 않는다). 서버는 이제 off 를 준다.
+  screen.server.manual = manualPayload({ state: "off", enabled: false });
+  const toggle = screen.host.querySelector("[data-coupang-rank-manual-toggle]");
+  assert.equal(toggle.disabled, false);
+  dispatch(toggle, "click");
+  await settle();
+  assert.equal(screen.server.of("settings-update").length, 1);
+  assert.equal(manualPill(screen), "확인 중", "꺼짐으로 바꾸지 않는다");
+  assert.match(manualLine(screen).textContent, warn);
+  assert.match(manualLine(screen).textContent, /지금 확인을 껐지만, 이미 시작한 이 확인은 끝까지 마치고 결과를 기록합니다/u);
+  assert.doesNotMatch(manualLine(screen).textContent, /기록되지 않습니다/u);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-manual-toggle]").textContent, "지금 확인 켜기", "버튼은 서버 상태(꺼짐)를 따른다");
+  release();
+  await settle();
+  assert.equal(manualPill(screen), "꺼짐");
+  assert.equal(manualLine(screen).textContent, "꺼져 있어 지금은 새 순위를 기록하지 않습니다. 카드의 '지금 확인' 버튼도 숨겨져 있습니다.");
+  assert.match(resultText(screen), /^확인 완료: /u, "결과는 상태판 '직전 확인' 줄에 남는다");
+  assert.match(cardNoteFor(screen), /^방금 확인 \d{2}:\d{2} · 일반 12위로 기록$/u);
+  // 순수 함수: 서버가 off 여도 진행 중이면 run 갈래
+  const off = manualPayload({ state: "off", enabled: false });
+  const running = view({ server: off, run: { phase: "check" } });
+  assert.equal(running.kind, "run");
+  assert.equal(running.visible, true);
+  assert.equal(boardOf({ server: off, view: running }).toggle, "enable");
+  assert.equal(boardOf({ server: off, view: running }).pill.text, "확인 중");
+  assert.equal(view({ server: off }).kind, "off");
+});
+
+test("카드 '지금 확인' 버튼 글자가 막힌 이유를 말한다(다른 확인·응답 없음·보내지 못함·확장·멈춤), 이른 아침은 '오늘 09시부터'", () => {
+  const label = (server, extra = {}) => internals.manualButtonLabel(view({ server, ...extra }), false, server, extra.now ?? SERVER_NOW);
+  const busy = manualPayload({ state: "busy", busyUntil: iso(SERVER_NOW + 90000) });
+  assert.equal(label(busy), "약 1분 30초 뒤");
+  assert.equal(label(busy, { ownLost: true }), "약 1분 30초 뒤");
+  assert.equal(label(busy, { ownUnsent: true }), "약 1분 30초 뒤");
+  assert.equal(label(busy, { unsentMaybe: true }), "약 1분 30초 뒤");
+  assert.equal(label(busy, { ownPending: true }), "확인 중…");
+  assert.equal(view({ server: busy }).countdown, true, "다른 확인도 1초마다 다시 센다(버튼 글자가 남은 시간)");
+  assert.equal(label(manualPayload(), { hello: helloOk({ busy: true }) }), "잠시 뒤");
+  assert.equal(label(manualPayload(), { hello: { status: "missing" } }), "확장 확인 필요");
+  assert.equal(label(manualPayload(), { hello: null }), "확장 확인 중");
+  for (const stateName of ["budget", "review", "cooldown"]) assert.equal(label(manualPayload({ state: stateName })), "멈춤", stateName);
+  assert.equal(label(manualPayload(), { hello: helloOk({ incognitoWindowOpen: true }) }), "지금 확인", "켜진 버튼은 그대로");
+  // 00~09시(시간 밖 이른 아침): '다음 확인 오늘 09:00'과 '오늘 쓴 횟수' 아래 줄이 같은 날을 말한다
+  const early = Date.parse("2026-10-22T23:30:00.000Z"); // KST 08:30
+  const morning = manualPayload({ state: "hours", serverTime: iso(early) });
+  const model = boardOf({ server: morning, now: early, view: view({ server: morning, now: early }) });
+  assert.equal(model.metrics.next.value, "오늘 09:00");
+  assert.equal(model.metrics.used.note, "09~19시 · 오늘 09시부터 30번");
+  assert.equal(label(morning, { now: early }), "오늘 09:00");
+  const late = Date.parse("2026-10-23T11:00:00.000Z"); // KST 20:00
+  const evening = manualPayload({ state: "hours", serverTime: iso(late) });
+  assert.equal(boardOf({ server: evening, now: late, view: view({ server: evening, now: late }) }).metrics.used.note, "09~19시 · 내일 09시에 다시 30번");
+});
+
+test("자동 수집 보류 안내는 지금 확인 상태를 따르고, 꺼짐 + 자동 수집 경보면 빈 기록판이 '기록된다'고 하지 않는다", async () => {
+  const holdOf = async (manual, collector = { state: "not_connected" }) => {
+    const screen = mountManual({ manual, listOverrides: { collector } });
+    screen.controller.show();
+    await settle();
+    return screen;
+  };
+  const on = await holdOf(manualPayload());
+  assert.match(on.host.querySelector("[data-coupang-rank-owner-hold]").textContent, /지금은 카드의 '지금 확인'으로만 기록합니다/u);
+  const off = await holdOf(manualPayload({ state: "off", enabled: false }));
+  const hold = off.host.querySelector("[data-coupang-rank-owner-hold]");
+  assert.equal(hold.hidden, false);
+  assert.match(hold.textContent, /지금 확인도 꺼져 있어 지금은 새 순위를 기록하지 않습니다/u);
+  assert.doesNotMatch(hold.textContent, /'지금 확인'으로만 기록합니다/u, "상태판의 '꺼짐'과 다른 말을 하지 않는다");
+  for (const stateName of ["review", "budget", "cooldown", "outdated", "offline", "zzz_unknown"]) {
+    const alarm = await holdOf(manualPayload({ state: "off", enabled: false }), { state: stateName, lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null });
+    assert.doesNotMatch(manualLine(alarm).textContent, /기록 중/u, stateName);
+    const empty = alarm.host.querySelectorAll(".mi-coupang-rank-board-empty")[0];
+    assert.equal(empty.textContent, "아직 순위 기록이 없습니다. 자동 수집이 멈췄거나 확인이 필요한 상태라 언제 기록될지 알 수 없습니다(위 자동추적 칸 참고).", stateName);
+    assert.equal(alarm.host.querySelector("[data-coupang-rank-strip]").hidden, false, `${stateName}: 자동추적 칸 경보는 그대로 보인다`);
+  }
+  const unknown = await holdOf(manualPayload({ state: "off", enabled: false }), { state: "zzz_unknown" });
+  assert.match(manualLine(unknown).textContent, /^자동 수집 상태를 알 수 없습니다\(코드 zzz_unknown\)/u);
+});
+
+test("카드 한 장 동작 성공은 화면 읽기 자리에도 쓰고, 앞선 결과 줄은 다음 동작 때 지우며, 모두 지워 목록이 비면 결과를 맨 위 상태줄에 쓴다", async () => {
+  let deleted = new Set();
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        if (body.action === "delete") body.ids.forEach((id) => deleted.add(id));
+        return response({ ok: true, updated: body.ids.length, deleted: body.action === "delete" ? body.ids.length : 0 });
+      }
+      const payload = listPayload();
+      return response(listPayload({ trackers: payload.trackers.filter((tracker) => !deleted.has(tracker.id)) }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const status = () => screen.host.querySelector("[data-coupang-rank-status]");
+  const bulkNote = () => screen.host.querySelector("[data-coupang-rank-bulk-note]");
+  // 앞선 동작이 남긴 상태줄
+  dispatch(screen.host.querySelector("[data-coupang-rank-create-form]"), "submit");
+  assert.equal(status().textContent, "키워드를 입력해주세요.");
+  // 묶음 결과 줄도 하나 남겨 둔다(하나 고르고 그룹명 없이 '그룹으로 옮기기')
+  const pick = screen.host.querySelector(`[data-coupang-rank-select="${TRACKER_ID}"]`);
+  pick.checked = true;
+  dispatch(pick, "change");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-group"]'), "click");
+  assert.equal(bulkNote().textContent, "만들거나 이동할 그룹명을 입력해주세요.");
+  dispatch(screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${TRACKER_ID}"]`), "click");
+  await flush();
+  assert.equal(status().hidden, true, "앞선 상태줄은 지웠다");
+  assert.equal(bulkNote().hidden, true, "앞선 묶음 결과 줄도 지웠다");
+  const live = screen.host.querySelector("[data-coupang-rank-sr-live]");
+  assert.equal(live.getAttribute("aria-live"), "polite");
+  assert.equal(live.textContent, "1개 일시중지했습니다.");
+  // 보이는 항목 전체 선택 → 선택 삭제 → 목록이 비면 막대가 숨으므로 결과를 맨 위 상태줄에
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="select-visible"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-delete"]'), "click");
+  await flush();
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 0);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk]").hidden, true);
+  assert.equal(status().hidden, false);
+  assert.equal(status().textContent, "2개 삭제했습니다.");
+});
+
+test("휴대폰 아래 막대: 고르면 접힌 한 줄, 단추로 펼침, 선택이 0개가 되어도 결과 한 줄은 막대 안에 잠시 남는다", async () => {
+  const screen = mountWith({
+    fetch: async (url, init) => {
+      if (init.method === "POST") return response({ ok: true, updated: JSON.parse(init.body).ids.length });
+      return response(listPayload());
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const host = screen.host;
+  const dock = () => host.querySelector("[data-coupang-rank-bulk-dock]");
+  const toggle = () => host.querySelector('[data-coupang-rank-action="bulk-sheet-toggle"]');
+  assert.equal(dock().classList.contains("is-shown"), false);
+  const check = host.querySelector(`[data-coupang-rank-select="${TRACKER_ID}"]`);
+  check.checked = true;
+  dispatch(check, "change");
+  assert.equal(dock().classList.contains("is-shown"), true);
+  assert.equal(dock().classList.contains("is-expanded"), false, "처음에는 접힌 한 줄");
+  assert.equal(host.querySelector(".mi-coupang-rank-bulk-sheet-count").textContent, "1개 선택");
+  assert.equal(toggle().getAttribute("aria-expanded"), "false");
+  assert.equal(toggle().getAttribute("aria-controls"), host.querySelector("[data-coupang-rank-bulk-actions]").id);
+  dispatch(toggle(), "click");
+  assert.equal(dock().classList.contains("is-expanded"), true);
+  assert.equal(toggle().textContent, "접기 ▾");
+  assert.equal(toggle().getAttribute("aria-expanded"), "true");
+  // 체크해도 겹친 칸의 안내 글은 그대로 남는다(감추기는 CSS, 높이가 바뀌지 않게)
+  assert.equal(host.querySelector(".mi-coupang-rank-bulk-hint").textContent, "카드를 체크하면 그룹 옮기기 · 일시중지 · 삭제 · 이미지 저장을 한 번에 할 수 있습니다.");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-actions]").getAttribute("aria-hidden"), "false");
+  // 그룹 해제(선택을 비운다) → 막대는 접히지만 결과 한 줄은 아래 막대 안에 남는다
+  dispatch(host.querySelector('[data-coupang-rank-action="bulk-ungroup"]'), "click");
+  await flush();
+  assert.equal(host.querySelector("[data-coupang-rank-bulk]").classList.contains("is-open"), false);
+  assert.equal(dock().classList.contains("is-shown"), true, "결과 한 줄 때문에 잠시 남는다");
+  assert.equal(dock().classList.contains("is-expanded"), false, "선택이 0개면 접는다");
+  const dockNote = host.querySelector("[data-coupang-rank-bulk-dock-note]");
+  assert.equal(dockNote.textContent, "1개 추적 항목을 그룹에서 해제했습니다.");
+  assert.equal(dockNote.getAttribute("aria-hidden"), "true", "같은 글을 두 번 읽지 않는다(막대 안 결과 줄이 읽는다)");
+  assert.equal(host.querySelector("[data-coupang-rank-bulk-note]").textContent, dockNote.textContent);
+});
+
+test("목록을 다시 그려도 키보드 포커스는 같은 자리로 돌아오고, 날짜 줄의 화살표 위치를 지키며, 꺼진 버튼 대신 카드에 맡긴다", async () => {
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  const card = () => screen.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${TRACKER_ID}"]`);
+  const days = () => card().querySelectorAll("[data-coupang-rank-day]");
+  days()[0].focus();
+  keydown(days()[0], "ArrowRight");
+  assert.equal(screen.document.activeElement, days()[1]);
+  // 다시 그리기(필터 '전체' 누름 → 목록을 통째로 새로 만든다)
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="all"]'), "click");
+  assert.equal(screen.document.activeElement, days()[1], "같은 날짜 칸(새 노드)으로 돌아온다");
+  assert.deepEqual(days().map((node) => node.getAttribute("tabindex")), ["-1", "0"], "화살표로 옮긴 칸이 탭 정지로 남는다");
+  // 카드 버튼
+  const pause = () => screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${TRACKER_ID}"]`);
+  pause().focus();
+  dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="all"]'), "click");
+  assert.equal(screen.document.activeElement, pause());
+
+  // 지금 확인: 누른 버튼이 꺼지면 카드에 맡기고(몸통으로 사라지지 않음), 다시 켜져 그려지면 버튼으로 돌린다
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const manual = mountManual({ check: async () => { await gate; return { ok: true, reply: measuredReply() }; },
+    record: (body, server) => { server.manual = manualPayload({ usedToday: 4 }); return recordKeepingManual(body, server); } });
+  manual.controller.show();
+  await settle();
+  manualButtonFor(manual).focus();
+  dispatch(manualButtonFor(manual), "click");
+  await settle();
+  const manualCard = manual.host.querySelector(`[data-coupang-rank-card][data-coupang-rank-id="${TRACKER_ID}"]`);
+  assert.equal(manual.document.activeElement, manualCard, "꺼진 버튼 대신 카드");
+  assert.equal(manualCard.getAttribute("tabindex"), "-1");
+  release();
+  await settle();
+  assert.equal(manualButtonFor(manual).disabled, false);
+  assert.equal(manual.document.activeElement, manualButtonFor(manual), "버튼이 다시 켜지면 버튼으로");
+});
+
+test("날짜 줄 오른쪽 끝 흐림은 옆으로 더 있을 때만(끝까지 밀면 사라짐)", async () => {
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  const wrap = screen.host.querySelector(".mi-coupang-rank-days-scroll");
+  const grid = wrap.querySelector(".mi-rank-day-grid");
+  assert.equal(wrap.classList.contains("has-more"), false, "잴 수 없으면(넘침 0) 흐리지 않는다");
+  Object.defineProperty(grid, "scrollWidth", { value: 900, configurable: true });
+  Object.defineProperty(grid, "clientWidth", { value: 300, configurable: true });
+  grid.scrollLeft = 0;
+  dispatch(grid, "scroll");
+  assert.equal(wrap.classList.contains("has-more"), true);
+  grid.scrollLeft = 600;
+  dispatch(grid, "scroll");
+  assert.equal(wrap.classList.contains("has-more"), false, "끝까지 밀었다");
+});
+
+test("시작하지 않은 결과(서버 거절·누르기 직전 확장 검사)는 카드에 '방금 누름', 확인한 결과는 '방금 확인'", async () => {
+  // 누르기 직전 확장 검사에서 막힘(화면을 연 뒤 시크릿 허용을 껐다)
+  let helloCalls = 0;
+  const blocked = mountManual({ hello: () => { helloCalls += 1; return { ok: true, reply: helloReply(helloCalls > 1 ? { incognitoAllowed: false } : {}) }; } });
+  blocked.controller.show();
+  await settle();
+  dispatch(manualButtonFor(blocked), "click");
+  await settle();
+  assert.equal(blocked.server.posts.length, 0);
+  assert.match(cardNoteFor(blocked), /^방금 누름 \d{2}:\d{2} · 시작하지 않음 · 쿠팡 검색 안 함$/u);
+  const refused = mountManual({ claim: { __status: 500, payload: {} } });
+  refused.controller.show();
+  await settle();
+  dispatch(manualButtonFor(refused), "click");
+  await settle();
+  assert.match(cardNoteFor(refused), /^방금 누름 \d{2}:\d{2} · 시작하지 않음 · 쿠팡 검색 안 함$/u);
+  const done = mountManual();
+  done.controller.show();
+  await settle();
+  dispatch(manualButtonFor(done), "click");
+  await settle();
+  assert.match(cardNoteFor(done), /^방금 확인 \d{2}:\d{2} · 일반 12위로 기록$/u);
+});
+
+test("C30 CSS: 카드 1행 칸 비율(키워드·상품번호 먼저) · 날짜 칸 포커스 안쪽 테두리 · 흐림 조건 · 겹친 칸 · 아래 막대 · 누르는 자리 · 화면 머리", () => {
+  const ruleOf = (selector) => {
+    const at = cssSource.indexOf(selector);
+    assert.ok(at >= 0, selector);
+    const open = cssSource.indexOf("{", at);
+    return cssSource.slice(open, cssSource.indexOf("}", open));
+  };
+  // 1366~1920px 에서 키워드·상품번호가 잘리지 않게(줄어드는 몫은 상품명이 먼저)
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-card .mi-rank-track-primary,").includes("grid-template-columns: max-content minmax(68px, max-content) max-content minmax(84px, 1fr);"));
+  // 날짜 칸 포커스: 넘침 자르기에 잘리지 않게 안쪽(-3px), 펼친 날은 다른 모양(아래 파란 줄)
+  const focus = ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day-button:focus-visible,");
+  assert.ok(focus.includes("outline-offset: -3px;") && focus.includes("z-index: 1;"));
+  const selected = ruleOf("#mi-admin .mi-coupang-rank-day.is-selected,");
+  assert.ok(selected.includes("inset 0 -3px 0 var(--mi-blue)"));
+  assert.doesNotMatch(selected, /inset 0 0 0 2px var\(--mi-navy\)/u, "포커스처럼 보이는 남색 테두리를 쓰지 않는다");
+  // 흐림은 has-more 일 때만
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-days-scroll::after,").includes("opacity: 0;"));
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-days-scroll.has-more::after,").includes("opacity: 1;"));
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-day-grid,").includes("scroll-padding-inline: 0 40px;"));
+  // 겹친 칸: 안내 글·동작 줄이 같은 자리, 고르면 visibility 만 바꾼다(높이 그대로)
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-bulk-msg,").includes("grid-area: 1 / 1;"));
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-open .mi-coupang-rank-bulk-msg,").includes("visibility: hidden;"));
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,").includes("visibility: hidden;"));
+  assert.doesNotMatch(cssSource, /\.mi-coupang-rank-bulk\.is-open,\s*#mi-clean[^{]*\{\s*padding/u, "고를 때 막대 여백을 바꾸지 않는다");
+  // 휴대폰 아래 막대(카카오 단추 위) · 맨 아래 여백 = 막대 높이 + 96px
+  const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px)"), cssSource.indexOf("@media (max-width: 720px)"));
+  const dock = phone.slice(phone.indexOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk-dock,"));
+  assert.ok(dock.slice(0, dock.indexOf("}")).includes("position: fixed;") && dock.slice(0, dock.indexOf("}")).includes("bottom: 84px;"));
+  assert.ok(phone.includes(".mi-coupang-rank-bulk-dock:not(.is-expanded) .mi-coupang-rank-bulk-actions"));
+  assert.ok(phone.includes("padding-bottom: calc(96px + var(--mi-coupang-rank-dock-space, 0px));"));
+  // 누르는 자리 44px(최소 40px)
+  const text = phone.slice(phone.indexOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-text-button,"));
+  assert.ok(text.slice(0, text.indexOf("}")).includes("min-height: 44px;"));
+  assert.ok(phone.includes("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-filter-actions .mi-rank-filter-button:focus-visible,"));
+  // 화면 머리: 901~1180px 도 대상 알약을 제목 아래로, 제목은 낱말 단위로 줄바꿈
+  const mid = cssSource.slice(cssSource.indexOf("@media (min-width: 901px) and (max-width: 1180px)"), cssSource.indexOf("@media (max-width: 900px)"));
+  assert.ok(mid.includes("#mi-admin .mi-coupang-rank-screen-head.mi-head,"));
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-screen-head h1,").includes("word-break: keep-all;"));
 });

@@ -4437,8 +4437,9 @@ test("C30 CSS: 카드 1행 칸 비율(키워드·상품번호 먼저) · 날짜 
   // 겹친 칸: 안내 글·동작 줄이 같은 자리, 고르면 visibility 만 바꾼다(높이 그대로)
   assert.ok(ruleOf("#mi-admin .mi-coupang-rank-bulk-msg,").includes("grid-area: 1 / 1;"));
   assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-open .mi-coupang-rank-bulk-msg,").includes("visibility: hidden;"));
-  // 고르기 전에는 동작 줄이 자리를 차지하지 않는다(접힌 막대 = 단추 한 줄 높이, 2026-10-23 재검사 2차)
-  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,").includes("display: none;"));
+  // 고르기 전에도 동작 줄 자리를 잡아 둔다(고를 때 목록이 밀리지 않게, 2026-10-23 재검사 3차 — display: none 은 901~1230px 에서 42px 밀렸다)
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,").includes("visibility: hidden;"));
+  assert.doesNotMatch(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,"), /display:\s*none/u);
   assert.doesNotMatch(cssSource, /\.mi-coupang-rank-bulk\.is-open,\s*#mi-clean[^{]*\{\s*padding/u, "고를 때 막대 여백을 바꾸지 않는다");
   // 휴대폰 아래 막대(카카오 단추 위) · 맨 아래 여백 = 막대 높이 + 96px
   const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px)"), cssSource.indexOf("@media (max-width: 720px)"));
@@ -4570,7 +4571,44 @@ test("휴대폰 '전체 선택 → 선택 삭제'로 목록이 비어도 결과 
   assert.equal(bulk().classList.contains("is-note-only"), false);
 });
 
-test("날짜 줄 흐림: 가려진 몫이 10px 이하(1440~1920px 12칸 카드의 4px 넘침)면 흐리지 않는다(2026-10-23 재검사 2차)", async () => {
+test("카드 '삭제'로 마지막 카드를 지워 목록이 비면 결과가 아래 막대 안 결과 줄에도 보인다(휴대폰 화면 밖 상태줄 보완, 2026-10-23 재검사 3차)", async () => {
+  const clock = { now: Date.parse("2026-10-17T03:00:00.000Z") };
+  const deleted = new Set();
+  const screen = mountWith({
+    clock,
+    deferTimersFrom: 6000,
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        body.ids.forEach((id) => deleted.add(id));
+        return response({ ok: true, deleted: body.ids.length });
+      }
+      const payload = listPayload();
+      return response(listPayload({ trackers: payload.trackers.filter((tracker) => !deleted.has(tracker.id)) }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const ids = Array.from(screen.host.querySelectorAll("[data-coupang-rank-card]")).map((card) => card.getAttribute("data-coupang-rank-id"));
+  assert.ok(ids.length >= 2);
+  const removeCard = async (id) => {
+    dispatch(screen.host.querySelector(`[data-coupang-rank-action="delete"][data-coupang-rank-id="${id}"]`), "click");
+    await flush();
+  };
+  await removeCard(ids[0]);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk]").classList.contains("is-note-only"), false, "카드가 남아 있으면 결과 줄만 모양이 아니다");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-dock-note]").hidden, true, "카드가 남아 있으면 아래 막대 결과 줄을 쓰지 않는다(넓은 화면 막대 높이 그대로)");
+  for (const id of ids.slice(1)) await removeCard(id);
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 0);
+  const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
+  assert.equal(bulk.hidden, false);
+  assert.ok(bulk.classList.contains("is-note-only"));
+  assert.ok(screen.host.querySelector("[data-coupang-rank-bulk-dock]").classList.contains("is-shown"));
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-dock-note]").textContent, "1개 삭제했습니다.");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "1개 삭제했습니다.", "맨 위 상태줄도 그대로");
+});
+
+test("날짜 줄 흐림: 가려진 몫이 16px 이하(1440~1920px 12칸 카드의 4px 넘침 · 글자가 안 잘리는 17px 미만)면 흐리지 않는다(2026-10-23 재검사 2·3차)", async () => {
   const screen = mountWith();
   screen.controller.show();
   await flush();
@@ -4584,8 +4622,8 @@ test("날짜 줄 흐림: 가려진 몫이 10px 이하(1440~1920px 12칸 카드�
     return wrap.classList.contains("has-more");
   };
   assert.equal(fadeAt(1008), false, "12칸 × 84px = 1008px, 보이는 폭 1004px");
-  assert.equal(fadeAt(1014), false, "10px 까지는 칸 오른쪽 여백·테두리뿐");
-  assert.equal(fadeAt(1015), true, "11px 부터는 흐린다");
+  assert.equal(fadeAt(1020), false, "16px 까지는 칸 오른쪽 여백·테두리뿐");
+  assert.equal(fadeAt(1021), true, "17px 부터는 흐린다");
   assert.equal(fadeAt(1260), true, "15칸");
   assert.equal(fadeAt(1260, 250), false, "끝에서 6px 남으면 흐림을 뗀다");
   assert.ok(moduleSource.includes("var DAY_FADE_PX = 40;") && cssSource.includes("width: 40px;") && cssSource.includes("scroll-padding-inline: 0 40px;"), "JS·CSS 흐림 폭이 같다");
@@ -4732,7 +4770,6 @@ test("C30 CSS(2026-10-23 재검사 2차): 접힌 막대 한 줄 · 결과 줄만
   // 결함 7: 겹친 칸은 단추 한 줄 높이(34px)를 지키고, 휴대폰은 자리를 잡지 않는다(동작 줄은 아래 막대)
   assert.ok(ruleOf(wide, "#mi-admin .mi-coupang-rank-bulk-stack,").includes("min-height: 34px;"));
   assert.ok(ruleOf(phone, "#mi-admin .mi-coupang-rank-bulk-stack,").includes("min-height: 0;"));
-  assert.doesNotMatch(ruleOf(wide, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,"), /visibility/u);
   // 결함 2: 결과 줄만(is-note-only) — 넓은 화면은 숨기고, 휴대폰은 막대 상자 없이 아래 막대 안 결과 줄만
   assert.ok(ruleOf(wide, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only,").includes("display: none;"));
   assert.ok(ruleOf(phone, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only,").includes("display: contents;"));

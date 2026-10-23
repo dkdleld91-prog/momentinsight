@@ -117,7 +117,7 @@
   var BULK_NOTE_FLOAT_MS = 6000;
   // 날짜 줄: 오른쪽 끝 흐림 폭(CSS .mi-coupang-rank-days-scroll::after · scroll-padding-inline 과 같다)과, 흐리지 않는 작은 넘침(px).
   var DAY_FADE_PX = 40;
-  var DAY_FADE_SLACK_PX = 10;
+  var DAY_FADE_SLACK_PX = 16;
 
   var ATTENTION_TEXT = {
     drop10: "10위 이상 하락",
@@ -3056,7 +3056,8 @@
 
     // 날짜 줄 오른쪽 끝 흐림은 옆으로 더 있을 때만(넘침이 있고 끝까지 밀지 않았을 때). 읽기를 먼저 모두 하고 쓴다.
     // 가려진 몫이 DAY_FADE_SLACK_PX 이하(칸 오른쪽 여백·테두리뿐 — 칸 글자는 왼쪽 9px 부터 시작)면 흐리지 않는다:
-    // 1440~1920px 의 12칸 카드는 4px 만 넘치는데 40px 흐림이 마지막 칸 글자를 덮었다(2026-10-23 재검사).
+    // 1440~1920px 의 12칸 카드는 4px 만 넘치는데 40px 흐림이 마지막 칸 글자를 덮었다(2026-10-23 재검사). 문턱 16px: 실측(헤드리스)
+    // 마지막 칸 '10-12(월)' 글자가 처음 잘리는 넘침은 20px 이라 글꼴 폭 차이를 남겨 둔다(17~19px 넘침은 흐림이 남는다).
     function dayFadeWanted(wrap) {
       var grid = wrap.querySelector(".mi-rank-day-grid");
       if (!grid) return false;
@@ -3504,7 +3505,9 @@
     async function runBulk(action, ids, extra, options) {
       var opts = options || {};
       var origin = opts.origin === "card" ? "card" : "bulk";
+      var lastReport = null;
       var report = function (text, tone) {
+        lastReport = { text: text, tone: tone };
         var toStatus = tone === "is-warn" || (origin === "card" && action === "delete");
         if (origin === "card" && opts.cardId && action !== "delete") {
           setCardNote(opts.cardId, text, tone);
@@ -3566,6 +3569,11 @@
       // (넓은 화면·화면 읽기용. 휴대폰은 아래 막대 안 결과 줄이 잠시 보인다).
       if (!state.destroyed && origin === "bulk" && state.bulkNote.text && state.payload && !state.setupRequired && !trackers().length && state.status.text !== state.bulkNote.text) {
         setStatus(state.bulkNote.text, state.bulkNote.tone);
+      }
+      // 카드 '삭제'로 마지막 카드를 지워 목록이 비면 결과는 맨 위 상태줄에만 있어 휴대폰에서 화면 밖이었다(2026-10-23 재검사 3차) →
+      // 막대 '결과 줄만' 모양에도 같은 글을 띄운다(넓은 화면은 막대를 감추므로 상태줄 그대로, 휴대폰은 아래 막대 안 결과 줄).
+      if (!state.destroyed && origin === "card" && action === "delete" && lastReport && lastReport.text && state.payload && !state.setupRequired && !trackers().length) {
+        setBulkNote(lastReport.text, lastReport.tone);
       }
     }
 
@@ -5509,9 +5517,9 @@
       markDirty(target);
     }
 
-    // 체크칸을 누르는 순간 목록 위 '선택 항목 정리' 막대 높이가 바뀌면(약 901~1230px: 고르기 전에는 한 줄, 고르면 동작 줄이 두 줄) 누른 체크칸이
-    // 화면에서 밀리지 않게 그 차이만큼 화면을 함께 옮긴다(막대가 위로 늘어나 보인다, 2026-10-23 재검사). 브라우저의 스크롤 고정이 이미
-    // 맞췄으면 차이가 0 이라 옮기지 않는다. 휴대폰은 동작 줄이 화면 아래 막대에 떠 있어 높이가 바뀌지 않는다.
+    // 체크칸을 누르는 순간 누른 체크칸이 화면에서 밀렸으면 그 차이만큼 화면을 함께 옮기는 안전장치다. 막대는 동작 줄 자리를 늘 잡아 두므로
+    // (CSS visibility) 보통 차이는 0 이라 옮기지 않는다(그룹 체크칸은 목록을 다시 그려 findAgain 으로 다시 찾는다). 휴대폰은 동작 줄이
+    // 화면 아래 막대에 떠 있어 높이가 바뀌지 않는다.
     function keepInPlace(anchor, change, findAgain) {
       var before = viewportTop(anchor);
       change();

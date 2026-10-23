@@ -115,6 +115,9 @@
   var MANUAL_RUN_OFF_TEXT = "지금 확인을 껐지만, 이미 시작한 이 확인은 끝까지 마치고 결과를 기록합니다(시크릿 창이 열리기 전이었다면 검색하지 않고 끝납니다).";
   // 선택 항목 정리 결과 한 줄을 휴대폰 아래 막대에 남겨 두는 시간(선택이 0개가 되어 막대가 접혀도).
   var BULK_NOTE_FLOAT_MS = 6000;
+  // 날짜 줄: 오른쪽 끝 흐림 폭(CSS .mi-coupang-rank-days-scroll::after · scroll-padding-inline 과 같다)과, 흐리지 않는 작은 넘침(px).
+  var DAY_FADE_PX = 40;
+  var DAY_FADE_SLACK_PX = 10;
 
   var ATTENTION_TEXT = {
     drop10: "10위 이상 하락",
@@ -2767,7 +2770,23 @@
 
     function renderBulkBar() {
       var hasData = Boolean(state.payload) && !state.setupRequired && trackers().length > 0;
-      shell.bulk.hidden = !hasData;
+      // 모두 지워 목록이 비어도 결과 한 줄이 떠 있는 동안은 막대를 '결과 줄만' 모양(is-note-only)으로 남긴다: 넓은 화면은 CSS 가 막대를 감추고
+      // (결과는 맨 위 상태줄 — runBulk), 휴대폰은 화면 아래 막대 안 결과 줄만 보인다(맨 위 상태줄은 화면 밖이라 안 보였다, 2026-10-23 재검사).
+      var noteOnly = !hasData && Boolean(state.payload) && !state.setupRequired && bulkNoteFloating();
+      shell.bulk.hidden = !hasData && !noteOnly;
+      shell.bulk.classList.toggle("is-note-only", noteOnly);
+      if (noteOnly) {
+        state.bulkExpanded = false;
+        shell.bulk.classList.remove("is-open");
+        shell.bulkCount.hidden = true;
+        shell.bulkSheetToggle.hidden = true;
+        shell.bulkActions.setAttribute("aria-hidden", "true");
+        shell.bulkDock.classList.add("is-shown");
+        shell.bulkDock.classList.remove("is-expanded");
+        renderBulkNote();
+        syncDockSpace();
+        return;
+      }
       if (!hasData) {
         syncDockSpace();
         return;
@@ -2850,9 +2869,12 @@
         if (key) counts[key] = (counts[key] || 0) + 1;
       });
       var showManual = manualVisible();
+      // 진행 중에 '지금 확인'을 껐으면 버튼은 모두 숨기되, 재고 있는 카드만 끝날 때까지 '확인 중…'을 남긴다(2026-10-23 재검사).
+      var runOnly = !showManual && manualRunWhileOff() ? state.manual.run.trackerId : "";
       return {
         manual: showManual,
-        view: showManual ? currentManualView() : null,
+        runOnly: runOnly,
+        view: showManual || runOnly ? currentManualView() : null,
         keywordCounts: counts,
         todayKst: todayKstValue(),
         auto: autoActive() || readonlyView()
@@ -2861,11 +2883,75 @@
 
     // 목록은 다시 그릴 때 통째로 새로 만든다. 그리기 전에 키보드 포커스 자리를 기억해 같은 버튼(없거나 꺼졌으면 그 카드)으로 되돌린다.
     // 꺼진 버튼 대신 카드에 맡겨 둔 자리(pendingFocus)는 버튼이 다시 켜져 그려질 때 원래 버튼으로 돌아간다.
+    // 날짜 줄을 옆으로 민 자리(카드 id → scrollLeft)도 다시 그리기 전에 기억해 되돌린다(새 줄은 0 에서 시작해 되돌린 포커스 칸이 가려졌다,
+    // 2026-10-23 재검사). 되돌린 포커스 칸은 revealInRow 가 줄 안(오른쪽 흐림 밖)에 보이게 한 번 더 맞춘다.
     function renderList() {
       var focus = captureListFocus();
+      var rows = captureRowScroll();
       drawList();
+      restoreRowScroll(rows);
       restoreListFocus(focus);
       syncDayFades();
+    }
+
+    function rowCardId(grid) {
+      var card = grid && grid.closest ? grid.closest("[data-coupang-rank-card]") : null;
+      return card ? String(card.getAttribute("data-coupang-rank-id") || "") : "";
+    }
+
+    function captureRowScroll() {
+      var saved = {};
+      if (!shell) return saved;
+      Array.prototype.forEach.call(shell.list.querySelectorAll(".mi-rank-day-grid"), function (grid) {
+        var id = rowCardId(grid);
+        var left = Number(grid.scrollLeft) || 0;
+        if (id && left > 0) saved[id] = left;
+      });
+      return saved;
+    }
+
+    function restoreRowScroll(saved) {
+      if (!shell || !saved) return;
+      Array.prototype.forEach.call(shell.list.querySelectorAll(".mi-rank-day-grid"), function (grid) {
+        var id = rowCardId(grid);
+        if (id && saved[id]) grid.scrollLeft = saved[id];
+      });
+    }
+
+    // 옆으로 미는 줄(날짜 줄 · 휴대폰 필터 줄) 안의 칸이 줄 보이는 폭 안에 다 들어오게 그 줄만 옆으로 민다(화면은 위아래로 움직이지 않는다).
+    // 날짜 줄은 칸(버튼의 부모)을 기준으로, 오른쪽 끝 흐림 폭(DAY_FADE_PX)만큼 비워 둔다. 끝까지 밀면 흐림이 사라지므로 끝 칸은 끝까지.
+    function revealInRow(node) {
+      if (!node || !node.closest) return;
+      var row = node.closest(".mi-rank-day-grid, .mi-coupang-rank-filter-actions");
+      if (!row || typeof row.getBoundingClientRect !== "function" || !shell || !host.contains(row)) return;
+      var client = Number(row.clientWidth) || 0;
+      var width = Number(row.scrollWidth) || 0;
+      if (client <= 0 || width - client < 1) return;
+      var isDays = row.classList.contains("mi-rank-day-grid");
+      var item = isDays && node.parentNode && node.parentNode !== row ? node.parentNode : node;
+      if (typeof item.getBoundingClientRect !== "function") return;
+      var box = row.getBoundingClientRect();
+      var rect = item.getBoundingClientRect();
+      if (!box || !rect || !isNum(box.left) || !isNum(rect.left) || !isNum(rect.right)) return;
+      var left = Number(row.scrollLeft) || 0;
+      var max = width - client;
+      var viewLeft = box.left + (Number(row.clientLeft) || 0);
+      var endPad = isDays ? DAY_FADE_PX : 0;
+      var next = left;
+      if (rect.left < viewLeft) next = left - (viewLeft - rect.left);
+      else if (rect.right > viewLeft + client - endPad) next = left + (rect.right - (viewLeft + client - endPad));
+      next = Math.max(0, Math.min(max, Math.round(next)));
+      if (Math.abs(next - left) >= 1) row.scrollLeft = next;
+    }
+
+    // 키보드로 들어온 포커스(Tab·되돌린 포커스)가 옆으로 미는 줄 안에서 일부만 보이면 그 줄을 민다. 마우스로 누를 때(:focus-visible 아님)는
+    // 누르는 사이 칸이 움직여 다른 칸에 손이 떨어지지 않게 그대로 둔다.
+    function onFocusIn(event) {
+      var target = event && event.target;
+      if (!target || !target.closest || !host.contains(target)) return;
+      var keyboard = true;
+      try { keyboard = typeof target.matches !== "function" || target.matches(":focus-visible"); } catch (error) { keyboard = true; }
+      if (keyboard) revealInRow(target);
     }
 
     var FOCUS_ALIAS = { pause: "resume", resume: "pause", "group-save": "group-edit", "group-cancel": "group-edit" };
@@ -2964,16 +3050,20 @@
       if (target === card) card.setAttribute("tabindex", "-1");
       state.pendingFocus = null;
       focusNode(target);
+      // 포커스는 화면을 움직이지 않게(preventScroll) 돌리므로, 옆으로 미는 줄 안에서 가려졌으면 그 줄만 민다.
+      revealInRow(target);
     }
 
     // 날짜 줄 오른쪽 끝 흐림은 옆으로 더 있을 때만(넘침이 있고 끝까지 밀지 않았을 때). 읽기를 먼저 모두 하고 쓴다.
+    // 가려진 몫이 DAY_FADE_SLACK_PX 이하(칸 오른쪽 여백·테두리뿐 — 칸 글자는 왼쪽 9px 부터 시작)면 흐리지 않는다:
+    // 1440~1920px 의 12칸 카드는 4px 만 넘치는데 40px 흐림이 마지막 칸 글자를 덮었다(2026-10-23 재검사).
     function dayFadeWanted(wrap) {
       var grid = wrap.querySelector(".mi-rank-day-grid");
       if (!grid) return false;
       var width = Number(grid.scrollWidth) || 0;
       var client = Number(grid.clientWidth) || 0;
       var left = Math.abs(Number(grid.scrollLeft) || 0);
-      return client > 0 && width - client > 1 && left + client < width - 1;
+      return client > 0 && width - (left + client) > DAY_FADE_SLACK_PX;
     }
 
     function syncDayFades() {
@@ -3141,6 +3231,8 @@
             actions.push(manualCardButton(tracker, context.view, context.todayKst));
             var same = context.keywordCounts[keywordKeyOf(tracker)] || 0;
             if (same > 1) actions.push(el("small", { className: "mi-coupang-rank-same-kw", title: "같은 키워드 카드는 한 번 누르면 모두 기록됩니다(하루 횟수도 1번만 씁니다)", text: "같은 키워드 " + same + "개 함께 기록" }));
+          } else if (!cleanup && context.runOnly && context.runOnly === tracker.id) {
+            actions.push(manualCardButton(tracker, context.view, context.todayKst));
           }
           tools.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         }
@@ -3470,7 +3562,8 @@
         report(typeof opts.okText === "function" ? opts.okText(total) : total + "개 " + labels[action] + ".", total ? "is-ok" : "is-warn");
       }
       await loadList({ afterWrite: true });
-      // 모두 지워 목록이 비면 선택 항목 정리 막대(결과 줄 포함)가 숨는다 → 결과를 맨 위 상태줄로 옮겨 쓴다.
+      // 모두 지워 목록이 비면 선택 항목 정리 막대는 '결과 줄만' 모양이 된다(넓은 화면은 숨김) → 결과를 맨 위 상태줄에도 쓴다
+      // (넓은 화면·화면 읽기용. 휴대폰은 아래 막대 안 결과 줄이 잠시 보인다).
       if (!state.destroyed && origin === "bulk" && state.bulkNote.text && state.payload && !state.setupRequired && !trackers().length && state.status.text !== state.bulkNote.text) {
         setStatus(state.bulkNote.text, state.bulkNote.tone);
       }
@@ -3679,7 +3772,16 @@
     }
 
     // ── 6. 사용 방법(보조 상자의 첫 줄, 접힘) ──
-    // 지금 방식(지금 확인)으로 쓰고, 숫자는 서버 manual 칸 값으로 채운다. 지금 확인 칸이 없는 화면(읽기 전용 등)은 자동 수집 설명을 쓴다.
+    // 지금 방식 세 갈래에 맞는 문장만 쓴다(2026-10-23 재검사): 지금 확인 켜짐 · 자동 수집(지금 확인 꺼짐) · 둘 다 꺼짐.
+    // 숫자는 서버 manual 칸 값으로 채운다. 지금 확인 칸이 없는 화면(읽기 전용 등)은 자동 수집 설명(legacy)을 쓴다.
+    // 갈래 판정 순서는 등록 결과 안내(firstCheckText)·첫 기록 전 카드 안내(firstBoardHint)와 같다(지금 확인 켜짐 → 자동 수집 → 둘 다 꺼짐).
+
+    function guideMode(server) {
+      var manualField = Boolean(server) && server.state !== "setup_required" && deps.mode === "admin" && isOwnerSession();
+      if (!manualField) return "legacy";
+      if (server.state !== "off") return "manual";
+      return autoMode() ? "auto" : "none";
+    }
 
     function renderGuide() {
       var scope = currentScope();
@@ -3689,24 +3791,44 @@
       var n = checksPerDay();
       var hours = hoursText(info.activeFromHour, info.activeToHour) || "08~23시";
       var server = state.manual.server;
-      var manualOn = Boolean(server) && server.state !== "setup_required" && deps.mode === "admin" && isOwnerSession();
+      var mode = guideMode(server);
+      var manualOn = mode === "manual";
       var wasOpen = shell.guide.open;
       shell.guide.replaceChildren();
+      var sub = { manual: "지금 확인 · 칸 읽는 법 · 필터 · 멈추기와 삭제", none: "켜는 법 · 칸 읽는 법 · 필터 · 멈추기와 삭제" }[mode] || "등록 · 읽는 법 · 멈추기 · 수집 시간";
       shell.guide.appendChild(el("summary", {}, [
         el("strong", { text: "사용 방법" }),
-        el("span", { className: "mi-coupang-rank-aux-sub", text: manualOn ? "지금 확인 · 칸 읽는 법 · 필터 · 멈추기와 삭제" : "등록 · 읽는 법 · 멈추기 · 수집 시간" })
+        el("span", { className: "mi-coupang-rank-aux-sub", text: sub })
       ]));
-      var autoLine = "자동 수집: 수집기 PC가 켜져 있을 때, 하루 " + (isNum(n) ? n : "n") + "회, " + hours + "에 잽니다.";
-      var items = [];
-      if (manualOn) {
+      var autoWhen = "수집기 PC가 켜져 있을 때, 하루 " + (isNum(n) ? n : "n") + "회, " + hours;
+      var autoLine = "자동 수집: " + autoWhen + "에 잽니다.";
+      var register = "등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다.";
+      var manualRule = "";
+      if (mode !== "legacy") {
         var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
-        var manualHoursText = manualHours(server);
-        items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(검색 사이 " + manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHoursText.text +
-          "). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHoursText.from) + "시부터 다시 됩니다.");
+        manualRule = "검색 사이 " + manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text;
+      }
+      var items = [];
+      if (mode === "manual") {
+        items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(" + manualRule +
+          "). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다.");
         items.push("같은 키워드 카드는 한 번 누르면 함께 기록됩니다(하루 횟수도 1번만 씁니다). 그래서 같은 키워드 카드를 따로 누를 필요가 없습니다.");
-        items.push("등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다. 등록한 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다.");
+        items.push(register + " 등록한 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다.");
+      } else if (mode === "auto") {
+        // 지금 확인은 꺼져 있고 자동 수집이 켜져 있다. 켜 둔 뒤의 경보(멈춤·확인 필요)면 '다음 수집 때 기록'이라고 단정하지 않는다.
+        var recording = autoMode() === "recording";
+        items.push("기록: 자동 수집으로 잽니다(" + autoWhen + "). 지금 확인은 꺼져 있어 카드에 '지금 확인' 버튼이 없습니다(지금 확인과 자동 수집은 함께 켜지지 않습니다)." +
+          (recording ? "" : " 지금은 자동 수집이 멈췄거나 확인이 필요한 상태입니다(위 자동추적 칸 참고)."));
+        items.push(register);
+        items.push(recording
+          ? "첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다."
+          : "첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록됩니다. 그 밖에는 자동 수집이 멈췄거나 확인이 필요한 상태라 언제 기록될지 알 수 없습니다.");
+      } else if (mode === "none") {
+        items.push("기록: 지금은 지금 확인과 자동 수집이 모두 꺼져 있어 새 순위를 기록하지 않습니다. 위 상태판의 '지금 확인 켜기'를 누르면 카드에 '지금 확인' 버튼이 생기고, 그 버튼을 누를 때만 잽니다(" +
+          manualRule + ").");
+        items.push(register + " 꺼져 있어도 등록은 되고, '지금 확인'을 켠 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다.");
       } else {
-        items.push("등록: 쿠팡 상품 페이지를 연 뒤 주소창의 주소를 붙여 넣습니다(짧은 링크 link.coupang.com·coupa.ng는 안 됩니다). 상품번호만 넣어도 됩니다.");
+        items.push(register);
         items.push("첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다.");
         items.push(autoLine);
       }
@@ -3716,10 +3838,10 @@
       items.push("일시중지·다시 시작은 기록을 보존하고, 삭제는 30일 기록도 함께 지웁니다.");
       items.push("광고 순번은 참고용입니다. 순위는 광고를 뺀 일반 상품 순서입니다.");
       items.push("상승·하락(전회 대비)은 같은 시간대 회차끼리 비교합니다(하루 횟수를 바꾼 날은 비교할 짝이 없어 '전회 데이터 대기'로 보일 수 있습니다).");
-      if (manualOn) {
-        items.push(autoActive()
-          ? autoLine + " 지금 확인과 자동 수집은 함께 켜지지 않습니다."
-          : "자동 수집(수집기 PC로 하루 여러 번 자동으로 재는 방식)은 대표 결정(2026-10-17)으로 보류 중입니다. 같은 회선의 윙·광고센터를 보호하려는 결정이고, 설정·연결 코드·설치 줄은 맨 아래 '자동 수집' 칸에 그대로 있습니다.");
+      // 자동 수집 보류 안내는 자동 수집이 돌지 않는 두 갈래(지금 확인 켜짐 · 둘 다 꺼짐)에만 붙인다.
+      if (manualOn && autoActive()) items.push(autoLine + " 지금 확인과 자동 수집은 함께 켜지지 않습니다.");
+      else if (manualOn || mode === "none") {
+        items.push("자동 수집(수집기 PC로 하루 여러 번 자동으로 재는 방식)은 대표 결정(2026-10-17)으로 보류 중입니다. 같은 회선의 윙·광고센터를 보호하려는 결정이고, 설정·연결 코드·설치 줄은 맨 아래 '자동 수집' 칸에 그대로 있습니다.");
       }
       shell.guide.appendChild(el("ol", { className: "mi-coupang-rank-guide-list" }, items.map(function (text) { return el("li", { text: text }); })));
       shell.guide.open = wasOpen;
@@ -4485,6 +4607,14 @@
       if (deps.mode !== "admin" || !isOwnerSession() || !canWrite() || state.setupRequired || !state.payload || !currentScope()) return false;
       var server = state.manual.server;
       return Boolean(server) && server.state !== "off" && server.state !== "setup_required";
+    }
+
+    // 진행 중에 껐다(서버는 off, 이 화면의 확인은 끝까지 간다 — manualView 의 off + run 갈래). 그 카드 버튼만 '확인 중…'으로 남긴다.
+    function manualRunWhileOff() {
+      if (deps.mode !== "admin" || !isOwnerSession() || !canWrite() || state.setupRequired || !state.payload || !currentScope()) return false;
+      var server = state.manual.server;
+      var run = state.manual.run;
+      return Boolean(server) && server.state === "off" && Boolean(run) && typeof run.trackerId === "string" && Boolean(run.trackerId);
     }
 
     // 상태판을 보일지: 위와 같되 꺼짐(off)이어도 보인다(꺼졌다는 사실과 '지금 확인 켜기'가 본문에 남게). SQL 전·서버 칸 없음이면 숨긴다.
@@ -5350,21 +5480,25 @@
       if (!target || !target.getAttribute) return;
       if (target.hasAttribute("data-coupang-rank-select")) {
         var id = target.getAttribute("data-coupang-rank-select");
-        if (target.checked) state.selected.add(id);
-        else state.selected.delete(id);
-        renderBulkBar();
-        syncGroupChecks();
+        keepInPlace(target, function () {
+          if (target.checked) state.selected.add(id);
+          else state.selected.delete(id);
+          renderBulkBar();
+          syncGroupChecks();
+        });
         return;
       }
       if (target.hasAttribute("data-coupang-rank-group-select")) {
         var name = target.getAttribute("data-coupang-rank-group-select");
-        visibleTrackers().forEach(function (tracker) {
-          if (String(tracker.groupName || DEFAULT_GROUP) !== name) return;
-          if (target.checked) state.selected.add(tracker.id);
-          else state.selected.delete(tracker.id);
-        });
-        renderBulkBar();
-        renderList();
+        keepInPlace(target, function () {
+          visibleTrackers().forEach(function (tracker) {
+            if (String(tracker.groupName || DEFAULT_GROUP) !== name) return;
+            if (target.checked) state.selected.add(tracker.id);
+            else state.selected.delete(tracker.id);
+          });
+          renderBulkBar();
+          renderList();
+        }, function () { return findByAttr(shell.list, "data-coupang-rank-group-select", name); });
         return;
       }
       if (target.hasAttribute("data-coupang-rank-filter-group")) {
@@ -5373,6 +5507,26 @@
         return;
       }
       markDirty(target);
+    }
+
+    // 체크칸을 누르는 순간 목록 위 '선택 항목 정리' 막대 높이가 바뀌면(약 901~1230px: 고르기 전에는 한 줄, 고르면 동작 줄이 두 줄) 누른 체크칸이
+    // 화면에서 밀리지 않게 그 차이만큼 화면을 함께 옮긴다(막대가 위로 늘어나 보인다, 2026-10-23 재검사). 브라우저의 스크롤 고정이 이미
+    // 맞췄으면 차이가 0 이라 옮기지 않는다. 휴대폰은 동작 줄이 화면 아래 막대에 떠 있어 높이가 바뀌지 않는다.
+    function keepInPlace(anchor, change, findAgain) {
+      var before = viewportTop(anchor);
+      change();
+      if (before === null) return;
+      var after = viewportTop(findAgain ? findAgain() : anchor);
+      if (after === null) return;
+      var delta = after - before;
+      if (Math.abs(delta) < 1 || typeof window === "undefined" || !window || typeof window.scrollBy !== "function") return;
+      try { window.scrollBy(0, delta); } catch (error) {}
+    }
+
+    function viewportTop(node) {
+      if (!node || typeof node.getBoundingClientRect !== "function" || node.isConnected === false) return null;
+      var rect = node.getBoundingClientRect();
+      return rect && isNum(rect.top) ? rect.top : null;
     }
 
     function markDirty(target) {
@@ -5455,6 +5609,7 @@
     host.addEventListener("change", onChange);
     host.addEventListener("input", onInput);
     host.addEventListener("keydown", onKeydown);
+    host.addEventListener("focusin", onFocusIn);
     host.addEventListener("submit", onSubmit);
     host.addEventListener("toggle", onToggle, true);
     host.addEventListener("scroll", onScroll, true);
@@ -5605,6 +5760,7 @@
       host.removeEventListener("change", onChange);
       host.removeEventListener("input", onInput);
       host.removeEventListener("keydown", onKeydown);
+      host.removeEventListener("focusin", onFocusIn);
       host.removeEventListener("submit", onSubmit);
       host.removeEventListener("toggle", onToggle, true);
       host.removeEventListener("scroll", onScroll, true);

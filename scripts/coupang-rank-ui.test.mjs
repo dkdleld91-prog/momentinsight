@@ -4279,12 +4279,19 @@ test("카드 한 장 동작 성공은 화면 읽기 자리에도 쓰고, 앞선 
   const live = screen.host.querySelector("[data-coupang-rank-sr-live]");
   assert.equal(live.getAttribute("aria-live"), "polite");
   assert.equal(live.textContent, "1개 일시중지했습니다.");
-  // 보이는 항목 전체 선택 → 선택 삭제 → 목록이 비면 막대가 숨으므로 결과를 맨 위 상태줄에
+  // 보이는 항목 전체 선택 → 선택 삭제 → 목록이 비면 막대는 '결과 줄만' 모양(넓은 화면은 CSS 가 숨김)이라 결과를 맨 위 상태줄에도 쓴다.
+  // 휴대폰은 맨 위 상태줄이 화면 밖이라 아래 막대 안 결과 줄이 잠시 보인다(2026-10-23 재검사 2차).
   dispatch(screen.host.querySelector('[data-coupang-rank-action="select-visible"]'), "click");
   dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-delete"]'), "click");
   await flush();
   assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 0);
-  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk]").hidden, true);
+  const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
+  assert.equal(bulk.hidden, false, "결과 한 줄이 떠 있는 동안은 남는다");
+  assert.ok(bulk.classList.contains("is-note-only"));
+  assert.equal(bulk.classList.contains("is-open"), false);
+  assert.ok(screen.host.querySelector("[data-coupang-rank-bulk-dock]").classList.contains("is-shown"));
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-dock-note]").textContent, "2개 삭제했습니다.");
+  assert.equal(screen.host.querySelector('[data-coupang-rank-action="bulk-sheet-toggle"]').hidden, true, "고를 것이 없으니 펼치기 단추는 없다");
   assert.equal(status().hidden, false);
   assert.equal(status().textContent, "2개 삭제했습니다.");
 });
@@ -4430,7 +4437,8 @@ test("C30 CSS: 카드 1행 칸 비율(키워드·상품번호 먼저) · 날짜 
   // 겹친 칸: 안내 글·동작 줄이 같은 자리, 고르면 visibility 만 바꾼다(높이 그대로)
   assert.ok(ruleOf("#mi-admin .mi-coupang-rank-bulk-msg,").includes("grid-area: 1 / 1;"));
   assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-open .mi-coupang-rank-bulk-msg,").includes("visibility: hidden;"));
-  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,").includes("visibility: hidden;"));
+  // 고르기 전에는 동작 줄이 자리를 차지하지 않는다(접힌 막대 = 단추 한 줄 높이, 2026-10-23 재검사 2차)
+  assert.ok(ruleOf("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,").includes("display: none;"));
   assert.doesNotMatch(cssSource, /\.mi-coupang-rank-bulk\.is-open,\s*#mi-clean[^{]*\{\s*padding/u, "고를 때 막대 여백을 바꾸지 않는다");
   // 휴대폰 아래 막대(카카오 단추 위) · 맨 아래 여백 = 막대 높이 + 96px
   const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px)"), cssSource.indexOf("@media (max-width: 720px)"));
@@ -4446,4 +4454,296 @@ test("C30 CSS: 카드 1행 칸 비율(키워드·상품번호 먼저) · 날짜 
   const mid = cssSource.slice(cssSource.indexOf("@media (min-width: 901px) and (max-width: 1180px)"), cssSource.indexOf("@media (max-width: 900px)"));
   assert.ok(mid.includes("#mi-admin .mi-coupang-rank-screen-head.mi-head,"));
   assert.ok(ruleOf("#mi-admin .mi-coupang-rank-screen-head h1,").includes("word-break: keep-all;"));
+});
+
+// ── 2026-10-23 재검사 2차: 남은 결함 7건(사용 방법 문장 · 휴대폰 삭제 결과 · 작은 넘침 흐림 · 되돌린 날짜 칸 · 포커스 잘림 · 끈 뒤 확인 중 · 접힌 막대) ──
+
+// 가짜 배치: 옆으로 미는 줄(날짜 줄 300px · 필터 줄 200px)과 그 안 칸(72px · 80px). 칸 위치 = 순서 × 폭 − 줄의 scrollLeft.
+function fakeRowLayout(screen) {
+  const proto = Object.getPrototypeOf(screen.host);
+  const rowOf = (node) => (node.classList.contains("mi-rank-day-grid") ? { client: 300, cell: 72 } : (node.classList.contains("mi-coupang-rank-filter-actions") ? { client: 200, cell: 80 } : null));
+  Object.defineProperty(proto, "clientWidth", { configurable: true, get() { const row = rowOf(this); return row ? row.client : 0; } });
+  Object.defineProperty(proto, "scrollWidth", { configurable: true, get() { const row = rowOf(this); return row ? this.children.length * row.cell : 0; } });
+  proto.getBoundingClientRect = function () {
+    const own = rowOf(this);
+    if (own) return { left: 0, right: own.client, top: 0, bottom: 58, width: own.client, height: 58 };
+    const parent = this.parentNode;
+    const row = parent && parent.classList ? rowOf(parent) : null;
+    if (row) {
+      const left = parent.children.indexOf(this) * row.cell - (Number(parent.scrollLeft) || 0);
+      return { left, right: left + row.cell, top: 0, bottom: 58, width: row.cell, height: 58 };
+    }
+    return { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+  };
+}
+
+test("사용 방법 상자는 지금 방식(지금 확인 켜짐 · 자동 수집 · 둘 다 꺼짐)에 맞는 문장만 쓰고, 켜고 끄면 바로 바뀐다(2026-10-23 재검사 2차)", async () => {
+  const guideOf = (screen) => {
+    const guide = screen.host.querySelector("[data-coupang-rank-guide]");
+    return { sub: guide.querySelector(".mi-coupang-rank-aux-sub").textContent, items: guide.querySelectorAll("li").map((li) => li.textContent), text: guide.textContent };
+  };
+  const mountOf = async (manual, collector) => {
+    const screen = mountManual({ manual, listOverrides: { collector } });
+    screen.controller.show();
+    await settle();
+    return screen;
+  };
+  const idle = { state: "not_connected" };
+  const off = () => manualPayload({ state: "off", enabled: false });
+  // ① 지금 확인 켜짐(자동 수집 보류)
+  const on = await mountOf(manualPayload(), idle);
+  let guide = guideOf(on);
+  assert.equal(guide.sub, "지금 확인 · 칸 읽는 법 · 필터 · 멈추기와 삭제");
+  assert.equal(guide.items[0], "기록: 카드의 '지금 확인'을 누를 때만 잽니다(검색 사이 3분 · 하루 30번 · 09~19시). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 09시부터 다시 됩니다.");
+  assert.ok(guide.text.includes("같은 키워드 카드는 한 번 누르면 함께 기록됩니다"));
+  assert.match(guide.items.at(-1), /대표 결정\(2026-10-17\)으로 보류 중입니다/u);
+  assert.doesNotMatch(guide.text, /자동 수집: 수집기 PC가/u);
+  // ② 둘 다 꺼짐: '누를 때만 잽니다'라고 하지 않고 켜는 법을 말한다
+  const none = await mountOf(off(), idle);
+  guide = guideOf(none);
+  assert.equal(guide.sub, "켜는 법 · 칸 읽는 법 · 필터 · 멈추기와 삭제");
+  assert.equal(guide.items[0], "기록: 지금은 지금 확인과 자동 수집이 모두 꺼져 있어 새 순위를 기록하지 않습니다. 위 상태판의 '지금 확인 켜기'를 누르면 카드에 '지금 확인' 버튼이 생기고, 그 버튼을 누를 때만 잽니다(검색 사이 3분 · 하루 30번 · 09~19시).");
+  assert.match(guide.items[1], /꺼져 있어도 등록은 되고, '지금 확인'을 켠 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다\.$/u);
+  assert.doesNotMatch(guide.text, /'지금 확인'을 누를 때만 잽니다|같은 키워드 카드는 한 번 누르면|자동 수집: 수집기 PC가/u);
+  assert.match(guide.items.at(-1), /보류 중입니다/u);
+  // ③ 자동 수집(지금 확인 꺼짐): 자동 수집 문장만, 보류 안내·'누를 때만'은 없다
+  const auto = await mountOf(off(), { state: "ok", lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null });
+  guide = guideOf(auto);
+  assert.equal(guide.sub, "등록 · 읽는 법 · 멈추기 · 수집 시간");
+  assert.equal(guide.items[0], "기록: 자동 수집으로 잽니다(수집기 PC가 켜져 있을 때, 하루 2회, 08~23시). 지금 확인은 꺼져 있어 카드에 '지금 확인' 버튼이 없습니다(지금 확인과 자동 수집은 함께 켜지지 않습니다).");
+  assert.equal(guide.items[2], "첫 기록: 오늘 같은 키워드를 이미 쟀으면 바로 기록되고, 없으면 다음 수집 때 기록됩니다.");
+  assert.doesNotMatch(guide.text, /누를 때만 잽니다|보류 중입니다|같은 키워드 카드는 한 번 누르면/u);
+  // ④ 자동 수집을 켜 둔 뒤의 경보: '다음 수집 때 기록'이라고 단정하지 않는다
+  const alarm = await mountOf(off(), { state: "review", lastSuccessAt: null, checksPerDay: 2, activeFromHour: 8, activeToHour: 23, cooldownUntil: null });
+  guide = guideOf(alarm);
+  assert.match(guide.items[0], /지금은 자동 수집이 멈췄거나 확인이 필요한 상태입니다\(위 자동추적 칸 참고\)\.$/u);
+  assert.doesNotMatch(guide.text, /없으면 다음 수집 때 기록됩니다/u);
+  // ⑤ 켜진 화면에서 끄면 바로 '둘 다 꺼짐' 문장으로
+  on.server.manual = off();
+  dispatch(on.host.querySelector("[data-coupang-rank-manual-toggle]"), "click");
+  await settle();
+  assert.match(guideOf(on).items[0], /^기록: 지금은 지금 확인과 자동 수집이 모두 꺼져 있어/u);
+  assert.doesNotMatch(guideOf(on).text, /'지금 확인'을 누를 때만 잽니다/u);
+});
+
+test("휴대폰 '전체 선택 → 선택 삭제'로 목록이 비어도 결과 한 줄이 아래 막대 안에 6초 남고, 그 뒤 막대가 숨는다(2026-10-23 재검사 2차)", async () => {
+  const clock = { now: Date.parse("2026-10-17T03:00:00.000Z") };
+  const deleted = new Set();
+  const screen = mountWith({
+    clock,
+    deferTimersFrom: 6000,
+    fetch: async (url, init) => {
+      if (init.method === "POST") {
+        const body = JSON.parse(init.body);
+        body.ids.forEach((id) => deleted.add(id));
+        return response({ ok: true, deleted: body.ids.length });
+      }
+      const payload = listPayload();
+      return response(listPayload({ trackers: payload.trackers.filter((tracker) => !deleted.has(tracker.id)) }));
+    },
+  });
+  screen.controller.show();
+  await flush();
+  const bulk = () => screen.host.querySelector("[data-coupang-rank-bulk]");
+  const dock = () => screen.host.querySelector("[data-coupang-rank-bulk-dock]");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="select-visible"]'), "click");
+  dispatch(screen.host.querySelector('[data-coupang-rank-action="bulk-sheet-toggle"]'), "click");
+  assert.ok(dock().classList.contains("is-expanded"));
+  const remove = screen.host.querySelector('[data-coupang-rank-action="bulk-delete"]');
+  assert.ok(screen.host.querySelector("[data-coupang-rank-bulk-dock]").contains(remove), "선택 삭제는 아래 막대 안");
+  dispatch(remove, "click");
+  await flush();
+  assert.equal(screen.host.querySelectorAll("[data-coupang-rank-card]").length, 0);
+  assert.equal(bulk().hidden, false);
+  assert.ok(bulk().classList.contains("is-note-only"));
+  assert.ok(dock().classList.contains("is-shown"));
+  assert.equal(dock().classList.contains("is-expanded"), false, "결과 줄만 보인다(동작 줄은 접는다)");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-dock-note]").hidden, false);
+  assert.equal(screen.host.querySelector("[data-coupang-rank-bulk-dock-note]").textContent, "2개 삭제했습니다.");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-status]").textContent, "2개 삭제했습니다.", "넓은 화면·화면 읽기용 맨 위 상태줄");
+  // 6초 뒤: 막대(결과 줄 포함)가 숨는다
+  clock.now += 6200;
+  const timers = screen.timeouts.filter((entry) => entry.ms === 6100 && !entry.cleared);
+  assert.ok(timers.length >= 1, "결과 줄 시간이 끝나면 다시 그리는 타이머");
+  timers.forEach((entry) => entry.fn());
+  assert.equal(bulk().hidden, true);
+  assert.equal(bulk().classList.contains("is-note-only"), false);
+});
+
+test("날짜 줄 흐림: 가려진 몫이 10px 이하(1440~1920px 12칸 카드의 4px 넘침)면 흐리지 않는다(2026-10-23 재검사 2차)", async () => {
+  const screen = mountWith();
+  screen.controller.show();
+  await flush();
+  const wrap = screen.host.querySelector(".mi-coupang-rank-days-scroll");
+  const grid = wrap.querySelector(".mi-rank-day-grid");
+  Object.defineProperty(grid, "clientWidth", { value: 1004, configurable: true });
+  const fadeAt = (scrollWidth, scrollLeft = 0) => {
+    Object.defineProperty(grid, "scrollWidth", { value: scrollWidth, configurable: true });
+    grid.scrollLeft = scrollLeft;
+    dispatch(grid, "scroll");
+    return wrap.classList.contains("has-more");
+  };
+  assert.equal(fadeAt(1008), false, "12칸 × 84px = 1008px, 보이는 폭 1004px");
+  assert.equal(fadeAt(1014), false, "10px 까지는 칸 오른쪽 여백·테두리뿐");
+  assert.equal(fadeAt(1015), true, "11px 부터는 흐린다");
+  assert.equal(fadeAt(1260), true, "15칸");
+  assert.equal(fadeAt(1260, 250), false, "끝에서 6px 남으면 흐림을 뗀다");
+  assert.ok(moduleSource.includes("var DAY_FADE_PX = 40;") && cssSource.includes("width: 40px;") && cssSource.includes("scroll-padding-inline: 0 40px;"), "JS·CSS 흐림 폭이 같다");
+});
+
+test("다시 그려도 날짜 줄을 옆으로 민 자리를 지키고, 되돌린 포커스 칸이 줄 밖·흐림 밑이면 그 줄만 민다(2026-10-23 재검사 2차)", async () => {
+  const screen = mountWith({ payload: listPayload({ trackers: [trackerFixture({ createdDay: "2026-10-08" })] }) });
+  fakeRowLayout(screen);
+  screen.controller.show();
+  await flush();
+  const grid = () => screen.host.querySelector(".mi-rank-day-grid");
+  const days = () => grid().querySelectorAll("[data-coupang-rank-day]");
+  const redraw = () => dispatch(screen.host.querySelector('[data-coupang-rank-filter-status="all"]'), "click");
+  assert.equal(days().length, 10, "10-17 ~ 10-08 열 칸(720px)");
+  // ① 마우스로 옆으로 민 자리(포커스 없음)는 새로 그린 줄에도 그대로
+  grid().scrollLeft = 150;
+  redraw();
+  assert.equal(grid().scrollLeft, 150);
+  // ② End 로 맨 끝 칸 → 줄이 처음 자리(0)에서 다시 그려지면, 되돌린 포커스 칸이 보이게 끝까지 민다(끝이라 흐림 없음)
+  days()[0].focus();
+  keydown(days()[0], "End");
+  assert.equal(screen.document.activeElement, days()[9]);
+  grid().scrollLeft = 0;
+  redraw();
+  assert.equal(screen.document.activeElement, days()[9], "같은 날짜 칸(새 노드)");
+  assert.equal(grid().scrollLeft, 420, "720 − 300");
+  // ③ 가운데 칸(5번째, 288~360px)은 오른쪽 흐림(40px) 밖에 오게: 360 − (300 − 40) = 100
+  keydown(days()[9], "Home");
+  keydown(days()[0], "ArrowRight");
+  keydown(days()[1], "ArrowRight");
+  keydown(days()[2], "ArrowRight");
+  keydown(days()[3], "ArrowRight");
+  assert.equal(screen.document.activeElement, days()[4]);
+  grid().scrollLeft = 0;
+  redraw();
+  assert.equal(grid().scrollLeft, 100);
+  // ④ 왼쪽으로 가려진 칸: 줄을 끝까지 민 채 Home → 다시 그리면 맨 앞으로
+  keydown(days()[4], "Home");
+  grid().scrollLeft = 420;
+  redraw();
+  assert.equal(screen.document.activeElement, days()[0]);
+  assert.equal(grid().scrollLeft, 0);
+});
+
+test("휴대폰 필터 줄: 키보드 포커스(:focus-visible)가 일부만 보이는 버튼에 오면 그 줄을 밀고, 마우스로 누를 때는 그대로 둔다(2026-10-23 재검사 2차)", async () => {
+  const screen = mountWith();
+  fakeRowLayout(screen);
+  screen.controller.show();
+  await flush();
+  const row = screen.host.querySelector(".mi-coupang-rank-filter-actions");
+  const button = screen.host.querySelector('[data-coupang-rank-filter-status="out"]');
+  const index = row.children.indexOf(button);
+  assert.ok(index * 80 + 80 > 200, "보이는 폭(200px) 밖에 있는 버튼");
+  const focusWith = (keyboard) => {
+    const original = button.matches.bind(button);
+    button.matches = (selector) => (selector === ":focus-visible" ? keyboard : original(selector));
+    dispatch(button, "focusin");
+    button.matches = original;
+  };
+  row.scrollLeft = 0;
+  focusWith(false);
+  assert.equal(row.scrollLeft, 0, "마우스로 누르는 사이 줄이 움직이지 않는다");
+  focusWith(true);
+  assert.equal(row.scrollLeft, index * 80 + 80 - 200, "버튼 오른쪽 끝이 줄 끝에 맞는다(필터 줄은 흐림 없음)");
+});
+
+test("진행 중에 '지금 확인'을 끄면 다른 카드 버튼은 숨기고, 재고 있는 카드만 끝날 때까지 '확인 중…'을 남긴다(2026-10-23 재검사 2차)", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const screen = mountManual({ check: async () => { await gate; return { ok: true, reply: measuredReply() }; }, record: recordKeepingManual,
+    listOverrides: { collector: { state: "not_connected" } } });
+  screen.controller.show();
+  await settle();
+  const buttons = () => manualButtons(screen).map((node) => [node.getAttribute("data-coupang-rank-id"), node.textContent, node.disabled]);
+  assert.equal(manualButtons(screen).length, 2);
+  dispatch(manualButtonFor(screen), "click");
+  await settle();
+  assert.deepEqual(buttons()[0], [TRACKER_ID, "확인 중…", true]);
+  screen.server.manual = manualPayload({ state: "off", enabled: false });
+  dispatch(screen.host.querySelector("[data-coupang-rank-manual-toggle]"), "click");
+  await settle();
+  assert.deepEqual(buttons(), [[TRACKER_ID, "확인 중…", true]], "재고 있는 카드만, 꺼진 '확인 중…'");
+  assert.ok(manualButtonFor(screen).classList.contains("is-running"));
+  assert.equal(screen.host.querySelectorAll(".mi-coupang-rank-same-kw").length, 0);
+  release();
+  await settle();
+  assert.equal(manualButtons(screen).length, 0, "끝나면 꺼짐 그대로(버튼 없음)");
+  assert.match(cardNoteFor(screen), /^방금 확인 \d{2}:\d{2} · 일반 12위로 기록$/u);
+  // 꺼져 있고 진행 중인 확인이 없으면 버튼이 없다
+  const idle = mountManual({ manual: manualPayload({ state: "off", enabled: false }), listOverrides: { collector: { state: "not_connected" } } });
+  idle.controller.show();
+  await settle();
+  assert.equal(manualButtons(idle).length, 0);
+});
+
+test("체크칸을 누르는 순간 '선택 항목 정리' 막대가 늘거나 줄면 그만큼 화면을 함께 옮겨 누른 체크칸이 밀리지 않는다(2026-10-23 재검사 2차)", async () => {
+  const screen = mountWith();
+  const scrolls = [];
+  screen.window.scrollBy = (x, y) => scrolls.push([x, y]);
+  // 가짜 배치: 막대가 열리면(is-open, 약 901~1230px 에서 동작 줄 두 줄) 그 아래 카드·그룹 머리 체크칸이 42px 내려간다
+  const proto = Object.getPrototypeOf(screen.host);
+  let grow = 42;
+  proto.getBoundingClientRect = function () {
+    const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
+    const checkbox = this.hasAttribute("data-coupang-rank-select") || this.hasAttribute("data-coupang-rank-group-select");
+    const top = checkbox ? 400 + (bulk && bulk.classList.contains("is-open") ? grow : 0) : 0;
+    return { left: 0, right: 16, top, bottom: top + 16, width: 16, height: 16 };
+  };
+  screen.controller.show();
+  await flush();
+  const check = screen.host.querySelector(`[data-coupang-rank-select="${TRACKER_ID}"]`);
+  check.checked = true;
+  dispatch(check, "change");
+  assert.deepEqual(scrolls, [[0, 42]], "고르면 늘어난 만큼 아래로");
+  check.checked = false;
+  dispatch(check, "change");
+  assert.deepEqual(scrolls, [[0, 42], [0, -42]], "풀면 줄어든 만큼 위로");
+  // 그룹 머리 '전체 선택'(목록을 다시 그림)은 새로 그린 같은 그룹 체크칸 기준
+  const name = screen.host.querySelector("[data-coupang-rank-group-select]").getAttribute("data-coupang-rank-group-select");
+  const group = screen.host.querySelector(`[data-coupang-rank-group-select="${name}"]`);
+  group.checked = true;
+  dispatch(group, "change");
+  assert.deepEqual(scrolls.at(-1), [0, 42]);
+  assert.notEqual(screen.host.querySelector(`[data-coupang-rank-group-select="${name}"]`), group, "다시 그린 새 노드");
+  // 높이가 그대로인 너비(1231px 이상 · 휴대폰 아래 막대)는 옮기지 않는다
+  grow = 0;
+  const count = scrolls.length;
+  const again = screen.host.querySelector(`[data-coupang-rank-group-select="${name}"]`);
+  again.checked = false;
+  dispatch(again, "change");
+  assert.equal(scrolls.length, count);
+});
+
+test("C30 CSS(2026-10-23 재검사 2차): 접힌 막대 한 줄 · 결과 줄만 모양 · 휴대폰 포커스 테두리가 잘리지 않는 자리", () => {
+  const withoutComments = cssSource.replace(/\/\*[\s\S]*?\*\//g, "");
+  const ruleOf = (source, selector) => {
+    const at = source.indexOf(selector);
+    assert.ok(at >= 0, selector);
+    const open = source.indexOf("{", at);
+    return source.slice(open, source.indexOf("}", open));
+  };
+  const wide = withoutComments.slice(0, withoutComments.indexOf("@media"));
+  const phone = withoutComments.slice(withoutComments.indexOf("@media (max-width: 900px)"), withoutComments.indexOf("@media (max-width: 720px)"));
+  // 결함 7: 겹친 칸은 단추 한 줄 높이(34px)를 지키고, 휴대폰은 자리를 잡지 않는다(동작 줄은 아래 막대)
+  assert.ok(ruleOf(wide, "#mi-admin .mi-coupang-rank-bulk-stack,").includes("min-height: 34px;"));
+  assert.ok(ruleOf(phone, "#mi-admin .mi-coupang-rank-bulk-stack,").includes("min-height: 0;"));
+  assert.doesNotMatch(ruleOf(wide, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk:not(.is-open) .mi-coupang-rank-bulk-actions,"), /visibility/u);
+  // 결함 2: 결과 줄만(is-note-only) — 넓은 화면은 숨기고, 휴대폰은 막대 상자 없이 아래 막대 안 결과 줄만
+  assert.ok(ruleOf(wide, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only,").includes("display: none;"));
+  assert.ok(ruleOf(phone, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only,").includes("display: contents;"));
+  assert.ok(phone.includes("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only .mi-coupang-rank-bulk-stack,"));
+  assert.ok(ruleOf(phone, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-bulk.is-note-only > :not(.mi-coupang-rank-bulk-stack),").includes("display: none;"));
+  // 결함 5: 검색칸·그룹 고르기 테두리는 안쪽, 카드 1행 칸은 자르는 상자만 사방 4px 넓힌다(칸 자리는 그대로)
+  const input = ruleOf(phone, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar .mi-input:focus-visible,");
+  assert.ok(input.includes("outline-offset: -2px;"));
+  assert.ok(phone.includes("#mi-admin .mi-coupang-rank-root .mi-coupang-rank-filterbar select:focus-visible,"));
+  const main = ruleOf(phone, "#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-track-main,");
+  assert.ok(main.includes("margin: -4px;") && main.includes("padding: 4px;"));
+  // 넓은 화면에는 카드 1행 칸 규칙을 더하지 않는다(901px 이상은 잘림 0 — 실측)
+  assert.ok(!wide.includes(".mi-coupang-rank-card .mi-rank-track-main,"));
 });

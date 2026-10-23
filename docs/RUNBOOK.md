@@ -624,6 +624,7 @@ commit;
 - 대표 SQL 실행 전에는 네 표가 없다 → manifest 에 `skipped: "table_missing"`, 실패가 아니다(종료 코드 0). 로그 끝에 `WARN 선택 표 n개 건너뜀: <이름들> — 대표 SQL 실행 뒤에도 보이면 표가 사라진 것` 한 줄. **SQL 실행 뒤에도 이 줄이 보이면** 표가 사라진 것이니 점검 SQL 부터 돌린다.
 - 매일 03:00 백업은 메인 작업 트리(`~/Desktop/개발/모먼트 인사이트 개발`)의 스크립트를 쓴다. 메인 트리가 이 커밋으로 갱신되기 전에는 C 표가 백업에 없다(실패도 없다).
 - 복원 순서: 추적기(`coupang_rank_trackers`, `clients` 가 먼저 있어야 함 — FK) → 스냅숏 → 위 '일별 칸 재생성'. 회차·일정·연결 코드는 복원하지 않는다(키워드 일정은 다음 claim 이 다시 만들고, 연결 코드는 새로 발급).
+- ① 지금 확인의 요청 표(`coupang_rank_manual_claims`, 토큰 해시 포함)도 백업하지 않는다(명세 R14 — 백업 C 표 4개 고정). 그래서 **복원하면 어느 스냅숏이 수동 확인에서 왔는지 가를 근거가 사라진다**: 수동·자동 구분은 회차(`coupang_rank_runs.source`, 14일·백업 안 함)와 요청 표(`run_id`, 60일·백업 안 함)에만 있고, 스냅숏 `source` 는 자동과 같은 값이다[추정 — SQL 기본값 근거, 실제 복원은 안 해 봄]. 설정 표의 `manual_*` 칸은 `select=*` 라 백업에 들어간다. 구분이 필요해지면(대표·통합 담당 결정) 토큰 해시를 뺀 열만 받는 표별 열 목록을 db-export 에 두고 `db-export.test.mjs` 의 'C 표 4개' 단정을 고친다.
 
 ### ① 지금 확인(사람이 누를 때만, 2026-10-23 다시 구현)
 
@@ -631,9 +632,10 @@ commit;
 - 흐름(모든 시간 판정은 서버 시계):
   1. 화면 → `POST /api/coupang-rank-trackers {action:"manual-claim", trackerId}`(총관리자 세션 + CSRF). 서버가 관문을 보고 1회용 요청(60초 안에 확장 확인 필요)과 토큰(`mcm1_…`, 원문은 이 응답에만, DB 에는 sha256)을 준다. **검색은 아직 없다.**
   2. 화면 → 확장 `check {claimId, claimToken, keyword}`.
-  3. 확장 → `GET /api/coupang-rank-trackers?view=manual-verify&claimId=<id>` + 머리글 `x-mi-coupang-claim-token: <토큰>`(같은 크롬의 총관리자 세션 쿠키). 서버가 관문을 **다시** 보고 통과하면 이 시각을 **실제 검색 시각**으로 적는다(간격·하루 횟수의 기준). 확장은 `200 · ok:true · verified:true` 일 때만, 응답의 `keyword`(서버가 정한 검색어)로 창을 연다. 1회용(두 번째는 409 `COUPANG_MANUAL_CLAIM_USED`).
-  4. 확장이 차단 신호(403·429·503·'사용권한이 없습니다|사용권한이 제한된'·검색 밖으로 보내져 읽지 못함)를 보면 → `GET …?view=manual-stop&claimId=<id>&reason=<사유>` + 같은 머리글(관리자 탭이 닫혀도 그날 중지가 걸리게). 순위는 저장하지 않고 그날 중지만 건다.
-  5. 화면 → `POST {action:"manual-record", claimId, claimToken, outcome, outcomeCode?, page?, durationMs?, extensionVersion?, browser?}`(본문 64KB 까지, 다른 동작은 32KB 그대로). 서버가 판정·저장한다.
+  3. 확장이 빈 시크릿 창(`about:blank`, 쿠팡 요청 0)을 먼저 열어 정말 시크릿인지·다른 시크릿 창이 없는지 본다. 여기서 멈추면(창을 못 엶·일반 창·다른 시크릿 창) 서버 확인 전이라 **횟수·간격을 쓰지 않는다**.
+  4. 확장 → `GET /api/coupang-rank-trackers?view=manual-verify&claimId=<id>` + 머리글 `x-mi-coupang-claim-token: <토큰>`(같은 크롬의 총관리자 세션 쿠키). 서버가 관문을 **다시** 보고 통과하면 이 시각을 **실제 검색 시각**으로 적는다(간격·하루 횟수의 기준). 확장은 `200 · ok:true · verified:true` 일 때만, 응답의 `keyword`(서버가 정한 검색어)로 그 탭에 쿠팡 주소를 넣는다(거절이면 빈 창을 닫는다). 1회용(두 번째는 409 `COUPANG_MANUAL_CLAIM_USED`). 확인 뒤에 멈추면(확인 중 사람이 창을 닫음 `window_closed_early` 등) 검색 0번이어도 횟수에 들고, 화면은 기록 응답의 `counted` 로 '이번 1번은 오늘 횟수에 들어갔고'를 보인다.
+  5. 확장이 차단 신호(403·429·503·'사용권한이 없습니다|사용권한이 제한된'·검색 밖으로 보내져 읽지 못함)를 보면 → `GET …?view=manual-stop&claimId=<id>&reason=<사유>` + 같은 머리글(관리자 탭이 닫혀도 그날 중지가 걸리게). 순위는 저장하지 않고 그날 중지만 건다. 실패하면 같은 실행 안에서 3초·10초 뒤에 다시 보내고, 그래도 실패하면 다음 hello(관리자 화면을 열 때)·다음 누름 때 다시 보낸다(그 사이 그 크롬은 `report_pending` 으로 새 검색을 하지 않는다). 차단 신호는 load 확인(1초마다)·불러온 직후 짧은 읽기에서도 남기므로, 사람이 첫 읽기 전에 창을 닫거나 45초·120초 상한에 걸려도 잃지 않는다(권한 밖으로 보내져 읽지 못한 것을 봤으면 `page_unreadable`, D1).
+  6. 화면 → `POST {action:"manual-record", claimId, claimToken, outcome, outcomeCode?, page?, durationMs?, extensionVersion?, browser?}`(본문 64KB 까지, 다른 동작은 32KB 그대로). 서버가 판정·저장한다.
 - 확장 확인이 GET 인 이유(사실): 세션 게이트는 POST 에 출처(Origin)·CSRF 를 요구한다(`src/server/session-gate.mjs` `mutationOriginAllowed`·`csrfMatches`). 확장 서비스 워커의 출처는 `chrome-extension://…` 이고 운영 허용 목록은 https 출처만 받는다(`src/server/security.mjs` `allowedOrigins`). GET 은 게이트가 출처·CSRF 를 보지 않는다. 토큰은 주소가 아니라 머리글로 보낸다(기록에 남지 않게). 새 Vercel 함수·게이트·라우터 변경은 없다.
 - [추정 — 대표 첫 시험에서 확인] 확장 서비스 워커의 `fetch(…, {credentials:"include"})` 에 대표 크롬 일반 프로필의 세션 쿠키(`SameSite=Strict`)가 실린다(호스트 권한이 있는 확장 요청은 같은 사이트로 취급된다고 알고 있음). 실리지 않으면 확인이 401 `SESSION_REQUIRED` 로 거절되고 **창은 열리지 않는다**(안전 쪽 실패). 호스트 권한이 있는 확장 요청은 CORS 사전 요청 없이 응답을 읽는다는 것도 [추정]이다 — 사전 요청이 나가면 라우터의 OPTIONS 204 에 허용 출처가 없어 역시 창이 열리지 않는다.
 - 대표 SQL: `supabase/migrations/20261018090000_coupang_rank_manual_check.sql` = `docs/sql/c30-2-manual-check.sql`(바이트 같음, sha256 `7a958e9700c204122d03d81a8b6e7bc639aa90d8f3b676d19aa7047291414577`, begin/commit 1개씩, 다시 실행 안전, 코드 배포 전후 어느 쪽이든 — `manual_enabled` 기본 false). 바탕화면 준비: `bash ~/.claude/skills/mi-operator-feature/scripts/stage-sql.sh supabase/migrations/20261018090000_coupang_rank_manual_check.sql C30-2-지금확인.txt`. 앞선 C 함수 18개는 다시 정의하지 않는다.
@@ -656,7 +658,7 @@ from public.coupang_rank_settings s where s.id = 1;
 | 시간 | 09~19시(KST, 19:00 직전까지) | 제약 `from between 9 and 18`·`to between 10 and 19`·`from < to` |
 | 차단 1번 | 그날(KST, 검색 날짜) 수동 확인 전체 중지 + 화면 알림. 다음 날 자동으로 풀림(D2: 푸는 버튼 없음) | `manual_stopped_day`·`manual_stopped_code` |
 | 동시 진행 | 전역 1개(열린 요청 60초·검색 중 150초 동안 다른 요청 거절) | `busy` |
-| 꾸민 결과 | 확장 확인이 없는 요청의 측정은 저장 안 함(409 `COUPANG_MANUAL_CLAIM_NOT_VERIFIED`), 확인 뒤 5초 안의 목록 결과 거절(400 `timing`), 검색어가 요청 키워드와 다르면 오류(`query_mismatch`) | SQL record · `manual.mjs` M2 |
+| 꾸민 결과(일부만 거절) | 거절하는 것은 셋뿐이다: 확장 확인이 없는 요청의 측정(409 `COUPANG_MANUAL_CLAIM_NOT_VERIFIED`), 확인 뒤 5초 안의 목록 결과(400 `timing`), 검색어가 요청 키워드와 다른 목록(오류 `query_mismatch`). **총관리자 세션의 같은 출처 스크립트가 claim → verify → 6초 뒤 같은 검색어의 꾸민 목록을 보내면 막지 못한다**(아래 '남은 한계') | SQL record · `manual.mjs` M2 |
 | 보이는 사람 | 처음에는 총관리자만 | `MANUAL_ALLOWED_ROLES = ["owner"]` |
 
 - 상태(`manual.state`, 판정 순서)와 조치
@@ -681,17 +683,17 @@ from public.coupang_rank_settings s where s.id = 1;
 | ok | found / out / short | 아니오 |
 | noresult | noresult | 아니오 |
 | blocked(차단 신호·D1) | 성공 없는 칸은 failed(성공 칸 유지) | **예** |
-| partial·empty(광고만 있고 일반 0개 포함)·error·timeout | failed | 아니오 |
+| partial(측정 중 창이 숨음 `wasHidden` 이면 ok·empty 도 partial — 기본값, 대표 결정 대기)·empty(광고만 있고 일반 0개 포함)·error·timeout | failed | 아니오 |
 | unsupported(쿠팡 안 다른 쪽) | unsupported. 단 확장이 `user_navigated`(사람이 창 안을 누름)라고 하면 error | 아니오 |
 | 시작 못 함·응답 없음 | 없음. 확인 전이면 횟수·간격에 세지 않고, 확인 뒤면 셈(`counted`) | `blocked_today`·`report_pending`(확장이 오늘 차단을 봄)만 예 |
 
 - 차단 신호는 어느 갈래에서든 그날 중지를 건다: 정상 저장, 같은 보고 다시 보내기, 이미 끝난 요청, 요청 뒤 10분 넘은 보고(410, 저장은 안 함), 확장 확인이 없는 요청, 모양 검사에 실패한 본문(400 + `stopped`), 확장의 직접 알림(`view=manual-stop`). 모두 더 엄격하게만 바뀌므로 꾸며도 해가 없다. 화면이 확장의 차단을 보고 스스로 멈추기만 하면 안 된다(서버 보고가 먼저).
 - 비상 끄기: 총관리자 패널 '지금 확인 끄기'(확인 창 없이 즉시) → 서버가 모든 요청·확인을 `COUPANG_MANUAL_OFF` 로 거절. 확장 쪽: `chrome://extensions` 에서 확장 끄기·삭제(개발자 모드를 끄는 것도 확장 끄기다).
 - 되돌리기(반드시 이 순서): ① 끄기 → ② 코드 되돌림·배포 → ③ (대표 승인 뒤) `docs/sql/c30-2-manual-check.rollback.sql`. 기록된 순위(일별 칸·스냅숏)는 남고 회차의 출처 표시만 사라진다. 코드가 남은 채 SQL 만 되돌리면 목록의 `manual` 이 `setup_required` 로 보이고 버튼이 숨는다(오류 아님).
-- **자동 수집을 다시 켤 때 반드시 함께 볼 것**(지금 자동 수집 보류 중, `enabled=false`): 자동 claim(`coupang_rank_claim`, C 원문)은 수동 칸(`manual_last_search_at`·`manual_stopped_day`)을 보지 않는다. 수동 관문은 자동의 `last_claim_at` 을 보지만 반대 방향은 없다. 그래서 자동을 켜면 수동 검색 직후에도, 수동 '그날 중지' 날에도 자동 검색이 같은 회선으로 나갈 수 있다. **자동 재개 묶음에서 자동 claim 이 수동 간격·그날 중지를 함께 보게 고친 뒤 켠다**(그 전까지는 자동을 켜지 않거나 '지금 확인'을 끈다). 수동 회차(`source='manual'`)는 자동의 시간당·하루 상한 집계와 48시간 차단 집계(`coupang_rank_stats`)에 들어간다 — 자동 재개 판단 때 수동 차단도 차단으로 보이는 보수적 효과다.
+- **자동 수집을 다시 켤 때 반드시 함께 볼 것**(지금 자동 수집 보류 중, `enabled=false`): 자동 claim(`coupang_rank_claim`, C 원문)은 수동 칸(`manual_last_search_at`·`manual_stopped_day`)을 보지 않는다. 수동 관문은 자동의 `last_claim_at` 을 보지만 반대 방향은 없다. 그래서 자동을 켜면 수동 검색 직후에도, 수동 '그날 중지' 날에도 자동 검색이 같은 회선으로 나갈 수 있다. **자동 재개 묶음에서 자동 claim 이 수동 간격·그날 중지를 함께 보게 고친 뒤 켠다**. 그 전까지 화면 API 가 둘이 함께 켜지는 것을 막는다(SQL·수집기 무접촉): '수집 켜기'(`collector-enable`)는 지금 확인이 켜져 있거나 오늘(KST) 지금 확인이 차단으로 멈춘 날이면 409 `COUPANG_COLLECTOR_MANUAL_CONFLICT`(`reason` = `manual_enabled`·`manual_stopped_today`), '지금 확인 켜기'는 자동 수집이 켜져 있으면 409 `COUPANG_MANUAL_COLLECTOR_CONFLICT`. 끄기는 언제나 된다. 자동 claim 을 고치는 묶음에서 이 거절을 푼다. 수동 회차(`source='manual'`)는 자동의 시간당·하루 상한 집계와 48시간 차단·빈 쪽 집계(`coupang_rank_stats`)에 들어간다 — 자동 재개 판단 때 수동 차단도 차단으로 보이는 보수적 효과다. 반대로 **성공 쪽은 빼고 센다**: 속도 올리기 관문('48시간 성공 48회')·수집기 관리의 '마지막 성공'·목록의 '최근 갱신(수집기 PC)'은 화면 API 가 수집기 회차(`source='collector'`)만 다시 센다(수동 성공만으로 관문이 열려 검증 안 된 두 배 속도로 자동을 다시 켜는 일을 막음, C 원문 `coupang_rank_stats` 는 그대로).
 - 점검 SQL(읽기만): 오늘 요청 `select status, outcome_code, count(*) from public.coupang_rank_manual_claims where claimed_at >= (now() at time zone 'Asia/Seoul')::date::timestamp at time zone 'Asia/Seoul' group by 1, 2 order by 1, 2;` · 중지 상태 `select manual_enabled, manual_stopped_day, manual_stopped_code, manual_stopped_at, manual_last_search_at from public.coupang_rank_settings;` · 수동 회차 `select claimed_at, status, http_status, organic_count, ad_count, duration_ms, error_code from public.coupang_rank_runs where source = 'manual' order by claimed_at desc limit 20;`
 - 보관: 요청 표 `coupang_rank_manual_claims` 60일(스냅숏과 같음, 스냅숏.run_id = 요청.run_id 로 수동 기록을 가려낸다), 다음 요청 때 500줄씩 지운다. 백업하지 않는다. 회차는 자동과 같이 14일.
-- 남은 한계: 총관리자 세션을 가진 같은 출처 스크립트(관리자 화면 콘솔·XSS)는 확인(`manual-verify`)도 직접 부를 수 있다 — '확인됨'은 '확장이 창을 열었다'는 증명이 아니다. 그래도 그런 요청은 하루 횟수·간격을 쓰고, 5초 하한·검색어 일치·모양 검사를 지나야 하며, 쿠팡 검색 창은 확장만 연다. 결과는 같은 키워드의 모든 활성 추적기(다른 광고주 포함)에 쓴다 — 지금은 총관리자만 써서 받아들임. 운영팀·광고주에게 열기 전에 '누른 사람 범위의 추적기에만 쓰기'를 먼저 정한다. 화면이 확장 답을 받기 전에 관리자 탭을 닫으면 결과는 저장되지 않는다(검색 1번은 이미 셌다. 차단이었다면 확장의 직접 알림으로 중지는 걸린다).
+- 남은 한계: 총관리자 세션을 가진 같은 출처 스크립트(관리자 화면 콘솔·XSS)는 확인(`manual-verify`)도 직접 부를 수 있다 — '확인됨'은 '확장이 창을 열었다'는 증명이 아니다. **그런 스크립트가 쿠팡 창을 한 번도 열지 않고 claim → verify → 6초 뒤 같은 검색어·꾸민 목록으로 record 를 보내면 '확인 완료'로 저장되고, 같은 키워드의 다른 대행사 추적기에도 그 순위가 써진다**(재현됨). 막히는 것은 확인 없는 결과·5초 안 목록·다른 검색어뿐이다. 안전장치(3분·30번·시간·그날 중지)는 깨지지 않는다(꾸민 요청도 횟수·간격을 쓰고 쿠팡 요청은 없다). 결과는 같은 키워드의 모든 활성 추적기(다른 광고주 포함)에 쓴다 — 지금은 총관리자만 써서 받아들임. 결과를 확장만 만들 수 있게 묶을지(예: 확장 설치 때 키쌍을 만들고 공개키를 서버에 등록해 결과에 서명)와, 운영팀·광고주에게 열기 전에 '누른 사람(claim 의 대행사) 범위의 추적기에만 쓰기'는 대표 결정 항목이다. 화면이 확장 답을 받기 전에 관리자 탭을 닫으면 결과는 저장되지 않는다(검색 1번은 이미 셌다. 차단이었다면 확장의 직접 알림으로 중지는 걸린다).
 
 ## 헬스 스냅샷 RPC(로그 B안, 2026-10-16)
 

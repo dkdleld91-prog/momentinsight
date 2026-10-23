@@ -146,6 +146,9 @@ export const ERROR_HTTP_STATUS = Object.freeze({
   COUPANG_MANUAL_CLAIM_NOT_VERIFIED: 409,
   COUPANG_MANUAL_CLAIM_EXPIRED: 410,
   COUPANG_MANUAL_RECORD_INVALID: 400,
+  // 지금 확인 ↔ 자동 수집이 함께 켜지지 않게(자동 claim 이 수동 간격·그날 중지를 보기 전까지). 핸들러만 거절한다.
+  COUPANG_COLLECTOR_MANUAL_CONFLICT: 409, // 수집 켜기 거절: 지금 확인이 켜져 있거나 오늘 지금 확인이 차단으로 멈춤
+  COUPANG_MANUAL_COLLECTOR_CONFLICT: 409, // 지금 확인 켜기 거절: 자동 수집이 켜져 있음
 });
 
 // §3.5 수집기 로컬 오류 코드(errorCode·로그). 서버는 형식만 검사하고, foreign_navigation 은 서버가 덮어쓴다.
@@ -211,7 +214,7 @@ export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
 ]);
 export const MANUAL_NOT_STARTED_CODES = Object.freeze([
   "incognito_not_allowed", "incognito_window_open", "host_access_withheld", "busy", "too_soon", "bad_request",
-  "window_create_failed", "window_create_null", "verify_refused", "verify_unreachable", "blocked_today", "report_pending", "extension_error",
+  "window_create_failed", "window_create_null", "window_closed_early", "verify_refused", "verify_unreachable", "blocked_today", "report_pending", "extension_error",
   "extension_missing", "extension_outdated", "origin_rejected", "browser_unsupported",
 ]);
 export const MANUAL_LOST_CODES = Object.freeze(["extension_no_response", "extension_timeout"]);

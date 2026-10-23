@@ -37,6 +37,11 @@ const CASES = [
   ["오류 쪽", assemblePage({ ...SEARCH }, { errorCode: "page_load_failed" }), "error"],
   ["상품 누름", assemblePage({ host: "www.coupang.com", path: "/vp/products/123" }, { errorCode: "user_navigated" }), "error"],
   ["읽을 수 없는 곳(D1)", assemblePage({}, { errorCode: UNREADABLE_ERROR_CODE }), "error"],
+  // 2026-10-23 검토 반영: 읽기를 끝내지 못한 회차도 본 신호를 싣는다
+  ["시간 초과 중 권한 밖으로 보내짐(D1)", assemblePage({ httpStatus: null, blockedText: false, host: "", path: "" }, { errorCode: UNREADABLE_ERROR_CODE }), "error"],
+  ["첫 읽기 전에 닫힘 + 불러오며 본 403", assemblePage({ ...SEARCH, httpStatus: 403, blockedText: false }, { errorCode: "window_closed" }), "blocked"],
+  ["첫 읽기 전에 닫힘 + 불러오며 본 차단 문구", assemblePage({ ...SEARCH, httpStatus: 200, blockedText: true }, { errorCode: "window_closed" }), "blocked"],
+  ["120초 상한 + 본 429", assemblePage({ ...SEARCH, httpStatus: 429 }, { errorCode: "browser_hard_cap" }), "blocked"],
   ["쿠팡 다른 쪽", assemblePage({ host: "www.coupang.com", path: "/np/campaigns/1", httpStatus: 200, stable: false, items: full.items }), "unsupported"],
 ];
 

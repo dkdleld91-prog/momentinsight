@@ -2461,7 +2461,8 @@ test("지금 확인 상태 줄: 위에서부터 처음 맞는 것(spec-manual §
   assert.equal(view({ server: manualPayload({ state: "stopped", stoppedDay: "2026-10-22" }) }).banner, false);
   assert.equal(view({ server: manualPayload({ state: "stopped", stoppedDay: "2026-10-23" }), now: SERVER_NOW + 86400000 }).state, "ready");
   // 진행 중
-  assert.match(view({ run: { phase: "check" } }).text, /^확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다\(약 20초\)\. 창 안을 누르거나 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요\.$/u);
+  // 2026-10-23 검토: 첫 읽기 전에 창을 닫으면 차단 신호를 잃을 수 있어 '직접 닫지 말라'를 함께 안내한다
+  assert.match(view({ run: { phase: "check" } }).text, /^확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다\(약 20초, 확장이 저절로 닫습니다\)\. 열린 창을 직접 닫거나, 창 안을 누르거나, 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요\.$/u);
   assert.match(view({ run: { phase: "check", slow: true } }).text, /확장 응답이 늦습니다\. 최대 9분까지 기다립니다/u);
   assert.match(view({ run: { phase: "record", resumed: true } }).text, /앞서 보내지 못한 확인 결과/u);
   // 확장 쪽 문제(창을 열기 전에 멈춤)
@@ -2627,6 +2628,46 @@ test("claim 거절 문구: 쿠팡 검색 전이라는 사실을 덧붙이고 간
   assert.match(refuse({ code: "COUPANG_OWNER_ONLY" }), /총관리자만 할 수 있습니다\. 쿠팡 검색은 하지 않았습니다\./u);
   assert.match(refuse({}, { transport: true, httpStatus: 0 }), /서버에 연결하지 못해/u);
   assert.match(refuse({ message: "x" }, { httpStatus: 500 }), /서버 처리 중 오류/u);
+});
+
+test("확장의 서버 확인 거절·횟수 문구가 원인과 맞다(2026-10-23 검토: 401 은 '다시 로그인'이 아닐 수 있음·기한은 1분·확인 뒤 멈춤은 횟수에 듦)", () => {
+  const text = (recorded, parsed) => internals.manualRecordText(recorded, parsed, KEYWORD, manualPayload());
+  const ok = (payload = {}) => ({ payload: { ok: true, accepted: false, duplicate: false, outcome: "not_started", stopped: false, manual: manualPayload({ usedToday: 4 }), ...payload }, httpStatus: 200 });
+  const refused = (serverCode, httpStatus) => internals.parseCheckReply({ ok: true, reply: { ok: false, outcome: "not_started", code: "verify_refused", serverCode, httpStatus } });
+  // 401(확장 요청에 로그인 정보가 안 실렸을 수 있음) — 화면 쪽 '다시 로그인해주세요'를 그대로 붙이지 않는다
+  for (const parsed of [refused("SESSION_REQUIRED", 401), refused("COUPANG_SESSION_REQUIRED", 401), refused(undefined, 401)]) {
+    const line = text(ok(), parsed).text;
+    assert.match(line, /서버가 로그인 정보를 받지 못했다고 해 시작하지 않았습니다\(화면은 로그인돼 있어도 확장 요청에 로그인 정보가 실리지 않았을 수 있습니다/u);
+    assert.doesNotMatch(line, /다시 로그인해주세요/u);
+    assert.match(line, /쿠팡 검색은 하지 않았습니다\./u);
+  }
+  // 확인 요청 기한(60초) — 결과 저장 기한(10분) 문구와 섞지 않는다
+  const expired = text(ok(), refused("COUPANG_MANUAL_CLAIM_EXPIRED", 410)).text;
+  assert.match(expired, /^확인 요청의 1분 기한이 지나 확장이 시작하지 않았습니다\. 다시 눌러 주세요\. 쿠팡 검색은 하지 않았습니다\./u);
+  assert.doesNotMatch(expired, /10분|저장하지 않았습니다/u);
+  // 그 밖의 거절은 서버 사유를 그대로 덧붙인다
+  assert.match(text(ok(), refused("COUPANG_MANUAL_GAP", 409)).text, /허락하지 않아 확장이 시작하지 않았습니다\(검색 사이 간격/u);
+  // 서버 확인 뒤에 멈춤(검색 0번이지만 횟수에 듦) — 서버 counted 가 사실
+  const early = { outcome: "not_started", code: "window_closed_early" };
+  assert.equal(text(ok({ counted: true }), early).text,
+    "쿠팡 검색 전에 시크릿 창이 닫혀 확장이 검색하지 않았습니다(확장이 연 창은 직접 닫지 마세요). 쿠팡 검색은 하지 않았지만 이번 1번은 오늘 횟수에 들어갔고, 3분 뒤 다시 누를 수 있습니다. (오늘 4/30번 사용)");
+  // 서버 확인 전에 멈춤(창 만들기 실패 등)은 횟수에 들지 않는다 — 문구도 그대로
+  assert.match(text(ok({ counted: false }), { outcome: "not_started", code: "window_create_failed" }).text, /시크릿 창을 열지 못했습니다.*쿠팡 검색은 하지 않았습니다\. \(오늘 4\/30번 사용\)$/u);
+});
+
+test("응답 없음(lost) 뒤 서버가 그 확인을 잠시 '진행 중'으로 셀 때 상태 줄은 '다른 확인'이 아니라 '방금 확인이 응답 없이 끝남'", async () => {
+  assert.match(view({ server: manualPayload({ state: "busy", busyUntil: iso(SERVER_NOW + 95000) }), ownLost: true }).text,
+    /^지금 확인: 방금 확인이 확장 응답 없이 끝났습니다\(약 1분 35초 뒤 다시 누를 수 있습니다\)\.$/u);
+  assert.match(view({ server: manualPayload({ state: "busy", busyUntil: iso(SERVER_NOW + 95000) }), ownLost: false }).text, /다른 확인이 진행 중입니다/u);
+  const screen = mountManual({ check: async () => ({ ok: false, code: "extension_no_response" }), record: { ok: true, accepted: false, outcome: "lost", counted: true } });
+  screen.controller.show();
+  await settle();
+  dispatch(manualButtonFor(screen), "click");
+  await settle();
+  // 기록 뒤 목록 GET 의 manual 은 claim 때의 '진행 중'(60초) 그대로다
+  assert.match(manualLine(screen).textContent, /방금 확인이 확장 응답 없이 끝났습니다/u);
+  assert.doesNotMatch(manualLine(screen).textContent, /다른 확인이 진행 중/u);
+  assert.match(manualResult(screen).textContent, /검색이 됐는지는 확인하지 못했습니다/u);
 });
 
 test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지금 확인 켜짐일 때만 일시중지 앞에 있다", async () => {

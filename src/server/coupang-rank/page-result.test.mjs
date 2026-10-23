@@ -430,6 +430,19 @@ test("classifyManualPage: page_unreadable 만 차단으로 바꾸고(D1), 나머
   assert.deepEqual(classifyManualPage(page({ organic: [], ads: [{ p: "11111", v: "", s: 1 }] })), { status: "empty" });
 });
 
+test("classifyManualPage: 측정 중 창이 숨으면(wasHidden) 목록을 다 읽었다고 본 판정(ok·empty)만 partial — 차단·결과 없음·오류는 그대로(기본값, 대표 결정 대기)", () => {
+  // 2026-10-23 검토: 숨김을 '서버가 판정한다'고 적었지만 아무 데서도 보지 않아 가려진 창의 순위가 ok 로 저장됐다
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true })), { status: "partial" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true, organic: [], ads: [{ p: "11111", v: "", s: 1 }] })), { status: "partial" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: false })), { status: "ok" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: "true" })), { status: "ok" }, "참값만 본다");
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true, httpStatus: 403, organic: [] })), { status: "blocked" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true, status: "error", errorCode: "page_unreadable", finalHost: "" })), { status: "blocked" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true, organic: [], noResultText: true })), { status: "noresult" });
+  assert.deepEqual(classifyManualPage(page({ wasHidden: true, status: "timeout", errorCode: "page_timeout" })), { status: "timeout" });
+  assert.equal(manualStopSignal(page({ wasHidden: true })), null, "숨김은 중지 신호가 아니다");
+});
+
 test("manualStopSignal: classifyManualPage 가 blocked 인 사례에서만, 사유 코드는 계약 목록 안", () => {
   const cases = [...SHARED_CASES, { status: "error", errorCode: "page_unreadable", finalHost: "", finalPath: "" }, { finalHost: "coupang.com", finalPath: "/login" }];
   for (const overrides of cases) {

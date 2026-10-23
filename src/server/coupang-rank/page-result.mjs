@@ -239,12 +239,19 @@ export function validateManualRecord(body) {
   return { ok: true };
 }
 
-// 수동 판정: classifyCollectorPage 와 같고 하나만 더한다(M1·D1 대표 결정 '예'). 확장이 탭을 읽지 못했고 주소도 보이지
-// 않으면(쿠팡이 검색 밖 쪽 — 로그인 화면 등 — 으로 보냄. 확장은 그 호스트 권한이 없어 주소를 못 본다) 차단으로 본다.
+// 수동 판정: classifyCollectorPage 와 같고 둘을 더한다.
+// 1) M1·D1(대표 결정 '예'): 확장이 탭을 읽지 못했고 주소도 보이지 않으면(쿠팡이 검색 밖 쪽 — 로그인 화면 등 — 으로 보냄.
+//    확장은 그 호스트 권한이 없어 주소를 못 본다) 차단으로 본다.
+// 2) 숨김(기본값, 대표 결정 대기): 측정 중 창이 한 번이라도 숨으면(내림·다른 창으로 가림, page.wasHidden) 크롬이 그 쪽을
+//    덜 그려 목록이 덜 찼을 수 있다. 목록을 다 읽었다고 본 판정(ok·empty)은 partial 로 낮춘다(순위 기록 안 함·중지 아님).
+//    차단·결과 없음 문구·오류·시간 초과·이동은 그대로 둔다.
+const HIDDEN_DOWNGRADED_STATUSES = new Set(["ok", "empty"]);
+
 export function classifyManualPage(page) {
   const base = classifyCollectorPage(page);
   if (base.status === "blocked") return base;
   if (nullable(page?.errorCode) === MANUAL_UNREADABLE_ERROR_CODE) return { status: "blocked" };
+  if (page?.wasHidden === true && HIDDEN_DOWNGRADED_STATUSES.has(base.status)) return { status: "partial" };
   return base;
 }
 

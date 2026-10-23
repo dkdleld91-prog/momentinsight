@@ -127,6 +127,9 @@ const FAILURE_VIEW_LIMIT = 50;
 const FAILURE_VIEW_DAYS = 14;
 const SLOW_LIST_MS = 2000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 회차 출처(① 지금 확인 SQL 이 더한 coupang_rank_runs.source, 기본값 'collector'). 속도 올리기 관문은 48시간 수집기 회차만 센다.
+const RUN_SOURCE_COLLECTOR = "collector";
+const RAISE_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const MESSAGES = Object.freeze({
   COUPANG_SESSION_REQUIRED: "로그인 세션을 확인할 수 없습니다. 다시 로그인해 주세요.",
@@ -157,6 +160,8 @@ const MESSAGES = Object.freeze({
   COUPANG_RAISE_NOT_ALLOWED: "지금은 속도를 올릴 수 없습니다.",
   COUPANG_COLLECTOR_LIMIT: "활성 연결 코드는 최대 3개입니다. 쓰지 않는 코드를 먼저 폐기해 주세요.",
   COUPANG_NO_COLLECTOR: "연결된 수집기가 없습니다. 연결 코드를 먼저 만들어 주세요.",
+  COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요.",
+  COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). 먼저 수집기 관리에서 '수집 끄기'를 눌러 주세요.",
   BODY_TOO_LARGE: "요청 본문이 너무 큽니다.",
   METHOD_NOT_ALLOWED: "허용되지 않은 요청 방식입니다.",
   COUPANG_SETUP_REQUIRED: "쿠팡 순위 저장소가 아직 준비되지 않았습니다(대표 SQL 실행 전).",
@@ -260,17 +265,41 @@ async function countActiveCollectors(ctx) {
   return count;
 }
 
-async function loadLastSuccessAt(ctx) {
+// 마지막 성공 회차 시각. collectorOnly 면 수집기 회차만 본다(① 지금 확인 SQL 이 회차 출처 source 를 더한 뒤에만 —
+// 그 전에는 칸이 없고 모든 회차가 수집기다). '최근 갱신 · 수집기 PC'·'정상 · 마지막 수집'이 수동 확인만으로 수집기가
+// 돈 것처럼 보이지 않게 한다.
+async function loadLastSuccessAt(ctx, collectorOnly = false) {
+  let query = ctx.supabaseAdmin.from(TABLES.runs).select("claimed_at");
+  if (collectorOnly) query = query.eq("source", RUN_SOURCE_COLLECTOR);
   const rows = rowsOf(
-    await ctx.supabaseAdmin
-      .from(TABLES.runs)
-      .select("claimed_at")
+    await query
       .in("status", [...SUCCESS_RUN_STATUSES])
       .order("claimed_at", { ascending: false })
       .limit(1),
     "last_success",
   );
   return rows[0]?.claimed_at ?? null;
+}
+
+// 자동 수집 집계(C 원문 coupang_rank_stats)는 회차 출처를 가리지 않아, 수동 '지금 확인' 성공이 '48시간 성공'·'마지막 성공'에
+// 섞인다(수집기가 한 번도 돌지 않아도 속도 올리기 관문 '48시간 성공 48회'가 열릴 수 있었다). 수동 칸(SQL) 뒤에는 이 두 값만
+// 수집기 회차로 다시 센다(C 원문 함수는 그대로). 차단·빈 쪽 수는 그대로 둔다(수동 차단도 차단으로 보는 보수적 효과).
+async function collectorOnlyStats(ctx, settings, stats, now) {
+  if (!hasManualColumns(settings)) return stats;
+  const since = new Date(now.getTime() - RAISE_WINDOW_MS).toISOString();
+  const [counted, lastSuccessAt] = await Promise.all([
+    ctx.supabaseAdmin
+      .from(TABLES.runs)
+      .select("id", { count: "exact", head: true })
+      .eq("source", RUN_SOURCE_COLLECTOR)
+      .in("status", [...SUCCESS_RUN_STATUSES])
+      .gt("claimed_at", since),
+    loadLastSuccessAt(ctx, true),
+  ]);
+  if (counted.error) throw dbError("stats_collector", counted.error);
+  const success48h = Number(counted.count);
+  if (!Number.isInteger(success48h)) throw dbError("stats_collector", { code: "COUNT_MISSING" });
+  return { ...stats, success48h, lastSuccessAt, successSource: RUN_SOURCE_COLLECTOR };
 }
 
 async function loadLimitStatus(ctx, agencyCode, keywordKey) {
@@ -308,7 +337,7 @@ async function assembleTrackers(ctx, settings, access, rows, now, { includeLimit
     loadDayRows(ctx, ids, days30[days30.length - 1]),
     loadKeywordRows(ctx, keywordKeys),
     loadActiveCollectors(ctx),
-    loadLastSuccessAt(ctx),
+    loadLastSuccessAt(ctx, hasManualColumns(settings)),
     includeLimit ? loadLimitStatus(ctx, access.agencyCode, null) : Promise.resolve(null),
   ]);
   const daysByTracker = new Map();
@@ -712,11 +741,13 @@ function currentRelease() {
 
 async function collectorView(request, ctx, settings, now, trace) {
   trace.stage = "collector_view";
-  const [collectors, accountLimits, stats] = await Promise.all([
+  const [collectors, accountLimits, allStats] = await Promise.all([
     loadCollectorPanelRows(ctx),
     loadAccountLimits(ctx),
     loadStats(ctx),
   ]);
+  // '48시간 성공'·'마지막 성공'·속도 올리기 가능 여부는 수집기 회차로만(수동 지금 확인 성공은 빼고) 보인다.
+  const stats = await collectorOnlyStats(ctx, settings, allStats, now);
   const release = currentRelease();
   const raise = raiseStatus(settings, stats, now);
   return respond(request, {
@@ -1038,12 +1069,17 @@ async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
   if (Object.hasOwn(patch, "manualEnabled") && !hasManualColumns(settings)) {
     return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   }
+  // 자동 수집이 켜져 있으면 지금 확인을 켜지 않는다(아래 manualAutoConflict 설명). 끄기는 언제나 된다.
+  if (patch.manualEnabled === true && settings.enabled === true) {
+    return failure(request, "COUPANG_MANUAL_COLLECTOR_CONFLICT", { reason: "collector_enabled" });
+  }
   const confirmRaise = body.confirmRaise === true;
   let stats = null;
   // 내리기만 하는 변경은 집계를 읽지 않고 바로 저장한다(집계가 느리거나 실패해도 비상 감속이 막히지 않게).
+  // 올리기 관문의 '48시간 성공'은 수집기 회차만 센다(수동 지금 확인 성공이 자동 속도의 증거가 되지 않게).
   if (confirmRaise && isRaisingPatch(patch, settings)) {
     trace.stage = "stats";
-    stats = await loadStats(ctx);
+    stats = await collectorOnlyStats(ctx, settings, await loadStats(ctx), now);
   }
   const checked = validateSettingsPatch(patch, settings, stats, now, confirmRaise);
   if (!checked.ok) {
@@ -1062,8 +1098,21 @@ async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
   return respond(request, { ok: true, settings: settingsPayload(saved), replanned });
 }
 
-async function collectorEnableAction(request, ctx, enable, trace) {
+// ① 지금 확인 ↔ 자동 수집: 자동 claim(C 원문 coupang_rank_claim)은 아직 수동 간격(manual_last_search_at)·수동 그날 중지
+// (manual_stopped_day)를 보지 않는다(자동 재개 묶음에서 SQL 로 양방향 관문을 넣을 때까지). 그 전까지 같은 회선에서 둘이 함께
+// 돌지 않게 자동 수집 켜기를 거절한다: 지금 확인이 켜져 있거나, 오늘(KST) 지금 확인이 차단으로 멈춘 날. 끄기는 언제나 된다.
+function manualAutoConflict(settings, now) {
+  if (!hasManualColumns(settings)) return null;
+  if (settings.manual_enabled === true) return "manual_enabled";
+  const stoppedDay = typeof settings.manual_stopped_day === "string" ? settings.manual_stopped_day.slice(0, 10) : "";
+  if (stoppedDay && stoppedDay === kstDayOf(now)) return "manual_stopped_today";
+  return null;
+}
+
+async function collectorEnableAction(request, ctx, settings, enable, now, trace) {
   if (enable) {
+    const conflict = manualAutoConflict(settings, now);
+    if (conflict) return failure(request, "COUPANG_COLLECTOR_MANUAL_CONFLICT", { reason: conflict });
     trace.stage = "collectors_count";
     if ((await countActiveCollectors(ctx)) < 1) return failure(request, "COUPANG_NO_COLLECTOR");
   }
@@ -1379,9 +1428,9 @@ async function handlePost(request, ctx, now, trace) {
     case "settings-update":
       return settingsUpdateAction(request, ctx, settings, body, now, trace);
     case "collector-enable":
-      return collectorEnableAction(request, ctx, true, trace);
+      return collectorEnableAction(request, ctx, settings, true, now, trace);
     case "collector-disable":
-      return collectorEnableAction(request, ctx, false, trace);
+      return collectorEnableAction(request, ctx, settings, false, now, trace);
     case "cooldown-clear":
       return cooldownClearAction(request, ctx, now, trace);
     case "account-limit-set":

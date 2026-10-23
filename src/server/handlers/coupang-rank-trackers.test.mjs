@@ -141,6 +141,10 @@ class MockQuery {
     return this.addFilter("gte", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] >= value);
   }
 
+  gt(column, value) {
+    return this.addFilter("gt", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] > value);
+  }
+
   lte(column, value) {
     return this.addFilter("lte", column, value, (row) => row[column] !== null && row[column] !== undefined && row[column] <= value);
   }
@@ -2068,6 +2072,85 @@ test("settings-update manualEnabled: 총관리자 켜기·끄기는 바로 저�
   for (const value of ["true", 1]) {
     assert.equal((await post(state, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: value } })).body.field, "manualEnabled");
   }
+});
+
+// 2026-10-23 검토(지난 #5 그대로): 자동 claim(C 원문)은 수동 간격·그날 중지를 보지 않는다. 고치기 전까지 둘이 함께 켜지지 않게 한다.
+test("지금 확인 ↔ 자동 수집: 지금 확인이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날에는 '수집 켜기' 409, 자동이 켜져 있으면 '지금 확인 켜기' 409, 끄기는 언제나", async () => {
+  const collector = { id: uuid(510), revoked_at: null, token_sha256: "c".repeat(64) };
+  const manualOn = manualState({ settings: { manual_enabled: true } });
+  manualOn.tables.coupang_rank_collectors.push({ ...collector });
+  const refusedOn = await post(manualOn, ownerHeaders(), { action: "collector-enable" });
+  assert.deepEqual([refusedOn.status, refusedOn.body.code, refusedOn.body.reason], [409, "COUPANG_COLLECTOR_MANUAL_CONFLICT", "manual_enabled"]);
+  assert.match(refusedOn.body.message, /지금 확인 끄기/u);
+  assert.equal(manualOn.tables.coupang_rank_settings[0].enabled, false, "자동 수집은 그대로 꺼져 있다");
+
+  const stoppedToday = manualState({ settings: { manual_enabled: false, manual_stopped_day: "2026-10-17", manual_stopped_code: "blocked_http_403" } });
+  stoppedToday.tables.coupang_rank_collectors.push({ ...collector });
+  const refusedStopped = await post(stoppedToday, ownerHeaders(), { action: "collector-enable" });
+  assert.deepEqual([refusedStopped.status, refusedStopped.body.code, refusedStopped.body.reason], [409, "COUPANG_COLLECTOR_MANUAL_CONFLICT", "manual_stopped_today"]);
+  assert.equal(stoppedToday.tables.coupang_rank_settings[0].enabled, false);
+
+  // 지금 확인을 끄고 그날 중지가 어제였다면 켜진다. 끄기는 언제나 된다.
+  const yesterday = manualState({ settings: { manual_enabled: false, manual_stopped_day: "2026-10-16" } });
+  yesterday.tables.coupang_rank_collectors.push({ ...collector });
+  const enabled = await post(yesterday, ownerHeaders(), { action: "collector-enable" });
+  assert.equal(enabled.status, 200);
+  assert.equal(enabled.body.settings.enabled, true);
+  // 자동이 켜져 있으면 지금 확인 켜기를 거절, 끄기·다른 설정은 된다
+  const manualRefused = await post(yesterday, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: true } });
+  assert.deepEqual([manualRefused.status, manualRefused.body.code, manualRefused.body.reason], [409, "COUPANG_MANUAL_COLLECTOR_CONFLICT", "collector_enabled"]);
+  assert.equal(yesterday.tables.coupang_rank_settings[0].manual_enabled, false);
+  assert.equal((await post(yesterday, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: false } })).status, 200);
+  const disabled = await post(manualOn, ownerHeaders(), { action: "collector-disable" });
+  assert.equal(disabled.status, 200);
+  assert.equal(disabled.body.settings.enabled, false);
+  // 수동 칸이 없는 설정(대표 SQL 전)은 예전 그대로
+  const before = createState();
+  before.tables.coupang_rank_collectors.push({ ...collector });
+  assert.equal((await post(before, ownerHeaders(), { action: "collector-enable" })).status, 200);
+});
+
+// 2026-10-23 검토: 수동 '지금 확인' 성공이 자동 집계(coupang_rank_stats)에 섞여 수집기 0대로도 속도 올리기 관문이 열렸다.
+test("속도 올리기 관문·수집기 관리 '마지막 성공'·목록 '최근 갱신(수집기 PC)'은 수집기 회차만 센다(수동 성공 48번으로는 안 열림)", async () => {
+  const manualRuns = (count) => Array.from({ length: count }, (_, index) => ({
+    id: uuid(7000 + index), keyword_key: "아이폰 필름", status: "ok", source: "manual",
+    claimed_at: new Date(Date.parse(NOW) - (index + 1) * 60_000).toISOString(),
+  }));
+  const state = manualState({ settings: { manual_enabled: true } });
+  state.tables.coupang_rank_runs.push(...manualRuns(48));
+  // C 원문 집계는 출처를 가리지 않아 48(이상)로 센다
+  state.stats = { blocked48h: 0, empty48h: 0, success48h: 48, activeKeywords: 1, ineligibleActiveTrackers: 0, lastSuccessAt: state.tables.coupang_rank_runs[0].claimed_at };
+  const raise = await post(state, ownerHeaders(), { action: "settings-update", settings: { maxRunsPerHour: 24 }, confirmRaise: true });
+  assert.deepEqual([raise.status, raise.body.code], [409, "COUPANG_RAISE_NOT_ALLOWED"]);
+  assert.deepEqual(raise.body.reasons, ["too_few_success_48h"]);
+  assert.equal(raise.body.success48h, 0);
+  assert.equal(state.tables.coupang_rank_settings[0].max_runs_per_hour, 12);
+  const panel = await list(state, ownerHeaders(), "?view=collector");
+  assert.equal(panel.status, 200);
+  assert.equal(panel.body.stats.success48h, 0);
+  assert.equal(panel.body.stats.successSource, "collector");
+  assert.equal(panel.body.stats.lastSuccessAt, null);
+  assert.equal(panel.body.raise.allowed, false);
+  const listed = await list(state, ownerHeaders());
+  assert.equal(listed.body.collector.lastSuccessAt, null, "수동 확인만 있으면 '최근 갱신(수집기 PC)'은 비어 있다");
+
+  // 48시간 안의 수집기 성공 48번이면 열린다(48시간보다 오래된 회차·수동 회차는 세지 않음)
+  const collectorRuns = Array.from({ length: 48 }, (_, index) => ({
+    id: uuid(8000 + index), keyword_key: "아이폰 필름", status: index % 2 ? "ok" : "noresult", source: "collector",
+    claimed_at: new Date(Date.parse(NOW) - (index + 1) * 3_600_000 * 0.9).toISOString(),
+  }));
+  const ready = manualState({ settings: { manual_enabled: false } });
+  ready.tables.coupang_rank_runs.push(...manualRuns(10), ...collectorRuns, {
+    id: uuid(8999), keyword_key: "아이폰 필름", status: "ok", source: "collector", claimed_at: "2026-10-14T00:00:00.000Z",
+  });
+  const raised = await post(ready, ownerHeaders(), { action: "settings-update", settings: { maxRunsPerHour: 24 }, confirmRaise: true });
+  assert.equal(raised.status, 200, JSON.stringify(raised.body));
+  assert.equal(raised.body.settings.maxRunsPerHour, 24);
+  const readyPanel = await list(ready, ownerHeaders(), "?view=collector");
+  assert.equal(readyPanel.body.stats.success48h, 48);
+  assert.equal(readyPanel.body.stats.lastSuccessAt, collectorRuns[0].claimed_at);
+  const readyList = await list(ready, ownerHeaders());
+  assert.equal(readyList.body.collector.lastSuccessAt, collectorRuns[0].claimed_at);
 });
 
 test("기록 로그에 요청 토큰·요청 id·검색어가 남지 않는다(실패 500 경로 포함)", async () => {

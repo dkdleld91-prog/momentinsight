@@ -245,7 +245,10 @@
     COUPANG_MANUAL_CLAIM_USED: "이미 쓴 확인 요청입니다(한 요청으로 검색은 한 번만 합니다).",
     COUPANG_MANUAL_CLAIM_NOT_VERIFIED: "확장이 서버 확인을 받지 않은 요청이라 결과를 저장하지 않았습니다.",
     COUPANG_MANUAL_CLAIM_EXPIRED: "확인 요청 기한(10분)이 지나 결과를 저장하지 않았습니다.",
-    COUPANG_MANUAL_RECORD_INVALID: "확인 결과 형식이 맞지 않아 저장하지 못했습니다."
+    COUPANG_MANUAL_RECORD_INVALID: "확인 결과 형식이 맞지 않아 저장하지 못했습니다.",
+    // 지금 확인 ↔ 자동 수집이 함께 켜지지 않게(자동 수집이 아직 지금 확인의 간격·그날 중지를 보지 않는다)
+    COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). 먼저 '수집 끄기'를 눌러 주세요.",
+    COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요."
   };
 
   // ── 순수 도우미 ───────────────────────────────────────────────
@@ -847,6 +850,8 @@
   var MANUAL_CHECK_GIVE_UP_MS = 540000;
   var MANUAL_RECORD_TIMEOUT_MS = 30000;
   var MANUAL_RECORD_RETRY_MS = [3000, 10000];
+  // 서버는 확장 확인 뒤 150초 동안 그 확인을 '진행 중'으로 센다(contract MANUAL_SEARCH_WINDOW_SECONDS).
+  var MANUAL_LOST_BUSY_MS = 150000;
   // 결과를 보내지 못했을 때 다시 보내려고 남겨 두는 자리(새 탭에서도 보이게 localStorage). 10분 뒤에는 버린다.
   var MANUAL_PENDING_KEY = "miCoupangRankManual:v1:pending";
   var MANUAL_PENDING_MAX_MS = 10 * 60 * 1000;
@@ -858,7 +863,8 @@
   var KST_OFFSET_MS = 9 * 60 * 60 * 1000;
   // 확장·서버가 주는 사유 코드 → 쉬운 문구(끝 마침표 없음). 원인을 모르는 경우는 단정하지 않는다.
   var MANUAL_CODE_TEXT = {
-    // 확장이 창을 열기 전에 멈춘 사유(not_started) — 이때는 쿠팡 검색을 하지 않았다
+    // 확장이 쿠팡 주소를 넣기 전에 멈춘 사유(not_started) — 이때는 쿠팡 검색을 하지 않았다
+    // (서버 확인 뒤에 멈췄으면 횟수에는 들 수 있다 — 기록 응답의 counted 로 따로 알린다)
     extension_missing: "이 크롬에서 '" + MANUAL_EXTENSION_NAME + "' 확장을 찾지 못했습니다(설치 안 됨·꺼짐·개발자 모드 꺼짐)",
     extension_outdated: "확장 버전이 낮아 시작하지 않았습니다",
     extension_refused: "확장이 시작하지 않았습니다",
@@ -871,10 +877,14 @@
     origin_rejected: "확장이 이 화면에서 온 요청을 받지 않았습니다(주소가 insight.momentlabs.co.kr 인지 확인해 주세요)",
     window_create_failed: "시크릿 창을 열지 못했습니다(크롬 설정에서 시크릿 모드가 막혀 있을 수 있습니다)",
     window_create_null: "시크릿 창을 열었지만 확장이 그 창을 다룰 수 없어 멈췄습니다(열린 시크릿 창을 직접 닫고 '시크릿 모드에서 허용'을 켜 주세요)",
+    window_closed_early: "쿠팡 검색 전에 시크릿 창이 닫혀 확장이 검색하지 않았습니다(확장이 연 창은 직접 닫지 마세요)",
     claim_reused: "이미 쓴 확인 요청이라 확장이 시작하지 않았습니다",
     report_pending: "앞서 차단으로 보인 결과가 아직 서버에 가지 않아 확장이 새 검색을 하지 않았습니다(그 결과를 먼저 보냅니다)",
     verify_refused: "서버가 이번 확인을 허락하지 않아 확장이 시작하지 않았습니다",
-    verify_session_required: "확장이 서버에 확인받으려 했지만 로그인 세션이 없다고 합니다(같은 크롬에서 관리자 화면에 로그인해 주세요)",
+    // 확장의 서버 확인이 401 로 거절됨. 화면은 같은 세션으로 방금 요청을 받았으므로 '다시 로그인'이 답이 아닐 수 있다
+    // (확장 요청에 로그인 정보가 실리지 않는 경우 — 첫 실제 시험에서 확인할 [추정] 항목)
+    verify_session_required: "확장이 서버에 확인받으려 했지만 서버가 로그인 정보를 받지 못했다고 해 시작하지 않았습니다(화면은 로그인돼 있어도 확장 요청에 로그인 정보가 실리지 않았을 수 있습니다. 다시 로그인해도 같으면 이 문구를 그대로 개발 담당에게 알려 주세요)",
+    verify_claim_expired: "확인 요청의 1분 기한이 지나 확장이 시작하지 않았습니다. 다시 눌러 주세요",
     verify_unreachable: "확장이 서버에 연결하지 못해 시작하지 않았습니다(인터넷 연결 확인)",
     verify_invalid: "확장이 서버 확인 응답을 알아보지 못해 시작하지 않았습니다(확장 버전을 확인해 주세요)",
     extension_error: "확장 안에서 오류가 나 시작하지 않았습니다(chrome://extensions 에서 확장을 새로고침(↻)해 주세요)",
@@ -1073,6 +1083,7 @@
         windowLeftOpen: reply.windowLeftOpen === true,
         retryAfterSec: Number.isSafeInteger(reply.retryAfterSec) && reply.retryAfterSec > 0 ? reply.retryAfterSec : null,
         serverCode: typeof reply.serverCode === "string" && /^[A-Z][A-Z0-9_]{0,59}$/.test(reply.serverCode) ? reply.serverCode : "",
+        httpStatus: Number.isSafeInteger(reply.httpStatus) && reply.httpStatus >= 100 && reply.httpStatus <= 599 ? reply.httpStatus : null,
         held: parseHeldResult(reply.pending)
       };
     }
@@ -1175,11 +1186,12 @@
     if (phase === "claim") return "지금 확인: 서버에 확인 요청을 받는 중입니다…";
     if (phase === "record") return run.resumed ? "지금 확인: 앞서 보내지 못한 확인 결과를 서버에 보내는 중입니다…" : "지금 확인: 결과를 서버에 기록하는 중입니다…";
     if (run && run.slow) return "지금 확인: 확장 응답이 늦습니다. 최대 9분까지 기다립니다. 이 화면을 닫지 마세요.";
-    return "확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다(약 20초). 창 안을 누르거나 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요.";
+    return "확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다(약 20초, 확장이 저절로 닫습니다). 열린 창을 직접 닫거나, 창 안을 누르거나, 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요.";
   }
 
   // 상태 줄 하나(spec-manual §7.3 표 + 반박 검토 반영). 위에서부터 처음 맞는 것을 쓴다.
-  // input: { server, now(서버 시각으로 보정한 ms), hello, run, stopDetail, ownPending, userAgent }
+  // input: { server, now(서버 시각으로 보정한 ms), hello, run, stopDetail, ownPending, ownLost, userAgent }
+  // ownLost: 이 화면의 방금 확인이 확장 응답 없이 끝났다(서버는 그 확인을 150초 동안 '진행 중'으로 센다).
   // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state }
   function manualView(input) {
     var options = input || {};
@@ -1209,8 +1221,14 @@
         return make(false, "지금 확인: 쿠팡 차단 감지로 쉬는 중입니다" + (until && until !== "-" ? "(~" + until + ")" : "") + ".", "is-warn");
       }
       case "hours": return make(false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
-      case "busy":
+      case "busy": {
+        if (options.ownLost) {
+          var busyLeft = Date.parse(server.busyUntil) - now;
+          return make(false, "지금 확인: 방금 확인이 확장 응답 없이 끝났습니다" +
+            (isFinite(busyLeft) && busyLeft > 0 ? "(약 " + countdownText(busyLeft) + " 뒤 다시 누를 수 있습니다)" : "") + ".", "is-warn", { countdown: true });
+        }
         return make(false, options.ownPending ? "지금 확인: 방금 누른 확인이 아직 진행 중입니다. 이 화면을 닫지 마세요." : "지금 확인: 다른 확인이 진행 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
+      }
       case "daily_cap": return make(false, "지금 확인: 오늘 " + projected.max + "번을 모두 썼습니다. 내일 " + pad2(hours.from) + "시부터 다시 됩니다.", "");
       case "gap":
         return make(false, "다음 확인은 " + countdownText(projected.remainingMs) + " 뒤에 할 수 있습니다(검색 사이 " + manualGapMinutes(server) + "분 · 오늘 " + projected.used + "/" + projected.max + "번).", "", { countdown: true });
@@ -1250,7 +1268,15 @@
 
   // 시작 못 함·응답 없음 사유. 서버가 거절한 코드(serverCode)·다시 누를 수 있는 시간(retryAfterSec)을 덧붙인다.
   function manualNotStartedText(check) {
-    var text = manualCodeText(check && check.code);
+    var code = check && check.code;
+    var serverCode = check && check.serverCode;
+    // 확장의 서버 확인 거절 중 화면 쪽 문구와 원인이 다른 것: 로그인(화면은 방금 같은 세션으로 요청을 받았다 — 확장 요청에
+    // 로그인 정보가 안 실렸을 수 있음)·확인 요청 1분 기한(결과 저장 기한 10분과 다르다).
+    if (code === "verify_refused" && (serverCode === "SESSION_REQUIRED" || serverCode === "COUPANG_SESSION_REQUIRED" || check.httpStatus === 401)) {
+      return MANUAL_CODE_TEXT.verify_session_required;
+    }
+    if (code === "verify_refused" && serverCode === "COUPANG_MANUAL_CLAIM_EXPIRED") return MANUAL_CODE_TEXT.verify_claim_expired;
+    var text = manualCodeText(code);
     if (check && check.serverCode && ERROR_TEXT[check.serverCode]) text += "(" + ERROR_TEXT[check.serverCode].replace(/\.$/, "") + ")";
     if (check && isNum(check.retryAfterSec) && check.retryAfterSec > 0) text += " " + countdownText(check.retryAfterSec * 1000) + " 뒤에 다시 눌러 주세요";
     return text;
@@ -1285,6 +1311,10 @@
     if (check.outcome !== "measured") {
       var head = manualNotStartedText(check) + ".";
       var searched = check.outcome === "not_started" ? " 쿠팡 검색은 하지 않았습니다." : " 검색이 됐는지는 확인하지 못했습니다.";
+      // 서버가 '확장 확인 뒤'라 횟수에 셌다고 하면(counted) 그 사실을 함께 적는다(검색 0번이어도 하루 1번·간격을 썼다).
+      if (check.outcome === "not_started" && payload.counted === true) {
+        searched = " 쿠팡 검색은 하지 않았지만 이번 1번은 오늘 횟수에 들어갔고, " + manualGapMinutes(info) + "분 뒤 다시 누를 수 있습니다.";
+      }
       if (payload.ok === true || payload.code === "COUPANG_MANUAL_CLAIM_CLOSED") return { text: head + searched + usage + left, tone: "is-warn" };
       return { text: head + searched + " " + errorText(payload) + left, tone: "is-warn" };
     }
@@ -1530,7 +1560,7 @@
         owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 },
         // ① 지금 확인. server 는 목록 GET 의 manual 칸(총관리자만, 캐시에 남기지 않음), offsetMs 는 서버 시각 - 내 시계.
         manual: { server: null, offsetMs: 0, hello: null, helloFlight: null, run: null, result: null, stopDetail: "", busyRefreshFor: "", toggling: false,
-          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {} }
+          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null }
       };
     }
 
@@ -3200,7 +3230,8 @@
         return;
       }
       if (action === "collector-enable") {
-        if (!confirmAction("수집을 켭니다. 수집기 PC가 켜져 있으면 다음 회차부터 쿠팡 검색을 잽니다. 켤까요?")) return;
+        if (!confirmAction("수집을 켭니다. 수집기 PC가 켜져 있으면 다음 회차부터 쿠팡 검색을 잽니다.\n" +
+          "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이면 서버가 켜지 않습니다(자동 수집이 아직 지금 확인의 간격·그날 중지를 보지 않으므로, 먼저 '지금 확인 끄기'). 켤까요?")) return;
         ownerPost({ action: "collector-enable" }, "수집을 켰습니다.");
         return;
       }
@@ -3433,12 +3464,16 @@
       var runParts = Object.keys(runs).filter(function (key) { return Number(runs[key]) > 0; }).map(function (key) {
         return (RUN_STATUS_TEXT[key] || key) + " " + runs[key];
       });
+      // 서버가 '성공'을 수집기 회차로만 셌으면(지금 확인 SQL 뒤) 그렇다고 적는다. 차단·빈 쪽에는 지금 확인도 들어간다.
+      var collectorOnly = stats.successSource === "collector";
       var lines = [
         "최근 24시간 회차: " + (runParts.length ? runParts.join(" · ") : "없음"),
         "지난 1시간 " + (isNum(stats.runsLastHour) ? stats.runsLastHour : 0) + "회 · 오늘 " + (isNum(stats.runsToday) ? stats.runsToday : 0) + "회" +
           (isNum(stats.avgDurationMs24h) ? " · 성공 평균 " + (Math.round(stats.avgDurationMs24h / 100) / 10) + "초" : ""),
-        "48시간: 차단 " + (isNum(stats.blocked48h) ? stats.blocked48h : 0) + " · 빈 쪽 " + (isNum(stats.empty48h) ? stats.empty48h : 0) + " · 성공 " + (isNum(stats.success48h) ? stats.success48h : 0),
-        "마지막 수집 " + (stats.lastRunAt ? kstStamp(stats.lastRunAt, todayKst) : "없음") + " · 마지막 성공 " + (stats.lastSuccessAt ? kstStamp(stats.lastSuccessAt, todayKst) : "없음") +
+        "48시간: 차단 " + (isNum(stats.blocked48h) ? stats.blocked48h : 0) + " · 빈 쪽 " + (isNum(stats.empty48h) ? stats.empty48h : 0) +
+          (collectorOnly ? "(지금 확인 포함)" : "") + " · 성공 " + (isNum(stats.success48h) ? stats.success48h : 0) + (collectorOnly ? "(수집기만)" : ""),
+        "마지막 수집 " + (stats.lastRunAt ? kstStamp(stats.lastRunAt, todayKst) : "없음") + " · 마지막 성공" + (collectorOnly ? "(수집기)" : "") + " " +
+          (stats.lastSuccessAt ? kstStamp(stats.lastSuccessAt, todayKst) : "없음") +
           (stats.lastErrorCode ? " · 마지막 오류 " + stats.lastErrorCode : ""),
         "예정 시각 지난 키워드 " + (isNum(stats.overdueKeywords) ? stats.overdueKeywords : 0) + "개",
         "저장 용량: C 표 " + megabytes(stats.storage && stats.storage.coupangBytes) + " / 상한 " + (isNum(settings.maxStorageMb) ? settings.maxStorageMb + "MB" : "-") +
@@ -3553,21 +3588,34 @@
       return age >= 0 && age < MANUAL_CHECK_GIVE_UP_MS;
     }
 
+    // 이 화면의 방금 확인이 확장 응답 없이 끝났는지(서버는 확인 뒤 150초 동안 그 확인을 '진행 중'으로 센다).
+    // 응답 없음은 확인 뒤에 오므로, 그 뒤 150초 안의 '진행 중'은 다른 사람이 아니라 이 확인이다.
+    function ownLostActive() {
+      var lost = state.manual.lost;
+      if (!lost) return false;
+      var age = Date.now() - Number(lost.at || 0);
+      return age >= 0 && age < MANUAL_LOST_BUSY_MS;
+    }
+
     function currentManualView() {
       var manual = state.manual;
+      var busy = Boolean(manual.server && manual.server.state === "busy");
+      var ownLost = busy ? ownLostActive() : false;
       return manualView({
         server: manual.server,
         now: manualNow(),
         hello: manual.hello,
         run: manual.run,
         stopDetail: manual.stopDetail,
-        ownPending: manual.server && manual.server.state === "busy" ? ownPendingActive() : false,
+        ownPending: busy && !ownLost ? ownPendingActive() : false,
+        ownLost: ownLost,
         userAgent: userAgentText()
       });
     }
 
     function manualButtonTitle(view) {
       if (view.enabled) return "누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 순위를 확인합니다";
+      if (view.countdown && view.state === "busy") return "방금 확인이 끝나기를 기다리는 중입니다";
       if (view.countdown) return "검색 사이 간격을 기다리는 중입니다";
       return "지금은 확인할 수 없습니다(목록 위 '지금 확인' 줄 참고)";
     }
@@ -3889,6 +3937,7 @@
       var keyword = String(tracker.keyword || "");
       manual.run = { trackerId: trackerId, keyword: keyword, phase: "hello", slow: false };
       manual.result = null;
+      manual.lost = null;
       renderManual();
       // 1. 누르기 직전에 확장 상태를 새로 묻는다. 막히면 서버 요청 없이 끝낸다(횟수도 쓰지 않는다).
       var hello = await refreshHello(true);
@@ -3959,6 +4008,8 @@
       renderManual();
       var recorded = await postManualRecord(record.report, scope, owner);
       if (owner !== state) return;
+      // 응답 없음이면 서버가 이 확인을 잠시 '진행 중'으로 센다. 그동안 상태 줄이 '다른 확인'이라고 하지 않게 기억한다.
+      if (parsed.outcome === "lost") manual.lost = { claimId: record.claimId, at: Date.now() };
       settleManualRecord(recorded, parsed, record, "");
       // 확장이 '보고 안 된 앞 결과가 있다'며 시작하지 않았으면 그 결과를 바로 보낸다(차단 보고가 먼저).
       if (parsed.outcome === "not_started" && parsed.code === "report_pending" && parsed.held) {

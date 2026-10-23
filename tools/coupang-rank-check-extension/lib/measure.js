@@ -2,15 +2,29 @@
 // chrome.scripting.executeScript 의 func 로 넘겨 확장이 연 시크릿 탭에서만 돈다(기본 ISOLATED 세계).
 // 그래서 두 함수 모두 자기완결이다: 이 파일 밖의 값·import·전역 상수를 쓰지 않는다(테스트가 node:vm 으로 확인).
 // 읽기 규칙은 수집기 tools/coupang-rank-collector/lib/extract.mjs EXTRACT_SOURCE 와 같다(선택자·광고 표식·제목 200자).
-// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜 표시.
+// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜(경로·q) 표시.
 // 하지 않는 것: 누르기·입력·포커스 옮기기·주소 바꾸기·브라우저 표식 숨기기. 스크롤은 수집기와 같은 범위만 한다.
 
-// 페이지가 다 불러와졌는지(주 문서 load = readyState complete)만 본다. 화면을 바꾸지 않는다.
+// 페이지가 다 불러와졌는지(주 문서 load = readyState complete)를 본다. 화면을 바꾸지 않는다.
+// 불러오는 동안의 차단 신호(주 문서 HTTP 상태·차단 문구)도 함께 적는다: 사람이 첫 읽기 전에 창을 닫아도
+// 확장이 그 신호로 그날 중지를 걸 수 있게(차단 문구 식은 아래 miCoupangMeasure 와 같다).
 export function miCoupangProbe() {
+  let httpStatus = null;
+  try {
+    const entry = performance.getEntriesByType("navigation")[0];
+    const status = entry ? entry.responseStatus : null;
+    httpStatus = Number.isInteger(status) && status >= 1 && status <= 599 ? status : null;
+  } catch {
+    httpStatus = null;
+  }
+  const body = document.body ? String(document.body.innerText || "") : "";
+  const blockPattern = /Access Denied|permission to access|비정상적인 접근|자동입력 방지|captcha|사용권한이 없습니다|사용권한이 제한된/i;
   return {
     readyState: String(document.readyState || ""),
     host: String(location.host || "").toLowerCase(),
     path: String(location.pathname || "").slice(0, 80),
+    httpStatus,
+    blockedText: blockPattern.test(body.slice(0, 4000)) || /Access Denied/i.test(String(document.title || "")),
   };
 }
 
@@ -30,8 +44,17 @@ export async function miCoupangMeasure(options) {
   const jitter = () => gapMin + Math.floor(Math.random() * (gapMax - gapMin + 1));
 
   const blockPattern = /Access Denied|permission to access|비정상적인 접근|자동입력 방지|captcha|사용권한이 없습니다|사용권한이 제한된/i;
+  // 주소 바뀜 = 경로가 바뀜 또는 검색어(q)가 바뀜. 쿠팡 쪽 스크립트가 주소 꼬리에 추적 값(&channel= 등)만 붙이는 것은
+  // 사람이 옮긴 것이 아니므로 보지 않는다(q 가 바뀐 목록은 서버 M2 query_mismatch 가 따로 잡는다).
+  const qNow = () => {
+    try {
+      return new URLSearchParams(String(location.search || "")).get("q");
+    } catch {
+      return null;
+    }
+  };
   const startPath = String(location.pathname || "");
-  const startSearch = String(location.search || "");
+  const startQ = qNow();
   let wasHidden = document.visibilityState === "hidden";
   const onVisibility = () => {
     if (document.visibilityState === "hidden") wasHidden = true;
@@ -58,7 +81,7 @@ export async function miCoupangMeasure(options) {
     }
     return Array.from(q.replace(/[\u0000-\u001f\u007f]/g, " ")).slice(0, 100).join("");
   };
-  const moved = () => String(location.pathname || "") !== startPath || String(location.search || "") !== startSearch;
+  const moved = () => String(location.pathname || "") !== startPath || qNow() !== startQ;
 
   const read = () => {
     reads += 1;

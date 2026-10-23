@@ -40,6 +40,7 @@ export const FAST_TIMING = Object.freeze({
   quickReadTimeoutMs: 40,
   closeTimeoutMs: 40,
   verifyTimeoutMs: 80,
+  stopRetryDelaysMs: [5, 5],
 });
 
 export const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });

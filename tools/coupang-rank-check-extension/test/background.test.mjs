@@ -160,7 +160,7 @@ test("동시에 check 2개: 작업 중 표시를 await 전에 켜서 창은 1개
   assert.equal(fake.calls.create.length, 1);
 });
 
-test("같은 요청 번호로 다시 보내면 서버가 1회용으로 거절(CLAIM_USED → verify_refused), 창은 1번만", async () => {
+test("같은 요청 번호로 다시 보내면 서버가 1회용으로 거절(CLAIM_USED → verify_refused), 쿠팡 검색은 1번만(두 번째 빈 창은 닫음)", async () => {
   const clock = clockFrom(1_000_000);
   const { fake, background } = setup({ now: clock.now });
   assert.equal((await send(background, checkMessage())).outcome, "measured");
@@ -168,7 +168,9 @@ test("같은 요청 번호로 다시 보내면 서버가 1회용으로 거절(CL
   const again = await send(background, checkMessage());
   assert.equal(again.code, "verify_refused");
   assert.equal(again.serverCode, "COUPANG_MANUAL_CLAIM_USED");
-  assert.equal(fake.calls.create.length, 1);
+  assert.equal(fake.calls.update.length, 1, "쿠팡 주소는 첫 번째만");
+  assert.equal(fake.calls.create.length, 2);
+  assert.equal(fake.windows.size, 0, "거절된 빈 창도 닫는다");
 });
 
 test("같은 크롬 안 상대 간격 170초(보조): 안이면 too_soon(서버 확인 0), 맥 시계가 뒤로 가도 막히지 않는다", async () => {
@@ -187,7 +189,7 @@ test("같은 크롬 안 상대 간격 170초(보조): 안이면 too_soon(서버 
 
 // ── 서버 확인(지난 결함: 확장이 서버 확인 없이 창을 엶) ──
 
-test("서버 확인: 창을 만들기 전에 GET manual-verify 1번, 토큰은 머리글(주소에 없음)·세션 쿠키 포함·리다이렉트 안 따라감", async () => {
+test("서버 확인: 빈 시크릿 창 검사 뒤·쿠팡 주소를 넣기 전에 GET manual-verify 1번, 토큰은 머리글(주소에 없음)·세션 쿠키 포함·리다이렉트 안 따라감", async () => {
   const { fake, fetchImpl, background } = setup();
   assert.equal((await send(background, checkMessage())).outcome, "measured");
   assert.equal(fetchImpl.calls.length, 1);
@@ -202,11 +204,12 @@ test("서버 확인: 창을 만들기 전에 GET manual-verify 1번, 토큰은 �
   assert.equal(init.headers["x-mi-coupang-claim-token"], CLAIM_TOKEN);
   assert.equal(init.headers["x-mi-coupang-check"], "1.0.0");
   assert.equal(init.body, undefined);
-  const order = fake.log.filter((name) => ["fetch", "windows.create", "tabs.update"].includes(name));
-  assert.deepEqual(order, ["fetch", "windows.create", "tabs.update"]);
+  // 빈 창(쿠팡 요청 0) → 다른 시크릿 창 검사 → 서버 확인 → 그 탭만 쿠팡으로(지난 검토: 확인을 먼저 하면 창을 못 열 때 1번을 헛되이 씀)
+  const order = fake.log.filter((name) => ["fetch", "windows.create", "windows.getAll", "tabs.update"].includes(name));
+  assert.deepEqual(order, ["windows.getAll", "windows.create", "windows.getAll", "fetch", "tabs.update"]);
 });
 
-test("서버 확인 거절은 창을 열지 않고 사유를 넘긴다: 간격·그날 중지·기한·세션·총관리자 아님·연결 실패·5xx·모양 틀림", async () => {
+test("서버 확인 거절은 쿠팡 주소를 넣지 않고 빈 창을 닫고 사유를 넘긴다: 간격·그날 중지·기한·세션·총관리자 아님·연결 실패·5xx·모양 틀림", async () => {
   const cases = [
     [{ status: 409, body: { ok: false, code: "COUPANG_MANUAL_GAP", state: "gap", retryAfterSec: 42 } }, "verify_refused", "COUPANG_MANUAL_GAP"],
     [{ status: 409, body: { ok: false, code: "COUPANG_MANUAL_STOPPED", state: "stopped" } }, "verify_refused", "COUPANG_MANUAL_STOPPED"],
@@ -230,7 +233,9 @@ test("서버 확인 거절은 창을 열지 않고 사유를 넘긴다: 간격·
     assert.equal(reply.outcome, "not_started", label);
     assert.equal(reply.code, code, label);
     assert.equal(reply.serverCode, serverCode, label);
-    assert.equal(fake.calls.create.length, 0);
+    assert.equal(reply.windowLeftOpen, false, label);
+    assert.equal(fake.calls.create.length, 1, "빈 창 1개");
+    assert.equal(fake.windows.size, 0, "빈 창은 닫는다");
     noSearch(fake, fetchImpl, { verifies: 1 });
     if (serverCode === "COUPANG_MANUAL_GAP") {
       assert.equal(reply.retryAfterSec, 42);
@@ -240,7 +245,7 @@ test("서버 확인 거절은 창을 열지 않고 사유를 넘긴다: 간격·
   }
 });
 
-test("서버 확인이 답하지 않으면 제한 시간 뒤 verify_unreachable(창 0)", async () => {
+test("서버 확인이 답하지 않으면 제한 시간 뒤 verify_unreachable(쿠팡 요청 0, 빈 창 닫음)", async () => {
   const { fake, background } = setup({
     fetch: (url, init) => new Promise((_, reject) => {
       init.signal.addEventListener("abort", () => reject(new Error("aborted")));
@@ -249,7 +254,26 @@ test("서버 확인이 답하지 않으면 제한 시간 뒤 verify_unreachable(
   });
   const reply = await send(background, checkMessage());
   assert.equal(reply.code, "verify_unreachable");
-  assert.equal(fake.calls.create.length, 0);
+  assert.equal(fake.calls.update.length, 0);
+  assert.equal(fake.windows.size, 0);
+});
+
+test("서버 확인을 기다리는 사이 사람이 빈 창을 닫으면 쿠팡 주소를 넣지 않고 window_closed_early(검색 0)", async () => {
+  let fakeRef;
+  const { fake, fetchImpl, background } = setup({
+    fetch: async (url, init) => {
+      fakeRef.closeWindowByUser(fakeRef.lastWindowId());
+      await sleep(5);
+      return defaultVerify(url, init);
+    },
+  });
+  fakeRef = fake;
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.outcome, "not_started");
+  assert.equal(reply.code, "window_closed_early");
+  assert.equal(reply.windowLeftOpen, false);
+  noSearch(fake, fetchImpl, { verifies: 1 });
+  assert.equal(fake.storage.active, undefined);
 });
 
 test("창의 검색어는 화면이 보낸 값이 아니라 서버가 확인해 준 값", async () => {
@@ -283,23 +307,23 @@ test("창: 빈 시크릿 창을 먼저 열고(about:blank·focused·1280×900), 
   assert.equal(fake.storage.active, undefined);
 });
 
-test("windows.create 가 빈 값을 주면 window_create_null + windowLeftOpen, 쿠팡 요청 0", async () => {
-  const { fake, background } = setup({ chrome: { createBehavior: "null" } });
+test("windows.create 가 빈 값을 주면 window_create_null + windowLeftOpen, 쿠팡 요청 0·서버 확인 0(횟수 안 씀)", async () => {
+  const { fake, fetchImpl, background } = setup({ chrome: { createBehavior: "null" } });
   const reply = await send(background, checkMessage());
   assert.equal(reply.outcome, "not_started");
   assert.equal(reply.code, "window_create_null");
   assert.equal(reply.windowLeftOpen, true);
-  assert.equal(fake.calls.update.length, 0);
+  noSearch(fake, fetchImpl, { verifies: 0 });
 });
 
-test("일반 창이 만들어지면 닫고 window_create_failed, 만들기 실패(정책)도 window_create_failed — 둘 다 쿠팡 요청 0", async () => {
+test("일반 창이 만들어지면 닫고 window_create_failed, 만들기 실패(정책)도 window_create_failed — 둘 다 쿠팡 요청 0·서버 확인 0(횟수 안 씀)", async () => {
   const normal = setup({ chrome: { createBehavior: "normal" } });
   assert.equal((await send(normal.background, checkMessage())).code, "window_create_failed");
   assert.equal(normal.fake.calls.remove.length, 1);
-  assert.equal(normal.fake.calls.update.length, 0);
+  noSearch(normal.fake, normal.fetchImpl, { verifies: 0 });
   const thrown = setup({ chrome: { createBehavior: "throw" } });
   assert.equal((await send(thrown.background, checkMessage())).code, "window_create_failed");
-  assert.equal(thrown.fake.calls.update.length, 0);
+  noSearch(thrown.fake, thrown.fetchImpl, { verifies: 0 });
 });
 
 test("창 결과에 탭이 없으면 tabs.query 로 찾는다", async () => {
@@ -308,10 +332,10 @@ test("창 결과에 탭이 없으면 tabs.query 로 찾는다", async () => {
   assert.equal(fake.calls.query.length, 1);
 });
 
-test("서버 확인 뒤 창을 연 사이 다른 시크릿 창이 생기면 우리 창을 닫고 incognito_window_open(쿠팡 요청 0)", async () => {
-  const { fake, background } = setup({ chrome: { extraIncognitoAfterCreate: true } });
+test("빈 창을 연 사이 다른 시크릿 창이 생기면 서버 확인 없이 우리 창을 닫고 incognito_window_open(쿠팡 요청 0·횟수 안 씀)", async () => {
+  const { fake, fetchImpl, background } = setup({ chrome: { extraIncognitoAfterCreate: true } });
   assert.equal((await send(background, checkMessage())).code, "incognito_window_open");
-  assert.equal(fake.calls.update.length, 0);
+  noSearch(fake, fetchImpl, { verifies: 0 });
   assert.equal(fake.calls.remove.length, 1);
 });
 
@@ -499,6 +523,129 @@ test("120초 상한 → browser_hard_cap, 창은 닫고 짧은 읽기를 해 본
   assert.ok(fake.log.includes("quick"));
 });
 
+// ── 첫 읽기 전에 끝난 회차에도 차단 신호를 남긴다(지난 검토: 창을 닫으면 차단 신호가 사라져 그날 중지가 안 걸림) ──
+
+const LOGIN_URL = "https://login.coupang.com/login/login.pang?rtnUrl=x";
+const NO_ACCESS = () => { throw new Error("Cannot access contents of url"); };
+
+test("불러오는 동안 HTTP 403 을 본 뒤 사람이 첫 읽기 전에 창을 닫으면: window_closed 이지만 403 으로 서버 그날 중지", async () => {
+  let fakeRef;
+  let probes = 0;
+  const { fake, fetchImpl, background } = setup({
+    chrome: {
+      scenario: {
+        loadEvents: false,
+        probe: ({ tab }) => {
+          probes += 1;
+          if (probes === 2) queueMicrotask(() => fakeRef.closeWindowByUser(tab.windowId));
+          return { readyState: "interactive", host: "www.coupang.com", path: "/np/search", httpStatus: 403, blockedText: false };
+        },
+      },
+    },
+    timing: { loadTimeoutMs: 400 },
+  });
+  fakeRef = fake;
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.outcome, "measured");
+  assert.equal(reply.page.errorCode, "window_closed");
+  assert.equal(reply.page.httpStatus, 403);
+  assert.equal(reply.stopReason, "blocked_http_403");
+  assert.equal(reply.stopReported, true);
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_403"]);
+  assert.ok(fake.storage.blockedDay, "이 크롬의 그날 표시");
+  assert.ok(!fake.log.includes("measure"), "쪽 함수의 첫 읽기 전에 닫힘");
+});
+
+test("불러온 직후 짧은 읽기가 차단 화면(HTTP 200 + 한국어 차단 문구)을 보면 기다리거나 스크롤하지 않고 끝내고 그날 중지", async () => {
+  const { fake, fetchImpl, background } = setup({
+    chrome: { scenario: { quick: () => rawPage({ httpStatus: 200, items: [], blockedText: true, stable: false, scrolls: 0, reads: 1 }) } },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.status, "blocked");
+  assert.equal(reply.stopReason, "blocked_text");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_text"]);
+  assert.ok(!fake.log.includes("measure"), "차단 화면에서는 측정(스크롤)을 하지 않는다");
+});
+
+test("로그인 화면 등 권한 밖으로 보내진 것을 load 중에 본 뒤 사람이 창을 닫으면: page_unreadable(D1)로 그날 중지", async () => {
+  let fakeRef;
+  let probes = 0;
+  const { fake, fetchImpl, background } = setup({
+    chrome: {
+      scenario: {
+        loadEvents: false,
+        finalUrl: () => LOGIN_URL,
+        probe: ({ tab }) => {
+          probes += 1;
+          if (probes === 2) queueMicrotask(() => fakeRef.closeWindowByUser(tab.windowId));
+          return NO_ACCESS();
+        },
+      },
+    },
+    timing: { loadTimeoutMs: 400 },
+  });
+  fakeRef = fake;
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "page_unreadable");
+  assert.equal(reply.stopReason, "page_unreadable");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
+});
+
+test("D1 시간 초과: 권한 밖 호스트로 보내져 45초 안에 load 가 끝나지 않으면 page_timeout 이 아니라 page_unreadable(그날 중지)", async () => {
+  const unreadable = setup({
+    chrome: { scenario: { loadEvents: false, finalUrl: () => LOGIN_URL, quick: NO_ACCESS } },
+    timing: { loadTimeoutMs: 40 },
+  });
+  const reply = await send(unreadable.background, checkMessage());
+  assert.equal(reply.page.errorCode, "page_unreadable");
+  assert.equal(reply.page.finalHost, "");
+  assert.equal(reply.stopReason, "page_unreadable");
+  assert.deepEqual(unreadable.fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
+  // 대조: 쿠팡 검색 주소가 보이는데 늦을 뿐이면(차단 HTTP 없음) 시간 초과 = 차단 아님
+  const slow = setup({ chrome: { scenario: { loadEvents: false, quick: NO_ACCESS } }, timing: { loadTimeoutMs: 40 } });
+  const late = await send(slow.background, checkMessage());
+  assert.equal(late.page.errorCode, "page_timeout");
+  assert.equal(late.page.finalHost, "www.coupang.com");
+  assert.equal(late.stopReason, null);
+  assert.deepEqual(slow.fetchImpl.stops(), []);
+});
+
+test("120초 상한인데 권한 밖으로 보내져 읽지 못하면 page_unreadable(그날 중지)", async () => {
+  const { fetchImpl, background } = setup({
+    chrome: { scenario: { finalUrl: () => LOGIN_URL, quick: NO_ACCESS, measure: () => new Promise(() => {}) } },
+    timing: { hardCapMs: 80 },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "page_unreadable");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
+});
+
+test("측정 중 쿠팡이 주소 꼬리만 바꾸면(같은 경로·같은 q) 사람의 이동이 아니다, q 가 바뀌면 이동(user_navigated)", async () => {
+  const cases = [
+    [(tab) => `${tab.url}&channel=user&traceId=abc`, "page_load_failed"],
+    [() => searchUrl("다른 검색어"), "user_navigated"],
+  ];
+  for (const [nextUrl, expected] of cases) {
+    let fakeRef;
+    const { fake, background } = setup({
+      chrome: {
+        scenario: {
+          measure: ({ tab }) => {
+            const url = nextUrl(tab);
+            tab.url = url;
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { url });
+            throw new Error("Frame with ID 0 is showing error page");
+          },
+        },
+      },
+    });
+    fakeRef = fake;
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, expected, expected);
+    assert.equal(reply.stopSignal, false);
+  }
+});
+
 test("작업 중 15초마다 확장 API(windows.get) 호출로 서비스 워커를 깨워 둔다", async () => {
   const { fake, background } = setup({
     chrome: { scenario: { measure: async () => { await sleep(120); return rawPage(); } } },
@@ -608,13 +755,69 @@ test("중지 알림이 실패하면(서버 연결 실패) 다음 누름 때 그 
   const first = await send(background, checkMessage());
   assert.equal(first.stopReason, "blocked_text");
   assert.equal(first.stopReported, false);
+  // 같은 실행 안에서 0·3·10초(테스트는 짧게)에 3번 보내 본다
+  assert.equal(fetchImpl.stops().length, 3);
   clock.value += 200_000;
   serverUp = true;
   const next = await send(background, checkMessage({ claimId: CLAIM_ID_2 }));
   assert.equal(next.code, "report_pending");
   assert.equal(next.stopReported, true);
-  assert.deepEqual(fetchImpl.stops().map((stop) => [stop.claimId, stop.reason]), [[CLAIM_ID, "blocked_text"], [CLAIM_ID, "blocked_text"]]);
+  assert.deepEqual(fetchImpl.stops().map((stop) => [stop.claimId, stop.reason]), Array.from({ length: 4 }, () => [CLAIM_ID, "blocked_text"]));
   assert.equal(fetchImpl.views().filter((view) => view === "manual-verify").length, 1);
+});
+
+test("중지 알림이 한두 번 실패해도 같은 실행 안에서 다시 보내 서버 그날 중지를 건다(관리자 탭이 닫혀도 다른 설치가 같은 날 검색하지 않게)", async () => {
+  let failures = 2;
+  const { fake, fetchImpl, background } = setup({
+    chrome: { scenario: { measure: BLOCKED_403 } },
+    fetch: (url, init, { view, used }) => {
+      if (view === "manual-stop") {
+        if (failures > 0) {
+          failures -= 1;
+          return new Error("Failed to fetch");
+        }
+        return { status: 200, body: { ok: true, stopped: true } };
+      }
+      used.add(new URL(url).searchParams.get("claimId"));
+      return defaultVerify(url, init);
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.stopReason, "blocked_http_403");
+  assert.equal(reply.stopReported, true);
+  assert.equal(fetchImpl.stops().length, 3);
+  assert.equal(fake.storage.pending.stopReported, true);
+  assert.equal(fake.storage.pending.reply.stopReported, true);
+  assert.equal(fake.storage.stopReportedDay, fake.storage.blockedDay);
+});
+
+test("중지 알림이 실행 안에서 모두 실패하면 결과·그날 표시는 먼저 남기고, 다음 hello(관리자 화면을 열 때)가 다시 보낸다", async () => {
+  let serverUp = false;
+  const { fake, fetchImpl, background } = setup({
+    chrome: { scenario: { measure: BLOCKED_403 } },
+    fetch: (url, init, { view, used }) => {
+      if (view === "manual-stop") return serverUp ? { status: 200, body: { ok: true, stopped: true } } : new Error("Failed to fetch");
+      used.add(new URL(url).searchParams.get("claimId"));
+      return defaultVerify(url, init);
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.stopReported, false);
+  assert.equal(fake.storage.pending.stop, true);
+  assert.equal(fake.storage.pending.stopReported, false);
+  assert.ok(fake.storage.blockedDay, "알림이 실패해도 이 크롬의 그날 표시는 남는다");
+  serverUp = true;
+  const hello = await send(background, { type: "mi-coupang-hello" });
+  assert.equal(hello.pending.stop, true);
+  await sleep(20);
+  assert.equal(fetchImpl.stops().length, 4, "실행 안 3번 + hello 1번");
+  assert.equal(fake.storage.pending.stopReported, true);
+  assert.equal(fake.storage.pending.reply.stopReported, true);
+  assert.equal(fake.storage.stopReportedDay, fake.storage.blockedDay);
+  // 이미 알렸으면 다음 hello 는 다시 보내지 않는다
+  await send(background, { type: "mi-coupang-hello" });
+  await sleep(10);
+  assert.equal(fetchImpl.stops().length, 4);
 });
 
 test("남은 결과를 지운 뒤에도 그날 표시가 있고 서버에 알린 기록이 없으면, 이번 요청 토큰으로 extension_reported 를 알린다", async () => {
@@ -693,7 +896,7 @@ test("예기치 못한 오류: 쿠팡 주소를 넣기 전이면 extension_error
   const before = setup({
     now: () => {
       calls += 1;
-      if (calls === 5) throw new TypeError("boom"); // 오늘(1)·간격(2)·확인 시각(3)·창 연 시각(4) 다음, 마지막 검색 시각 저장(5)
+      if (calls === 5) throw new TypeError("boom"); // 오늘(1)·간격(2)·창 연 시각(3)·확인 시각(4) 다음, 마지막 검색 시각 저장(5)
       return 50_000_000 + calls;
     },
   });

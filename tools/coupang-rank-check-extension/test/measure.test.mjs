@@ -96,7 +96,42 @@ test("자기완결: 새 문맥(DOM 값만)에서 돌고, 화면을 누르거나 
   assert.deepEqual(dom.forbidden, []);
   assert.equal(dom.listeners.size, 0, "visibilitychange 리스너는 끝나면 뗀다");
   const probe = vm.runInContext(`(${miCoupangProbe.toString()})`, dom.context)();
-  assert.deepEqual(JSON.parse(JSON.stringify(probe)), { readyState: "complete", host: "www.coupang.com", path: "/np/search" });
+  assert.deepEqual(JSON.parse(JSON.stringify(probe)), { readyState: "complete", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false });
+  assert.deepEqual(dom.forbidden, [], "load 확인도 화면을 바꾸지 않는다");
+});
+
+test("load 확인(probe)도 불러오는 동안의 차단 신호(HTTP 403·429·503·한국어 차단 문구)를 적는다 — 첫 읽기 전에 창이 닫혀도 남게", () => {
+  const probeOf = (dom) => JSON.parse(JSON.stringify(vm.runInContext(`(${miCoupangProbe.toString()})`, dom.context)()));
+  for (const httpStatus of [403, 429, 503]) assert.equal(probeOf(makeDom({ httpStatus, items: [] })).httpStatus, httpStatus);
+  assert.equal(probeOf(makeDom({ bodyText: BLOCK_BODY, title: "쿠팡!", items: [] })).blockedText, true);
+  assert.equal(probeOf(makeDom({ title: "Access Denied", bodyText: "", items: [] })).blockedText, true);
+  assert.equal(probeOf(makeDom({ httpStatus: 0 })).httpStatus, null);
+});
+
+test("쿠팡이 불러온 뒤 주소 꼬리(추적 값)만 바꾸면 사람의 이동이 아니다(navigated=false), q 가 바뀌면 이동", async () => {
+  const tail = makeDom({
+    onScroll: (state, count) => {
+      if (count === 2) {
+        Reflect.set(state.location, "search", `${state.location.search}&traceId=abc&channel=user`);
+        state.forbidden.pop();
+      }
+    },
+  });
+  const kept = await run(tail);
+  assert.equal(kept.navigated, false);
+  assert.equal(kept.scrolls, 8);
+  assert.equal(kept.stable, true);
+  const other = makeDom({
+    onScroll: (state, count) => {
+      if (count === 2) {
+        Reflect.set(state.location, "search", `?q=${encodeURIComponent("다른 검색어")}`);
+        state.forbidden.pop();
+      }
+    },
+  });
+  const moved = await run(other);
+  assert.equal(moved.navigated, true);
+  assert.equal(moved.stable, false);
 });
 
 test("정상 검색 1쪽: 스크롤 8번(1400px)·읽기 3번·stable·검색어·HTTP 상태·광고 표식·제목 첫 줄", async () => {

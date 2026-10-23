@@ -12,7 +12,8 @@ export const TRACKERS_PATH = "/api/coupang-rank-trackers"; // = 서버 contract 
 // 서버 요청 2가지(모두 GET). 세션 게이트가 POST 에 출처(Origin)·CSRF 를 요구하는데 확장 서비스 워커의 출처는
 // chrome-extension:// 이라 들 수 없다(session-gate.mjs mutationOriginAllowed·csrfMatches). GET 은 그 둘을 보지 않는다.
 // 요청 토큰은 주소가 아니라 머리글에 싣는다(기록·주소창에 남지 않게). 이름은 서버 contract 와 같다(테스트).
-//  - manual-verify: 창을 열기 직전. 서버가 토큰·기한·상태·전역 간격(서버 시각)을 보고 '검색함'으로 한 번만 표시한다.
+//  - manual-verify: 빈 시크릿 창을 열어 검사를 마친 뒤, 쿠팡 주소를 넣기 직전. 서버가 토큰·기한·상태·전역 간격(서버 시각)을
+//    보고 '검색함'으로 한 번만 표시한다.
 //  - manual-stop: 차단 신호를 본 순간. 서버가 그 요청의 검색 날짜를 '그날 중지'로 건다(더 엄격하게만 바뀐다).
 export const VERIFY_VIEW = "manual-verify"; // = MANUAL_VERIFY_VIEW
 export const STOP_VIEW = "manual-stop"; // = MANUAL_STOP_VIEW
@@ -55,6 +56,8 @@ export const CLOSE_TIMEOUT_MS = 5000;
 export const LOCAL_MIN_GAP_MS = 170000; // 같은 크롬 안 상대 간격(보조). 전역 180초는 서버가 확인 시각으로 판정한다
 export const ACTIVE_STALE_MS = 7 * 60 * 1000; // 이보다 오래된 '작업 중' 기록의 창은 닫지 않는다(창 번호 재사용 대비)
 export const RESULT_RESEND_MS = 10 * 60 * 1000; // 차단 아닌 결과는 10분(서버 늦은 보고 기한)까지만 다시 준다
+// 그날 중지 알림이 실패하면 같은 실행 안에서 다시 보낸다(0초 → 3초 뒤 → 그 7초 뒤 = 0·3·10초, 알람 없이 기다리기만).
+export const STOP_RETRY_DELAYS_MS = Object.freeze([3000, 7000]);
 export const WINDOW_WIDTH = 1280;
 export const WINDOW_HEIGHT = 900;
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -65,9 +68,10 @@ export const MESSAGE_TYPES = Object.freeze({
   check: "mi-coupang-check",
   ack: "mi-coupang-ack",
 });
-// 창을 열기 전에 멈춘 경우(쿠팡 검색 0번). 서버 확인 뒤에 멈춘 것도 여기 든다(창에 쿠팡 주소를 넣지 않음).
-// 모두 서버 contract MANUAL_NOT_STARTED_CODES 에 있어야 한다(테스트). report_pending·blocked_today 는 '오늘 차단을 봤다'는 뜻이라
-// 서버가 그날 중지로 받아야 한다(MANUAL_STOP_NOT_STARTED_CODES).
+// 쿠팡 주소를 넣기 전에 멈춘 경우(쿠팡 검색 0번). 확장은 빈 시크릿 창을 먼저 열어 검사한 뒤에 서버 확인을 받으므로,
+// 창 만들기·시크릿 검사 실패는 서버 확인 전이다(횟수에 들지 않음). 서버 확인 뒤에 멈춘 것(window_closed_early 등)은
+// 횟수에 들 수 있다(서버 기록 응답의 counted 가 사실). 모두 서버 contract MANUAL_NOT_STARTED_CODES 에 있어야 한다(테스트).
+// report_pending·blocked_today 는 '오늘 차단을 봤다'는 뜻이라 서버가 그날 중지로 받아야 한다(MANUAL_STOP_NOT_STARTED_CODES).
 export const NOT_STARTED_CODES = Object.freeze([
   "bad_request",
   "busy",
@@ -81,6 +85,7 @@ export const NOT_STARTED_CODES = Object.freeze([
   "verify_unreachable",
   "window_create_failed",
   "window_create_null",
+  "window_closed_early",
   "extension_error",
 ]);
 // 창을 연 뒤의 실패(page.errorCode) = 서버 MANUAL_EXTENSION_ERROR_CODES. 모두 ^[a-z0-9_]{1,60}$.

@@ -10,6 +10,7 @@ import {
   COLLECTOR_ERROR_CODE_PATTERN,
   FOREIGN_NAVIGATION_ERROR_CODE,
   KEYWORD_MAX,
+  MANUAL_UNREADABLE_ERROR_CODE,
   ORGANIC_MAX,
   PAGE_STATUSES,
   SLOT_MAX,
@@ -212,4 +213,52 @@ export function recordPayloadForRpc(body, classified) {
     browser: body?.browser,
     errorCode: override ?? nullable(page.errorCode),
   };
+}
+
+// ── ① 지금 확인(spec-manual §6.7) ── 확장이 읽은 쪽도 수집기와 같은 page 규칙·판정을 쓴다.
+const MANUAL_QUERY_MAX = 100;
+const MANUAL_FIELD_NAMES = Object.freeze({ runId: "claimId", collectorVersion: "extensionVersion" });
+
+// 수동 확인 결과 본문 검증(validateCollectorRecord 재사용). 칸 이름만 claimId·extensionVersion 으로 바꿔 알린다.
+// page.query(쪽 주소의 q 값)는 없거나 null 이면 빈 글자로 보고, 있으면 100 코드 포인트 이하·제어 문자 없음.
+export function validateManualRecord(body) {
+  if (!isPlainObject(body)) return invalid("body");
+  const checked = validateCollectorRecord({
+    runId: body.claimId,
+    keywordKey: "manual",
+    page: body.page,
+    durationMs: body.durationMs,
+    collectorVersion: body.extensionVersion,
+    browser: body.browser,
+  });
+  if (!checked.ok) return invalid(MANUAL_FIELD_NAMES[checked.field] ?? checked.field);
+  const query = nullable(body.page.query);
+  if (query !== null && (typeof query !== "string" || codePointLength(query) > MANUAL_QUERY_MAX || CONTROL_CHAR_PATTERN.test(query))) {
+    return invalid("page.query");
+  }
+  return { ok: true };
+}
+
+// 수동 판정: classifyCollectorPage 와 같고 하나만 더한다(M1·D1 대표 결정 '예'). 확장이 탭을 읽지 못했고 주소도 보이지
+// 않으면(쿠팡이 검색 밖 쪽 — 로그인 화면 등 — 으로 보냄. 확장은 그 호스트 권한이 없어 주소를 못 본다) 차단으로 본다.
+export function classifyManualPage(page) {
+  const base = classifyCollectorPage(page);
+  if (base.status === "blocked") return base;
+  if (nullable(page?.errorCode) === MANUAL_UNREADABLE_ERROR_CODE) return { status: "blocked" };
+  return base;
+}
+
+// 차단 신호(그날 중지 사유). classifyManualPage 가 blocked 로 보는 조건과 같은 순서로 사유 코드를 고른다.
+// 모양 검사를 통과하지 못한 본문에도 쓴다(그래서 값의 모양을 하나씩 직접 본다). 신호가 없으면 null.
+export function manualStopSignal(page) {
+  if (!isPlainObject(page)) return null;
+  const httpStatus = nullable(page.httpStatus);
+  if (BLOCKED_HTTP_STATUSES.includes(httpStatus)) return `blocked_http_${httpStatus}`;
+  if (page.blockedText === true) return "blocked_text";
+  if (page.status === "blocked") return "blocked_page";
+  const host = typeof page.finalHost === "string" ? page.finalHost.toLowerCase() : "";
+  const path = typeof page.finalPath === "string" ? page.finalPath : "";
+  if (host === LOGIN_HOST || (isCoupangHost(host) && path.startsWith("/login"))) return "login_redirect";
+  if (nullable(page.errorCode) === MANUAL_UNREADABLE_ERROR_CODE) return "page_unreadable";
+  return null;
 }

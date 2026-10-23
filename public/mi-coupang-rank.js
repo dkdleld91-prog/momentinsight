@@ -225,7 +225,27 @@
     BODY_TOO_LARGE: "요청이 너무 큽니다.",
     METHOD_NOT_ALLOWED: "허용되지 않은 요청입니다.",
     COUPANG_SETUP_REQUIRED: "대표 SQL 실행 전입니다(설정 필요).",
-    COUPANG_RANK_TRACKERS_FAILED: "서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요."
+    COUPANG_RANK_TRACKERS_FAILED: "서버 처리 중 오류가 났습니다. 잠시 뒤 다시 시도하세요.",
+    // ① 지금 확인(spec-manual §6.2). 원인을 모르는 경우는 단정하지 않는다.
+    COUPANG_MANUAL_SETUP_REQUIRED: "지금 확인용 대표 SQL 실행 전입니다.",
+    COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(수집기 관리 → 지금 확인 켜기).",
+    COUPANG_MANUAL_BUDGET: "저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).",
+    COUPANG_MANUAL_STOPPED: "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 지금 확인을 멈췄습니다. 내일 다시 됩니다.",
+    COUPANG_MANUAL_COOLDOWN: "쿠팡 차단 감지로 쉬는 중입니다.",
+    COUPANG_MANUAL_REVIEW: "대표 확인이 필요한 상태라 지금 확인이 멈춰 있습니다.",
+    COUPANG_MANUAL_HOURS: "지금 확인은 정해진 시간에만 됩니다.",
+    COUPANG_MANUAL_BUSY: "다른 확인이 진행 중입니다. 잠시 뒤 다시 눌러 주세요.",
+    COUPANG_MANUAL_DAILY_CAP: "오늘 확인 횟수를 모두 썼습니다. 내일 다시 됩니다.",
+    COUPANG_MANUAL_GAP: "검색 사이 간격을 기다리는 중입니다.",
+    COUPANG_MANUAL_TRACKER_PAUSED: "일시중지한 추적은 확인할 수 없습니다.",
+    COUPANG_MANUAL_TRACKER_INELIGIBLE: "연결이 끊긴 범위라 확인할 수 없습니다.",
+    COUPANG_MANUAL_CLAIM_NOT_FOUND: "확인 요청을 서버에서 찾지 못했습니다.",
+    COUPANG_MANUAL_CLAIM_MISMATCH: "확인 요청이 맞지 않아 결과를 저장하지 않았습니다.",
+    COUPANG_MANUAL_CLAIM_CLOSED: "이미 끝난 확인 요청이라 결과를 저장하지 않았습니다.",
+    COUPANG_MANUAL_CLAIM_USED: "이미 쓴 확인 요청입니다(한 요청으로 검색은 한 번만 합니다).",
+    COUPANG_MANUAL_CLAIM_NOT_VERIFIED: "확장이 서버 확인을 받지 않은 요청이라 결과를 저장하지 않았습니다.",
+    COUPANG_MANUAL_CLAIM_EXPIRED: "확인 요청 기한(10분)이 지나 결과를 저장하지 않았습니다.",
+    COUPANG_MANUAL_RECORD_INVALID: "확인 결과 형식이 맞지 않아 저장하지 못했습니다."
   };
 
   // ── 순수 도우미 ───────────────────────────────────────────────
@@ -686,6 +706,7 @@
     }
     if (code === "COUPANG_SETTINGS_INVALID") return "설정 값이 범위를 벗어났습니다" + (body.field ? "(" + settingLabel(body.field) + ")" : "") + ".";
     if (code === "COUPANG_RAISE_NOT_ALLOWED") return "지금은 속도를 올릴 수 없습니다: " + raiseReasonText(body.reasons);
+    if (code === "COUPANG_MANUAL_RECORD_INVALID" && body.field) return "확인 결과 형식이 맞지 않아 저장하지 못했습니다(칸 " + String(body.field).slice(0, 40) + ").";
     if (ERROR_TEXT[code]) return ERROR_TEXT[code];
     return String(body.message || "요청을 처리하지 못했습니다. 잠시 뒤 다시 시도하세요.");
   }
@@ -799,6 +820,591 @@
     return text ? COUPANG_SEARCH_URL + encodeURIComponent(text) : "";
   }
 
+  // ── ① 지금 확인(spec-manual §7) ───────────────────────────────
+  // 사람이 카드의 '지금 확인'을 누를 때만, 그 사람 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 연다.
+  // 화면 순서: 확장에 묻기(hello) → 서버 1회용 확인(manual-claim) → 확장에 맡기기(check: 확장이 창을 열기 전에
+  // 서버에 그 확인을 직접 확인받는다) → 결과를 서버에 보내기(manual-record) → 목록 다시 받기.
+  // 간격·하루 상한·시간·그날 중지는 서버가 서버 시각으로 정한다. 화면은 서버가 준 시각(serverTime)과 내 시계의
+  // 차이만 보정해 남은 시간을 보여 준다. 예약·반복·전체 확인은 없다(확장에 check 를 보내는 곳은 startManualCheck 하나).
+  // 확장이 따로 기억한 '오늘 차단'으로 화면이 먼저 막지 않는다. 차단 보고는 언제나 서버 기록 경로로 보낸다.
+
+  var MANUAL_HELLO_TYPE = "mi-coupang-hello";
+  var MANUAL_CHECK_TYPE = "mi-coupang-check";
+  // 서버가 결과를 받은 뒤 확장에 '남겨 둔 결과를 지워도 된다'고 알린다(검색 아님).
+  var MANUAL_ACK_TYPE = "mi-coupang-ack";
+  var MANUAL_EXTENSION_NAME = "모먼트 인사이트 쿠팡 순위 확인";
+  var MANUAL_FOLDER_NAME = "mi-coupang-check";
+  var MANUAL_FOLDER_PATTERN = /^[a-z0-9-]{1,40}$/;
+  var MANUAL_ZIP_PATH_PATTERN = /^\/coupang-check\/[A-Za-z0-9._-]{1,80}\.zip$/;
+  var MANUAL_EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
+  var MANUAL_CODE_PATTERN = /^[a-z0-9_]{1,60}$/;
+  var MANUAL_VERSION_PATTERN = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
+  var MANUAL_HELLO_TIMEOUT_MS = 5000;
+  var MANUAL_HELLO_CACHE_MS = 30000;
+  var MANUAL_CLAIM_TIMEOUT_MS = 20000;
+  // 확장은 창을 연 뒤 120초 안에 끝낸다. 150초가 지나면 '늦습니다'만 알리고, 늦은 보고 창(10분) 안인 9분까지 기다린다.
+  var MANUAL_CHECK_SLOW_MS = 150000;
+  var MANUAL_CHECK_GIVE_UP_MS = 540000;
+  var MANUAL_RECORD_TIMEOUT_MS = 30000;
+  var MANUAL_RECORD_RETRY_MS = [3000, 10000];
+  // 결과를 보내지 못했을 때 다시 보내려고 남겨 두는 자리(새 탭에서도 보이게 localStorage). 10분 뒤에는 버린다.
+  var MANUAL_PENDING_KEY = "miCoupangRankManual:v1:pending";
+  var MANUAL_PENDING_MAX_MS = 10 * 60 * 1000;
+  var MANUAL_RESUME_POLL_MS = 15000;
+  var MANUAL_RESUME_POLL_MAX = 40;
+  var MANUAL_RESUME_GAP_MS = 30000;
+  var MANUAL_TICK_MS = 1000;
+  var MANUAL_BUSY_REFRESH_PAD_MS = 2000;
+  var KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  // 확장·서버가 주는 사유 코드 → 쉬운 문구(끝 마침표 없음). 원인을 모르는 경우는 단정하지 않는다.
+  var MANUAL_CODE_TEXT = {
+    // 확장이 창을 열기 전에 멈춘 사유(not_started) — 이때는 쿠팡 검색을 하지 않았다
+    extension_missing: "이 크롬에서 '" + MANUAL_EXTENSION_NAME + "' 확장을 찾지 못했습니다(설치 안 됨·꺼짐·개발자 모드 꺼짐)",
+    extension_outdated: "확장 버전이 낮아 시작하지 않았습니다",
+    extension_refused: "확장이 시작하지 않았습니다",
+    incognito_not_allowed: "확장의 '시크릿 모드에서 허용'이 꺼져 있어 시작하지 않았습니다",
+    host_access_withheld: "확장의 '사이트 액세스'가 막혀 있어 시작하지 않았습니다",
+    incognito_window_open: "다른 시크릿 창이 열려 있어 시작하지 않았습니다(모든 시크릿 창을 닫아 주세요)",
+    busy: "확장이 다른 확인을 하는 중이라 시작하지 않았습니다",
+    too_soon: "확장이 방금 확인해서 시작하지 않았습니다(검색 사이 3분)",
+    bad_request: "확장이 요청 형식을 받지 않았습니다(확장 버전을 확인해 주세요)",
+    origin_rejected: "확장이 이 화면에서 온 요청을 받지 않았습니다(주소가 insight.momentlabs.co.kr 인지 확인해 주세요)",
+    window_create_failed: "시크릿 창을 열지 못했습니다(크롬 설정에서 시크릿 모드가 막혀 있을 수 있습니다)",
+    window_create_null: "시크릿 창을 열었지만 확장이 그 창을 다룰 수 없어 멈췄습니다(열린 시크릿 창을 직접 닫고 '시크릿 모드에서 허용'을 켜 주세요)",
+    claim_reused: "이미 쓴 확인 요청이라 확장이 시작하지 않았습니다",
+    report_pending: "앞서 차단으로 보인 결과가 아직 서버에 가지 않아 확장이 새 검색을 하지 않았습니다(그 결과를 먼저 보냅니다)",
+    verify_refused: "서버가 이번 확인을 허락하지 않아 확장이 시작하지 않았습니다",
+    verify_session_required: "확장이 서버에 확인받으려 했지만 로그인 세션이 없다고 합니다(같은 크롬에서 관리자 화면에 로그인해 주세요)",
+    verify_unreachable: "확장이 서버에 연결하지 못해 시작하지 않았습니다(인터넷 연결 확인)",
+    verify_invalid: "확장이 서버 확인 응답을 알아보지 못해 시작하지 않았습니다(확장 버전을 확인해 주세요)",
+    extension_error: "확장 안에서 오류가 나 시작하지 않았습니다(chrome://extensions 에서 확장을 새로고침(↻)해 주세요)",
+    browser_unsupported: "지금 확인은 크롬에서만 됩니다",
+    blocked_today: "오늘 차단으로 보이는 화면이 있어 확장이 시작하지 않았습니다",
+    stopped: "오늘 '지금 확인'이 멈춰 있어 시작하지 않았습니다",
+    daily_cap: "오늘 확인 횟수를 모두 써서 시작하지 않았습니다",
+    hours: "정해진 시간 밖이라 시작하지 않았습니다",
+    gap: "검색 사이 간격이 지나지 않아 시작하지 않았습니다",
+    // 확장 답이 없음(lost) — 검색이 됐는지 화면은 모른다
+    extension_no_response: "확장이 답하지 않았습니다(확인 중에 확장이 멈췄거나 꺼졌을 수 있습니다)",
+    extension_timeout: "확장 응답을 9분 동안 받지 못해 기다리기를 멈췄습니다",
+    // 창을 연 뒤의 실패(확장 page.errorCode · 서버 판정 코드)
+    page_timeout: "쿠팡 화면이 45초 안에 다 열리지 않았습니다",
+    window_closed: "확인 중에 시크릿 창이 닫혔습니다",
+    browser_hard_cap: "2분 안에 끝나지 않아 확장이 창을 닫았습니다",
+    page_load_failed: "쿠팡 화면을 불러오지 못했습니다(인터넷 연결 확인)",
+    page_unreadable: "쿠팡이 검색이 아닌 곳(로그인 화면 등)으로 보내 화면을 읽지 못했습니다",
+    extract_failed: "화면에서 상품 목록을 읽지 못했습니다",
+    user_navigated: "확인 중에 창 안에서 다른 쪽으로 옮겨졌습니다(창 안을 누르지 마세요)",
+    query_mismatch: "창의 검색어가 요청한 키워드와 달랐습니다(창 안에서 검색하지 마세요)",
+    login_state_unknown: "로그인하지 않은 화면인지 확인하지 못해 순위를 기록하지 않았습니다",
+    foreign_navigation: "쿠팡 밖 주소로 옮겨졌습니다",
+    empty_page: "일반 상품 목록이 비어 있었습니다(원인은 확인하지 못했습니다)",
+    record_invalid: "확인 결과 형식이 맞지 않았습니다"
+  };
+
+  // 서버 판정(실패 쪽) → 문구. 성공(ok·noresult)과 차단(blocked)은 따로 쓴다.
+  var MANUAL_STATUS_TEXT = {
+    partial: "목록을 끝까지 읽지 못했습니다(읽는 동안 상품 수가 바뀌었습니다)",
+    empty: "일반 상품을 읽지 못했습니다(목록이 비어 있었거나 광고만 보였습니다. 원인은 확인하지 못했고, 차단으로 보지 않았습니다)",
+    error: "확인하지 못했습니다",
+    timeout: "쿠팡 화면이 제때 열리지 않았습니다",
+    unsupported: "쿠팡이 검색 결과가 아닌 쪽으로 보내 순위를 기록하지 못했습니다('이동'으로 기록)"
+  };
+
+  // 그날 중지 사유(서버 manual.stoppedCode · 기록 응답 stopCode = contract MANUAL_STOP_CODES) → 짧은 말.
+  // 모르는 코드면 사유를 쓰지 않는다(원인을 단정하지 않는다).
+  var MANUAL_STOP_REASON_TEXT = {
+    blocked_http_403: "쿠팡 응답 HTTP 403",
+    blocked_http_429: "쿠팡 응답 HTTP 429",
+    blocked_http_503: "쿠팡 응답 HTTP 503",
+    blocked_text: "쿠팡 '사용권한' 안내 화면",
+    blocked_page: "확장이 차단으로 본 화면",
+    login_redirect: "로그인 화면으로 보내짐",
+    page_unreadable: "검색이 아닌 곳(로그인 화면 등)으로 보내져 읽지 못함",
+    extension_reported: "확장이 오늘 차단으로 보이는 화면을 봤다고 알림"
+  };
+
+  function manualSafeCode(value) {
+    var code = String(value == null ? "" : value);
+    return MANUAL_CODE_PATTERN.test(code) ? code : "";
+  }
+
+  function manualCodeText(code) {
+    var safe = manualSafeCode(code);
+    if (safe && MANUAL_CODE_TEXT[safe]) return MANUAL_CODE_TEXT[safe];
+    return safe ? "확장이 끝내지 못했습니다(사유 코드 " + safe + ")" : "확장이 끝내지 못했습니다(사유를 받지 못함)";
+  }
+
+  // x.y.z 비교(contract.mjs compareVersion 과 같은 규칙).
+  function compareVersionText(left, right) {
+    var a = String(left || "0.0.0").split(".").map(Number);
+    var b = String(right || "0.0.0").split(".").map(Number);
+    for (var index = 0; index < 3; index += 1) {
+      if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) < (b[index] || 0) ? -1 : 1;
+    }
+    return 0;
+  }
+
+  // 한국은 서머타임이 없어 KST = UTC+9 로 고정 계산한다(내 컴퓨터 시간대와 무관).
+  function kstDayAt(ms) {
+    if (!isNum(ms)) return "";
+    return new Date(ms + KST_OFFSET_MS).toISOString().slice(0, 10);
+  }
+
+  function kstHourAt(ms) {
+    if (!isNum(ms)) return null;
+    return new Date(ms + KST_OFFSET_MS).getUTCHours();
+  }
+
+  function countdownText(ms) {
+    var seconds = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+    var minutes = Math.floor(seconds / 60);
+    var rest = seconds % 60;
+    return minutes ? minutes + "분 " + pad2(rest) + "초" : rest + "초";
+  }
+
+  function manualHours(info) {
+    var from = info && isNum(info.fromHour) ? info.fromHour : 9;
+    var to = info && isNum(info.toHour) ? info.toHour : 19;
+    return { from: from, to: to, text: pad2(from) + "~" + pad2(to) + "시" };
+  }
+
+  function manualGapMinutes(info) {
+    var seconds = info && isNum(info.minGapSeconds) ? info.minGapSeconds : 180;
+    return Math.round(seconds / 6) / 10;
+  }
+
+  // 서버가 보낸 상태(그 시각의 사진)를 지금 시각(서버 시각으로 보정한 값)에 맞춰 옮긴다. 화면 표시용이다.
+  // 누를 때는 서버가 다시 정한다. 간격이 지났으면 가능, 하루가 바뀌면 그날 중지·하루 상한은 풀린 것으로 본다.
+  function manualProjected(server, now) {
+    var info = server || {};
+    var stateName = String(info.state || "");
+    var hours = manualHours(info);
+    var today = kstDayAt(now);
+    var serverDay = kstDayAt(Date.parse(info.serverTime));
+    var newDay = Boolean(today && serverDay && today !== serverDay);
+    var hour = kstHourAt(now);
+    var inHours = hour === null ? true : (hour >= hours.from && hour < hours.to);
+    var nextAt = Date.parse(info.nextAt);
+    var busyUntil = Date.parse(info.busyUntil);
+    if (stateName === "stopped") {
+      if (!newDay && (!info.stoppedDay || String(info.stoppedDay) === today)) stateName = "stopped";
+      else stateName = "ready";
+    }
+    if (stateName === "daily_cap" && newDay) stateName = "ready";
+    if (stateName === "busy" && isFinite(busyUntil) && busyUntil <= now) stateName = "ready";
+    if (stateName === "gap" && (!isFinite(nextAt) || nextAt <= now)) stateName = "ready";
+    if (stateName === "hours" && inHours && !newDay) stateName = "ready";
+    if ((stateName === "ready" || stateName === "gap") && !inHours) stateName = "hours";
+    if (stateName === "ready" && isFinite(nextAt) && nextAt > now) stateName = "gap";
+    return {
+      state: stateName,
+      used: newDay ? 0 : (isNum(info.usedToday) ? info.usedToday : 0),
+      max: isNum(info.maxPerDay) ? info.maxPerDay : 30,
+      hours: hours,
+      remainingMs: stateName === "gap" && isFinite(nextAt) ? nextAt - now : 0
+    };
+  }
+
+  function manualIsChromeAgent(userAgent) {
+    var ua = String(userAgent || "");
+    if (!ua) return true;
+    return /Chrome\//.test(ua) && !/Edg\/|OPR\/|Whale\/|SamsungBrowser\//.test(ua);
+  }
+
+  // 확장 hello 답 → 화면이 쓰는 모양. version 이 x.y.z 가 아니면 알 수 없는 답으로 본다.
+  function parseHelloReply(result) {
+    if (!result || result.ok !== true) return { status: "missing", code: manualSafeCode(result && result.code) };
+    var reply = result.reply;
+    if (!reply || typeof reply !== "object") return { status: "invalid" };
+    if (reply.ok === false) return { status: reply.code === "origin_rejected" ? "rejected" : "invalid", code: manualSafeCode(reply.code) };
+    if (reply.ok !== true || typeof reply.version !== "string" || !MANUAL_VERSION_PATTERN.test(reply.version)) return { status: "invalid" };
+    var flag = function (value) { return value === true ? true : (value === false ? false : null); };
+    var leftover = reply.leftover && typeof reply.leftover === "object" ? reply.leftover : {};
+    return {
+      status: "ok",
+      version: reply.version,
+      incognitoAllowed: flag(reply.incognitoAllowed),
+      hostAccess: flag(reply.hostAccess),
+      incognitoWindowOpen: flag(reply.incognitoWindowOpen),
+      busy: reply.busy === true,
+      // 확장이 지난번 창을 닫지 못했는지(leftover.unknown) · 이번에 닫은 남은 창 수(leftover.closed)
+      leftoverWindow: leftover.unknown === true,
+      leftoverClosed: isNum(leftover.closed) && leftover.closed > 0 ? leftover.closed : 0,
+      browser: typeof reply.browser === "string" ? reply.browser.slice(0, 60) : "",
+      pending: parseHeldResult(reply.pending)
+    };
+  }
+
+  // 확장이 서버에 보내기 전까지 남겨 둔 결과(hello.pending · check report_pending). { claimId, claimToken, stop, reply }
+  function parseHeldResult(value) {
+    if (!value || typeof value !== "object" || typeof value.claimId !== "string" || !value.claimId) return null;
+    return {
+      claimId: value.claimId,
+      claimToken: typeof value.claimToken === "string" ? value.claimToken : "",
+      stop: value.stop === true,
+      reply: value.reply && typeof value.reply === "object" ? value.reply : null
+    };
+  }
+
+  // 확장 check 답 → measured / not_started / lost. 결과는 화면이 서버에 보낸다(확장은 ack 를 받을 때까지 결과를 들고 있다).
+  function parseCheckReply(result) {
+    if (!result || result.ok !== true) {
+      var code = result && result.code;
+      if (code === "extension_missing") return { outcome: "not_started", code: "extension_missing" };
+      return { outcome: "lost", code: code === "extension_timeout" ? "extension_timeout" : "extension_no_response" };
+    }
+    var reply = result.reply;
+    if (!reply || typeof reply !== "object") return { outcome: "lost", code: "extension_no_response" };
+    if (reply.outcome === "measured" && reply.page && typeof reply.page === "object") {
+      return {
+        outcome: "measured",
+        page: reply.page,
+        durationMs: Number.isSafeInteger(reply.durationMs) && reply.durationMs >= 0 ? reply.durationMs : null,
+        extensionVersion: typeof reply.extensionVersion === "string" && MANUAL_VERSION_PATTERN.test(reply.extensionVersion) ? reply.extensionVersion : "",
+        browser: typeof reply.browser === "string" ? reply.browser.slice(0, 60) : "",
+        windowLeftOpen: reply.windowLeftOpen === true
+      };
+    }
+    if (reply.outcome === "not_started" || reply.ok === false) {
+      return {
+        outcome: "not_started",
+        code: manualSafeCode(reply.code) || "extension_refused",
+        windowLeftOpen: reply.windowLeftOpen === true,
+        retryAfterSec: Number.isSafeInteger(reply.retryAfterSec) && reply.retryAfterSec > 0 ? reply.retryAfterSec : null,
+        serverCode: typeof reply.serverCode === "string" && /^[A-Z][A-Z0-9_]{0,59}$/.test(reply.serverCode) ? reply.serverCode : "",
+        held: parseHeldResult(reply.pending)
+      };
+    }
+    return { outcome: "lost", code: "extension_no_response" };
+  }
+
+  // manual-record 본문(spec-manual §6.4). 확장 버전·브라우저가 답에 없으면 hello 값을 쓴다.
+  function manualRecordBody(claim, parsed, hello) {
+    var body = { action: "manual-record", claimId: claim.claimId, claimToken: claim.claimToken, outcome: parsed.outcome };
+    if (parsed.outcome === "measured") {
+      body.page = parsed.page;
+      if (isNum(parsed.durationMs)) body.durationMs = parsed.durationMs;
+      var version = parsed.extensionVersion || (hello && hello.status === "ok" ? hello.version : "");
+      var browser = parsed.browser || (hello && hello.status === "ok" ? hello.browser : "");
+      if (version) body.extensionVersion = version;
+      if (browser) body.browser = browser;
+    } else if (manualSafeCode(parsed.code)) {
+      body.outcomeCode = parsed.code;
+    }
+    return body;
+  }
+
+  // 차단으로 본 화면의 짧은 사유(보낸 쪽 결과에서). 모르면 빈 글.
+  function manualBlockDetail(page, errorCode) {
+    var info = page && typeof page === "object" ? page : {};
+    var status = isNum(info.httpStatus) ? info.httpStatus : null;
+    if (status === 403 || status === 429 || status === 503) return "쿠팡 응답 HTTP " + status;
+    if (info.blockedText === true) return "쿠팡 '사용권한' 안내 화면";
+    var code = manualSafeCode(errorCode) || manualSafeCode(info.errorCode);
+    if (code === "page_unreadable") return MANUAL_STOP_REASON_TEXT.page_unreadable;
+    if (String(info.finalHost || "") === "login.coupang.com") return MANUAL_STOP_REASON_TEXT.login_redirect;
+    return "";
+  }
+
+  function manualStopText(server, detail) {
+    var info = server || {};
+    var at = kstClock(info.stoppedAt);
+    var reason = detail || MANUAL_STOP_REASON_TEXT[manualSafeCode(info.stoppedCode)] || "";
+    var extra = [at, reason].filter(Boolean).join(" · ");
+    return "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 모두 멈췄습니다" + (extra ? "(" + extra + ")" : "") +
+      ". 내일 " + pad2(manualHours(info).from) + "시부터 저절로 다시 됩니다.";
+  }
+
+  function manualUsage(info) {
+    if (!info || !isNum(info.usedToday) || !isNum(info.maxPerDay)) return "";
+    return " (오늘 " + info.usedToday + "/" + info.maxPerDay + "번 사용)";
+  }
+
+  // 확장 쪽 문제(창을 열 수 없는 상태). 막히면 { text, guide } 를, 아니면 null.
+  function manualHelloBlock(hello, server, userAgent) {
+    var info = hello || {};
+    var minimum = server && MANUAL_VERSION_PATTERN.test(String(server.minExtensionVersion || "")) ? server.minExtensionVersion : "";
+    if (info.status === "noid") return { text: "지금 확인: 서버가 확장 ID 를 보내지 않아 확장을 찾을 수 없습니다(배포 확인 필요).", guide: false };
+    if (info.status === "missing" || info.status === "invalid" || info.status === "rejected") {
+      if (!manualIsChromeAgent(userAgent)) return { text: "지금 확인은 크롬에서만 됩니다. 크롬으로 이 화면을 열어 주세요.", guide: false };
+      if (info.status === "rejected") return { text: "지금 확인: " + MANUAL_CODE_TEXT.origin_rejected + ".", guide: false };
+      if (info.status === "invalid") return { text: "지금 확인: 확장이 알 수 없는 답을 했습니다. chrome://extensions 에서 확장을 새로고침(↻)하거나 설치 안내대로 다시 설치해 주세요.", guide: true };
+      return { text: "지금 확인: 이 크롬에 '" + MANUAL_EXTENSION_NAME + "' 확장이 없거나 꺼져 있습니다. chrome://extensions 에서 개발자 모드와 확장 스위치가 켜져 있는지 확인하고, 처음이면 설치 안내를 따라 주세요.", guide: true };
+    }
+    if (info.status !== "ok") return null;
+    if (minimum && compareVersionText(info.version, minimum) < 0) {
+      return { text: "지금 확인: 확장을 새 버전으로 바꿔 주세요(지금 v" + info.version + ", 필요 v" + minimum + "). 설치 안내의 '업데이트' 순서를 따라 주세요.", guide: true };
+    }
+    if (/^edge\b/i.test(info.browser || "") || !manualIsChromeAgent(userAgent)) return { text: "지금 확인은 크롬에서만 됩니다. 크롬으로 이 화면을 열어 주세요.", guide: false };
+    if (info.incognitoAllowed !== true) {
+      return { text: "지금 확인: 확장의 '시크릿 모드에서 허용'이 꺼져 있습니다. 주소창에 chrome://extensions 입력 → 확장 '세부정보' → '시크릿 모드에서 허용'을 켜 주세요.", guide: true };
+    }
+    if (info.hostAccess === false) {
+      return { text: "지금 확인: 확장의 '사이트 액세스'가 막혀 있습니다. chrome://extensions → 확장 '세부정보' → '사이트 액세스'를 '모든 사이트에서'로 바꿔 주세요(쿠팡 쪽 읽기와 서버 확인에 필요합니다).", guide: true };
+    }
+    // 확장은 사이트 액세스·다른 시크릿 창을 확인하지 못하면 창을 열지 않는다. 누르기 전에 같은 기준으로 멈춘다(요청 횟수를 쓰지 않게).
+    if (info.hostAccess !== true) {
+      return { text: "지금 확인: 확장이 '사이트 액세스' 상태를 알려 주지 않았습니다. chrome://extensions 에서 확장을 새로고침(↻)한 뒤 다시 열어 주세요.", guide: false };
+    }
+    if (info.incognitoWindowOpen !== true && info.incognitoWindowOpen !== false) {
+      return { text: "지금 확인: 확장이 다른 시크릿 창이 있는지 알려 주지 않았습니다. 확장을 새로고침(↻)한 뒤 다시 눌러 주세요.", guide: false };
+    }
+    return null;
+  }
+
+  // 누르기 직전 검사: 확장 쪽 문제 + 다른 시크릿 창 + 확장 작업 중. 막히면 문구, 아니면 "".
+  function manualPreflightText(hello, server, userAgent) {
+    var block = manualHelloBlock(hello, server, userAgent);
+    if (block) return block.text;
+    var info = hello || {};
+    if (info.status !== "ok") return "지금 확인: 확장 상태를 확인하지 못했습니다. 잠시 뒤 다시 눌러 주세요.";
+    if (info.incognitoWindowOpen === true) return manualIncognitoText(info) + " 쿠팡 검색은 하지 않았습니다.";
+    if (info.busy) return "지금 확인: 확장이 다른 확인을 하는 중입니다. 잠시 뒤 다시 눌러 주세요.";
+    return "";
+  }
+
+  function manualIncognitoText(hello) {
+    if (hello && hello.leftoverWindow) return "지금 확인: 확장이 지난번에 연 시크릿 창이 남아 있습니다. 열린 시크릿 창을 모두 직접 닫은 뒤 눌러 주세요.";
+    return "지금 확인: 다른 시크릿 창이 열려 있습니다. 모든 시크릿 창을 닫고 눌러 주세요(같은 시크릿 세션을 쓰지 않으려는 규칙).";
+  }
+
+  function manualRunText(run) {
+    var phase = run && run.phase;
+    if (phase === "hello") return "지금 확인: 이 크롬의 확장 상태를 확인하는 중입니다…";
+    if (phase === "claim") return "지금 확인: 서버에 확인 요청을 받는 중입니다…";
+    if (phase === "record") return run.resumed ? "지금 확인: 앞서 보내지 못한 확인 결과를 서버에 보내는 중입니다…" : "지금 확인: 결과를 서버에 기록하는 중입니다…";
+    if (run && run.slow) return "지금 확인: 확장 응답이 늦습니다. 최대 9분까지 기다립니다. 이 화면을 닫지 마세요.";
+    return "확인 중입니다… 새 시크릿 창이 잠깐 열렸다 닫힙니다(약 20초). 창 안을 누르거나 창을 내리거나 가리지 말고, 이 화면도 닫지 마세요.";
+  }
+
+  // 상태 줄 하나(spec-manual §7.3 표 + 반박 검토 반영). 위에서부터 처음 맞는 것을 쓴다.
+  // input: { server, now(서버 시각으로 보정한 ms), hello, run, stopDetail, ownPending, userAgent }
+  // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state }
+  function manualView(input) {
+    var options = input || {};
+    var server = options.server;
+    var hidden = { visible: false, enabled: false, text: "", tone: "", banner: false, countdown: false, guide: false, state: "" };
+    if (!server || typeof server !== "object") return hidden;
+    var serverState = String(server.state || "");
+    if (!serverState || serverState === "off" || serverState === "setup_required") return Object.assign(hidden, { state: serverState });
+    var now = isNum(options.now) ? options.now : Date.now();
+    var projected = manualProjected(server, now);
+    var make = function (enabled, text, tone, extra) {
+      return Object.assign({ visible: true, enabled: enabled, text: text, tone: tone || "", banner: false, countdown: false, guide: false, state: projected.state }, extra || {});
+    };
+    var hours = projected.hours;
+    // 그날 중지는 가장 중요한 알림이라 확장 상태보다 먼저 띠로 보인다(확장이 없어도 보여야 한다).
+    if (projected.state === "stopped") return make(false, manualStopText(server, options.stopDetail), "is-warn", { banner: true });
+    if (options.run) return make(false, manualRunText(options.run), "");
+    var hello = options.hello;
+    if (!hello || hello.status === "pending") return make(false, "지금 확인: 이 크롬의 확장을 확인하는 중입니다…", "");
+    var block = manualHelloBlock(hello, server, options.userAgent);
+    if (block) return make(false, block.text, "is-warn", { guide: block.guide === true });
+    switch (projected.state) {
+      case "budget": return make(false, "지금 확인: 저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).", "is-warn");
+      case "review": return make(false, "지금 확인: 대표 확인이 필요한 상태라 멈춰 있습니다.", "is-warn");
+      case "cooldown": {
+        var until = server.cooldownUntil ? shortAt(server.cooldownUntil) : "";
+        return make(false, "지금 확인: 쿠팡 차단 감지로 쉬는 중입니다" + (until && until !== "-" ? "(~" + until + ")" : "") + ".", "is-warn");
+      }
+      case "hours": return make(false, "지금 확인은 " + hours.text + "에만 됩니다(서버 시각 기준).", "");
+      case "busy":
+        return make(false, options.ownPending ? "지금 확인: 방금 누른 확인이 아직 진행 중입니다. 이 화면을 닫지 마세요." : "지금 확인: 다른 확인이 진행 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
+      case "daily_cap": return make(false, "지금 확인: 오늘 " + projected.max + "번을 모두 썼습니다. 내일 " + pad2(hours.from) + "시부터 다시 됩니다.", "");
+      case "gap":
+        return make(false, "다음 확인은 " + countdownText(projected.remainingMs) + " 뒤에 할 수 있습니다(검색 사이 " + manualGapMinutes(server) + "분 · 오늘 " + projected.used + "/" + projected.max + "번).", "", { countdown: true });
+      default:
+        break;
+    }
+    if (hello.busy) return make(false, "지금 확인: 확장이 다른 확인을 하는 중입니다. 잠시 뒤 다시 눌러 주세요.", "");
+    // 다른 시크릿 창은 누를 때 확장에 다시 묻는다(닫았으면 그대로 진행). 그래서 버튼은 켜 둔다.
+    if (hello.incognitoWindowOpen === true) return make(true, manualIncognitoText(hello), "is-warn");
+    if (projected.state === "ready") {
+      return make(true, "지금 확인: 오늘 " + projected.used + "/" + projected.max + "번 · " + hours.text + " · 검색 사이 " + manualGapMinutes(server) +
+        "분 · 누르면 새 시크릿 창이 잠깐 열렸다 닫힙니다.", "");
+    }
+    return make(false, "지금 확인: 상태를 알 수 없습니다(" + (manualSafeCode(projected.state) || "?") + "). 화면을 새로고침해 주세요.", "is-warn");
+  }
+
+  // claim 거절 문구(쿠팡 검색 전). result = { payload, transport, httpStatus }
+  function manualClaimRefusalText(result, server) {
+    var payload = result && result.payload || {};
+    var info = payload.manual || server || {};
+    var tail = " 쿠팡 검색은 하지 않았습니다.";
+    if (result && result.transport) return "서버에 연결하지 못해 확인을 시작하지 않았습니다(인터넷 연결을 확인해 주세요)." + tail;
+    var code = String(payload.code || "");
+    if (code === "COUPANG_MANUAL_GAP") {
+      var wait = isNum(payload.retryAfterSec) ? payload.retryAfterSec * 1000 : NaN;
+      return "검색 사이 간격(" + manualGapMinutes(info) + "분)을 기다리는 중입니다" + (isFinite(wait) && wait > 0 ? "(" + countdownText(wait) + " 남음)" : "") + "." + tail;
+    }
+    if (code === "COUPANG_MANUAL_BUSY" && isNum(payload.retryAfterSec) && payload.retryAfterSec > 0) {
+      return "다른 확인이 진행 중입니다(약 " + countdownText(payload.retryAfterSec * 1000) + " 뒤 다시 눌러 주세요)." + tail;
+    }
+    if (code === "COUPANG_MANUAL_HOURS") return "지금 확인은 " + manualHours(info).text + "에만 됩니다." + tail;
+    if (code === "COUPANG_MANUAL_DAILY_CAP") return "오늘 확인 " + (isNum(info.maxPerDay) ? info.maxPerDay + "번" : "횟수") + "을 모두 썼습니다. 내일 다시 됩니다." + tail;
+    if (!code && result && result.httpStatus >= 500) return "서버 처리 중 오류가 나 확인을 시작하지 않았습니다. 잠시 뒤 다시 눌러 주세요." + tail;
+    if (code === "COUPANG_MANUAL_STOPPED") return manualStopText(info, "");
+    return errorText(payload) + tail;
+  }
+
+  // 시작 못 함·응답 없음 사유. 서버가 거절한 코드(serverCode)·다시 누를 수 있는 시간(retryAfterSec)을 덧붙인다.
+  function manualNotStartedText(check) {
+    var text = manualCodeText(check && check.code);
+    if (check && check.serverCode && ERROR_TEXT[check.serverCode]) text += "(" + ERROR_TEXT[check.serverCode].replace(/\.$/, "") + ")";
+    if (check && isNum(check.retryAfterSec) && check.retryAfterSec > 0) text += " " + countdownText(check.retryAfterSec * 1000) + " 뒤에 다시 눌러 주세요";
+    return text;
+  }
+
+  // 결과 문구. recorded = { payload, transport, httpStatus }, parsed = parseCheckReply 결과.
+  // 반환 { text, tone, stopped, detail }
+  function manualRecordText(recorded, parsed, keyword, server) {
+    var result = recorded || {};
+    var payload = result.payload || {};
+    var info = payload.manual || server || null;
+    var check = parsed || { outcome: "lost", code: "extension_no_response" };
+    var quoted = keyword ? "'" + keyword + "' " : "";
+    var left = check.windowLeftOpen ? " 확장이 연 시크릿 창이 남아 있을 수 있습니다. 열린 시크릿 창을 직접 닫아 주세요." : "";
+    if (result.transport) return { text: "결과를 서버에 보내지 못했습니다(인터넷 연결을 확인해 주세요). 이 화면을 10분 안에 다시 열면 저절로 다시 보냅니다." + left, tone: "is-warn" };
+    if (result.httpStatus === 401 || payload.code === "SESSION_REQUIRED" || payload.code === "COUPANG_SESSION_REQUIRED") {
+      return { text: "로그인이 풀려 결과를 보내지 못했습니다. 10분 안에 다시 로그인하면 이 화면이 저절로 다시 보냅니다." + left, tone: "is-warn" };
+    }
+    if (!payload.code && payload.ok !== true && result.httpStatus >= 500) {
+      return { text: "서버 처리 중 오류가 나 결과를 저장하지 못했습니다. 이 화면을 10분 안에 다시 열면 저절로 다시 보냅니다." + left, tone: "is-warn" };
+    }
+    var detail = MANUAL_STOP_REASON_TEXT[manualSafeCode(payload.stopCode)] || (check.outcome === "measured" ? manualBlockDetail(check.page, payload.errorCode) : "");
+    if (payload.stopped === true || payload.status === "blocked") {
+      return {
+        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " 오늘 '지금 확인'을 모두 멈췄습니다. 내일 " + pad2(manualHours(info).from) + "시부터 저절로 다시 됩니다." + left,
+        tone: "is-warn",
+        stopped: true,
+        detail: detail
+      };
+    }
+    var usage = manualUsage(info);
+    if (check.outcome !== "measured") {
+      var head = manualNotStartedText(check) + ".";
+      var searched = check.outcome === "not_started" ? " 쿠팡 검색은 하지 않았습니다." : " 검색이 됐는지는 확인하지 못했습니다.";
+      if (payload.ok === true || payload.code === "COUPANG_MANUAL_CLAIM_CLOSED") return { text: head + searched + usage + left, tone: "is-warn" };
+      return { text: head + searched + " " + errorText(payload) + left, tone: "is-warn" };
+    }
+    if (payload.ok !== true) return { text: "확인 결과를 저장하지 못했습니다: " + errorText(payload) + left, tone: "is-warn" };
+    var status = String(payload.status || "");
+    var prefix = payload.duplicate === true ? "이미 기록한 확인입니다. " : "";
+    if (status === "ok") {
+      var tracker = payload.tracker || null;
+      var matched = isNum(payload.matched) && payload.matched > 1 ? " · 같은 키워드 추적 " + payload.matched + "개에 기록" : "";
+      var text;
+      if (tracker && tracker.result === "found" && isNum(tracker.rank)) {
+        text = "확인 완료: " + quoted + "일반 " + tracker.rank + "위" + (isNum(tracker.organicCount) ? "(일반 " + tracker.organicCount + "개 중)" : "") + matched + ".";
+      } else if (tracker && tracker.result === "out") {
+        text = "확인 완료: " + quoted + "1쪽 일반 상품 1~" + RANK_TOP + "위 안에 없어 '" + RANK_TOP + "위 밖'으로 기록했습니다" +
+          (isNum(tracker.adOrder) ? "(광고 칸 " + tracker.adOrder + "번째에만 보임)" : "") + matched + ".";
+      } else if (tracker && tracker.result === "short") {
+        text = "확인 완료: " + quoted + "1쪽 일반 상품" + (isNum(tracker.organicCount) ? " " + tracker.organicCount + "개" : "") + " 안에 없어 '없음'으로 기록했습니다" + matched + ".";
+      } else {
+        text = "확인 완료: " + quoted + "기록했습니다" + matched + ". 카드의 '현재' 값을 새로 받습니다.";
+      }
+      return { text: prefix + text + usage + left, tone: "is-ok" };
+    }
+    if (status === "noresult") return { text: prefix + "확인 완료: " + quoted + "쿠팡 검색 결과가 없어 '결과 없음'으로 기록했습니다." + usage + left, tone: "is-ok" };
+    var code = manualSafeCode(payload.errorCode) || manualSafeCode(check.page && check.page.errorCode);
+    var reason;
+    if (status === "partial" && check.page && check.page.wasHidden === true) reason = "확인 중에 창이 가려지거나 내려가 목록을 끝까지 읽지 못했습니다(다음에는 창을 가리지 마세요)";
+    else if (code && MANUAL_CODE_TEXT[code]) reason = MANUAL_CODE_TEXT[code];
+    else reason = MANUAL_STATUS_TEXT[status] || "확인하지 못했습니다";
+    var keep = status === "unsupported" ? "" : " 순위는 기록하지 않았습니다.";
+    return { text: prefix + quoted + reason + "." + keep + usage + left, tone: "is-warn" };
+  }
+
+  // 설치 안내(대표가 따라 할 순서). 문자열은 그대로, { b } 는 굵게.
+  function manualGuideSteps(zipName, folderName) {
+    var folder = MANUAL_FOLDER_PATTERN.test(String(folderName || "")) ? String(folderName) : MANUAL_FOLDER_NAME;
+    var file = zipName || (folder + "-버전.zip");
+    return [
+      ["크롬 전용입니다. 대표가 평소 쓰는 크롬 프로필에 설치합니다. ", { b: "네이버 수집용 크롬(데스크탑 Profile 3)과 맥 대기 수집 프로필(Profile 5)에는 설치하지 마세요." },
+        " 확인: 주소창에 chrome://version → '프로필 경로' 끝이 Profile 3·Profile 5 가 아니어야 합니다."],
+      ["위 '확장 내려받기(zip)'를 누릅니다. 다운로드 폴더에 " + file + " 이 생깁니다."],
+      ["zip 을 두 번 눌러 풉니다. 생긴 " + folder + " 폴더를 홈 폴더(Finder → 이동 → 홈) 아래 새 폴더 '모먼트인사이트'로 옮깁니다(문서·다운로드·데스크탑 폴더는 쓰지 않습니다)."],
+      ["주소창에 chrome://extensions 를 입력하고 오른쪽 위 '개발자 모드(Developer mode)'를 켭니다. ", { b: "개발자 모드는 계속 켜 두세요. 끄면 이 확장도 바로 꺼집니다." }],
+      ["'압축해제된 확장 프로그램 로드(Load unpacked)'를 누르고, 3번의 " + folder + " 폴더(manifest.json 이 바로 보이는 폴더)를 고릅니다."],
+      ["확장 카드의 '세부정보(Details)' → '시크릿 모드에서 허용(Allow in Incognito)'을 켭니다. '사이트 액세스'는 바꾸지 않습니다(막으면 확인이 멈춥니다). 다른 확장의 '시크릿 모드에서 허용'은 꺼 두세요."],
+      ["이 화면을 새로고침하고 '확장 상태 다시 보기'를 누릅니다. '설치됨 · 시크릿 허용 켜짐'이 보이면 끝입니다(안 보이면 아래 확장 ID 를 알려 주세요)."],
+      ["업데이트: 홈/모먼트인사이트 의 옛 " + folder + " 폴더를 휴지통에 버리고, 새 zip 을 풀어 같은 자리에 둔 뒤 chrome://extensions 카드의 새로고침(↻)을 누릅니다. 확장을 '삭제(Remove)'했다가 다시 올렸다면 '시크릿 모드에서 허용'을 다시 켭니다."],
+      ["멈추기: 위 '지금 확인 끄기'(바로 멈춤). 지우기: chrome://extensions → 확장 카드 '삭제(Remove)'. 이 맥의 크롬은 N30 대기 수집(Profile 5)과 같은 앱이라, N30 크롬 재시작과 겹치면 확인이 중간에 끊길 수 있습니다."]
+    ];
+  }
+
+  function manualExtensionText(hello) {
+    var info = hello || null;
+    if (!info || info.status === "pending") return "확장: 확인하는 중…";
+    if (info.status === "noid") return "확장: 서버가 확장 ID 를 보내지 않았습니다";
+    if (info.status === "missing") return "확장: 이 크롬에서 찾지 못함(설치 안 됨·꺼짐·개발자 모드 꺼짐)";
+    if (info.status === "rejected") return "확장: 이 주소에서 온 요청을 받지 않음";
+    if (info.status !== "ok") return "확장: 알 수 없는 답(확장을 새로고침하거나 다시 설치해 주세요)";
+    var parts = ["설치됨 v" + info.version, info.incognitoAllowed === true ? "시크릿 허용 켜짐" : "시크릿 허용 꺼짐"];
+    if (info.hostAccess === false) parts.push("사이트 액세스 막힘");
+    else if (info.hostAccess === true) parts.push("사이트 액세스 허용");
+    if (info.incognitoWindowOpen === true) parts.push("다른 시크릿 창 열림");
+    if (info.leftoverWindow) parts.push("남은 시크릿 창 있음(직접 닫기)");
+    if (info.leftoverClosed) parts.push("지난번 남은 시크릿 창 " + info.leftoverClosed + "개를 닫음");
+    if (info.busy) parts.push("확인 중");
+    return "확장: " + parts.join(" · ");
+  }
+
+  // 기본 확장 다리: 페이지 → 확장(externally_connectable). chrome.runtime.lastError 는 콜백 안에서 읽어
+  // 콘솔 경고를 막는다. 맞는 확장이 없거나 꺼져 있으면(개발자 모드 꺼짐 포함) extension_missing / no_response.
+  function chromeExtensionBridge() {
+    return {
+      send: function (extensionId, message, timeoutMs) {
+        return new Promise(function (resolve) {
+          var settled = false;
+          var timer = 0;
+          var finish = function (result) {
+            if (settled) return;
+            settled = true;
+            if (timer) clearTimeout(timer);
+            resolve(result);
+          };
+          var runtime = null;
+          try {
+            runtime = window.chrome && window.chrome.runtime ? window.chrome.runtime : null;
+          } catch (error) {
+            runtime = null;
+          }
+          if (!runtime || typeof runtime.sendMessage !== "function") {
+            finish({ ok: false, code: "extension_missing" });
+            return;
+          }
+          try {
+            runtime.sendMessage(extensionId, message, function (reply) {
+              var lastError = null;
+              try {
+                lastError = runtime.lastError || null;
+              } catch (error) {
+                lastError = null;
+              }
+              if (lastError) finish({ ok: false, code: "extension_no_response" });
+              else finish({ ok: true, reply: reply });
+            });
+          } catch (error) {
+            finish({ ok: false, code: "extension_missing" });
+            return;
+          }
+          if (isNum(timeoutMs) && timeoutMs > 0) timer = setTimeout(function () { finish({ ok: false, code: "extension_timeout" }); }, timeoutMs);
+        });
+      }
+    };
+  }
+
+  function localStore() {
+    try {
+      return window.localStorage || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   // ── DOM 도우미(createElement + textContent 만) ───────────────
 
   function el(tag, attrs, children) {
@@ -875,7 +1481,9 @@
       ownerPrimaryCode: typeof given.ownerPrimaryCode === "function" ? given.ownerPrimaryCode : function () { return ""; },
       isOwnerScopePlaceholder: typeof given.isOwnerScopePlaceholder === "function" ? given.isOwnerScopePlaceholder : null,
       normalizeCode: typeof given.normalizeCode === "function" ? given.normalizeCode : defaultNormalize,
-      exportTools: given.exportTools || null
+      exportTools: given.exportTools || null,
+      // ① 지금 확인: 페이지 → 확장 다리. 시험은 가짜를 넘기고, 화면(admin.html)은 넘기지 않아 기본(chrome.runtime)을 쓴다.
+      extensionBridge: given.extensionBridge && typeof given.extensionBridge.send === "function" ? given.extensionBridge : chromeExtensionBridge()
     };
     if (!deps.isOwnerScopePlaceholder) {
       deps.isOwnerScopePlaceholder = function (value) {
@@ -894,6 +1502,8 @@
     var nextTimer = 0;
     // 요청 순번은 reset 뒤에도 계속 커진다(옛 응답이 새 화면에 끼어들지 않게).
     var seqCounter = 0;
+    // ① 지금 확인 간격 초 세기(1초). 화면이 보이고 간격 대기일 때만 돈다.
+    var manualTimer = 0;
 
     function freshState() {
       return {
@@ -917,7 +1527,10 @@
         runs: {},
         editingGroupId: "",
         busy: false,
-        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 }
+        owner: { open: false, seq: 0, loading: false, data: null, error: "", note: { text: "", tone: "" }, timer: 0, freshToken: null, dirty: false, fieldErrors: {}, key: "", flight: 0, doneAt: 0 },
+        // ① 지금 확인. server 는 목록 GET 의 manual 칸(총관리자만, 캐시에 남기지 않음), offsetMs 는 서버 시각 - 내 시계.
+        manual: { server: null, offsetMs: 0, hello: null, helloFlight: null, run: null, result: null, stopDetail: "", busyRefreshFor: "", toggling: false,
+          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {} }
       };
     }
 
@@ -1127,7 +1740,10 @@
         var payload = await readJson(response);
         if (!stillCurrent(seq, scope)) return;
         state.loading = false;
-        if (applyListPayload(payload, scope, opts.afterWrite === true, opts.announce === true)) state.listDoneAt = Date.now();
+        if (applyListPayload(payload, scope, opts.afterWrite === true, opts.announce === true)) {
+          state.listDoneAt = Date.now();
+          ensureManualHello();
+        }
       } finally {
         if (state.listFlight === seq) state.listFlight = 0;
       }
@@ -1144,12 +1760,15 @@
     // 받은 응답을 화면 상태에 반영한다. 정상 응답(설정 필요·전체 목록·500개 초과 일부 목록)이면 true 를
     // 돌려준다 — 그때만 2초 합치기 창을 연다. announce(화면 열기)면 N30 처럼 상태줄에 불러온 결과를 알린다.
     function applyListPayload(payload, scope, afterWrite, announce) {
+      // ① 지금 확인 칸(총관리자에게만 온다)은 목록과 따로 둔다. 캐시(sessionStorage)에 남기지 않는다.
+      var manualInfo = takeManualInfo(payload);
       if (payload && payload.ok === true && payload.setupRequired === true) {
         state.setupRequired = true;
         state.payload = null;
         state.partial = false;
         state.selected.clear();
         state.listNote = { text: "", tone: "" };
+        setManualServer(null);
         removeCache(scope);
         renderAll();
         return true;
@@ -1183,11 +1802,13 @@
           state.editingGroupId = "";
           state.listNote = { text: cleanupNoteText(payload), tone: "is-warn" };
           pruneSelection();
+          setManualServer(manualInfo);
           renderAll();
           return true;
         }
         // 화면에 전체 목록이 있으면 그 목록을 그대로 둔다(§8.2). 그 목록에서도 일시중지·삭제할 수 있다.
         state.listNote = { text: totalText + " 일시중지한 추적도 500개에 세므로 개수를 줄이려면 삭제하세요.", tone: "is-warn" };
+        setManualServer(manualInfo);
         renderAll();
         return true;
       }
@@ -1196,6 +1817,7 @@
       state.partial = false;
       state.listNote = { text: "", tone: "" };
       pruneSelection();
+      setManualServer(manualInfo);
       writeCache(scope, payload);
       // N30 목록 조회와 같은 알림: 추적이 있으면 '불러왔습니다'(초록), 없으면 기본 안내문. 등록 줄이 있는 화면에서만.
       if (announce && canWrite()) state.status = payload.trackers.length ? { text: LOADED_TEXT, tone: "is-ok" } : { text: "", tone: "" };
@@ -1321,6 +1943,8 @@
       renderBulkBar();
       renderListNote();
       renderList();
+      renderManual();
+      renderManualOwner();
       renderGuide();
       renderTemplate();
     }
@@ -1520,8 +2144,18 @@
       shell.board.appendChild(el("h3", { text: "상품별 일별 순위" }));
       shell.board.appendChild(shell.filterBar);
       shell.board.appendChild(shell.filterHelp);
+      // ① 지금 확인 상태(요약칸 바로 아래, 화면당 하나). 그날 중지면 상태 줄 대신 경고 띠를 보인다.
+      shell.manualBox = el("div", { className: "mi-coupang-rank-manual", "data-coupang-rank-manual-box": true, hidden: true });
+      shell.manualBanner = el("div", { className: "mi-coupang-rank-manual-banner is-warn", role: "alert", "data-coupang-rank-manual-banner": true, hidden: true });
+      shell.manualLine = el("p", { className: "mi-code-status mi-coupang-rank-manual-line", "data-coupang-rank-manual-line": true, "aria-live": "polite" });
+      shell.manualGuideButton = button("설치 안내 열기", "manual-guide-open", { className: "mi-link-button mi-coupang-rank-manual-guide-open", hidden: true });
+      shell.manualResult = el("p", { className: "mi-coupang-rank-manual-result", "data-coupang-rank-manual-result": true, "aria-live": "polite", hidden: true });
+      shell.manualBox.appendChild(shell.manualBanner);
+      shell.manualBox.appendChild(el("div", { className: "mi-coupang-rank-manual-row" }, [shell.manualLine, shell.manualGuideButton]));
+      shell.manualBox.appendChild(shell.manualResult);
       shell.board.appendChild(shell.listNote);
       shell.board.appendChild(shell.strip);
+      shell.board.appendChild(shell.manualBox);
       shell.board.appendChild(shell.bulk);
       shell.board.appendChild(shell.list);
     }
@@ -1734,6 +2368,8 @@
         if (paused) {
           if (!cleanup) actions.push(button("다시 시작", "resume", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         } else {
+          // ① 지금 확인: N30 '갱신' 자리(일시중지 앞). 총관리자·지금 확인 켜짐·활성 추적·정리용 아님일 때만.
+          if (!cleanup && manualVisible()) actions.push(manualCardButton(tracker, currentManualView()));
           actions.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         }
         actions.push(button("삭제", "delete", { className: "mi-link-button is-danger", "data-coupang-rank-id": tracker.id, disabled: state.busy }));
@@ -2205,10 +2841,12 @@
 
     function buildOwnerFrame() {
       shell.ownerSummaryState = el("span", { className: "mi-coupang-rank-owner-state" });
+      shell.ownerManualState = el("span", { className: "mi-coupang-rank-owner-state", "data-coupang-rank-owner-manual-state": true, hidden: true });
       shell.owner.appendChild(el("summary", {}, [
         el("strong", { text: "수집기 관리" }),
         el("span", { className: "mi-badge", text: "총관리자 전용" }),
-        shell.ownerSummaryState
+        shell.ownerSummaryState,
+        shell.ownerManualState
       ]));
       shell.ownerNote = el("p", { className: "mi-code-status mi-coupang-rank-owner-note", "data-coupang-rank-owner-status": true, "aria-live": "polite", hidden: true });
       shell.ownerStatusSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "status" });
@@ -2218,6 +2856,9 @@
       shell.ownerTokenBox = el("div", { className: "mi-coupang-rank-token-box", "data-coupang-rank-token-box": true, hidden: true });
       shell.ownerLinesSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "lines" });
       shell.ownerStatsSection = el("div", { className: "mi-coupang-rank-owner-section", "data-coupang-rank-owner-section": "stats" });
+      // ① 지금 확인(내 크롬) 구역: 켜기·끄기·확장 상태·확장 ID·zip 내려받기·설치 안내(접이식). 수집기 상태와 따로 그린다.
+      shell.ownerManualSection = el("div", { className: "mi-coupang-rank-owner-section mi-coupang-rank-manual-owner", "data-coupang-rank-owner-section": "manual", hidden: true });
+      shell.manualGuide = el("details", { className: "mi-coupang-rank-manual-guide", "data-coupang-rank-manual-guide": true });
       var body = el("div", { className: "mi-coupang-rank-owner-body" }, [
         el("ol", { className: "mi-coupang-rank-owner-steps" }, [
           el("li", { text: "아래 '연결 코드'에서 새 연결 코드를 만들고, 수집기 PC에서 설치 줄을 실행해 코드를 붙여 넣습니다." }),
@@ -2225,6 +2866,7 @@
           el("li", { text: "멈추기는 '수집 끄기'(즉시). 완전히 지우려면 제거 줄을 실행하고 연결 코드를 폐기합니다." }),
           el("li", { text: "속도 올리기는 48시간 동안 차단·빈 쪽이 0이고 성공이 48회 이상일 때 한 단계씩만 됩니다(서버가 막습니다)." })
         ]),
+        shell.ownerManualSection,
         shell.ownerNote,
         shell.ownerStatusSection,
         shell.ownerSettingsSection,
@@ -2814,6 +3456,635 @@
       }
     }
 
+    // ── ① 지금 확인(spec-manual §7) ──
+
+    function takeManualInfo(payload) {
+      if (!payload || typeof payload !== "object" || !Object.prototype.hasOwnProperty.call(payload, "manual")) return null;
+      var info = payload.manual;
+      delete payload.manual;
+      return info && typeof info === "object" ? info : null;
+    }
+
+    function setManualServer(info) {
+      var manual = state.manual;
+      if (!info || typeof info !== "object" || typeof info.state !== "string") {
+        manual.server = null;
+        return;
+      }
+      manual.server = info;
+      var serverTime = Date.parse(info.serverTime);
+      // 시간 판정은 서버 시각만 쓴다. 내 시계와의 차이는 남은 시간 표시에만 보정한다.
+      manual.offsetMs = isFinite(serverTime) ? serverTime - Date.now() : 0;
+      if (info.state !== "stopped") manual.stopDetail = "";
+    }
+
+    function manualNow() {
+      return Date.now() + (state.manual.offsetMs || 0);
+    }
+
+    function userAgentText() {
+      try {
+        return typeof navigator !== "undefined" && navigator && typeof navigator.userAgent === "string" ? navigator.userAgent : "";
+      } catch (error) {
+        return "";
+      }
+    }
+
+    // 버튼·상태 줄을 보일지(spec-manual §7.1): 관리자 화면 · 총관리자 · 쓰기 가능 · 서버 manual 칸이 켜짐.
+    function manualVisible() {
+      if (deps.mode !== "admin" || !isOwnerSession() || !canWrite() || state.setupRequired || !state.payload || !currentScope()) return false;
+      var server = state.manual.server;
+      return Boolean(server) && server.state !== "off" && server.state !== "setup_required";
+    }
+
+    function manualExtensionId() {
+      var server = state.manual.server;
+      var id = server ? String(server.extensionId || "") : "";
+      return MANUAL_EXTENSION_ID_PATTERN.test(id) ? id : "";
+    }
+
+    function manualZipPath() {
+      var server = state.manual.server;
+      var path = server ? String(server.extensionZipPath || "") : "";
+      return MANUAL_ZIP_PATH_PATTERN.test(path) ? path : "";
+    }
+
+    function readPending() {
+      var store = localStore();
+      if (!store) return null;
+      try {
+        var raw = store.getItem(MANUAL_PENDING_KEY);
+        if (!raw) return null;
+        var pending = JSON.parse(raw);
+        var age = Date.now() - Number(pending && pending.savedAt || 0);
+        if (!pending || typeof pending.claimId !== "string" || typeof pending.claimToken !== "string" || !(age >= -60000 && age < MANUAL_PENDING_MAX_MS)) {
+          store.removeItem(MANUAL_PENDING_KEY);
+          return null;
+        }
+        return pending;
+      } catch (error) {
+        try { store.removeItem(MANUAL_PENDING_KEY); } catch (ignored) {}
+        return null;
+      }
+    }
+
+    function writePending(pending) {
+      var store = localStore();
+      if (!store) return;
+      try {
+        store.setItem(MANUAL_PENDING_KEY, JSON.stringify(pending));
+      } catch (error) {}
+    }
+
+    function clearPending(claimId) {
+      var store = localStore();
+      if (!store) return;
+      try {
+        var current = readPending();
+        if (!current || !claimId || current.claimId === claimId) store.removeItem(MANUAL_PENDING_KEY);
+      } catch (error) {}
+    }
+
+    // 이 브라우저에서 방금 받은 확인(아직 결과 전)이 있는지. 서버가 busy 라고 할 때 문구만 바꾼다.
+    function ownPendingActive() {
+      var pending = readPending();
+      if (!pending || pending.report) return false;
+      var age = Date.now() - Number(pending.savedAt || 0);
+      return age >= 0 && age < MANUAL_CHECK_GIVE_UP_MS;
+    }
+
+    function currentManualView() {
+      var manual = state.manual;
+      return manualView({
+        server: manual.server,
+        now: manualNow(),
+        hello: manual.hello,
+        run: manual.run,
+        stopDetail: manual.stopDetail,
+        ownPending: manual.server && manual.server.state === "busy" ? ownPendingActive() : false,
+        userAgent: userAgentText()
+      });
+    }
+
+    function manualButtonTitle(view) {
+      if (view.enabled) return "누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 순위를 확인합니다";
+      if (view.countdown) return "검색 사이 간격을 기다리는 중입니다";
+      return "지금은 확인할 수 없습니다(목록 위 '지금 확인' 줄 참고)";
+    }
+
+    function manualCardButton(tracker, view) {
+      var running = state.manual.run;
+      var mine = Boolean(running && running.trackerId === tracker.id);
+      return button(mine ? "확인 중…" : "지금 확인", "manual-check", {
+        className: "mi-link-button mi-coupang-rank-manual-button",
+        "data-coupang-rank-id": tracker.id,
+        "data-coupang-rank-manual": true,
+        title: manualButtonTitle(view),
+        disabled: !view.enabled || Boolean(running) || state.busy
+      });
+    }
+
+    function setText(node, text) {
+      if (node.textContent !== text) node.textContent = text;
+    }
+
+    function syncManualButtons(view) {
+      var running = state.manual.run;
+      Array.prototype.forEach.call(shell.list.querySelectorAll("[data-coupang-rank-manual]"), function (node) {
+        var mine = Boolean(running && running.trackerId === node.getAttribute("data-coupang-rank-id"));
+        setText(node, mine ? "확인 중…" : "지금 확인");
+        node.disabled = !view.enabled || Boolean(running) || state.busy;
+        var title = manualButtonTitle(view);
+        if (node.getAttribute("title") !== title) node.setAttribute("title", title);
+      });
+    }
+
+    function renderManual() {
+      if (!shell || state.destroyed) return;
+      var box = shell.manualBox;
+      if (!manualVisible()) {
+        box.hidden = true;
+        stopManualTicker();
+        return;
+      }
+      var view = currentManualView();
+      box.hidden = false;
+      shell.manualBanner.hidden = !view.banner;
+      shell.manualLine.hidden = view.banner;
+      if (view.banner) setText(shell.manualBanner, view.text);
+      else setText(shell.manualLine, view.text);
+      shell.manualLine.classList.toggle("is-warn", view.tone === "is-warn");
+      shell.manualGuideButton.hidden = !view.guide;
+      var result = state.manual.result;
+      // 그날 중지 띠가 같은 말을 하고 있으면 직전 결과 줄은 겹쳐 보이지 않는다.
+      shell.manualResult.hidden = !result || (view.banner && result.stopped === true);
+      if (result) {
+        setText(shell.manualResult, "직전 확인" + (result.clock ? "(" + result.clock + ")" : "") + ": " + result.text);
+        shell.manualResult.classList.toggle("is-ok", result.tone === "is-ok");
+        shell.manualResult.classList.toggle("is-warn", result.tone === "is-warn");
+      }
+      syncManualButtons(view);
+      var visibleNow = !(typeof document !== "undefined" && document.hidden) && isHostVisible();
+      if (view.countdown && visibleNow) startManualTicker();
+      else stopManualTicker();
+      scheduleManualBusyRefresh();
+    }
+
+    function startManualTicker() {
+      if (manualTimer || state.destroyed) return;
+      manualTimer = setInterval(function () {
+        if (state.destroyed || !shell || (typeof document !== "undefined" && document.hidden) || !isHostVisible()) {
+          stopManualTicker();
+          return;
+        }
+        renderManual();
+      }, MANUAL_TICK_MS);
+      if (manualTimer && typeof manualTimer.unref === "function") manualTimer.unref();
+    }
+
+    function stopManualTicker() {
+      if (manualTimer) {
+        clearInterval(manualTimer);
+        manualTimer = 0;
+      }
+    }
+
+    // 서버가 '다른 확인이 진행 중'이라고 하면, 그 확인이 끝날 시각 + 2초에 목록을 한 번만 다시 받는다.
+    function scheduleManualBusyRefresh() {
+      var manual = state.manual;
+      var server = manual.server;
+      if (!server || server.state !== "busy" || manual.run) return;
+      var until = Date.parse(server.busyUntil);
+      if (!isFinite(until)) return;
+      var key = String(server.busyUntil);
+      if (manual.busyRefreshFor === key) return;
+      manual.busyRefreshFor = key;
+      var owner = state;
+      setTimeout(function () {
+        if (owner !== state || state.destroyed) return;
+        loadList();
+      }, Math.max(0, until - manualNow()) + MANUAL_BUSY_REFRESH_PAD_MS);
+    }
+
+    // 확장 hello(30초 캐시). force 면 새로 묻는다. 결과는 { status: ok|missing|invalid|rejected|noid, … }.
+    function refreshHello(force) {
+      var manual = state.manual;
+      var id = manualExtensionId();
+      if (!id) {
+        var changed = !manual.hello || manual.hello.status !== "noid";
+        manual.hello = { status: "noid", at: Date.now(), id: "" };
+        if (changed) {
+          renderManual();
+          renderManualOwner();
+        }
+        return Promise.resolve(manual.hello);
+      }
+      var cached = manual.hello;
+      var age = cached ? Date.now() - cached.at : Infinity;
+      if (!force && cached && cached.status !== "pending" && cached.id === id && age >= 0 && age < MANUAL_HELLO_CACHE_MS) return Promise.resolve(cached);
+      if (manual.helloFlight && manual.helloFlight.id === id) return manual.helloFlight.promise;
+      var owner = state;
+      if (!cached || cached.id !== id) manual.hello = { status: "pending", at: Date.now(), id: id };
+      var promise = Promise.resolve().then(function () {
+        return deps.extensionBridge.send(id, { type: MANUAL_HELLO_TYPE }, MANUAL_HELLO_TIMEOUT_MS);
+      }).then(parseHelloReply, function () {
+        return { status: "missing" };
+      }).then(function (hello) {
+        hello.at = Date.now();
+        hello.id = id;
+        if (owner !== state) return hello;
+        if (manual.helloFlight && manual.helloFlight.promise === promise) manual.helloFlight = null;
+        manual.hello = hello;
+        renderManual();
+        renderManualOwner();
+        return hello;
+      });
+      manual.helloFlight = { id: id, promise: promise };
+      return promise;
+    }
+
+    function ensureManualHello() {
+      if (state.destroyed || !manualVisible() || !isHostVisible()) return;
+      refreshHello(false).then(function (hello) {
+        return resumeManualPending(hello);
+      }).catch(function () {});
+    }
+
+    function onManualVisibility() {
+      if (state.destroyed || !shell) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        stopManualTicker();
+        return;
+      }
+      if (!manualVisible() || !isHostVisible()) return;
+      renderManual();
+      ensureManualHello();
+    }
+
+    // 지금 확인 요청. 범위가 바뀌어도 결과를 버리지 않는다(쿠팡 검색은 이미 끝났을 수 있다).
+    // 반환: { payload, httpStatus, transport(연결 실패·시간 초과) }
+    async function postManual(body, timeoutMs, scope) {
+      var target = scope || currentScope();
+      try {
+        var response = await deps.fetch(API_PATH, {
+          method: "POST",
+          cache: "no-store",
+          headers: requestHeaders(target, { "content-type": "application/json" }),
+          body: JSON.stringify(body),
+          timeoutMs: timeoutMs
+        });
+        var payload = await readJson(response);
+        return { payload: payload, httpStatus: response && isNum(response.status) ? response.status : 0, transport: false };
+      } catch (error) {
+        return { payload: { ok: false }, httpStatus: 0, transport: true };
+      }
+    }
+
+    function manualRetryable(result) {
+      return Boolean(result && (result.transport || result.httpStatus >= 500));
+    }
+
+    // 서버가 '끝난 일'로 답했는지(다시 보내도 같은 답). 연결 실패·5xx·로그인 풀림이면 남겨 두고 다시 보낸다.
+    function manualRecordFinal(result) {
+      if (!result || manualRetryable(result)) return false;
+      var payload = result.payload || {};
+      if (result.httpStatus === 401 || payload.code === "SESSION_REQUIRED" || payload.code === "COUPANG_SESSION_REQUIRED") return false;
+      return payload.ok === true || Boolean(payload.code);
+    }
+
+    async function postManualRecord(body, scope, owner) {
+      var attempt = await postManual(body, MANUAL_RECORD_TIMEOUT_MS, scope);
+      for (var index = 0; index < MANUAL_RECORD_RETRY_MS.length && manualRetryable(attempt); index += 1) {
+        await wait(MANUAL_RECORD_RETRY_MS[index]);
+        if (owner && owner !== state) break;
+        attempt = await postManual(body, MANUAL_RECORD_TIMEOUT_MS, scope);
+      }
+      return attempt;
+    }
+
+    function finishManualRun(text, tone, reload, stopped) {
+      var manual = state.manual;
+      manual.run = null;
+      manual.resuming = false;
+      manual.result = { text: text, tone: tone || "", stopped: stopped === true, clock: kstClock(new Date(manualNow()).toISOString()) };
+      setStatus(text, tone);
+      renderAll();
+      if (reload) loadList({ afterWrite: true });
+    }
+
+    function parsedFromReport(report) {
+      var body = report || {};
+      return { outcome: body.outcome, page: body.page || null, code: body.outcomeCode || "" };
+    }
+
+    // 서버가 결과를 받았으면(받음·중복·기한 지남 등 끝난 답) 확장에 남겨 둔 결과를 지우게 한다. 검색이 아니다.
+    function sendManualAck(claimId) {
+      var id = manualExtensionId();
+      if (!id || !claimId) return;
+      Promise.resolve().then(function () {
+        return deps.extensionBridge.send(id, { type: MANUAL_ACK_TYPE, claimId: claimId }, MANUAL_HELLO_TIMEOUT_MS);
+      }).catch(function () {});
+    }
+
+    function settleManualRecord(recorded, parsed, claim, prefix) {
+      var manual = state.manual;
+      var payload = recorded && recorded.payload || {};
+      if (payload.manual) setManualServer(payload.manual);
+      if (manualRecordFinal(recorded)) {
+        clearPending(claim.claimId);
+        manual.settled[claim.claimId] = true;
+        manual.resumePolls = 0;
+        if (parsed && parsed.outcome === "measured") sendManualAck(claim.claimId);
+        // 30초 캐시의 hello 가 아직 이 결과를 들고 있다고 하면 지운다(다시 보내거나 다시 ack 하지 않게).
+        if (manual.hello && manual.hello.pending && manual.hello.pending.claimId === claim.claimId) manual.hello.pending = null;
+      } else {
+        // 방금 보내지 못했다. 화면을 다시 열거나 탭이 다시 보일 때(30초 뒤부터) 저절로 다시 보낸다.
+        manual.resumeTriedAt[claim.claimId] = Date.now();
+      }
+      var outcome = manualRecordText(recorded, parsed, claim.keyword, manual.server);
+      if (outcome.stopped) {
+        manual.stopDetail = outcome.detail || "";
+        // 서버가 그날 중지를 걸었다고 답했다. 옛 manual 칸이면 띠를 바로 보이고, 목록을 다시 받아 서버 값으로 맞춘다.
+        if (payload.stopped === true && manual.server && manual.server.state !== "stopped") {
+          manual.server = Object.assign({}, manual.server, { state: "stopped", stoppedDay: kstDayAt(manualNow()), stoppedAt: new Date(manualNow()).toISOString() });
+        }
+      }
+      finishManualRun((prefix || "") + outcome.text, outcome.tone, true, outcome.stopped === true);
+      return outcome;
+    }
+
+    // 보내지 못한 결과 찾기: 이 브라우저에 남긴 결과 → 확장이 서버에 보내기 전까지 들고 있는 결과(hello.pending,
+    // 탭을 닫았거나 다른 탭에서 받은 확인이어도 토큰과 함께 있다). 이미 보낸 결과면 확장에 지우라고만 알린다.
+    function manualResumeCandidate(hello) {
+      var manual = state.manual;
+      var pending = readPending();
+      if (pending && manual.settled[pending.claimId]) {
+        clearPending(pending.claimId);
+        pending = null;
+      }
+      if (pending && pending.report) return { claim: pending, body: pending.report, parsed: parsedFromReport(pending.report) };
+      var held = hello && hello.status === "ok" ? hello.pending : null;
+      if (held && held.reply) {
+        if (manual.settled[held.claimId]) return { ackOnly: held.claimId };
+        var mine = pending && pending.claimId === held.claimId ? pending : null;
+        var token = held.claimToken || (mine ? mine.claimToken : "");
+        var parsedHeld = parseCheckReply({ ok: true, reply: held.reply });
+        if (token && parsedHeld.outcome !== "lost") {
+          var claim = {
+            claimId: held.claimId,
+            claimToken: token,
+            trackerId: mine ? mine.trackerId : "",
+            keyword: mine ? mine.keyword : (typeof held.reply.keyword === "string" ? held.reply.keyword : ""),
+            savedAt: mine ? mine.savedAt : Date.now()
+          };
+          return { claim: claim, body: manualRecordBody(claim, parsedHeld, hello), parsed: parsedHeld };
+        }
+      }
+      if (pending && hello && hello.status === "ok" && hello.busy) return { wait: true };
+      return null;
+    }
+
+    async function resumeManualPending(hello) {
+      var manual = state.manual;
+      if (manual.run || manual.resuming || !manualVisible()) return;
+      var candidate = manualResumeCandidate(hello);
+      if (!candidate) return;
+      var owner = state;
+      if (candidate.ackOnly) {
+        sendManualAck(candidate.ackOnly);
+        return;
+      }
+      if (candidate.wait) {
+        // 확장이 아직 그 확인을 하는 중이다. 15초 뒤 다시 묻는다(한 번에 하나, 최대 40번).
+        if (manual.resumePollScheduled || manual.resumePolls >= MANUAL_RESUME_POLL_MAX) return;
+        manual.resumePolls += 1;
+        manual.resumePollScheduled = true;
+        setTimeout(function () {
+          if (owner !== state || state.destroyed) return;
+          manual.resumePollScheduled = false;
+          refreshHello(true).then(function (next) { return resumeManualPending(next); }).catch(function () {});
+        }, MANUAL_RESUME_POLL_MS);
+        return;
+      }
+      var key = candidate.claim.claimId;
+      var tried = manual.resumeTriedAt[key];
+      if (tried && Date.now() - tried >= 0 && Date.now() - tried < MANUAL_RESUME_GAP_MS) return;
+      manual.resumeTriedAt[key] = Date.now();
+      manual.resuming = true;
+      manual.run = { trackerId: candidate.claim.trackerId || "", keyword: candidate.claim.keyword || "", phase: "record", resumed: true };
+      renderManual();
+      var recorded = await postManualRecord(candidate.body, currentScope(), owner);
+      if (owner !== state) return;
+      settleManualRecord(recorded, candidate.parsed, candidate.claim, "앞서 끝나지 않은 확인 결과를 보냈습니다. ");
+    }
+
+    // 카드 '지금 확인'(사람이 누를 때만). 확장에 check 를 보내는 곳은 이 함수 하나다.
+    async function startManualCheck(trackerId) {
+      var manual = state.manual;
+      if (manual.run || manual.resuming || state.busy || !manualVisible() || cleanupMode()) return;
+      var tracker = findTracker(trackerId);
+      if (!tracker || tracker.status !== "active") return;
+      var owner = state;
+      var scope = currentScope();
+      var keyword = String(tracker.keyword || "");
+      manual.run = { trackerId: trackerId, keyword: keyword, phase: "hello", slow: false };
+      manual.result = null;
+      renderManual();
+      // 1. 누르기 직전에 확장 상태를 새로 묻는다. 막히면 서버 요청 없이 끝낸다(횟수도 쓰지 않는다).
+      var hello = await refreshHello(true);
+      if (owner !== state) return;
+      var blocked = manualPreflightText(hello, manual.server, userAgentText());
+      if (blocked) {
+        finishManualRun(blocked, "is-warn", false);
+        return;
+      }
+      // 2. 앞서 보내지 못한 결과(이 브라우저에 남긴 것 · 확장이 들고 있는 것)가 있으면 먼저 보낸다.
+      //    차단 보고가 새 검색보다 먼저 서버에 닿아야 한다. 보냈으면 새 확인은 대표가 다시 누를 때 한다.
+      var earlier = manualResumeCandidate(hello);
+      if (earlier && earlier.ackOnly) sendManualAck(earlier.ackOnly);
+      if (earlier && earlier.body) {
+        manual.run.phase = "record";
+        manual.run.resumed = true;
+        renderManual();
+        var resent = await postManualRecord(earlier.body, scope, owner);
+        if (owner !== state) return;
+        if (!manualRecordFinal(resent)) {
+          finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false);
+          return;
+        }
+        settleManualRecord(resent, earlier.parsed, earlier.claim, "앞서 끝나지 않은 확인 결과를 먼저 보냈습니다. 새 확인은 다시 눌러 주세요. ");
+        return;
+      }
+      // 3. 서버 1회용 확인(간격·하루 상한·시간·그날 중지는 서버가 서버 시각으로 정한다)
+      manual.run.phase = "claim";
+      renderManual();
+      var claimed = await postManual({ action: "manual-claim", trackerId: trackerId }, MANUAL_CLAIM_TIMEOUT_MS, scope);
+      if (owner !== state) return;
+      var claim = claimed.payload || {};
+      if (claim.manual) setManualServer(claim.manual);
+      if (claim.ok !== true || typeof claim.claimId !== "string" || !claim.claimId || typeof claim.claimToken !== "string" || !claim.claimToken) {
+        finishManualRun(manualClaimRefusalText(claimed, manual.server), "is-warn", false);
+        return;
+      }
+      var record = { claimId: claim.claimId, claimToken: claim.claimToken, trackerId: trackerId, keyword: String(claim.keyword || keyword), savedAt: Date.now() };
+      writePending(record);
+      // 4. 확장에 맡긴다. 확장은 창을 열기 전에 이 확인(claimId·claimToken)이 유효한지 서버에 직접 확인받는다.
+      manual.run.phase = "check";
+      renderManual();
+      var slowTimer = setTimeout(function () {
+        if (owner === state && manual.run && manual.run.phase === "check") {
+          manual.run.slow = true;
+          renderManual();
+        }
+      }, MANUAL_CHECK_SLOW_MS);
+      var sent;
+      try {
+        sent = await deps.extensionBridge.send(manualExtensionId(), {
+          type: MANUAL_CHECK_TYPE,
+          claimId: record.claimId,
+          claimToken: record.claimToken,
+          keyword: record.keyword
+        }, MANUAL_CHECK_GIVE_UP_MS);
+      } catch (error) {
+        sent = { ok: false, code: "extension_no_response" };
+      }
+      clearTimeout(slowTimer);
+      var parsed = parseCheckReply(sent);
+      record.report = manualRecordBody(record, parsed, hello);
+      writePending(record);
+      // 화면이 잠겼으면(로그아웃 등) 남긴 결과를 다음에 화면을 열 때 보낸다.
+      if (owner !== state) return;
+      // 5. 결과를 서버에 보낸다(차단 신호면 서버가 그날 중지를 건다). 받으면 확장에 ack 를 보낸다.
+      manual.run.phase = "record";
+      renderManual();
+      var recorded = await postManualRecord(record.report, scope, owner);
+      if (owner !== state) return;
+      settleManualRecord(recorded, parsed, record, "");
+      // 확장이 '보고 안 된 앞 결과가 있다'며 시작하지 않았으면 그 결과를 바로 보낸다(차단 보고가 먼저).
+      if (parsed.outcome === "not_started" && parsed.code === "report_pending" && parsed.held) {
+        resumeManualPending({ status: "ok", busy: false, pending: parsed.held }).catch(function () {});
+      }
+      // 확장이 답 없이 멈췄으면 한 번 깨워 남은 시크릿 창을 정리하게 한다(캐시 무시).
+      if (parsed.outcome === "lost") refreshHello(true).catch(function () {});
+    }
+
+    function runManualCheck(trackerId) {
+      startManualCheck(trackerId).catch(function () {
+        if (state.destroyed) return;
+        state.manual.run = null;
+        state.manual.resuming = false;
+        setStatus("지금 확인 중 화면 오류가 났습니다. 화면을 새로고침한 뒤 다시 눌러 주세요.", "is-warn");
+        renderAll();
+      });
+    }
+
+    async function manualToggle(enable) {
+      var manual = state.manual;
+      if (manual.toggling) return;
+      var server = manual.server || {};
+      if (enable) {
+        var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
+        var agreed = confirmAction("'지금 확인'을 켭니다.\n총관리자 카드에 '지금 확인' 버튼이 보이고, 누를 때만 이 크롬이 새 시크릿 창으로 쿠팡 검색을 한 번 합니다(검색 사이 " +
+          manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text + ", 차단으로 보이는 화면이 나오면 그날 중지).\n내 크롬에 확장을 설치했나요? 켤까요?");
+        if (!agreed) return;
+      }
+      manual.toggling = true;
+      var owner = state;
+      // 끄기는 확인 창 없이 바로 숨긴다(비상 정지). 실패하면 목록을 다시 받아 서버 값으로 돌린다.
+      if (!enable && manual.server) manual.server = Object.assign({}, manual.server, { state: "off", enabled: false });
+      renderAll();
+      var result = await postAction({ action: "settings-update", settings: { manualEnabled: enable } });
+      if (owner !== state) return;
+      manual.toggling = false;
+      if (result.ok) {
+        if (result.settings && state.owner.data) state.owner.data.settings = result.settings;
+        setOwnerNote(enable ? "지금 확인을 켰습니다. 카드마다 '지금 확인' 버튼이 보입니다." : "지금 확인을 껐습니다. 카드의 '지금 확인' 버튼이 사라지고, 서버도 새 확인을 받지 않습니다.", "is-ok");
+      } else if (!result.stale) {
+        setOwnerNote(errorText(result), "is-warn");
+      }
+      await loadList({ afterWrite: true });
+    }
+
+    function openManualGuide() {
+      if (!shell) return;
+      // 상세 칸을 열면 브라우저가 toggle 을 보내 총관리자 패널 상태도 받는다(onOwnerToggle).
+      if (!shell.owner.open) shell.owner.open = true;
+      shell.manualGuide.open = true;
+      // 패널이 펼쳐지고 상태를 그린 뒤에 옮긴다(바로 부르면 브라우저가 펼침 중에 부드러운 스크롤을 멈춘다).
+      var guide = shell.manualGuide;
+      setTimeout(function () {
+        if (state.destroyed || !guide || typeof guide.scrollIntoView !== "function") return;
+        try { guide.scrollIntoView({ block: "start" }); } catch (error) {}
+      }, 150);
+    }
+
+    function renderManualGuide(file, folder) {
+      var guide = shell.manualGuide;
+      var mark = (file || "-") + "|" + (folder || "-");
+      if (guide.getAttribute("data-coupang-rank-manual-file") === mark && guide.childNodes.length) return;
+      var wasOpen = guide.open;
+      guide.replaceChildren();
+      guide.setAttribute("data-coupang-rank-manual-file", mark);
+      guide.appendChild(el("summary", {}, [el("strong", { text: "설치 안내" }), el("span", { text: "처음 한 번 · 업데이트 · 멈추기·지우기" })]));
+      guide.appendChild(el("ol", { className: "mi-coupang-rank-manual-steps" }, manualGuideSteps(file, folder).map(function (parts) {
+        return el("li", {}, parts.map(function (part) { return typeof part === "string" ? part : el("strong", { text: part.b }); }));
+      })));
+      guide.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "크롬 메뉴 이름은 버전에 따라 조금 다를 수 있습니다. 괄호 안 영어 이름과 위치로 찾아 주세요." }));
+      guide.open = wasOpen;
+    }
+
+    // 총관리자 패널 '지금 확인(내 크롬)' 구역(spec-manual §7.5). 서버 manual 칸이 있을 때만 보인다.
+    function renderManualOwner() {
+      if (!shell) return;
+      var section = shell.ownerManualSection;
+      var server = state.manual.server;
+      var visible = deps.mode === "admin" && isOwnerSession() && Boolean(currentScope()) && Boolean(server);
+      section.hidden = !visible;
+      shell.ownerManualState.hidden = !visible;
+      if (!visible) return;
+      var stateName = String(server.state || "");
+      var setup = stateName === "setup_required";
+      var on = !setup && stateName !== "off";
+      shell.ownerManualState.textContent = setup ? "지금 확인 SQL 전" : (on ? "지금 확인 켜짐" : "지금 확인 꺼짐");
+      shell.ownerManualState.className = "mi-coupang-rank-owner-state" + (on ? " is-ok" : " is-muted");
+      section.replaceChildren();
+      section.appendChild(ownerHeading("지금 확인(내 크롬)"));
+      section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다. 예약·자동 반복·전체 확인은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 그날 중지는 서버가 지킵니다." }));
+      var lines = [];
+      if (setup) {
+        lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 켜기 버튼이 생깁니다.");
+      } else {
+        var projected = manualProjected(server, manualNow());
+        lines.push((on ? "켜짐" : "꺼짐 — 켜면 총관리자 카드에 '지금 확인' 버튼이 보입니다") + " · 오늘 " + projected.used + "/" + projected.max + "번 · " +
+          projected.hours.text + " · 검색 사이 " + manualGapMinutes(server) + "분");
+        if (projected.state === "stopped") lines.push(manualStopText(server, state.manual.stopDetail));
+      }
+      lines.push(manualExtensionText(state.manual.hello));
+      section.appendChild(el("ul", { className: "mi-coupang-rank-owner-lines", "data-coupang-rank-manual-owner-lines": true }, lines.map(function (line) { return el("li", { text: line }); })));
+      var actions = [];
+      if (!setup) {
+        // 수집기 '수집 켜기·끄기'와 같은 모양(켜기는 주버튼, 끄기는 보조 버튼).
+        actions.push(on
+          ? button("지금 확인 끄기", "manual-disable", { disabled: state.manual.toggling })
+          : button("지금 확인 켜기", "manual-enable", { className: "mi-button", disabled: state.manual.toggling }));
+      }
+      actions.push(button("확장 상태 다시 보기", "manual-hello", {}));
+      section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, actions));
+      var id = manualExtensionId();
+      var zip = manualZipPath();
+      var file = zip ? zip.slice(zip.lastIndexOf("/") + 1) : "";
+      section.appendChild(el("div", { className: "mi-coupang-rank-manual-ext" }, [
+        zip
+          ? el("a", { className: "mi-link-button mi-coupang-rank-manual-download", href: zip, download: file, "data-coupang-rank-manual-download": true, text: "확장 내려받기(zip)" })
+          : null,
+        el("span", { text: "확장 ID" }),
+        el("code", { className: "mi-coupang-rank-manual-id", "data-coupang-rank-manual-id": true, text: id || "서버에서 받지 못함" })
+      ]));
+      if (!zip) section.appendChild(el("p", { className: "mi-coupang-rank-muted is-warn", text: "확장 내려받기 파일 경로를 서버에서 받지 못했습니다(배포 확인 필요)." }));
+      renderManualGuide(file, server.extensionFolder);
+      section.appendChild(shell.manualGuide);
+    }
+
     // ── 이벤트 ──
 
     function onClick(event) {
@@ -2891,6 +4162,26 @@
           return;
         case "template-fill":
           fillTemplate();
+          return;
+        case "manual-check":
+          runManualCheck(id);
+          return;
+        case "manual-enable":
+          manualToggle(true);
+          return;
+        case "manual-disable":
+          manualToggle(false);
+          return;
+        case "manual-hello":
+          refreshHello(true).then(function (hello) {
+            setOwnerNote("확장 상태를 다시 확인했습니다. " + manualExtensionText(hello), hello.status === "ok" && hello.incognitoAllowed === true ? "is-ok" : "is-warn");
+            renderManual();
+            renderManualOwner();
+            return resumeManualPending(hello);
+          }).catch(function () {});
+          return;
+        case "manual-guide-open":
+          openManualGuide();
           return;
         default:
           ownerButton(action, node);
@@ -2985,6 +4276,9 @@
     host.addEventListener("input", onInput);
     host.addEventListener("submit", onSubmit);
     host.addEventListener("toggle", onToggle, true);
+    // ① 지금 확인: 탭이 다시 보이면 확장 상태를 다시 묻고(30초 캐시) 간격 초 세기를 다시 켠다.
+    var visibilityTarget = typeof document !== "undefined" && document && typeof document.addEventListener === "function" ? document : null;
+    if (visibilityTarget) visibilityTarget.addEventListener("visibilitychange", onManualVisibility);
 
     if (observedRoot && typeof MutationObserver === "function") {
       observer = new MutationObserver(function () {
@@ -3074,6 +4368,7 @@
         }
       }
       renderAll();
+      ensureManualHello();
       // 메뉴 한 번에 setScreen 과 hashchange 가 show() 를 두 번 부르고, 운영팀 세션 동기화도 scope-changed 와
       // auth-ready 로 두 번 부른다. 같은 범위를 받는 중이거나 2초 안에 받았으면 다시 보내지 않는다.
       loadList({ reuse: true, announce: true });
@@ -3091,6 +4386,7 @@
       state.owner.seq = ++seqCounter;
       stopOwnerPoll();
       stopNextTicker();
+      stopManualTicker();
       clearTimeout(searchTimer);
       var destroyed = state.destroyed;
       state = freshState();
@@ -3110,6 +4406,7 @@
       host.removeEventListener("input", onInput);
       host.removeEventListener("submit", onSubmit);
       host.removeEventListener("toggle", onToggle, true);
+      if (visibilityTarget && typeof visibilityTarget.removeEventListener === "function") visibilityTarget.removeEventListener("visibilitychange", onManualVisibility);
       host.classList.remove("mi-coupang-rank-root");
     }
 
@@ -3147,7 +4444,24 @@
       raiseReasonText: raiseReasonText,
       settingsPatch: settingsPatch,
       isRaise: isRaise,
-      templateText: templateText
+      templateText: templateText,
+      // ① 지금 확인
+      manualView: manualView,
+      manualProjected: manualProjected,
+      manualPreflightText: manualPreflightText,
+      manualRecordText: manualRecordText,
+      manualClaimRefusalText: manualClaimRefusalText,
+      manualCodeText: manualCodeText,
+      manualStopText: manualStopText,
+      manualExtensionText: manualExtensionText,
+      manualGuideSteps: manualGuideSteps,
+      parseHelloReply: parseHelloReply,
+      parseCheckReply: parseCheckReply,
+      manualRecordBody: manualRecordBody,
+      countdownText: countdownText,
+      compareVersionText: compareVersionText,
+      kstDayAt: kstDayAt,
+      kstHourAt: kstHourAt
     }
   };
 })();

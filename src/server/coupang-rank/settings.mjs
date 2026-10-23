@@ -23,6 +23,9 @@ const EDITABLE_FIELDS = Object.freeze({
   minCollectorVersion: { column: "min_collector_version", kind: "version" },
   maxStorageMb: { column: "max_storage_mb", kind: "integer", min: 10, max: 400 },
   dbSizeStopMb: { column: "db_size_stop_mb", kind: "integer", min: 100, max: 8000 },
+  // ① 지금 확인 켜기·끄기(spec-manual §6.9). 속도 상향 규칙·재계획 대상이 아니다. 간격·하루·시간 값은 화면에서 바꾸지 않는다
+  // (대표 결정값, 바꾸려면 SQL — 더 느슨하게는 제약이 막는다). 수동 칸이 없는 설정에 보내면 핸들러가 409 로 막는다.
+  manualEnabled: { column: "manual_enabled", kind: "boolean" },
 });
 
 export const EDITABLE_SETTING_FIELDS = Object.freeze(Object.keys(EDITABLE_FIELDS));
@@ -71,6 +74,15 @@ export function settingsPayload(row) {
     budgetReason: source.budget_reason ?? null,
     rateChangedAt: source.rate_changed_at ?? null,
     updatedAt: source.updated_at ?? null,
+    // ① 지금 확인(spec-manual §6.9). 수동 칸이 없으면(대표 SQL 전) false/null.
+    manualEnabled: source.manual_enabled === true,
+    manualMinGapSeconds: intOf(source.manual_min_gap_seconds),
+    manualMaxPerDay: intOf(source.manual_max_per_day),
+    manualFromHour: intOf(source.manual_from_hour),
+    manualToHour: intOf(source.manual_to_hour),
+    manualStoppedDay: source.manual_stopped_day ?? null,
+    manualStoppedAt: source.manual_stopped_at ?? null,
+    manualStoppedCode: source.manual_stopped_code ?? null,
   };
 }
 

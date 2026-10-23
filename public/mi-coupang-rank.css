@@ -817,6 +817,201 @@
   user-select: all;
 }
 
+/* ── ① 지금 확인(spec-manual §7.8): 요약칸 아래 상태 줄·그날 중지 띠·직전 결과, 카드 버튼, 총관리자 구역·설치 안내 ──
+   상태 줄은 공용 .mi-code-status 상자 모양을 그대로 쓰고, 휴대폰 폭에서 긴 문구가 상자 안에서 줄을 바꾼다. */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 10px;
+}
+
+#mi-admin .mi-coupang-rank-manual-row,
+#mi-clean .mi-coupang-rank-manual-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-line,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-line {
+  flex: 1 1 260px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-guide-open,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-guide-open {
+  flex: 0 0 auto;
+  cursor: pointer;
+  background: var(--mi-panel);
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-manual-banner,
+#mi-clean .mi-coupang-rank-manual-banner {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--mi-warn);
+  border-left-width: 4px;
+  border-radius: var(--mi-radius);
+  padding: 10px 12px;
+  color: var(--mi-warn);
+  background: var(--mi-warn-bg);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-manual-result,
+#mi-clean .mi-coupang-rank-manual-result {
+  min-width: 0;
+  margin: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-manual-result.is-ok,
+#mi-clean .mi-coupang-rank-manual-result.is-ok {
+  color: var(--mi-green);
+}
+
+#mi-admin .mi-coupang-rank-manual-result.is-warn,
+#mi-clean .mi-coupang-rank-manual-result.is-warn {
+  color: var(--mi-warn);
+}
+
+/* 카드 '지금 확인'(N30 '갱신' 자리). 꺼져 있을 때는 흐리게만 하고 자리는 그대로 둔다. */
+#mi-admin .mi-coupang-rank-card .mi-coupang-rank-manual-button,
+#mi-clean .mi-coupang-rank-card .mi-coupang-rank-manual-button {
+  cursor: pointer;
+  border-color: var(--mi-navy);
+  color: var(--mi-navy);
+  background: var(--mi-panel);
+  font-family: inherit;
+  font-weight: var(--mi-weight-black);
+  white-space: nowrap;
+}
+
+#mi-admin .mi-coupang-rank-card .mi-coupang-rank-manual-button[disabled],
+#mi-clean .mi-coupang-rank-card .mi-coupang-rank-manual-button[disabled] {
+  border-color: var(--mi-line);
+  color: var(--mi-muted);
+  cursor: not-allowed;
+}
+
+#mi-admin .mi-coupang-rank-manual-ext,
+#mi-clean .mi-coupang-rank-manual-ext {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-manual-id,
+#mi-clean .mi-coupang-rank-manual-id {
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 3px 8px;
+  color: var(--mi-ink);
+  background: var(--mi-grey-50);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--mi-font-label);
+  word-break: break-all;
+  user-select: all;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-download,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-download {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  text-decoration: none;
+}
+
+#mi-admin .mi-coupang-rank-manual-guide,
+#mi-clean .mi-coupang-rank-manual-guide {
+  min-width: 0;
+  border: 1px solid var(--mi-line);
+  border-radius: var(--mi-radius);
+  padding: 10px 12px;
+  background: var(--mi-panel);
+}
+
+/* 설치 안내는 총관리자 패널(details) 안의 details 라, 패널 머리(summary) 규칙(안쪽 여백·▾▴ 표시·글자 크기)이
+   안쪽 summary 에도 걸린다. .mi-coupang-rank-root 를 더 붙여 특이도를 올리고 안내 칸 자기 열림 상태로 표시한다. */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 0;
+  color: var(--mi-navy);
+  cursor: pointer;
+  list-style: none;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary::after,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: var(--mi-muted);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide[open] summary::after,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide[open] summary::after {
+  content: "▴";
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary strong,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary strong {
+  font-size: var(--mi-font-body-lg);
+  font-weight: var(--mi-weight-black);
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary span,
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-owner .mi-coupang-rank-manual-guide summary span {
+  color: var(--mi-muted);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+}
+
+#mi-admin .mi-coupang-rank-manual-steps,
+#mi-clean .mi-coupang-rank-manual-steps {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 8px;
+  padding-left: 20px;
+  color: var(--mi-ink);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-bold);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-manual-steps strong,
+#mi-clean .mi-coupang-rank-manual-steps strong {
+  color: var(--mi-warn);
+  font-weight: var(--mi-weight-black);
+}
+
 /* ── 사이드바가 있는 좁은 화면(901~1360px): N30 같은 너비 규칙(admin.html, N30 상품 카드 범위)과 같은 모양 ──
    카드 1행은 칸을 고정하지 않고 줄을 바꿔 흐르게 해서 상품번호가 잘리지 않고, 상품명은 남는 폭(모자라면 다음 줄)을 쓴다.
    선택 항목 정리는 제목 아래에 동작 줄을 둔다. 1361px 이상은 위 데스크톱 규칙 그대로다. */
@@ -990,6 +1185,25 @@
 
 /* ── 휴대폰: 총관리자 패널·안내 문구 ── */
 @media (max-width: 720px) {
+  /* ① 지금 확인: 상태 줄과 '설치 안내 열기'는 한 줄씩, 내려받기 단추는 줄 전체 */
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-line,
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-guide-open,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-line,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-guide-open {
+    flex: 1 1 100%;
+  }
+
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-download,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-download {
+    justify-content: center;
+    width: 100%;
+  }
+
+  #mi-admin .mi-coupang-rank-manual-steps,
+  #mi-clean .mi-coupang-rank-manual-steps {
+    padding-left: 18px;
+  }
+
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-template,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-template {
     padding: 14px;

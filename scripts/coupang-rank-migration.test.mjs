@@ -303,10 +303,23 @@ test("migration-runtime-literal-audit: 이 파일의 함수 18개는 최종 선�
   assert.equal(ownAudit.ok, true);
   assert.deepEqual(ownAudit.violations, []);
 
+  // 이 파일의 18개는 모두 이 파일이 최종 선언이다(다른 마이그레이션이 다시 선언하지 않는다).
+  // 그 밖의 C 함수는 ① 지금 확인 SQL(20261018090000)의 coupang_rank_manual_* 5개뿐이다(spec-manual §6.10).
   const all = collectFinalFunctionDeclarations(migrationDirectory);
   const coupang = all.filter((entry) => entry.function.startsWith("public.coupang_rank_"));
-  assert.equal(coupang.length, 18);
-  assert.ok(coupang.every((entry) => entry.file === MIGRATION_NAME), "다른 마이그레이션이 C 함수를 다시 선언했다");
+  const own18 = new Set(EXPECTED_FUNCTIONS.map((sig) => `public.${sig.split("(")[0]}`));
+  const base = coupang.filter((entry) => own18.has(entry.function));
+  assert.equal(base.length, 18);
+  assert.ok(base.every((entry) => entry.file === MIGRATION_NAME), "다른 마이그레이션이 C 함수를 다시 선언했다");
+  const others = coupang.filter((entry) => !own18.has(entry.function));
+  assert.deepEqual(others.map((entry) => entry.function).sort(), [
+    "public.coupang_rank_manual_claim",
+    "public.coupang_rank_manual_record",
+    "public.coupang_rank_manual_stop",
+    "public.coupang_rank_manual_summary",
+    "public.coupang_rank_manual_verify",
+  ]);
+  assert.ok(others.every((entry) => entry.file === "20261018090000_coupang_rank_manual_check.sql"), "지금 확인 함수는 그 SQL 이 최종 선언");
   assert.equal(auditMigrationRuntimeLiterals({ migrationDirectory }).ok, true);
 });
 

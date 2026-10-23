@@ -2,11 +2,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyCollectorPage,
+  classifyManualPage,
+  manualStopSignal,
   recordPayloadForRpc,
   sanitizeTitles,
   validateCollectorRecord,
+  validateManualRecord,
 } from "./page-result.mjs";
-import { ADS_MAX, ORGANIC_MAX, TITLE_MAX, WORKER_BODY_MAX_BYTES } from "./contract.mjs";
+import {
+  ADS_MAX,
+  MANUAL_RECORD_BODY_MAX_BYTES,
+  MANUAL_STOP_CODES,
+  ORGANIC_MAX,
+  TITLE_MAX,
+  WORKER_BODY_MAX_BYTES,
+} from "./contract.mjs";
 
 const RUN_ID = "2cd1a0b4-9e1f-4c55-8a2b-0f6c3d9e7a10";
 
@@ -331,4 +341,130 @@ test("가장 큰 정상 record(일반 100·광고 30, 4바이트 글자 80개 �
   assert.deepEqual(validateCollectorRecord(body), { ok: true });
   const bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
   assert.ok(bytes < WORKER_BODY_MAX_BYTES, `bytes=${bytes}`);
+});
+
+// ── ① 지금 확인(spec-manual §6.7·§10.2) ──
+
+const CLAIM_ID = "7b0f2c1e-3a4d-4e5f-8a6b-1c2d3e4f5a6b";
+
+function manualRecord(overrides = {}, pageOverrides = {}) {
+  return {
+    action: "manual-record",
+    claimId: CLAIM_ID,
+    claimToken: `mcm1_${"A".repeat(43)}`,
+    outcome: "measured",
+    page: { ...page(pageOverrides), query: "아이폰 18프로 사생활 보호 필름", ...("query" in pageOverrides ? { query: pageOverrides.query } : {}) },
+    durationMs: 14231,
+    extensionVersion: "1.0.0",
+    browser: "chrome 141",
+    ...overrides,
+  };
+}
+
+// 수집기 판정 표의 사례(위 '판정 표 12행'·'판정 우선순위'와 같은 입력). 수동 판정은 page_unreadable 만 다르다.
+const SHARED_CASES = [
+  { httpStatus: 403 }, { httpStatus: 429 }, { httpStatus: 503 }, { blockedText: true }, { status: "blocked", httpStatus: 200 },
+  { finalHost: "login.coupang.com", finalPath: "/login/login.pang" }, { finalHost: "www.coupang.com", finalPath: "/login/login.pang" },
+  { status: "timeout", httpStatus: null }, { status: "error", httpStatus: null }, { finalHost: "www.google.com", finalPath: "/" },
+  { finalHost: "", finalPath: "" }, { httpStatus: 404 }, { finalHost: "m.coupang.com" }, { finalPath: "/vp/products/8533720933" },
+  { organic: [], noResultText: true }, { organic: [] }, { stable: false }, {},
+  { status: "error", httpStatus: 403, finalHost: "", finalPath: "" }, { status: "timeout", blockedText: true },
+  { organic: [], ads: [{ p: "11111", v: "", s: 1 }] }, { finalPath: "/np/categories/1", organic: [], noResultText: true },
+  { status: "error", errorCode: "window_closed" }, { status: "timeout", errorCode: "page_timeout", httpStatus: 200 },
+];
+
+test("validateManualRecord: 정상 통과, 칸 이름은 claimId·extensionVersion, page 규칙은 수집기와 같다", () => {
+  assert.deepEqual(validateManualRecord(manualRecord()), { ok: true });
+  assert.deepEqual(validateManualRecord(null), { ok: false, field: "body" });
+  assert.deepEqual(validateManualRecord(manualRecord({ claimId: "x" })), { ok: false, field: "claimId" });
+  assert.deepEqual(validateManualRecord(manualRecord({ extensionVersion: "1.0" })), { ok: false, field: "extensionVersion" });
+  assert.deepEqual(validateManualRecord(manualRecord({ durationMs: -1 })), { ok: false, field: "durationMs" });
+  assert.deepEqual(validateManualRecord(manualRecord({ browser: "b".repeat(61) })), { ok: false, field: "browser" });
+  assert.deepEqual(validateManualRecord(manualRecord({ page: null })), { ok: false, field: "page" });
+  // 수집기 page 규칙 표 그대로
+  for (const [overrides, field] of [
+    [{ organic: items(ORGANIC_MAX + 1) }, "page.organic"],
+    [{ ads: items(ADS_MAX + 1, { startSlot: 300 }) }, "page.ads"],
+    [{ organic: [{ p: "9000001", v: "", s: 5 }, { p: "9000002", v: "", s: 4 }] }, "page.organic[1].s"],
+    [{ errorCode: "Page_Timeout" }, "page.errorCode"],
+    [{ finalPath: "/np/search?q=a" }, "page.finalPath"],
+    [{ finalHost: "WWW.coupang.com" }, "page.finalHost"],
+    [{ status: "found" }, "page.status"],
+  ]) {
+    const collector = validateCollectorRecord(record({}, overrides));
+    assert.deepEqual(validateManualRecord(manualRecord({}, overrides)), collector, JSON.stringify(overrides));
+    assert.deepEqual(collector, { ok: false, field });
+  }
+});
+
+test("validateManualRecord: page.query 는 없거나 100 코드 포인트 이하·제어 문자 없음", () => {
+  assert.equal(validateManualRecord(manualRecord({}, { query: "" })).ok, true);
+  assert.equal(validateManualRecord(manualRecord({}, { query: null })).ok, true);
+  const missing = manualRecord();
+  delete missing.page.query;
+  assert.equal(validateManualRecord(missing).ok, true);
+  assert.equal(validateManualRecord(manualRecord({}, { query: "가".repeat(100) })).ok, true);
+  assert.equal(validateManualRecord(manualRecord({}, { query: "😀".repeat(100) })).ok, true);
+  for (const query of ["가".repeat(101), "a\u0000b", "줄\n바꿈", 12]) {
+    assert.deepEqual(validateManualRecord(manualRecord({}, { query })), { ok: false, field: "page.query" }, JSON.stringify(query));
+  }
+  // 모르는 page 칸(wasHidden 등)은 거절하지 않는다(수집기 규칙과 같음)
+  assert.equal(validateManualRecord(manualRecord({}, { wasHidden: true })).ok, true);
+});
+
+test("classifyManualPage: page_unreadable 만 차단으로 바꾸고(D1), 나머지 사례는 classifyCollectorPage 와 같다", () => {
+  for (const overrides of SHARED_CASES) {
+    const value = page(overrides);
+    assert.deepEqual(classifyManualPage(value), classifyCollectorPage(value), JSON.stringify(overrides));
+  }
+  for (const overrides of [
+    { status: "error", errorCode: "page_unreadable", finalHost: "", finalPath: "", httpStatus: null },
+    { status: "ok", errorCode: "page_unreadable" },
+    { status: "timeout", errorCode: "page_unreadable", httpStatus: null },
+  ]) {
+    assert.deepEqual(classifyManualPage(page(overrides)), { status: "blocked" }, JSON.stringify(overrides));
+  }
+  // HTTP 200 인데 쿠팡 차단 문구(확장이 blockedText 로 보냄) → 차단(R4)
+  assert.deepEqual(classifyManualPage(page({ httpStatus: 200, blockedText: true, organic: [], ads: [] })), { status: "blocked" });
+  // 광고만 있고 일반 0개는 차단이 아니라 빈 쪽
+  assert.deepEqual(classifyManualPage(page({ organic: [], ads: [{ p: "11111", v: "", s: 1 }] })), { status: "empty" });
+});
+
+test("manualStopSignal: classifyManualPage 가 blocked 인 사례에서만, 사유 코드는 계약 목록 안", () => {
+  const cases = [...SHARED_CASES, { status: "error", errorCode: "page_unreadable", finalHost: "", finalPath: "" }, { finalHost: "coupang.com", finalPath: "/login" }];
+  for (const overrides of cases) {
+    const value = page(overrides);
+    const code = manualStopSignal(value);
+    assert.equal(code !== null, classifyManualPage(value).status === "blocked", JSON.stringify(overrides));
+    if (code !== null) assert.ok(MANUAL_STOP_CODES.includes(code), code);
+  }
+  assert.equal(manualStopSignal(page({ httpStatus: 403 })), "blocked_http_403");
+  assert.equal(manualStopSignal(page({ httpStatus: 503, blockedText: true })), "blocked_http_503");
+  assert.equal(manualStopSignal(page({ blockedText: true })), "blocked_text");
+  assert.equal(manualStopSignal(page({ status: "blocked" })), "blocked_page");
+  assert.equal(manualStopSignal(page({ finalHost: "login.coupang.com" })), "login_redirect");
+  assert.equal(manualStopSignal(page({ errorCode: "page_unreadable" })), "page_unreadable");
+  assert.equal(manualStopSignal(page()), null);
+  // 모양이 틀린 본문에서도 신호를 읽는다(모양 검사를 통과하지 못해도 그날 중지는 건다)
+  assert.equal(manualStopSignal({ httpStatus: 429, organic: "broken" }), "blocked_http_429");
+  assert.equal(manualStopSignal({ blockedText: true, itemCount: -5 }), "blocked_text");
+  assert.equal(manualStopSignal({ finalHost: "LOGIN.COUPANG.COM" }), "login_redirect");
+  assert.equal(manualStopSignal({ httpStatus: "403" }), null);
+  assert.equal(manualStopSignal(null), null);
+  assert.equal(manualStopSignal([]), null);
+});
+
+test("가장 큰 수동 결과(일반 100·광고 30·한글 제목 80자·검색어 100자)는 manual-record 상한 64KB 안이고 32KB 는 넘을 수 있다", () => {
+  const title = "가".repeat(TITLE_MAX);
+  const body = manualRecord({}, {
+    organic: items(ORGANIC_MAX, { title }),
+    ads: items(ADS_MAX, { startSlot: ORGANIC_MAX + 1, title }),
+    itemCount: 200,
+    query: "가".repeat(100),
+  });
+  assert.equal(validateManualRecord(body).ok, true);
+  const bytes = Buffer.byteLength(JSON.stringify(body));
+  assert.ok(bytes <= MANUAL_RECORD_BODY_MAX_BYTES, String(bytes));
+  assert.ok(bytes > 32768, String(bytes));
+  assert.equal(MANUAL_RECORD_BODY_MAX_BYTES, WORKER_BODY_MAX_BYTES);
 });

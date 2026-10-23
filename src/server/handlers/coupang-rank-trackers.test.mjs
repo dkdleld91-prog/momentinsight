@@ -3,7 +3,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { handleCoupangRankTrackersRequest } from "./coupang-rank-trackers.mjs";
-import { COLLECTOR_TOKEN_PATTERN } from "../coupang-rank/contract.mjs";
+import {
+  COLLECTOR_TOKEN_PATTERN,
+  MANUAL_CLAIM_TOKEN_HEADER,
+  MANUAL_EXTENSION_ID,
+  MANUAL_EXTENSION_ZIP_PATH,
+  MANUAL_TOKEN_PATTERN,
+} from "../coupang-rank/contract.mjs";
 import { inList } from "../coupang-rank/db.mjs";
 import { executeRequest } from "../runtime.mjs";
 
@@ -813,8 +819,11 @@ test("GET 목록: 응답 모양·필드 순서·days 키·days30·한도·수집
   assert.equal(headers.get("access-control-allow-headers"), "content-type, x-mi-csrf, x-mi-agency-code");
   assert.deepEqual(Object.keys(body), [
     "ok", "setupRequired", "scopeKey", "scopeAgencyCode", "scopeClientId", "scopeMode", "readOnly",
-    "returnedCount", "totalCount", "hasMore", "complete", "todayKst", "days30", "limit", "collector", "trackers",
+    "returnedCount", "totalCount", "hasMore", "complete", "todayKst", "days30", "limit", "collector", "trackers", "manual",
   ]);
+  // ① 지금 확인 칸(총관리자만). 수동 칸이 없는 설정(대표 SQL 전)이면 요약 RPC 없이 setup_required.
+  assert.deepEqual(body.manual, { state: "setup_required" });
+  assert.equal(state.rpcCalls.some((entry) => entry.name === "coupang_rank_manual_summary"), false);
   assert.equal(body.setupRequired, false);
   assert.equal(body.todayKst, "2026-10-17");
   assert.equal(body.days30.length, 30);
@@ -1626,4 +1635,460 @@ test("GET ?view=collector: release·설정·수집기·한도·집계·용량·�
     if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
     else process.env.VERCEL_GIT_COMMIT_SHA = previous;
   }
+});
+
+// ── ① 지금 확인(spec-manual §6·§10.4, 2026-10-23 재구현) ───────────────────────
+
+const MANUAL_CLAIM_ID = "5a1d2c3b-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+const MANUAL_TOKEN = `mcm1_${"Ab3_-".repeat(8)}xyz`;
+const MANUAL_SETTINGS = Object.freeze({
+  manual_enabled: true, manual_min_gap_seconds: 180, manual_max_per_day: 30, manual_from_hour: 9, manual_to_hour: 19,
+  manual_last_claim_at: null, manual_last_search_at: null, manual_stopped_day: null, manual_stopped_at: null,
+  manual_stopped_run_id: null, manual_stopped_code: null, last_housekeeping_at: "2026-10-17T02:00:00.000Z",
+});
+
+function sha256(text) {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function manualSummary(overrides = {}) {
+  return {
+    state: "ready", enabled: true, usedToday: 2, maxPerDay: 30, minGapSeconds: 180, fromHour: 9, toHour: 19,
+    nextAt: null, busyUntil: null, lastSearchAt: "2026-10-17T02:40:00.000Z", stoppedDay: null, stoppedAt: null,
+    stoppedCode: null, cooldownUntil: null, serverTime: NOW, ...overrides,
+  };
+}
+
+function manualState({ settings = {}, claimRow = { id: MANUAL_CLAIM_ID, keyword_key: "아이폰 필름", status: "verified" } } = {}) {
+  const state = createState({ settings: { ...MANUAL_SETTINGS, ...settings } });
+  state.tables.coupang_rank_manual_claims = claimRow ? [claimRow] : [];
+  state.rpc.coupang_rank_manual_summary = () => ({ data: manualSummary(), error: null });
+  state.rpc.coupang_rank_housekeeping = () => ({ data: { runs: 0 }, error: null });
+  state.rpc.coupang_rank_manual_claim = () => ({
+    data: {
+      ok: true, claimId: MANUAL_CLAIM_ID, keyword: "아이폰 필름", keywordKey: "아이폰 필름",
+      expiresAt: "2026-10-17T03:01:00.000Z", serverTime: NOW, manual: manualSummary({ state: "busy", busyUntil: "2026-10-17T03:01:00.000Z" }),
+    },
+    error: null,
+  });
+  state.rpc.coupang_rank_manual_verify = () => ({
+    data: {
+      ok: true, verified: true, claimId: MANUAL_CLAIM_ID, keyword: "아이폰 필름", keywordKey: "아이폰 필름",
+      verifiedAt: NOW, recordUntil: "2026-10-17T03:10:00.000Z", serverTime: NOW,
+    },
+    error: null,
+  });
+  state.rpc.coupang_rank_manual_record = (args) => ({
+    data: {
+      ok: true, accepted: args.p_outcome === "measured", duplicate: false, status: args.p_status, errorCode: args.p_run?.errorCode ?? null,
+      matched: 2, counted: true, stopped: args.p_stop_code !== null, stopCode: args.p_stop_code, late: false,
+      tracker: { trackerId: uuid(1), result: "found", rank: 12, organicCount: 50, adOrder: null, checkedAt: NOW },
+      manual: manualSummary({ state: args.p_stop_code ? "stopped" : "gap" }),
+    },
+    error: null,
+  });
+  state.rpc.coupang_rank_manual_stop = (args) => ({
+    data: { ok: true, stopped: true, stoppedDay: "2026-10-17", stopCode: args.p_code, manual: manualSummary({ state: "stopped" }) },
+    error: null,
+  });
+  return state;
+}
+
+function manualPage(overrides = {}) {
+  return {
+    status: "ok", httpStatus: 200, loginWall: true, stable: true, noResultText: false, blockedText: false, itemCount: 52,
+    organic: [{ p: "9000001", v: "", s: 3 }, { p: "8533720933", v: "96009802650", s: 14, t: "아이쉘 필름" }],
+    ads: [{ p: "7000001", v: "", s: 1 }],
+    finalHost: "www.coupang.com", finalPath: "/np/search", errorCode: null, query: "아이폰 필름", ...overrides,
+  };
+}
+
+function manualRecordBody(overrides = {}, pageOverrides = {}) {
+  return {
+    action: "manual-record", claimId: MANUAL_CLAIM_ID, claimToken: MANUAL_TOKEN, outcome: "measured",
+    page: manualPage(pageOverrides), durationMs: 14231, extensionVersion: "1.0.0", browser: "chrome 141", ...overrides,
+  };
+}
+
+function rpcArgs(state, name) {
+  return state.rpcCalls.filter((entry) => entry.name === name).map((entry) => entry.args);
+}
+
+function manualGet(state, headers, view, { claimId = MANUAL_CLAIM_ID, token = MANUAL_TOKEN, reason, extraQuery = "" } = {}) {
+  const query = `?view=${view}&claimId=${claimId}${reason ? `&reason=${reason}` : ""}${extraQuery}`;
+  const allHeaders = token === null ? headers : { ...headers, [MANUAL_CLAIM_TOKEN_HEADER]: token };
+  return call(state, "GET", { query, headers: allHeaders });
+}
+
+async function captureLogs(fn) {
+  const lines = [];
+  const original = { error: console.error, warn: console.warn, log: console.log };
+  console.error = (line) => lines.push(String(line));
+  console.warn = (line) => lines.push(String(line));
+  console.log = (line) => lines.push(String(line));
+  try {
+    return { result: await fn(), lines };
+  } finally {
+    Object.assign(console, original);
+  }
+}
+
+test("manual-claim: 세션 없음 401·체험 403, 운영팀·광고주는 공개 여부와 상관없이 403(RPC 0회)", async () => {
+  const state = manualState();
+  state.tables.coupang_rank_trackers.push(trackerRow({ id: uuid(1) }));
+  const body = { action: "manual-claim", trackerId: uuid(1) };
+  assert.equal((await post(state, {}, body)).status, 401);
+  assert.equal((await post(state, { "x-mi-session-role": "client", "x-mi-session-scope": "trial" }, body)).body.code, "TRIAL_LOCKED");
+  assert.equal((await post(state, teamHeaders("adv-a"), body)).body.code, "COUPANG_OWNER_ONLY");
+  assert.equal((await post(state, teamHeaders("team-a", { accountOnly: true }), body)).body.code, "COUPANG_OWNER_ONLY");
+  assert.equal((await post(state, clientHeaders("adv-a"), body)).body.code, "COUPANG_READ_ONLY");
+  const closed = manualState({ settings: { team_access_enabled: false, client_view_enabled: false } });
+  assert.equal((await post(closed, teamHeaders("adv-a"), body)).body.code, "COUPANG_TEAM_NOT_OPEN");
+  assert.equal((await post(closed, clientHeaders("adv-a"), body)).body.code, "COUPANG_CLIENT_NOT_OPEN");
+  for (const current of [state, closed]) {
+    assert.equal(current.rpcCalls.filter((entry) => entry.name.startsWith("coupang_rank_manual_")).length, 0);
+  }
+  for (const headers of [teamHeaders("adv-a"), clientHeaders("adv-a")]) {
+    assert.equal((await post(state, headers, manualRecordBody())).status, 403);
+  }
+});
+
+test("manual-claim: 총관리자 → RPC 인자(범위 agency·owner·owner·원문 아닌 64자 해시), 응답 토큰 패턴·manual 칸·기한 60초", async () => {
+  const state = manualState();
+  const { status, body } = await post(state, ownerHeaders("adv-a"), { action: "manual-claim", trackerId: uuid(7).toUpperCase() });
+  assert.equal(status, 200);
+  assert.deepEqual(Object.keys(body), ["ok", "claimId", "claimToken", "keyword", "keywordKey", "expiresAt", "expiresInSeconds", "serverTime", "manual"]);
+  assert.match(body.claimToken, MANUAL_TOKEN_PATTERN);
+  assert.equal(body.expiresInSeconds, 60);
+  assert.equal(body.manual.state, "busy");
+  assert.equal(body.manual.extensionId, MANUAL_EXTENSION_ID);
+  assert.equal(body.manual.extensionZipPath, MANUAL_EXTENSION_ZIP_PATH);
+  const [args] = rpcArgs(state, "coupang_rank_manual_claim");
+  assert.deepEqual(args, {
+    p_tracker_id: uuid(7), p_agency_code: "adv-a", p_requested_by: "owner", p_requested_role: "owner",
+    p_token_sha256: sha256(body.claimToken),
+  });
+  assert.match(args.p_token_sha256, /^[0-9a-f]{64}$/);
+  assert.equal(JSON.stringify(state.rpcCalls).includes(body.claimToken), false, "원문 토큰은 DB 로 가지 않는다");
+  // 대표 코드 범위
+  const own = manualState();
+  await post(own, ownerHeaders(), { action: "manual-claim", trackerId: uuid(7) });
+  assert.equal(rpcArgs(own, "coupang_rank_manual_claim")[0].p_agency_code, PRIMARY);
+  // 추적기 id 형식
+  const bad = await post(own, ownerHeaders(), { action: "manual-claim", trackerId: "x" });
+  assert.deepEqual([bad.status, bad.body.code], [404, "COUPANG_TRACKER_NOT_FOUND"]);
+});
+
+test("manual-claim: 수동 칸 없는 설정 → 409 MANUAL_SETUP_REQUIRED(RPC 0회), RPC 없음(PGRST202) → 409(503 아님), C 표 없음 → 503", async () => {
+  const before = createState();
+  const noColumns = await post(before, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.deepEqual([noColumns.status, noColumns.body.code], [409, "COUPANG_MANUAL_SETUP_REQUIRED"]);
+  assert.equal(before.rpcCalls.length, 0);
+  const noFunction = manualState();
+  delete noFunction.rpc.coupang_rank_manual_claim;
+  const missing = await post(noFunction, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.deepEqual([missing.status, missing.body.code], [409, "COUPANG_MANUAL_SETUP_REQUIRED"]);
+  const noTables = manualState();
+  delete noTables.tables.coupang_rank_settings;
+  const tables = await post(noTables, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.deepEqual([tables.status, tables.body.code], [503, "COUPANG_SETUP_REQUIRED"]);
+});
+
+test("manual-claim: 상태 거절 9개 → 코드·HTTP·사유별 문구·manual, gap·busy 는 retryAfterSec(서버 시계끼리)", async () => {
+  const expected = {
+    off: ["COUPANG_MANUAL_OFF", 403], budget: ["COUPANG_MANUAL_BUDGET", 409], stopped: ["COUPANG_MANUAL_STOPPED", 409],
+    cooldown: ["COUPANG_MANUAL_COOLDOWN", 409], hours: ["COUPANG_MANUAL_HOURS", 409], busy: ["COUPANG_MANUAL_BUSY", 409],
+    daily_cap: ["COUPANG_MANUAL_DAILY_CAP", 409], gap: ["COUPANG_MANUAL_GAP", 409], setup_required: ["COUPANG_MANUAL_SETUP_REQUIRED", 409],
+  };
+  for (const [stateName, [code, status]] of Object.entries(expected)) {
+    const state = manualState();
+    const summary = manualSummary({
+      state: stateName,
+      nextAt: stateName === "gap" ? "2026-10-17T03:02:30.000Z" : null,
+      busyUntil: stateName === "busy" ? "2026-10-17T03:00:45.000Z" : null,
+    });
+    state.rpc.coupang_rank_manual_claim = () => ({ data: { ok: false, state: stateName, manual: summary }, error: null });
+    const result = await post(state, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+    assert.deepEqual([result.status, result.body.code, result.body.ok], [status, code, false], stateName);
+    assert.ok(result.body.message, stateName);
+    if (stateName !== "setup_required") assert.equal(result.body.manual.state, stateName);
+    if (stateName === "gap") {
+      assert.equal(result.body.retryAfterSec, 150);
+      assert.equal(result.body.nextAt, "2026-10-17T03:02:30.000Z");
+      assert.equal(result.body.message, "검색과 검색 사이 간격(3분)을 기다리는 중입니다.");
+    }
+    if (stateName === "busy") assert.equal(result.body.retryAfterSec, 45);
+    if (stateName === "hours") assert.equal(result.body.message, "지금 확인은 9~19시(한국 시각)에만 됩니다.");
+  }
+  for (const [code, status] of [["COUPANG_TRACKER_NOT_FOUND", 404], ["COUPANG_MANUAL_TRACKER_PAUSED", 409], ["COUPANG_MANUAL_TRACKER_INELIGIBLE", 409], ["COUPANG_ACTION_INVALID", 400]]) {
+    const state = manualState();
+    state.rpc.coupang_rank_manual_claim = () => ({ data: { ok: false, code }, error: null });
+    const result = await post(state, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+    assert.deepEqual([result.status, result.body.code], [status, code]);
+    assert.ok(result.body.message);
+  }
+});
+
+test("manual-claim: 보관 정리는 마지막 정리가 6시간 넘었을 때만, 실패해도 요청은 진행", async () => {
+  const stale = manualState({ settings: { last_housekeeping_at: "2026-10-16T20:00:00.000Z" } });
+  await post(stale, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.equal(rpcArgs(stale, "coupang_rank_housekeeping").length, 1);
+  const fresh = manualState({ settings: { last_housekeeping_at: "2026-10-17T02:00:00.000Z" } });
+  await post(fresh, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.equal(rpcArgs(fresh, "coupang_rank_housekeeping").length, 0);
+  const never = manualState({ settings: { last_housekeeping_at: null } });
+  never.rpc.coupang_rank_housekeeping = () => ({ data: null, error: { code: "57014", message: "secret detail" } });
+  const { result, lines } = await captureLogs(() => post(never, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) }));
+  assert.equal(result.status, 200);
+  assert.equal(rpcArgs(never, "coupang_rank_housekeeping").length, 1);
+  assert.equal(JSON.parse(lines[0]).event, "coupang_rank_trackers_housekeeping_failed");
+  assert.equal(lines.join("\n").includes("secret"), false);
+});
+
+test("manual-record: 본문 상한 — manual-record 만 64KB, 다른 동작은 33KB 도 413, 64KB 넘음 413", async () => {
+  const state = manualState();
+  const pad = "가".repeat(13000); // 약 39KB
+  const big = await post(state, ownerHeaders(), manualRecordBody({ pad }));
+  assert.equal(big.status, 200, JSON.stringify(big.body));
+  const other = await post(state, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1), pad });
+  assert.deepEqual([other.status, other.body.code], [413, "BODY_TOO_LARGE"]);
+  const declared = await call(state, "POST", { headers: { ...ownerHeaders(), "content-length": "40000" }, body: { action: "pause", ids: [uuid(1)] } });
+  assert.equal(declared.status, 413);
+  const declaredManual = await call(state, "POST", { headers: { ...ownerHeaders(), "content-length": "40000" }, body: manualRecordBody() });
+  assert.equal(declaredManual.status, 200);
+  const huge = await post(state, ownerHeaders(), manualRecordBody({ pad: "가".repeat(23000) }));
+  assert.deepEqual([huge.status, huge.body.code], [413, "BODY_TOO_LARGE"]);
+});
+
+test("manual-record: 형식 오류 400 {field}(RPC 0회), 모양이 틀려도 차단 신호가 보이면 그날 중지만 건다", async () => {
+  const state = manualState();
+  for (const [overrides, field] of [
+    [{ claimId: "x" }, "claimId"], [{ claimToken: "mic1_x" }, "claimToken"], [{ outcome: "done" }, "outcome"],
+    [{ outcomeCode: "Bad Code" }, "outcomeCode"], [{ outcomeCode: 3 }, "outcomeCode"],
+    [{ extensionVersion: "1.0" }, "extensionVersion"], [{ durationMs: -1 }, "durationMs"],
+  ]) {
+    const result = await post(state, ownerHeaders(), manualRecordBody(overrides));
+    assert.deepEqual([result.status, result.body.code, result.body.field], [400, "COUPANG_MANUAL_RECORD_INVALID", field], JSON.stringify(overrides));
+  }
+  const badQuery = await post(state, ownerHeaders(), manualRecordBody({}, { query: "가".repeat(101) }));
+  assert.equal(badQuery.body.field, "page.query");
+  assert.equal(state.rpcCalls.length, 0);
+
+  const blockedButBroken = await post(state, ownerHeaders(), manualRecordBody({}, { httpStatus: 403, organic: "broken" }));
+  assert.deepEqual([blockedButBroken.status, blockedButBroken.body.field, blockedButBroken.body.stopped, blockedButBroken.body.stopCode],
+    [400, "page.organic", true, "blocked_http_403"]);
+  assert.equal(blockedButBroken.body.manual.state, "stopped");
+  assert.deepEqual(rpcArgs(state, "coupang_rank_manual_stop"), [{
+    p_claim_id: MANUAL_CLAIM_ID, p_token_sha256: sha256(MANUAL_TOKEN), p_requested_by: "owner", p_code: "blocked_http_403", p_run_id: null,
+  }]);
+  assert.equal(rpcArgs(state, "coupang_rank_manual_record").length, 0);
+});
+
+test("manual-record: 서버 판정을 RPC 로 넘긴다 — 403·page_unreadable 은 차단+중지 사유, 검색어 다름은 error(query_mismatch), 광고만은 empty", async () => {
+  const cases = [
+    [{}, "ok", null, null],
+    [{ httpStatus: 403, status: "blocked", organic: [], ads: [], itemCount: 0 }, "blocked", "blocked_http_403", null],
+    [{ httpStatus: 200, blockedText: true, organic: [], ads: [], itemCount: 0 }, "blocked", "blocked_text", null],
+    [{ status: "error", errorCode: "page_unreadable", finalHost: "", finalPath: "", httpStatus: null, organic: [], ads: [], itemCount: 0, query: "" }, "blocked", "page_unreadable", "page_unreadable"],
+    [{ query: "아이폰 케이스" }, "error", null, "query_mismatch"],
+    [{ query: "아이폰  필름" }, "ok", null, null],
+    [{ organic: [], ads: [{ p: "7000001", v: "", s: 1 }], itemCount: 1 }, "empty", null, null],
+    [{ finalPath: "/vp/products/1", errorCode: "user_navigated" }, "error", null, "user_navigated"],
+    [{ finalPath: "/np/campaigns/9" }, "unsupported", null, null],
+    [{ status: "error", errorCode: "window_closed", httpStatus: null }, "error", null, "window_closed"],
+  ];
+  for (const [pageOverrides, status, stopCode, errorCode] of cases) {
+    const state = manualState();
+    const result = await post(state, ownerHeaders(), manualRecordBody({}, pageOverrides));
+    assert.equal(result.status, 200, JSON.stringify(pageOverrides));
+    const [args] = rpcArgs(state, "coupang_rank_manual_record");
+    assert.equal(args.p_status, status, JSON.stringify(pageOverrides));
+    assert.equal(args.p_stop_code, stopCode, JSON.stringify(pageOverrides));
+    assert.equal(args.p_run.errorCode, errorCode, JSON.stringify(pageOverrides));
+    assert.deepEqual([args.p_claim_id, args.p_token_sha256, args.p_requested_by, args.p_outcome, args.p_outcome_code],
+      [MANUAL_CLAIM_ID, sha256(MANUAL_TOKEN), "owner", "measured", null]);
+    assert.equal(args.p_run.collectorVersion, "1.0.0");
+    assert.equal(Object.hasOwn(args.p_run, "query"), false, "p_run 은 수집기와 같은 칸만");
+  }
+  // 시작 못 함·응답 없음: p_status·p_run 은 null, blocked_today 만 중지 사유
+  for (const [outcome, outcomeCode, stopCode] of [
+    ["not_started", "incognito_window_open", null], ["not_started", "blocked_today", "extension_reported"],
+    ["not_started", "report_pending", "extension_reported"], ["lost", "extension_timeout", null],
+  ]) {
+    const state = manualState();
+    const body = { action: "manual-record", claimId: MANUAL_CLAIM_ID, claimToken: MANUAL_TOKEN, outcome, outcomeCode };
+    const result = await post(state, ownerHeaders(), body);
+    assert.equal(result.status, 200);
+    const [args] = rpcArgs(state, "coupang_rank_manual_record");
+    assert.deepEqual([args.p_status, args.p_run, args.p_stop_code, args.p_outcome_code], [null, null, stopCode, outcomeCode]);
+  }
+});
+
+test("manual-record: 요청 없음 404·표 없음 409, RPC 거절 코드 → HTTP(늦음 410 + stopped), 200 응답 모양", async () => {
+  const none = manualState({ claimRow: null });
+  assert.deepEqual([(await post(none, ownerHeaders(), manualRecordBody())).status, rpcArgs(none, "coupang_rank_manual_record").length], [404, 0]);
+  const noTable = manualState();
+  delete noTable.tables.coupang_rank_manual_claims;
+  assert.equal((await post(noTable, ownerHeaders(), manualRecordBody())).body.code, "COUPANG_MANUAL_SETUP_REQUIRED");
+  for (const [code, status, extra] of [
+    ["COUPANG_MANUAL_CLAIM_EXPIRED", 410, { stopped: true }], ["COUPANG_MANUAL_CLAIM_NOT_VERIFIED", 409, { stopped: false }],
+    ["COUPANG_MANUAL_CLAIM_MISMATCH", 409, {}], ["COUPANG_MANUAL_CLAIM_CLOSED", 409, { stopped: true }],
+    ["COUPANG_MANUAL_RECORD_INVALID", 400, { field: "timing" }], ["COUPANG_MANUAL_CLAIM_NOT_FOUND", 404, {}],
+  ]) {
+    const state = manualState();
+    state.rpc.coupang_rank_manual_record = () => ({ data: { ok: false, code, ...extra }, error: null });
+    const result = await post(state, ownerHeaders(), manualRecordBody());
+    assert.deepEqual([result.status, result.body.code], [status, code]);
+    for (const [key, value] of Object.entries(extra)) assert.equal(result.body[key], value, `${code}.${key}`);
+  }
+  const missingFn = manualState();
+  delete missingFn.rpc.coupang_rank_manual_record;
+  assert.deepEqual([(await post(missingFn, ownerHeaders(), manualRecordBody())).status], [409]);
+  const ok = await post(manualState(), ownerHeaders(), manualRecordBody({}, { httpStatus: 403, status: "blocked", organic: [], ads: [], itemCount: 0 }));
+  assert.deepEqual(Object.keys(ok.body), [
+    "ok", "accepted", "duplicate", "outcome", "status", "errorCode", "matched", "counted", "stopped", "stopCode", "late", "tracker", "manual",
+  ]);
+  assert.deepEqual([ok.body.accepted, ok.body.status, ok.body.stopped, ok.body.stopCode, ok.body.manual.state], [true, "blocked", true, "blocked_http_403", "stopped"]);
+  assert.equal(ok.body.tracker.rank, 12);
+});
+
+test("GET ?view=manual-verify: 같은 크롬 세션 + 머리글 토큰 → 서버 확인, 응답은 서버가 정한 검색어, 토큰은 주소로 받지 않는다", async () => {
+  const state = manualState();
+  const { status, body, headers } = await manualGet(state, ownerHeaders(), "manual-verify", { claimId: MANUAL_CLAIM_ID.toUpperCase() });
+  assert.equal(status, 200);
+  assert.equal(headers.get("cache-control"), "no-store");
+  assert.deepEqual(body, {
+    ok: true, verified: true, claimId: MANUAL_CLAIM_ID, keyword: "아이폰 필름", keywordKey: "아이폰 필름",
+    verifiedAt: NOW, recordUntil: "2026-10-17T03:10:00.000Z", serverTime: NOW,
+  });
+  assert.deepEqual(rpcArgs(state, "coupang_rank_manual_verify"), [{
+    p_claim_id: MANUAL_CLAIM_ID, p_token_sha256: sha256(MANUAL_TOKEN), p_requested_by: "owner",
+  }]);
+  // 토큰 머리글 없음(주소에 실어도) → 400, RPC 0회
+  const urlToken = await manualGet(state, ownerHeaders(), "manual-verify", { token: null, extraQuery: `&claimToken=${MANUAL_TOKEN}` });
+  assert.deepEqual([urlToken.status, urlToken.body.code, urlToken.body.field], [400, "COUPANG_ACTION_INVALID", "claimToken"]);
+  const badId = await manualGet(state, ownerHeaders(), "manual-verify", { claimId: "nope" });
+  assert.equal(badId.body.field, "claimId");
+  assert.equal(rpcArgs(state, "coupang_rank_manual_verify").length, 1);
+  // 운영팀·광고주·세션 없음
+  assert.equal((await manualGet(state, teamHeaders("adv-a"), "manual-verify")).body.code, "COUPANG_OWNER_ONLY");
+  assert.equal((await manualGet(state, clientHeaders("adv-a"), "manual-verify")).body.code, "COUPANG_OWNER_ONLY");
+  assert.equal((await manualGet(state, {}, "manual-verify")).status, 401);
+  assert.equal(rpcArgs(state, "coupang_rank_manual_verify").length, 1);
+});
+
+test("GET ?view=manual-verify: 거절은 ok:false(성공 모양 아님) — 상태·1회용·기한·설정 없음·표 없음", async () => {
+  for (const [data, status, code] of [
+    [{ ok: false, state: "gap", manual: manualSummary({ state: "gap", nextAt: "2026-10-17T03:01:40.000Z" }) }, 409, "COUPANG_MANUAL_GAP"],
+    [{ ok: false, state: "stopped", manual: manualSummary({ state: "stopped" }) }, 409, "COUPANG_MANUAL_STOPPED"],
+    [{ ok: false, code: "COUPANG_MANUAL_CLAIM_USED" }, 409, "COUPANG_MANUAL_CLAIM_USED"],
+    [{ ok: false, code: "COUPANG_MANUAL_CLAIM_EXPIRED" }, 410, "COUPANG_MANUAL_CLAIM_EXPIRED"],
+    [{ ok: false, code: "COUPANG_MANUAL_CLAIM_MISMATCH" }, 409, "COUPANG_MANUAL_CLAIM_MISMATCH"],
+    [{ ok: true }, 409, "COUPANG_MANUAL_SETUP_REQUIRED"],
+  ]) {
+    const state = manualState();
+    state.rpc.coupang_rank_manual_verify = () => ({ data, error: null });
+    const result = await manualGet(state, ownerHeaders(), "manual-verify");
+    assert.deepEqual([result.status, result.body.ok, result.body.code, result.body.verified], [status, false, code, undefined], code);
+  }
+  const noColumns = createState();
+  const before = await manualGet(noColumns, ownerHeaders(), "manual-verify");
+  assert.deepEqual([before.status, before.body.ok, before.body.code], [409, false, "COUPANG_MANUAL_SETUP_REQUIRED"]);
+  const noTables = manualState();
+  delete noTables.tables.coupang_rank_settings;
+  const tables = await manualGet(noTables, ownerHeaders(), "manual-verify");
+  assert.deepEqual([tables.status, tables.body.ok, tables.body.code], [503, false, "COUPANG_SETUP_REQUIRED"]);
+  const noFunction = manualState();
+  delete noFunction.rpc.coupang_rank_manual_verify;
+  assert.deepEqual([(await manualGet(noFunction, ownerHeaders(), "manual-verify")).status], [409]);
+});
+
+test("GET ?view=manual-stop: 사유는 계약 목록만, 토큰 해시·회차 없음으로 중지 RPC, 응답 stopped·manual", async () => {
+  const state = manualState();
+  const ok = await manualGet(state, ownerHeaders(), "manual-stop", { reason: "blocked_http_403" });
+  assert.equal(ok.status, 200);
+  assert.deepEqual([ok.body.ok, ok.body.stopped, ok.body.stoppedDay, ok.body.stopCode, ok.body.manual.state], [true, true, "2026-10-17", "blocked_http_403", "stopped"]);
+  assert.deepEqual(rpcArgs(state, "coupang_rank_manual_stop"), [{
+    p_claim_id: MANUAL_CLAIM_ID, p_token_sha256: sha256(MANUAL_TOKEN), p_requested_by: "owner", p_code: "blocked_http_403", p_run_id: null,
+  }]);
+  for (const reason of ["", "blocked", "drop table", "BLOCKED_TEXT"]) {
+    const bad = await manualGet(state, ownerHeaders(), "manual-stop", { reason: reason || undefined });
+    assert.deepEqual([bad.status, bad.body.field], [400, "reason"], reason);
+  }
+  assert.equal(rpcArgs(state, "coupang_rank_manual_stop").length, 1);
+  state.rpc.coupang_rank_manual_stop = () => ({ data: { ok: false, code: "COUPANG_MANUAL_CLAIM_MISMATCH" }, error: null });
+  assert.equal((await manualGet(state, ownerHeaders(), "manual-stop", { reason: "page_unreadable" })).status, 409);
+  assert.equal((await manualGet(state, teamHeaders("adv-a"), "manual-stop", { reason: "page_unreadable" })).body.code, "COUPANG_OWNER_ONLY");
+});
+
+test("GET 목록: manual 칸은 총관리자에게만(확장 ID·zip 경로 포함), 운영팀·광고주 응답에는 키 자체가 없다, 요약 실패는 setup_required(200)", async () => {
+  const state = manualState();
+  state.tables.coupang_rank_trackers.push(trackerRow());
+  const owner = await list(state, ownerHeaders());
+  assert.equal(owner.status, 200);
+  assert.equal(owner.body.manual.state, "ready");
+  assert.equal(owner.body.manual.usedToday, 2);
+  assert.equal(owner.body.manual.extensionId, MANUAL_EXTENSION_ID);
+  assert.equal(owner.body.manual.extensionZipPath, MANUAL_EXTENSION_ZIP_PATH);
+  assert.deepEqual(rpcArgs(state, "coupang_rank_manual_summary"), [{ p_exclude_claim: null }]);
+  const teamState = manualState();
+  teamState.tables.coupang_rank_trackers.push(trackerRow({ agency_code: "adv-a", client_id: CLIENT_A }));
+  for (const headers of [teamHeaders("adv-a"), clientHeaders("adv-a")]) {
+    const result = await list(teamState, headers);
+    assert.equal(result.status, 200);
+    assert.equal(Object.hasOwn(result.body, "manual"), false);
+  }
+  assert.equal(rpcArgs(teamState, "coupang_rank_manual_summary").length, 0);
+  const missing = manualState();
+  delete missing.rpc.coupang_rank_manual_summary;
+  assert.deepEqual((await list(missing, ownerHeaders())).body.manual, { state: "setup_required" });
+  const broken = manualState();
+  broken.rpc.coupang_rank_manual_summary = () => ({ data: null, error: { code: "57014", message: "secret detail" } });
+  const { result, lines } = await captureLogs(() => list(broken, ownerHeaders()));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.manual, { state: "setup_required" });
+  assert.equal(JSON.parse(lines[0]).event, "coupang_rank_trackers_manual_summary_failed");
+  assert.equal(lines.join("\n").includes("secret"), false);
+});
+
+test("settings-update manualEnabled: 총관리자 켜기·끄기는 바로 저장(상향 아님), 수동 칸 없으면 409, 운영팀은 OWNER_ONLY", async () => {
+  const state = manualState({ settings: { manual_enabled: false } });
+  const on = await post(state, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: true } });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.settings.manualEnabled, true);
+  assert.equal(state.tables.coupang_rank_settings[0].manual_enabled, true);
+  assert.equal(state.rpcCalls.filter((entry) => entry.name === "coupang_rank_stats").length, 0);
+  const off = await post(state, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: false } });
+  assert.equal(off.body.settings.manualEnabled, false);
+  const before = createState();
+  const refused = await post(before, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: true } });
+  assert.deepEqual([refused.status, refused.body.code], [409, "COUPANG_MANUAL_SETUP_REQUIRED"]);
+  assert.equal(Object.hasOwn(before.tables.coupang_rank_settings[0], "manual_enabled"), false);
+  assert.equal((await post(state, teamHeaders("adv-a"), { action: "settings-update", settings: { manualEnabled: true } })).body.code, "COUPANG_OWNER_ONLY");
+  for (const value of ["true", 1]) {
+    assert.equal((await post(state, ownerHeaders(), { action: "settings-update", settings: { manualEnabled: value } })).body.field, "manualEnabled");
+  }
+});
+
+test("기록 로그에 요청 토큰·요청 id·검색어가 남지 않는다(실패 500 경로 포함)", async () => {
+  const state = manualState();
+  state.rpc.coupang_rank_manual_record = () => ({ data: null, error: { code: "57014", message: "canceling statement" } });
+  const { result, lines } = await captureLogs(() => post(state, ownerHeaders(), manualRecordBody()));
+  assert.equal(result.status, 500);
+  assert.equal(result.body.code, "COUPANG_RANK_TRACKERS_FAILED");
+  assert.equal(lines.length, 1);
+  const entry = JSON.parse(lines[0]);
+  assert.deepEqual([entry.event, entry.action, entry.stage, entry.errorCode], ["coupang_rank_trackers_failed", "manual-record", "manual_record", "57014"]);
+  const verifyState = manualState();
+  verifyState.rpc.coupang_rank_manual_verify = () => ({ data: "not-an-object", error: null });
+  const verifyLogs = await captureLogs(() => manualGet(verifyState, ownerHeaders(), "manual-verify"));
+  assert.equal(verifyLogs.result.status, 500);
+  for (const line of [...lines, ...verifyLogs.lines]) {
+    assert.equal(line.includes(MANUAL_TOKEN), false);
+    assert.equal(line.includes(MANUAL_CLAIM_ID), false);
+    assert.equal(line.includes(sha256(MANUAL_TOKEN)), false);
+    assert.equal(line.includes("아이폰"), false);
+  }
+  assert.equal(HANDLER_SOURCE.includes("claimToken:"), true, "토큰은 claim 응답에만 싣는다");
+  assert.equal(/console\.(?:log|warn|error)\([^)]*claim(?:Token|Id)/.test(HANDLER_SOURCE), false);
 });

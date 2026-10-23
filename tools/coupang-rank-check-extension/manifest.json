@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "모먼트 인사이트 쿠팡 순위 확인",
+  "short_name": "MI 쿠팡 확인",
+  "version": "1.0.0",
+  "description": "모먼트 인사이트 화면에서 '지금 확인'을 누를 때만, 서버 확인을 받은 뒤 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다.",
+  "minimum_chrome_version": "110",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2IVP2XcnXtNCQ4/gnzDdaOuQpLYZ00c5jrh+gnMaZAVSjT745up1nSeIc/v/lGQOuXNuPxwxUcktehHHRxelTjeJqMP5LK8DQZdOl04lE1eWmJ0vSA+M8uavt5XAPaQXCdFkZO0c+FvQO6XTiPI/IMOqD37edu1po+3Fk1/P9f+23mGEUVUOHAhKXUs637Hna/Y9J+FcdFxy23bhL/ne4Sat7DhGqBmFUzBSEnPYh3JMcBI8FUrzXOWHh2PmJAwn0D5lQlP+vytfiKkoQRsxtBklw2sbEXiqhwnXtS160wJXbM9NgMkCr77h01S1VqvDBcn9gjnwxenbXGoI46smrwIDAQAB",
+  "incognito": "spanning",
+  "permissions": ["scripting", "storage"],
+  "host_permissions": ["https://www.coupang.com/*", "https://insight.momentlabs.co.kr/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "externally_connectable": { "matches": ["https://insight.momentlabs.co.kr/admin*"] }
+}

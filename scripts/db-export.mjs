@@ -64,6 +64,7 @@ export const DEFAULT_TABLES = [
 //   coupang_rank_keywords    검색 일정·임대
 //   coupang_rank_collectors  연결 코드 해시·마지막 claim 답
 //   coupang_rank_cooldowns   쉬기 기록(90일)
+//   coupang_rank_manual_claims  ① 지금 확인 1회용 요청(토큰 해시·60일, 대표 SQL 20261018090000)
 // 감사 기록은 최근 90일만(오래된 것은 이전 백업에 있다).
 export const AUDIT_LOG_DAYS = 90;
 export const PAGE_SIZE = 1000;

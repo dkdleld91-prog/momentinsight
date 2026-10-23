@@ -8,7 +8,18 @@ import { PRIMARY_AGENCY_CODE } from "../owner-identity.mjs";
 import { requestIdFor } from "../runtime.mjs";
 import {
   COLLECTOR_BUNDLE_VERSION,
+  COLLECTOR_ERROR_CODE_PATTERN,
   ERROR_HTTP_STATUS,
+  MANUAL_ALLOWED_ROLES,
+  MANUAL_CLAIM_ID_PARAM,
+  MANUAL_CLAIM_TOKEN_HEADER,
+  MANUAL_CLAIM_TTL_SECONDS,
+  MANUAL_OUTCOMES,
+  MANUAL_RECORD_BODY_MAX_BYTES,
+  MANUAL_STOP_CODES,
+  MANUAL_STOP_REASON_PARAM,
+  MANUAL_STOP_VIEW,
+  MANUAL_VERIFY_VIEW,
   MAX_ACTIVE_COLLECTORS,
   SUCCESS_RUN_STATUSES,
   TRACKERS_BODY_MAX_BYTES,
@@ -29,6 +40,24 @@ import {
 import { collectorState, kstDayOf, kstDays30, trackerPayload } from "../coupang-rank/board.mjs";
 import { capacityOf, isRaisingPatch, raiseStatus, settingsPayload, validateSettingsPatch } from "../coupang-rank/settings.mjs";
 import { collectorOneLiners, safeRelease } from "../coupang-rank/one-liners.mjs";
+import {
+  MANUAL_MESSAGES,
+  finalManualStatus,
+  generateManualClaimToken,
+  hasManualColumns,
+  isManualToken,
+  manualPayload,
+  manualRecordStopCode,
+  manualRefusal,
+  manualTokenHash,
+} from "../coupang-rank/manual.mjs";
+import {
+  classifyManualPage,
+  manualStopSignal,
+  recordPayloadForRpc,
+  sanitizeTitles,
+  validateManualRecord,
+} from "../coupang-rank/page-result.mjs";
 
 const RESPONSE_OPTIONS = Object.freeze({
   methods: "GET, POST, OPTIONS",
@@ -45,6 +74,7 @@ const TABLES = Object.freeze({
   snapshots: "coupang_rank_snapshots",
   days: "coupang_rank_days",
   cooldowns: "coupang_rank_cooldowns",
+  manualClaims: "coupang_rank_manual_claims",
 });
 
 const TRACKER_COLUMNS = [
@@ -70,13 +100,19 @@ const SNAPSHOT_COLUMNS = [
 // 측정 기록(view=runs)에 보여 줄 실패 회차 상태. 임대 중·반납은 측정이 아니라서 뺀다.
 const FAILURE_RUN_STATUSES = Object.freeze(["expired", "partial", "blocked", "empty", "error", "timeout", "unsupported"]);
 
-const VIEWS = new Set(["", "access", "runs", "collector"]);
+// ① 지금 확인: 확장이 창을 열기 직전에 부르는 확인(GET)과, 확장이 본 차단을 결과 보고 전에 알리는 중지(GET).
+// 둘 다 같은 크롬의 총관리자 세션(게이트) + 1회용 요청 토큰(머리글)으로만 열린다. GET 인 이유는 contract.mjs ① 머리말.
+const MANUAL_VIEWS = new Set([MANUAL_VERIFY_VIEW, MANUAL_STOP_VIEW]);
+const VIEWS = new Set(["", "access", "runs", "collector", ...MANUAL_VIEWS]);
 const SCOPED_ACTIONS = new Set(["create", "pause", "resume", "delete", "group"]);
 const CREATE_ACTIONS = new Set(["create", "resume"]);
 const OWNER_ACTIONS = new Set([
   "settings-update", "collector-enable", "collector-disable", "cooldown-clear",
   "account-limit-set", "collector-token-create", "collector-token-revoke",
 ]);
+// ① 지금 확인(spec-manual §6.3·§6.4). manual-claim 은 범위(추적기)가 필요해 범위 판정을 하고, manual-record 는 범위와 무관하다.
+const MANUAL_ACTIONS = new Set(["manual-claim", "manual-record"]);
+const MANUAL_HOUSEKEEPING_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const LIMIT_ERROR_CODES = new Set(["COUPANG_KEYWORD_LIMIT_REACHED", "COUPANG_GLOBAL_KEYWORD_LIMIT_REACHED"]);
 const LIMIT_AGENCY_CODE_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const INTEGER_TEXT_PATTERN = /^[0-9]{1,4}$/;
@@ -125,6 +161,7 @@ const MESSAGES = Object.freeze({
   METHOD_NOT_ALLOWED: "허용되지 않은 요청 방식입니다.",
   COUPANG_SETUP_REQUIRED: "쿠팡 순위 저장소가 아직 준비되지 않았습니다(대표 SQL 실행 전).",
   COUPANG_RANK_TRACKERS_FAILED: "쿠팡 순위 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+  ...MANUAL_MESSAGES,
 });
 
 class SetupMissingError extends Error {
@@ -348,6 +385,125 @@ function scopeFields(access) {
   };
 }
 
+// ── ① 지금 확인 공용 ──────────────────────────────────────────────────────
+
+function manualAllowed(access) {
+  return access?.owner === true && MANUAL_ALLOWED_ROLES.includes(access.role);
+}
+
+// 목록에 싣는 manual 칸. 수동 칸이 없거나(대표 SQL 전) 요약을 읽지 못하면 setup_required 로 닫는다(목록은 그대로 200).
+async function loadManualPayload(ctx, settings) {
+  if (!hasManualColumns(settings)) return { state: "setup_required" };
+  try {
+    const result = await ctx.supabaseAdmin.rpc("coupang_rank_manual_summary", { p_exclude_claim: null });
+    if (result?.error) {
+      if (!isSetupMissing(result.error)) {
+        console.warn(JSON.stringify({
+          event: "coupang_rank_trackers_manual_summary_failed",
+          errorCode: String(result.error.code || ""),
+        }));
+      }
+      return { state: "setup_required" };
+    }
+    return manualPayload(result?.data);
+  } catch (error) {
+    console.warn(JSON.stringify({ event: "coupang_rank_trackers_manual_summary_failed", errorCode: String(error?.code || "") }));
+    return { state: "setup_required" };
+  }
+}
+
+// 수동 RPC 결과: 함수가 없으면(대표 SQL 전) null 을 돌려 부르는 쪽이 409 로 답하게 하고, 그 밖의 DB 오류는 던진다.
+async function manualRpc(ctx, name, args, stage) {
+  const result = await ctx.supabaseAdmin.rpc(name, args);
+  if (result?.error) {
+    if (isSetupMissing(result.error)) return null;
+    const wrapped = new Error(`coupang_rank_${stage}_failed`);
+    wrapped.code = String(result.error.code || "");
+    wrapped.stage = stage;
+    throw wrapped;
+  }
+  if (!plainObject(result?.data)) {
+    const wrapped = new Error(`coupang_rank_${stage}_failed`);
+    wrapped.code = "MANUAL_RPC_SHAPE";
+    wrapped.stage = stage;
+    throw wrapped;
+  }
+  return result.data;
+}
+
+// SQL 거절({ ok:false, code | state }) → 4xx 응답(문구는 사유별, manual·retryAfterSec·stopped 를 아는 만큼).
+function manualFailure(request, data) {
+  const refusal = manualRefusal(data);
+  return respond(request, {
+    ok: false,
+    code: refusal.code,
+    message: refusal.message || MESSAGES[refusal.code] || MESSAGES.COUPANG_RANK_TRACKERS_FAILED,
+    ...refusal.extra,
+  }, refusal.status);
+}
+
+// 확장이 보낸 요청 id(쿼리)·토큰(머리글). 토큰은 주소에 싣지 않는다(기록·주소창에 남지 않게).
+function manualClaimCredentials(request, url) {
+  const claimId = url.searchParams.get(MANUAL_CLAIM_ID_PARAM);
+  if (!isUuid(claimId)) return { ok: false, field: "claimId" };
+  const token = String(request.headers.get(MANUAL_CLAIM_TOKEN_HEADER) || "");
+  if (!isManualToken(token)) return { ok: false, field: "claimToken" };
+  return { ok: true, claimId: claimId.toLowerCase(), tokenSha256: manualTokenHash(token) };
+}
+
+// GET ?view=manual-verify: 확장이 새 시크릿 창을 열기 직전에 부른다. 통과하면 서버가 이 시각을 실제 검색 시각으로 적고
+// (간격·하루 횟수의 기준), 확장은 응답의 keyword(서버가 정한 검색어)로만 창을 연다. 1회용: 두 번째는 CLAIM_USED.
+async function manualVerifyView(request, ctx, settings, access, url, trace) {
+  if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  const credentials = manualClaimCredentials(request, url);
+  if (!credentials.ok) return failure(request, "COUPANG_ACTION_INVALID", { field: credentials.field });
+  trace.stage = "manual_verify";
+  const data = await manualRpc(ctx, "coupang_rank_manual_verify", {
+    p_claim_id: credentials.claimId,
+    p_token_sha256: credentials.tokenSha256,
+    p_requested_by: access.createdBy,
+  }, "manual_verify");
+  if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (data.ok !== true || data.verified !== true) return manualFailure(request, data);
+  return respond(request, {
+    ok: true,
+    verified: true,
+    claimId: data.claimId ?? credentials.claimId,
+    keyword: data.keyword ?? null,
+    keywordKey: data.keywordKey ?? null,
+    verifiedAt: data.verifiedAt ?? null,
+    recordUntil: data.recordUntil ?? null,
+    serverTime: data.serverTime ?? null,
+  });
+}
+
+// GET ?view=manual-stop&reason=…: 확장이 차단 신호(403·429·503·차단 문구·검색 밖으로 보냄)를 본 순간 결과 보고와
+// 따로 알린다(관리자 탭이 닫혀도 그날 중지가 걸리게). 그날 중지만 걸고 순위는 저장하지 않는다(더 엄격하게만 바뀐다).
+async function manualStopView(request, ctx, settings, access, url, trace) {
+  if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  const credentials = manualClaimCredentials(request, url);
+  if (!credentials.ok) return failure(request, "COUPANG_ACTION_INVALID", { field: credentials.field });
+  const reason = url.searchParams.get(MANUAL_STOP_REASON_PARAM);
+  if (!MANUAL_STOP_CODES.includes(reason)) return failure(request, "COUPANG_ACTION_INVALID", { field: "reason" });
+  trace.stage = "manual_stop";
+  const data = await manualRpc(ctx, "coupang_rank_manual_stop", {
+    p_claim_id: credentials.claimId,
+    p_token_sha256: credentials.tokenSha256,
+    p_requested_by: access.createdBy,
+    p_code: reason,
+    p_run_id: null,
+  }, "manual_stop");
+  if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (data.ok !== true) return manualFailure(request, data);
+  return respond(request, {
+    ok: true,
+    stopped: data.stopped === true,
+    stoppedDay: data.stoppedDay ?? null,
+    stopCode: data.stopCode ?? reason,
+    manual: manualPayload(data.manual),
+  });
+}
+
 // ── GET ──────────────────────────────────────────────────────────────────
 
 function setupRequiredBody(request, view) {
@@ -381,7 +537,10 @@ async function listView(request, ctx, settings, access, now, trace) {
   const count = Number.isInteger(result.count) ? result.count : null;
   const shown = rows.slice(0, TRACKER_LIST_MAX);
   trace.stage = "details";
-  const assembled = await assembleTrackers(ctx, settings, access, shown, now, { includeLimit: access.role !== "client" });
+  const [assembled, manual] = await Promise.all([
+    assembleTrackers(ctx, settings, access, shown, now, { includeLimit: access.role !== "client" }),
+    manualAllowed(access) ? loadManualPayload(ctx, settings) : Promise.resolve(null),
+  ]);
   const totalCount = count ?? rows.length;
   const hasMore = totalCount > TRACKER_LIST_MAX;
   const body = {
@@ -405,6 +564,8 @@ async function listView(request, ctx, settings, access, now, trace) {
     },
     trackers: assembled.trackers,
   };
+  // ① 지금 확인 칸은 총관리자(MANUAL_ALLOWED_ROLES)에게만 싣는다. 운영팀·광고주 응답에는 키 자체가 없다.
+  if (manual) body.manual = manual;
   const ms = Date.now() - started;
   if (ms > SLOW_LIST_MS) {
     console.warn(JSON.stringify({ event: "coupang_rank_trackers_list_slow", ms, count: rows.length }));
@@ -584,7 +745,11 @@ async function handleGet(request, ctx, url, view, now, trace) {
   if (!VIEWS.has(view)) return failure(request, "COUPANG_ACTION_INVALID");
   trace.stage = "settings";
   const loaded = await loadSettings(ctx);
-  if (loaded.setupRequired) return respond(request, setupRequiredBody(request, view));
+  if (loaded.setupRequired) {
+    // 확장의 확인·중지는 '준비 안 됨'을 성공 모양(ok:true)으로 받으면 안 된다.
+    if (MANUAL_VIEWS.has(view)) return failure(request, "COUPANG_SETUP_REQUIRED");
+    return respond(request, setupRequiredBody(request, view));
+  }
   const settings = loaded.settings;
 
   if (view === "access") {
@@ -596,10 +761,15 @@ async function handleGet(request, ctx, url, view, now, trace) {
   const resolved = await resolveCoupangAccess(request, ctx, settings, {
     write: false,
     create: false,
-    ownerOnly: view === "collector",
+    ownerOnly: view === "collector" || MANUAL_VIEWS.has(view),
   });
   if (!resolved.ok) return failure(request, resolved.code);
   const access = resolved.access;
+  if (MANUAL_VIEWS.has(view)) {
+    if (!manualAllowed(access)) return failure(request, "COUPANG_OWNER_ONLY");
+    if (view === MANUAL_VERIFY_VIEW) return manualVerifyView(request, ctx, settings, access, url, trace);
+    return manualStopView(request, ctx, settings, access, url, trace);
+  }
   if (view === "collector") {
     if (access.owner !== true) return failure(request, "COUPANG_OWNER_ONLY");
     return collectorView(request, ctx, settings, now, trace);
@@ -610,9 +780,11 @@ async function handleGet(request, ctx, url, view, now, trace) {
 
 // ── POST ─────────────────────────────────────────────────────────────────
 
+// 본문 상한: manual-record 만 64KB(상품 130개 × 한글 제목이면 32KB 를 넘을 수 있다), 나머지 동작은 32KB 그대로.
+// 동작 이름은 본문 안에 있으므로 64KB 까지 읽고 해석한 뒤 동작별 상한을 다시 본다(선언 길이·실제 길이 모두).
 async function readJsonBody(request) {
   const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > TRACKERS_BODY_MAX_BYTES) return { ok: false, code: "BODY_TOO_LARGE" };
+  if (Number.isFinite(declared) && declared > MANUAL_RECORD_BODY_MAX_BYTES) return { ok: false, code: "BODY_TOO_LARGE" };
   const contentType = String(request.headers.get("content-type") || "").trim().toLowerCase();
   if (!contentType.startsWith("application/json")) return { ok: false, code: "COUPANG_ACTION_INVALID" };
   let text;
@@ -621,14 +793,17 @@ async function readJsonBody(request) {
   } catch {
     return { ok: false, code: "COUPANG_ACTION_INVALID" };
   }
-  if (new TextEncoder().encode(text).length > TRACKERS_BODY_MAX_BYTES) return { ok: false, code: "BODY_TOO_LARGE" };
+  const bytes = new TextEncoder().encode(text).length;
+  if (bytes > MANUAL_RECORD_BODY_MAX_BYTES) return { ok: false, code: "BODY_TOO_LARGE" };
   let body;
   try {
     body = JSON.parse(text);
   } catch {
-    return { ok: false, code: "COUPANG_ACTION_INVALID" };
+    return { ok: false, code: bytes > TRACKERS_BODY_MAX_BYTES ? "BODY_TOO_LARGE" : "COUPANG_ACTION_INVALID" };
   }
-  if (!plainObject(body)) return { ok: false, code: "COUPANG_ACTION_INVALID" };
+  if (!plainObject(body)) return { ok: false, code: bytes > TRACKERS_BODY_MAX_BYTES ? "BODY_TOO_LARGE" : "COUPANG_ACTION_INVALID" };
+  const limit = body.action === "manual-record" ? MANUAL_RECORD_BODY_MAX_BYTES : TRACKERS_BODY_MAX_BYTES;
+  if ((Number.isFinite(declared) && declared > limit) || bytes > limit) return { ok: false, code: "BODY_TOO_LARGE" };
   return { ok: true, body };
 }
 
@@ -859,6 +1034,10 @@ async function updateSettingsRow(ctx, patch, stage) {
 async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
   const patch = body.settings;
   if (!plainObject(patch)) return failure(request, "COUPANG_SETTINGS_INVALID", { field: "settings" });
+  // ① 지금 확인 켜기·끄기는 수동 칸(대표 SQL 20261018090000)이 있어야 저장된다.
+  if (Object.hasOwn(patch, "manualEnabled") && !hasManualColumns(settings)) {
+    return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  }
   const confirmRaise = body.confirmRaise === true;
   let stats = null;
   // 내리기만 하는 변경은 집계를 읽지 않고 바로 저장한다(집계가 느리거나 실패해도 비상 감속이 막히지 않게).
@@ -1010,13 +1189,163 @@ async function collectorTokenRevokeAction(request, ctx, body, now, trace) {
   return respond(request, { ok: true, revokedAt: existing.data.revoked_at ?? null });
 }
 
+// ── ① 지금 확인 POST ──────────────────────────────────────────────────────
+
+// 보관 기간 정리·예산 검사: 자동 수집이 꺼져 있어도 돌도록 claim 앞에서 6시간에 한 번(수집기 hello 와 같은 규칙).
+// 실패는 기록만 하고 claim 은 그대로 진행한다.
+async function maybeManualHousekeeping(ctx, settings, now, trace) {
+  const lastMs = Date.parse(String(settings?.last_housekeeping_at || ""));
+  if (Number.isFinite(lastMs) && now.getTime() - lastMs < MANUAL_HOUSEKEEPING_INTERVAL_MS) return false;
+  trace.stage = "manual_housekeeping";
+  try {
+    const result = await ctx.supabaseAdmin.rpc("coupang_rank_housekeeping");
+    if (result?.error) throw result.error;
+    return true;
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: "coupang_rank_trackers_housekeeping_failed",
+      errorCode: String(error?.code || ""),
+    }));
+    return false;
+  }
+}
+
+// POST manual-claim {trackerId}: 화면이 '지금 확인'을 누를 때 1회용 요청을 받는다(검색은 아직 없음).
+// 원문 토큰은 이 응답에만 싣고(화면 → 확장), DB 에는 sha256 만 남긴다.
+async function manualClaimAction(request, ctx, settings, access, body, now, trace) {
+  if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (!isUuid(body.trackerId)) return failure(request, "COUPANG_TRACKER_NOT_FOUND");
+  const trackerId = body.trackerId.toLowerCase();
+  await maybeManualHousekeeping(ctx, settings, now, trace);
+  const generated = generateManualClaimToken();
+  trace.stage = "manual_claim";
+  const data = await manualRpc(ctx, "coupang_rank_manual_claim", {
+    p_tracker_id: trackerId,
+    p_agency_code: access.agencyCode,
+    p_requested_by: access.createdBy,
+    p_requested_role: access.role,
+    p_token_sha256: generated.tokenSha256,
+  }, "manual_claim");
+  if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (data.ok !== true) return manualFailure(request, data);
+  return respond(request, {
+    ok: true,
+    claimId: data.claimId ?? null,
+    claimToken: generated.token,
+    keyword: data.keyword ?? null,
+    keywordKey: data.keywordKey ?? null,
+    expiresAt: data.expiresAt ?? null,
+    expiresInSeconds: MANUAL_CLAIM_TTL_SECONDS,
+    serverTime: data.serverTime ?? null,
+    manual: manualPayload(data.manual),
+  });
+}
+
+function manualRecordInvalid(request, field, extra = {}) {
+  return failure(request, "COUPANG_MANUAL_RECORD_INVALID", { field, ...extra });
+}
+
+// POST manual-record: 화면이 확장의 답을 그대로 보낸다. 판정은 서버가 한다(page-result 규칙 + M1 + M2).
+// 저장은 SQL 이 하고, 확장 확인을 받지 않은 요청의 측정 결과는 받지 않는다(꾸민 결과 막기).
+// 차단 신호는 모양이 틀린 본문이어도, 요청이 끝났거나 늦었어도 그날 중지를 건다(더 엄격하게만 바뀐다).
+async function manualRecordAction(request, ctx, settings, access, body, trace) {
+  if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (!isUuid(body.claimId)) return manualRecordInvalid(request, "claimId");
+  if (!isManualToken(body.claimToken)) return manualRecordInvalid(request, "claimToken");
+  if (!MANUAL_OUTCOMES.includes(body.outcome)) return manualRecordInvalid(request, "outcome");
+  const outcomeCode = body.outcomeCode === undefined ? null : body.outcomeCode;
+  if (outcomeCode !== null && (typeof outcomeCode !== "string" || !COLLECTOR_ERROR_CODE_PATTERN.test(outcomeCode))) {
+    return manualRecordInvalid(request, "outcomeCode");
+  }
+  const claimId = body.claimId.toLowerCase();
+  const tokenSha256 = manualTokenHash(body.claimToken);
+  const measured = body.outcome === "measured";
+
+  if (measured) {
+    const checked = validateManualRecord(body);
+    if (!checked.ok) {
+      const stopCode = manualStopSignal(body.page);
+      if (!stopCode) return manualRecordInvalid(request, checked.field);
+      trace.stage = "manual_stop";
+      const stopped = await manualRpc(ctx, "coupang_rank_manual_stop", {
+        p_claim_id: claimId,
+        p_token_sha256: tokenSha256,
+        p_requested_by: access.createdBy,
+        p_code: stopCode,
+        p_run_id: null,
+      }, "manual_stop");
+      if (!stopped) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+      return manualRecordInvalid(request, checked.field, {
+        stopped: stopped.ok === true && stopped.stopped === true,
+        ...(stopped.ok === true ? { stopCode, manual: manualPayload(stopped.manual) } : {}),
+      });
+    }
+  }
+
+  trace.stage = "manual_claim_row";
+  const claimResult = await ctx.supabaseAdmin
+    .from(TABLES.manualClaims)
+    .select("id, keyword_key, status")
+    .eq("id", claimId)
+    .maybeSingle();
+  if (claimResult.error) {
+    if (isSetupMissing(claimResult.error)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+    throw dbError("manual_claim_row", claimResult.error);
+  }
+  const claim = claimResult.data;
+  if (!plainObject(claim)) return failure(request, "COUPANG_MANUAL_CLAIM_NOT_FOUND");
+
+  let status = null;
+  let run = null;
+  let stopCode;
+  if (measured) {
+    const page = sanitizeTitles(body.page);
+    const final = finalManualStatus(classifyManualPage(page), page, claim);
+    status = final.status;
+    run = recordPayloadForRpc({ ...body, page, collectorVersion: body.extensionVersion }, final);
+    stopCode = manualRecordStopCode("measured", outcomeCode, page);
+  } else {
+    stopCode = manualRecordStopCode(body.outcome, outcomeCode, null);
+  }
+  trace.stage = "manual_record";
+  const data = await manualRpc(ctx, "coupang_rank_manual_record", {
+    p_claim_id: claimId,
+    p_token_sha256: tokenSha256,
+    p_requested_by: access.createdBy,
+    p_outcome: body.outcome,
+    p_outcome_code: outcomeCode,
+    p_status: status,
+    p_run: run,
+    p_stop_code: stopCode,
+  }, "manual_record");
+  if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+  if (data.ok !== true) return manualFailure(request, data);
+  return respond(request, {
+    ok: true,
+    accepted: data.accepted === true,
+    duplicate: data.duplicate === true,
+    outcome: body.outcome,
+    status: data.status ?? null,
+    errorCode: data.errorCode ?? null,
+    matched: finiteNumberOrNull(data.matched) ?? 0,
+    counted: data.counted === true,
+    stopped: data.stopped === true,
+    stopCode: data.stopCode ?? null,
+    late: data.late === true,
+    tracker: plainObject(data.tracker) ? data.tracker : null,
+    manual: manualPayload(data.manual),
+  });
+}
+
 async function handlePost(request, ctx, now, trace) {
   trace.stage = "body";
   const parsed = await readJsonBody(request);
   if (!parsed.ok) return failure(request, parsed.code);
   const body = parsed.body;
   const action = typeof body.action === "string" ? body.action : "";
-  if (!SCOPED_ACTIONS.has(action) && !OWNER_ACTIONS.has(action)) return failure(request, "COUPANG_ACTION_INVALID");
+  if (!SCOPED_ACTIONS.has(action) && !OWNER_ACTIONS.has(action) && !MANUAL_ACTIONS.has(action)) {
+    return failure(request, "COUPANG_ACTION_INVALID");
+  }
   trace.action = action;
 
   trace.stage = "settings";
@@ -1025,7 +1354,7 @@ async function handlePost(request, ctx, now, trace) {
   const settings = loaded.settings;
 
   trace.stage = "access";
-  const ownerOnly = OWNER_ACTIONS.has(action);
+  const ownerOnly = OWNER_ACTIONS.has(action) || action === "manual-record";
   const resolved = await resolveCoupangAccess(request, ctx, settings, {
     write: true,
     create: CREATE_ACTIONS.has(action),
@@ -1034,6 +1363,7 @@ async function handlePost(request, ctx, now, trace) {
   if (!resolved.ok) return failure(request, resolved.code);
   const access = resolved.access;
   if (ownerOnly && access.owner !== true) return failure(request, "COUPANG_OWNER_ONLY");
+  if (MANUAL_ACTIONS.has(action) && !manualAllowed(access)) return failure(request, "COUPANG_OWNER_ONLY");
 
   switch (action) {
     case "create":
@@ -1060,6 +1390,10 @@ async function handlePost(request, ctx, now, trace) {
       return collectorTokenCreateAction(request, ctx, body, trace);
     case "collector-token-revoke":
       return collectorTokenRevokeAction(request, ctx, body, now, trace);
+    case "manual-claim":
+      return manualClaimAction(request, ctx, settings, access, body, now, trace);
+    case "manual-record":
+      return manualRecordAction(request, ctx, settings, access, body, trace);
     default:
       return failure(request, "COUPANG_ACTION_INVALID");
   }
@@ -1081,6 +1415,7 @@ export async function handleCoupangRankTrackersRequest(request, ctx, options = {
     return failure(request, "METHOD_NOT_ALLOWED");
   } catch (error) {
     if (error instanceof SetupMissingError || isSetupMissing(error)) {
+      if (MANUAL_VIEWS.has(trace.view) || MANUAL_ACTIONS.has(trace.action)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
       if (method === "GET") return respond(request, setupRequiredBody(request, trace.view));
       return failure(request, "COUPANG_SETUP_REQUIRED");
     }

@@ -127,6 +127,25 @@ export const ERROR_HTTP_STATUS = Object.freeze({
   JOB_LEASE_MISMATCH: 409,
   JOB_KEYWORD_MISMATCH: 409,
   JOB_TOO_OLD: 410,
+  // ① 지금 확인(spec-manual §6.2 + 2026-10-23 재구현). 모두 4xx(5xx 는 위 3개로 고정 — error-safety 테스트).
+  COUPANG_MANUAL_SETUP_REQUIRED: 409,
+  COUPANG_MANUAL_OFF: 403,
+  COUPANG_MANUAL_BUDGET: 409,
+  COUPANG_MANUAL_STOPPED: 409,
+  COUPANG_MANUAL_COOLDOWN: 409,
+  COUPANG_MANUAL_HOURS: 409,
+  COUPANG_MANUAL_BUSY: 409,
+  COUPANG_MANUAL_DAILY_CAP: 409,
+  COUPANG_MANUAL_GAP: 409,
+  COUPANG_MANUAL_TRACKER_PAUSED: 409,
+  COUPANG_MANUAL_TRACKER_INELIGIBLE: 409,
+  COUPANG_MANUAL_CLAIM_NOT_FOUND: 404,
+  COUPANG_MANUAL_CLAIM_MISMATCH: 409,
+  COUPANG_MANUAL_CLAIM_CLOSED: 409,
+  COUPANG_MANUAL_CLAIM_USED: 409,
+  COUPANG_MANUAL_CLAIM_NOT_VERIFIED: 409,
+  COUPANG_MANUAL_CLAIM_EXPIRED: 410,
+  COUPANG_MANUAL_RECORD_INVALID: 400,
 });
 
 // §3.5 수집기 로컬 오류 코드(errorCode·로그). 서버는 형식만 검사하고, foreign_navigation 은 서버가 덮어쓴다.
@@ -140,3 +159,59 @@ export const COLLECTOR_ERROR_CODES = Object.freeze([
   "node_version_unsupported", "config_invalid", "token_missing",
   "api_unreachable", "api_route_missing", "record_dropped", "outbox_dropped",
 ]);
+
+// ── ① 지금 확인(spec-manual §6, 2026-10-23 재구현) ──
+// 흐름: 화면 POST manual-claim(총관리자 세션) → 확장 GET view=manual-verify(같은 크롬의 총관리자 세션 쿠키 + 요청 토큰
+// 머리글, 창을 열기 직전) → 창 열고 읽기 → [차단 신호면 확장 GET view=manual-stop] → 화면 POST manual-record.
+// 확장 확인이 GET 인 이유: 세션 게이트가 POST 에 출처(Origin)·CSRF 를 요구하는데 확장 서비스 워커의 출처는
+// chrome-extension:// 이라 운영 허용 목록(https 만)에 들 수 없다. GET 은 게이트가 출처·CSRF 를 보지 않는다.
+// 서버는 시간 판정에 서버 시계만 쓴다(확장·화면 시계를 받지 않는다).
+export const MANUAL_EXTENSION_ID = "onbmdfamcmbljplkgalameendlmgnjeg"; // manifest key 에서 계산(확장 테스트가 대조)
+export const MANUAL_EXTENSION_VERSION = "1.0.0";
+export const MANUAL_MIN_EXTENSION_VERSION = "1.0.0";
+export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.0.zip";
+export const MANUAL_EXTENSION_FOLDER = "mi-coupang-check"; // zip 안 폴더 이름(버전 없음 — 업데이트 때 같은 자리에 덮어 풀기)
+export const MANUAL_ALLOWED_ROLES = Object.freeze(["owner"]); // 공개 순서: owner → team → client
+export const MANUAL_CLAIM_TTL_SECONDS = 60; // 요청 뒤 이 안에 확장 확인이 와야 한다(SQL interval '60 seconds')
+export const MANUAL_SEARCH_WINDOW_SECONDS = 150; // 확인 뒤 '검색 중'으로 보는 시간(SQL interval '150 seconds')
+export const MANUAL_RECORD_MAX_AGE_MINUTES = 10; // 요청 뒤 이만큼 지나면 결과를 저장하지 않는다(SQL interval '10 minutes')
+export const MANUAL_MIN_MEASURE_SECONDS = 5; // 확인 뒤 이보다 빨리 온 목록 결과는 꾸민 것으로 본다(SQL interval '5 seconds')
+export const MANUAL_CLAIM_KEEP_DAYS = 60; // 요청 표 보관(SQL interval '60 days')
+export const MANUAL_MIN_GAP_SECONDS = 180; // 대표 결정(SQL 기본값·제약 하한)
+export const MANUAL_MAX_PER_DAY = 30; // 대표 결정(SQL 기본값·제약 상한)
+export const MANUAL_FROM_HOUR = 9; // 대표 결정(KST, SQL 기본값·제약)
+export const MANUAL_TO_HOUR = 19;
+export const MANUAL_RECORD_BODY_MAX_BYTES = 65536; // manual-record 만(= WORKER_BODY_MAX_BYTES), 나머지는 TRACKERS_BODY_MAX_BYTES
+export const MANUAL_TOKEN_PATTERN = /^mcm1_[A-Za-z0-9_-]{43}$/;
+export const MANUAL_VERIFY_VIEW = "manual-verify";
+export const MANUAL_STOP_VIEW = "manual-stop";
+export const MANUAL_CLAIM_ID_PARAM = "claimId";
+export const MANUAL_STOP_REASON_PARAM = "reason";
+export const MANUAL_CLAIM_TOKEN_HEADER = "x-mi-coupang-claim-token";
+export const MANUAL_STATES = Object.freeze(["setup_required", "off", "budget", "stopped", "cooldown", "hours", "busy", "daily_cap", "gap", "ready"]);
+export const MANUAL_OUTCOMES = Object.freeze(["measured", "not_started", "lost"]);
+export const MANUAL_CLAIM_STATUSES = Object.freeze(["open", "verified", "recorded", "cancelled", "lost", "expired"]);
+// 그날 중지 사유(settings.manual_stopped_code). 화면은 사유별로 다른 문구를 쓴다(원인을 단정하지 않는다).
+// blocked_http_*: 쿠팡 응답 403·429·503 / blocked_text: 차단 문구 / blocked_page: 확장이 차단으로 본 쪽 /
+// login_redirect: 로그인 화면으로 보냄 / page_unreadable: 쿠팡이 검색 밖 쪽으로 보내 읽지 못함(D1) /
+// extension_reported: 확장이 '오늘 차단을 봤다'고만 알림(시작 못 함 blocked_today·report_pending).
+export const MANUAL_STOP_CODES = Object.freeze([
+  "blocked_http_403", "blocked_http_429", "blocked_http_503", "blocked_text", "blocked_page",
+  "login_redirect", "page_unreadable", "extension_reported",
+]);
+// 확장이 '오늘 차단을 봤다'는 뜻으로 시작하지 않은 코드: blocked_today(오늘 차단 본 날), report_pending(차단 결과를 아직
+// 서버에 못 보냄). 서버는 이 둘을 그날 중지(extension_reported)로 받는다.
+export const MANUAL_STOP_NOT_STARTED_CODES = Object.freeze(["blocked_today", "report_pending"]);
+export const MANUAL_UNREADABLE_ERROR_CODE = "page_unreadable";
+export const MANUAL_QUERY_MISMATCH_ERROR_CODE = "query_mismatch";
+export const MANUAL_USER_NAVIGATED_ERROR_CODE = "user_navigated";
+// 아래 세 목록은 화면·확장 공용 이름이다. 서버는 outcomeCode·errorCode 의 형식(^[a-z0-9_]{1,60}$)만 검사한다.
+export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
+  "page_timeout", "window_closed", "browser_hard_cap", "page_load_failed", "page_unreadable", "extract_failed", "user_navigated",
+]);
+export const MANUAL_NOT_STARTED_CODES = Object.freeze([
+  "incognito_not_allowed", "incognito_window_open", "host_access_withheld", "busy", "too_soon", "bad_request",
+  "window_create_failed", "window_create_null", "verify_refused", "verify_unreachable", "blocked_today", "report_pending", "extension_error",
+  "extension_missing", "extension_outdated", "origin_rejected", "browser_unsupported",
+]);
+export const MANUAL_LOST_CODES = Object.freeze(["extension_no_response", "extension_timeout"]);

@@ -56,6 +56,8 @@ test("settingsPayload: §5.6 settings 필드 순서·camelCase", () => {
     "maxRunsPerHour", "maxRunsPerDay", "activeFromHour", "activeToHour", "defaultAccountLimit", "globalKeywordLimit",
     "windowMode", "minCollectorVersion", "maxStorageMb", "dbSizeStopMb", "cooldownUntil", "cooldownReason",
     "needsOwnerReview", "reviewReason", "budgetBlocked", "budgetReason", "rateChangedAt", "updatedAt",
+    "manualEnabled", "manualMinGapSeconds", "manualMaxPerDay", "manualFromHour", "manualToHour",
+    "manualStoppedDay", "manualStoppedAt", "manualStoppedCode",
   ]);
   assert.equal(payload.maxRunsPerHour, 12);
   assert.equal(payload.windowMode, "offscreen");
@@ -112,7 +114,7 @@ test("검증: 모르는 칸·빈 패치·from ≥ to 는 SETTINGS_INVALID {field
   assert.equal(validateSettingsPatch({ activeFromHour: 23 }, current, null, NOW).field, "activeFromHour");
   assert.equal(validateSettingsPatch({ activeToHour: 8 }, current, null, NOW).field, "activeToHour");
   assert.equal(validateSettingsPatch({ activeFromHour: 10, activeToHour: 10 }, current, null, NOW).field, "activeFromHour");
-  assert.deepEqual(EDITABLE_SETTING_FIELDS.length, 15);
+  assert.deepEqual(EDITABLE_SETTING_FIELDS.length, 16);
 });
 
 test("내리는 변경은 확인·집계 없이 바로 되고 rate_changed_at 은 그대로", () => {
@@ -231,4 +233,39 @@ test("capacityOf", () => {
   assert.equal(capacityOf(settingsRow({ checks_per_day: 3 }), 40).over, false);
   assert.deepEqual(capacityOf(settingsRow()), { runsPerDay: 120, keywordsAtChecks: 60, activeKeywords: null, over: false });
   assert.equal(capacityOf(settingsRow({ max_runs_per_day: 1000, max_runs_per_hour: 60, active_from_hour: 0, active_to_hour: 24, checks_per_day: 1 })).keywordsAtChecks, 1000);
+});
+
+// ── ① 지금 확인(spec-manual §6.9) ──
+
+test("settingsPayload: 수동 칸이 없으면(대표 SQL 전) false/null, 있으면 그대로 옮긴다", () => {
+  const before = settingsPayload(settingsRow());
+  assert.deepEqual(
+    [before.manualEnabled, before.manualMinGapSeconds, before.manualMaxPerDay, before.manualFromHour, before.manualToHour,
+      before.manualStoppedDay, before.manualStoppedAt, before.manualStoppedCode],
+    [false, null, null, null, null, null, null, null],
+  );
+  const after = settingsPayload(settingsRow({
+    manual_enabled: true, manual_min_gap_seconds: 180, manual_max_per_day: 30, manual_from_hour: 9, manual_to_hour: 19,
+    manual_stopped_day: "2026-10-20", manual_stopped_at: "2026-10-20T02:00:00.000Z", manual_stopped_code: "blocked_http_403",
+  }));
+  assert.deepEqual(
+    [after.manualEnabled, after.manualMinGapSeconds, after.manualMaxPerDay, after.manualFromHour, after.manualToHour,
+      after.manualStoppedDay, after.manualStoppedAt, after.manualStoppedCode],
+    [true, 180, 30, 9, 19, "2026-10-20", "2026-10-20T02:00:00.000Z", "blocked_http_403"],
+  );
+});
+
+test("manualEnabled: boolean 만, 상향·재계획이 아니고, 간격·하루·시간 수동 칸은 화면에서 바꿀 수 없다", () => {
+  const current = settingsRow({ rate_changed_at: RECENT });
+  const on = validateSettingsPatch({ manualEnabled: true }, current, null, NOW);
+  assert.deepEqual(on, { ok: true, update: { manual_enabled: true }, raise: false, replan: false });
+  assert.equal(isRaisingPatch({ manualEnabled: true }, current), false);
+  assert.deepEqual(validateSettingsPatch({ manualEnabled: false }, current, null, NOW).update, { manual_enabled: false });
+  for (const value of ["true", 1, null]) {
+    assert.equal(validateSettingsPatch({ manualEnabled: value }, current, null, NOW).field, "manualEnabled", JSON.stringify(value));
+  }
+  for (const field of ["manualMinGapSeconds", "manualMaxPerDay", "manualFromHour", "manualToHour", "manualStoppedDay"]) {
+    assert.equal(validateSettingsPatch({ [field]: 1 }, current, null, NOW).field, field);
+  }
+  assert.ok(EDITABLE_SETTING_FIELDS.includes("manualEnabled"));
 });

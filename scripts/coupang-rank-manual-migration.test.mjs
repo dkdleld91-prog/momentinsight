@@ -26,6 +26,7 @@ import {
   MANUAL_STOP_CODES,
   MANUAL_TO_HOUR,
 } from "../src/server/coupang-rank/contract.mjs";
+import { manualNavigatedFinalPath } from "../src/server/coupang-rank/manual.mjs";
 import {
   auditMigrationRuntimeLiterals,
   collectFinalFunctionDeclarations,
@@ -857,6 +858,24 @@ test("광고만 있고 일반 0개(empty)·쿠팡 안 다른 쪽(unsupported)은
     const unsupported = await h.record(moved.claimId, moved.hash, { status: "unsupported", run: { ...okRun([]), finalPath: "/np/campaigns/1" } });
     assert.deepEqual([unsupported.accepted, unsupported.stopped], [true, false]);
     assert.equal((await h.summary()).state, "gap");
+  });
+});
+
+test("측정 중 쿼리만 바뀐 이동(user_navigated): 서버가 만든 final_path('경로?이름&이름', 80자 안)를 대표 SQL 이 그대로 저장한다(마이그레이션 없음)", async () => {
+  await withDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const navigatedRun = (finalPath) => ({ ...okRun([], []), stable: false, itemCount: 0, errorCode: "user_navigated", finalPath });
+    const names = Array.from({ length: 10 }, (_, index) => `name${index}${"x".repeat(20)}`);
+    for (const changedParams of [["channel", "traceId"], names]) {
+      const finalPath = manualNavigatedFinalPath({ finalPath: "/np/search", changedParams }, "user_navigated");
+      const job = await h.verified(tracker);
+      const saved = await h.record(job.claimId, job.hash, { status: "error", run: navigatedRun(finalPath) });
+      assert.deepEqual([saved.accepted, saved.status, saved.errorCode, saved.stopped], [true, "error", "user_navigated", false]);
+      const row = await h.one("select final_path, error_code from public.coupang_rank_runs where id = (select run_id from public.coupang_rank_manual_claims where id = $1)", [job.claimId]);
+      assert.deepEqual([row.final_path, row.error_code], [finalPath, "user_navigated"]);
+      await h.clearGap();
+    }
+    assert.ok((await h.one("select final_path from public.coupang_rank_runs where final_path like '%&…'")).final_path.length <= 80);
   });
 });
 

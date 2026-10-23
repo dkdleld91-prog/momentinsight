@@ -18,9 +18,9 @@ import {
   ACTIVE_STALE_MS, BLOCKED_HTTP_STATUSES, CLOSE_TIMEOUT_MS, COUPANG_ORIGIN_PATTERN, EXTENSION_REPORTED_STOP, EXTENSION_VERSION,
   EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
   READ_GAP_MS, RESULT_RESEND_MS, SCROLL_COUNT, SCROLL_GAP_MS, SCROLL_PIXELS, SEARCH_HOST, SEARCH_PATH, SERVER_ORIGIN_PATTERN,
-  SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
-  browserLabel, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, searchAddressOf, searchKeyOf, searchUrl,
-  splitAddress, verifyClaim,
+  SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
+  browserLabel, changedParamNames, cleanChangedParams, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, searchAddressOf,
+  searchKeyOf, searchUrl, splitAddress, verifyClaim,
 } from "./lib/protocol.js";
 import { miCoupangMeasure, miCoupangProbe } from "./lib/measure.js";
 import { assemblePage, stopReasonOf } from "./lib/assemble.js";
@@ -364,9 +364,15 @@ export function createBackground(chromeApi, deps = {}) {
     let tabId = null;
     let keyword = null;
     let measuring = false;
-    // 측정 시작 때 탭 주소의 쿼리 값(searchParamsKey). 쿠팡이 불러오는 동안 값을 붙였어도 그 뒤 '바뀜'만 본다.
+    // 측정 시작 때 탭 주소의 쿼리 값(searchParamsKey·searchParamPairs). 쿠팡이 불러오는 동안 값을 붙였어도 그 뒤 '바뀜'만 본다.
     let baselineKey = null;
+    let baselinePairs = null;
     let navigatedDuringMeasure = false;
+    // 측정 중 본 주소 중 같은 검색 쪽(호스트·경로 같음)에서 기준과 값이 달라진 쿼리 이름(모은 것, 이름만).
+    // 다른 쪽(호스트·경로가 다른 주소)을 봤으면 movedElsewhere(이름을 싣지 않는다 — '다른 쪽으로 옮겨짐' 문구).
+    const changedNames = [];
+    let sawQueryChange = false;
+    let movedElsewhere = false;
     let navigationIssued = false;
     let navigationStarted = false;
     // 이 창에서 본 차단 신호(읽기 실패·창 닫힘 때 결과를 만들 재료). 차단 HTTP·차단 문구·읽을 수 없는 곳은 한 번 보면 남긴다.
@@ -393,12 +399,27 @@ export function createBackground(chromeApi, deps = {}) {
     };
     // 측정 중 주소 바뀜: 새 주소가 보이면 경로·쿼리 값 전부(q·정렬·쪽 번호·거르기 등, 근거로 확인된 추적 꼬리만 빼고 — 지금은 없음)를
     // 측정 시작 때와 비교하고, 주소 없이 다시 불러오기 시작하면(새로고침·권한 밖 주소로 이동) 바뀐 것으로 본다.
+    const noteChangedAddress = (url) => {
+      const address = searchAddressOf(url);
+      if (!address || address.host !== SEARCH_HOST || address.path !== SEARCH_PATH || !baselinePairs) {
+        movedElsewhere = true;
+        return;
+      }
+      sawQueryChange = true;
+      for (const name of changedParamNames(baselinePairs, address.pairs)) {
+        if (!changedNames.includes(name)) changedNames.push(name);
+      }
+    };
     const onTabUpdated = (id, info) => {
       if (tabId === null || id !== tabId || !measuring || !info) return;
       if (typeof info.url === "string") {
-        if (!isSearchAddress(info.url, keyword, baselineKey)) navigatedDuringMeasure = true;
+        if (!isSearchAddress(info.url, keyword, baselineKey)) {
+          navigatedDuringMeasure = true;
+          noteChangedAddress(info.url);
+        }
         return;
       }
+      // 주소 없이 다시 불러오기 시작(새로고침 등): 무엇이 바뀌었는지 모르므로 이름은 그 뒤 본 주소에서만 얻는다.
       if (info.status === "loading") navigatedDuringMeasure = true;
     };
     c.windows.onRemoved.addListener(onWindowRemoved);
@@ -408,6 +429,12 @@ export function createBackground(chromeApi, deps = {}) {
       get windowGone() { return windowGone; },
       get stopCode() { return stopCode; },
       get navigatedDuringMeasure() { return navigatedDuringMeasure; },
+      // 쿼리만 바뀐 이동이면 바뀐 이름(q 맨 앞·나머지 이름 순·10개까지), 아니면 null.
+      get changedParams() {
+        if (!sawQueryChange || movedElsewhere) return null;
+        const names = [...changedNames].sort((a, b) => (a === b ? 0 : a === "q" ? -1 : b === "q" ? 1 : a < b ? -1 : a > b ? 1 : 0));
+        return cleanChangedParams(names);
+      },
       get navigationIssued() { return navigationIssued; },
       get navigationStarted() { return navigationStarted; },
       get unreadable() { return seen.unreadable; },
@@ -421,7 +448,9 @@ export function createBackground(chromeApi, deps = {}) {
       setMeasuring(value, startUrl) {
         if (value === true) {
           const start = searchAddressOf(startUrl);
-          baselineKey = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start.key : searchKeyOf(keyword);
+          const base = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start : searchAddressOf(searchUrl(keyword));
+          baselineKey = base ? base.key : searchKeyOf(keyword);
+          baselinePairs = base ? base.pairs : null;
         }
         measuring = value;
       },
@@ -530,6 +559,13 @@ export function createBackground(chromeApi, deps = {}) {
     return { errorCode: "user_navigated", host: address.host, path: address.path };
   }
 
+  // 쪽 함수가 결과를 못 준 회차의 재료. 지금 탭이 검색 쪽이고 측정 중 쿼리만 바뀐 것을 봤으면 바뀐 이름(값 없음)을 싣는다.
+  function failureSignals(run, failure) {
+    const searchPage = failure.host === SEARCH_HOST && failure.path === SEARCH_PATH;
+    const changedParams = failure.errorCode === USER_NAVIGATED_ERROR_CODE && searchPage ? run.changedParams : null;
+    return { host: failure.host, path: failure.path, ...(changedParams ? { changedParams } : {}) };
+  }
+
   // 짧은 읽기 1번(기다림·스크롤 없음). 읽으면 그 결과, 못 읽으면 탭 주소만. 어느 쪽이든 실행 기록에 남긴다.
   async function quickRead(run, tabId) {
     try {
@@ -588,7 +624,7 @@ export function createBackground(chromeApi, deps = {}) {
       } catch (error) {
         if (error instanceof StopError) throw error;
         const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
-        return { page: assemblePage(run.signals({ host: failure.host, path: failure.path }), { errorCode: failure.errorCode }) };
+        return { page: assemblePage(run.signals(failureSignals(run, failure)), { errorCode: failure.errorCode }) };
       } finally {
         run.setMeasuring(false);
       }
@@ -596,7 +632,7 @@ export function createBackground(chromeApi, deps = {}) {
       if (!raw || typeof raw !== "object") {
         const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
         const code = failure.errorCode === "page_load_failed" ? "extract_failed" : failure.errorCode;
-        return { page: assemblePage(run.signals({ host: failure.host, path: failure.path }), { errorCode: code }) };
+        return { page: assemblePage(run.signals(failureSignals(run, failure)), { errorCode: code }) };
       }
       return { page: assemblePage(raw) };
     } finally {

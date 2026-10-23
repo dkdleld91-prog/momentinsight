@@ -760,6 +760,73 @@ test("측정 중 주소의 쿼리 값(정렬·쪽 번호·목록 크기·거르�
   }
 });
 
+// 2026-10-23 3차 재검사: user_navigated 로 끝났을 때 어떤 쿼리 이름이 바뀌었는지(이름만) 결과에 싣는다 — 쿼리만 바뀐 경우에만.
+test("측정 중 쿼리만 바뀌어 user_navigated 면 바뀐 이름(값 없음, q 맨 앞)을 page.changedParams 에 싣는다 — 경로가 바뀌면 싣지 않는다", async () => {
+  const cases = [
+    // [측정 중 주소, 기대 이름(없으면 null)]
+    [(url) => `${url}&traceId=abc&channel=user`, ["channel", "traceId"]],
+    [(url) => `${url}&brand=%20`, ["brand"]],
+    [() => `${searchUrl("다른 검색어")}&listSize=36`, ["q", "listSize"]],
+    [() => "https://www.coupang.com/vp/products/12345678?traceId=abc", null],
+  ];
+  for (const [nextUrl, expected] of cases) {
+    let fakeRef;
+    let seen = "";
+    const { fake, background } = setup({
+      chrome: {
+        scenario: {
+          measure: ({ tab }) => {
+            const url = nextUrl(tab.url);
+            seen = url;
+            tab.url = url;
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { url });
+            throw new Error("Frame with ID 0 is showing error page");
+          },
+        },
+      },
+    });
+    fakeRef = fake;
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, "user_navigated", seen);
+    if (expected) assert.deepEqual(reply.page.changedParams, expected, seen);
+    else assert.equal(Object.hasOwn(reply.page, "changedParams"), false, seen);
+    assert.equal(JSON.stringify(reply.page).includes("abc"), false, "값은 싣지 않는다");
+    assert.equal(reply.stopSignal, false);
+  }
+  // 같은 쪽에서 두 번 바뀌면 이름을 모은다. 그 뒤 다른 쪽으로 가면 싣지 않는다.
+  for (const [then, expected] of [[null, ["listSize", "traceId"]], ["https://www.coupang.com/np/campaigns/1", null]]) {
+    let fakeRef;
+    const { fake, background } = setup({
+      chrome: {
+        scenario: {
+          measure: ({ tab }) => {
+            const base = tab.url;
+            for (const url of [`${base}&traceId=1`, `${base}&listSize=72`, ...(then ? [then] : [])]) {
+              tab.url = url;
+              fakeRef.events.tabsOnUpdated.emit(tab.id, { url });
+            }
+            throw new Error("The frame was removed.");
+          },
+        },
+      },
+    });
+    fakeRef = fake;
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, "user_navigated");
+    if (expected) assert.deepEqual(reply.page.changedParams, expected);
+    else assert.equal(Object.hasOwn(reply.page, "changedParams"), false);
+  }
+  // 쪽 함수가 이동을 알리면 그 이름을 쓴다(확장이 다시 맞춘다: 문자열 아닌 것·빈 이름은 빼고 10개·40자까지)
+  const raw = setup({ chrome: { scenario: { measure: () => rawPage({ navigated: true, changedParams: ["traceId", "", 3, "x".repeat(50)] }) } } });
+  const fromPage = await send(raw.background, checkMessage());
+  assert.equal(fromPage.page.errorCode, "user_navigated");
+  assert.deepEqual(fromPage.page.changedParams, ["traceId", "x".repeat(40)]);
+  assert.equal(fromPage.page.organic.length, 0);
+  // 이동이 아니면(쪽 함수가 값을 실어 보내도) 싣지 않는다
+  const notMoved = setup({ chrome: { scenario: { measure: () => rawPage({ changedParams: ["traceId"] }) } } });
+  assert.equal(Object.hasOwn((await send(notMoved.background, checkMessage())).page, "changedParams"), false);
+});
+
 test("isSearchAddress: 같은 검색어의 검색 1쪽 + 쿼리 값 전부가 기준과 같을 때만 참(기준 없으면 확장이 연 ?q= 주소)", () => {
   const url = searchUrl(SERVER_KEYWORD);
   assert.equal(isSearchAddress(url, SERVER_KEYWORD), true);

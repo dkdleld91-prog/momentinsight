@@ -208,6 +208,10 @@ export const MANUAL_STOP_NOT_STARTED_CODES = Object.freeze(["blocked_today", "re
 export const MANUAL_UNREADABLE_ERROR_CODE = "page_unreadable";
 export const MANUAL_QUERY_MISMATCH_ERROR_CODE = "query_mismatch";
 export const MANUAL_USER_NAVIGATED_ERROR_CODE = "user_navigated";
+// user_navigated 중 측정 중 쿼리만 바뀐 회차: 확장이 page.changedParams 에 바뀐 쿼리 이름(값 없음)을 싣는다(확장 protocol 과 같은 상한).
+// 서버는 그 회차 final_path 에 '경로?이름&이름'으로 남긴다(manual.mjs manualNavigatedFinalPath, 마이그레이션 없음).
+export const MANUAL_CHANGED_PARAMS_MAX = 10;
+export const MANUAL_CHANGED_PARAM_NAME_MAX = 40; // 코드 포인트
 // 아래 세 목록은 화면·확장 공용 이름이다. 서버는 outcomeCode·errorCode 의 형식(^[a-z0-9_]{1,60}$)만 검사한다.
 export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
   "page_timeout", "window_closed", "browser_hard_cap", "page_load_failed", "page_unreadable", "extract_failed", "user_navigated",

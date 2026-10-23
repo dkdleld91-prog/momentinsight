@@ -5,6 +5,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   ERROR_HTTP_STATUS,
+  MANUAL_CHANGED_PARAMS_MAX,
+  MANUAL_CHANGED_PARAM_NAME_MAX,
   MANUAL_CLAIM_TTL_SECONDS,
   MANUAL_EXTENSION_FOLDER,
   MANUAL_EXTENSION_ID,
@@ -26,6 +28,10 @@ const MANUAL_SETTINGS_COLUMN = "manual_enabled";
 // M2 를 보는 판정(검색어가 바뀌면 목록이 그 키워드의 순위가 아니다). 차단·시간 초과·오류·이동은 그대로 둔다.
 const QUERY_CHECKED_STATUSES = new Set(["ok", "noresult", "empty", "partial"]);
 const STOP_EXTENSION_REPORTED = "extension_reported";
+// 회차 final_path 칸 상한(SQL char_length <= 80 · page-result FINAL_PATH_MAX). 잘린 이름 목록 끝 표시.
+const FINAL_PATH_MAX = 80;
+const CHANGED_CUT_MARK = "&…";
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001f\u007f]/;
 
 // 상태 → 거절 코드(§6.2). ready 는 거절이 아니다.
 export const MANUAL_STATE_CODES = Object.freeze({
@@ -203,6 +209,42 @@ export function finalManualStatus(classified, page, claim) {
     return { status: "error", errorCode: MANUAL_QUERY_MISMATCH_ERROR_CODE };
   }
   return base;
+}
+
+// 측정 중 쿼리만 바뀌어 user_navigated 로 끝난 회차의 바뀐 쿼리 이름(확장 page.changedParams, 이름만·값 없음).
+// 모양이 나쁜 원소는 본문을 거절하지 않고 뺀다(진단용 칸이라 M6 제목과 같은 방식): 문자열·1~40 코드 포인트·제어 문자 없음·
+// 깨진 글자 없음만 받고, 같은 이름은 하나, 앞에서부터 10개. 배열이 아니면 null(경로·q 가 바뀐 이동이거나 이름을 싣지 않는 확장).
+export function manualChangedParams(page) {
+  const list = plainObject(page) && Array.isArray(page.changedParams) ? page.changedParams : null;
+  if (!list) return null;
+  const out = [];
+  for (const name of list) {
+    if (out.length >= MANUAL_CHANGED_PARAMS_MAX) break;
+    if (typeof name !== "string" || name === "" || !name.isWellFormed() || CONTROL_CHAR_PATTERN.test(name)) continue;
+    if (Array.from(name).length > MANUAL_CHANGED_PARAM_NAME_MAX || out.includes(name)) continue;
+    out.push(name);
+  }
+  return out;
+}
+
+// 회차 기록에 바뀐 쿼리 이름을 남길 곳(2026-10-23, 마이그레이션 없이 쓰는 기존 칸). 회차 표에는 오류 세부 칸이 없고,
+// SQL coupang_rank_manual_record 가 p_run 에서 받는 칸 중 주소를 적는 칸은 final_host·final_path 뿐이라 final_path 를 쓴다.
+// 모양: 쪽 경로 + "?" + 이름(encodeURIComponent, 값 없음)을 "&" 로 이은 것 — 예 "/np/search?channel&traceId".
+// 칸 상한 80자 안에서 이름 단위로 자르고, 잘랐으면 끝에 "&…". 이름이 하나도 없거나 user_navigated 가 아니면 경로 그대로.
+export function manualNavigatedFinalPath(page, errorCode) {
+  const path = plainObject(page) && typeof page.finalPath === "string" ? page.finalPath : "";
+  if (errorCode !== MANUAL_USER_NAVIGATED_ERROR_CODE) return path;
+  const names = manualChangedParams(page);
+  if (!names || names.length === 0) return path;
+  const encoded = names.map((name) => encodeURIComponent(name));
+  const join = (parts) => `${path}?${parts.join("&")}`;
+  if (join(encoded).length <= FINAL_PATH_MAX) return join(encoded);
+  for (let keep = encoded.length - 1; keep >= 1; keep -= 1) {
+    const text = `${join(encoded.slice(0, keep))}${CHANGED_CUT_MARK}`;
+    if (text.length <= FINAL_PATH_MAX) return text;
+  }
+  const bare = `${path}?…`;
+  return bare.length <= FINAL_PATH_MAX ? bare : path;
 }
 
 // 결과 보고의 그날 중지 사유. 측정 결과면 쪽의 차단 신호, '시작 못 함'이면 확장이 오늘 차단을 봤다는 코드.

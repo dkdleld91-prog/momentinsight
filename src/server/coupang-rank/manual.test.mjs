@@ -23,6 +23,8 @@ import {
   generateManualClaimToken,
   hasManualColumns,
   isManualToken,
+  manualChangedParams,
+  manualNavigatedFinalPath,
   manualPayload,
   manualRecordStopCode,
   manualRefusal,
@@ -166,6 +168,44 @@ test("M2: 검색어가 요청 키워드와 다르면 error(query_mismatch), 대�
   // 사람이 창 안을 눌러 다른 쪽으로 감 → 이동(unsupported)이 아니라 오류
   assert.deepEqual(finalManualStatus({ status: "unsupported" }, { query: "x", errorCode: "user_navigated" }, claim), { status: "error", errorCode: "user_navigated" });
   assert.deepEqual(finalManualStatus(null, {}, claim), { status: "error" });
+});
+
+test("바뀐 쿼리 이름(page.changedParams): 모양이 나쁜 원소는 거절 대신 빼고(문자열·1~40 코드 포인트·제어 문자·깨진 글자), 같은 이름 하나·10개까지", () => {
+  assert.equal(manualChangedParams({}), null);
+  assert.equal(manualChangedParams({ changedParams: "traceId" }), null);
+  assert.equal(manualChangedParams(null), null);
+  assert.deepEqual(manualChangedParams({ changedParams: [] }), []);
+  assert.deepEqual(
+    manualChangedParams({ changedParams: ["traceId", "", 3, null, "a\u0001b", "\ud800x", "가".repeat(41), "가".repeat(40), "traceId", " ", "채널"] }),
+    ["traceId", "가".repeat(40), " ", "채널"],
+  );
+  const many = Array.from({ length: 15 }, (_, index) => `n${index}`);
+  assert.deepEqual(manualChangedParams({ changedParams: many }), many.slice(0, 10));
+});
+
+test("바뀐 쿼리 이름을 회차 final_path 에 남긴다: user_navigated 이고 이름이 있을 때만 '경로?이름&이름'(값 없음·인코딩), 80자 안에서 이름 단위로 자르고 '&…'", () => {
+  const page = (changedParams, finalPath = "/np/search") => ({ finalPath, changedParams });
+  assert.equal(manualNavigatedFinalPath(page(["channel", "traceId"]), "user_navigated"), "/np/search?channel&traceId");
+  assert.equal(manualNavigatedFinalPath(page(["q", "brand"]), "user_navigated"), "/np/search?q&brand");
+  assert.equal(manualNavigatedFinalPath(page(["a&b", "c=d", " ", "채널"]), "user_navigated"), "/np/search?a%26b&c%3Dd&%20&%EC%B1%84%EB%84%90");
+  // user_navigated 가 아니거나 이름이 없으면 경로 그대로
+  assert.equal(manualNavigatedFinalPath(page(["traceId"]), "query_mismatch"), "/np/search");
+  assert.equal(manualNavigatedFinalPath(page(["traceId"]), null), "/np/search");
+  assert.equal(manualNavigatedFinalPath(page([]), "user_navigated"), "/np/search");
+  assert.equal(manualNavigatedFinalPath({ finalPath: "/vp/products/1" }, "user_navigated"), "/vp/products/1");
+  assert.equal(manualNavigatedFinalPath(null, "user_navigated"), "");
+  // 80자(칸 상한) 넘으면 이름 단위로 자르고 끝에 &…
+  const names = Array.from({ length: 10 }, (_, index) => `name${index}${"x".repeat(20)}`);
+  const cut = manualNavigatedFinalPath(page(names), "user_navigated");
+  assert.ok(cut.length <= 80, cut);
+  assert.equal(cut, `/np/search?${names.slice(0, 2).join("&")}&…`);
+  assert.equal(manualNavigatedFinalPath(page(["가".repeat(40)]), "user_navigated"), "/np/search?…", "인코딩한 이름 하나도 안 들어가면 ?… 만");
+  const longPath = `/${"p".repeat(79)}`;
+  assert.equal(manualNavigatedFinalPath(page(["a"], longPath), "user_navigated"), longPath);
+  for (const count of [1, 3, 5, 10]) {
+    const value = manualNavigatedFinalPath(page(Array.from({ length: count }, (_, index) => `k${index}${"y".repeat(38)}`)), "user_navigated");
+    assert.ok(value.length <= 80 && value.startsWith("/np/search?"), value);
+  }
 });
 
 test("그날 중지 사유: 측정은 쪽의 차단 신호, 시작 못 함은 blocked_today·report_pending 만 extension_reported, 그 밖은 없음", () => {

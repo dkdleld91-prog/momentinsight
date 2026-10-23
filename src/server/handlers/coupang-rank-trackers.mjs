@@ -46,6 +46,7 @@ import {
   generateManualClaimToken,
   hasManualColumns,
   isManualToken,
+  manualNavigatedFinalPath,
   manualPayload,
   manualRecordStopCode,
   manualRefusal,
@@ -1401,6 +1402,8 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
     const final = finalManualStatus(classifyManualPage(page), page, claim);
     status = final.status;
     run = recordPayloadForRpc({ ...body, page, collectorVersion: body.extensionVersion }, final);
+    // 측정 중 쿼리만 바뀐 이동(user_navigated)이면 바뀐 쿼리 이름(값 없음)을 그 회차 final_path 에 남긴다(기존 칸, 마이그레이션 없음).
+    run.finalPath = manualNavigatedFinalPath(page, run.errorCode);
     stopCode = manualRecordStopCode("measured", outcomeCode, page);
   } else {
     stopCode = manualRecordStopCode(body.outcome, outcomeCode, null);

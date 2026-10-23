@@ -2618,6 +2618,30 @@ test("결과 문구: 서버 판정·사유별 쉬운 문구, 차단은 '차단�
   assert.match(text(ok({ status: "ok", tracker: { result: "found", rank: 3 } }), { ...measured(), windowLeftOpen: true }).text, /열린 시크릿 창을 직접 닫아 주세요/u);
 });
 
+// 2026-10-23 3차 재검사: 측정 중 쿼리만 바뀐 user_navigated 는 사람 탓을 하지 않고 바뀐 이름을 보인다(대표 첫 시험에서 무시 목록 판단용).
+test("결과 문구: 측정 중 쿼리만 바뀐 이동은 '검색 창 주소가 바뀌어' + 바뀐 이름, 경로·q 가 바뀌면 '다른 쪽으로 옮겨짐' 그대로", () => {
+  const ok = (payload) => ({ payload: { ok: true, accepted: true, duplicate: false, stopped: false, manual: manualPayload({ usedToday: 4 }), ...payload }, httpStatus: 200 });
+  const navigated = (changedParams) => ({ outcome: "measured", page: measuredPage({ status: "error", errorCode: "user_navigated", organic: [], itemCount: 0, ...(changedParams === undefined ? {} : { changedParams }) }) });
+  const text = (parsed, payload = { status: "error", errorCode: "user_navigated" }) => internals.manualRecordText(ok(payload), parsed, KEYWORD, manualPayload()).text;
+  const queryOnly = text(navigated(["channel", "traceId"]));
+  assert.equal(queryOnly, `'${KEYWORD}' 확인 중에 검색 창 주소가 바뀌어 순위를 기록하지 않았습니다(바뀐 값: channel, traceId). 창 안을 누르지 않았다면 알려 주세요. (오늘 4/30번 사용)`);
+  assert.doesNotMatch(queryOnly, /창 안을 누르지 마세요|순위는 기록하지 않았습니다/u, "사람 탓 문구·중복 문장 없음");
+  assert.equal(internals.manualRecordText(ok({ status: "error", errorCode: "user_navigated" }), navigated(["traceId"]), KEYWORD, manualPayload()).tone, "is-warn");
+  // 이름을 받지 못한 쿼리만 바뀜(빈 목록)
+  assert.match(text(navigated([])), /검색 창 주소가 바뀌어 순위를 기록하지 않았습니다\. 창 안을 누르지 않았다면 알려 주세요\./u);
+  // 화면도 이름을 다시 맞춘다(문자열·제어 문자 없음·40자·10개)
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.manualChangedParams({ changedParams: ["a", 1, "", "b\u0001", "가".repeat(41), "a", ...Array.from({ length: 12 }, (_, index) => `n${index}`)] }))),
+    ["a", "n0", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"]);
+  assert.equal(internals.manualChangedParams({}), null);
+  // 경로가 바뀜(이름 없음)·q 가 바뀜·옛 확장(이름 칸 없음) → '다른 쪽으로 옮겨짐' 문구 그대로
+  for (const parsed of [navigated(undefined), navigated(["q", "channel"]), navigated("traceId")]) {
+    const moved = text(parsed);
+    assert.match(moved, /확인 중에 창 안에서 다른 쪽으로 옮겨졌습니다\(창 안을 누르지 마세요\)\. 순위는 기록하지 않았습니다\./u, JSON.stringify(parsed.page.changedParams));
+  }
+  // 서버 판정이 user_navigated 가 아니면 이름이 있어도 쓰지 않는다
+  assert.match(text(navigated(["traceId"]), { status: "error", errorCode: "window_closed" }), /시크릿 창이 닫혔습니다/u);
+});
+
 test("claim 거절 문구: 쿠팡 검색 전이라는 사실을 덧붙이고 간격은 남은 시간을 보인다", () => {
   const refuse = (payload, extra = {}) => internals.manualClaimRefusalText({ payload: { ok: false, ...payload }, httpStatus: 409, ...extra }, manualPayload());
   assert.equal(refuse({ code: "COUPANG_MANUAL_GAP", retryAfterSec: 65 }), "검색 사이 간격(3분)을 기다리는 중입니다(1분 05초 남음). 쿠팡 검색은 하지 않았습니다.");

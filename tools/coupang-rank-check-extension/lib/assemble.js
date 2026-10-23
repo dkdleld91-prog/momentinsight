@@ -1,7 +1,7 @@
 // C 30일 ① '지금 확인' 확장 — 읽은 목록 → 서버 page 모양(spec-manual §4.6).
 // 나누기 규칙은 수집기 tools/coupang-rank-collector/lib/extract.mjs splitItems 와 같다(패리티 테스트).
 // 판정은 서버가 한다(page-result 규칙). 여기서는 사실만 채운다: 실패해도 httpStatus·차단 문구·주소를 아는 만큼 넣는다.
-import { BLOCKED_HTTP_STATUSES, UNREADABLE_ERROR_CODE } from "./protocol.js";
+import { BLOCKED_HTTP_STATUSES, UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, cleanChangedParams } from "./protocol.js";
 
 export const ORGANIC_MAX = 100;
 export const ADS_MAX = 30;
@@ -90,8 +90,9 @@ function httpStatusOf(value) {
   return Number.isInteger(value) && value >= 0 && value <= 599 ? value : null;
 }
 
-// raw = 쪽 함수 결과(또는 실패 때 아는 만큼의 {host, path, httpStatus, blockedText}).
+// raw = 쪽 함수 결과(또는 실패 때 아는 만큼의 {host, path, httpStatus, blockedText, changedParams}).
 // errorCode 가 있으면 실패 회차다: 목록은 비우고(수집기와 같음), 차단 신호·주소는 남긴다.
+// user_navigated 이고 쿼리만 바뀌었으면(raw.changedParams 배열) 바뀐 이름(값 없음)을 changedParams 로 싣는다 — 경로가 바뀐 이동에는 없다.
 export function assemblePage(raw, { errorCode = null } = {}) {
   const r = raw && typeof raw === "object" ? raw : {};
   let code = typeof errorCode === "string" && ERROR_CODE_PATTERN.test(errorCode) ? errorCode : null;
@@ -100,6 +101,7 @@ export function assemblePage(raw, { errorCode = null } = {}) {
   const httpStatus = httpStatusOf(r.httpStatus);
   const blockedText = r.blockedText === true;
   const split = code ? { organic: [], ads: [], itemCount: 0 } : splitItems(r);
+  const changedParams = code === USER_NAVIGATED_ERROR_CODE ? cleanChangedParams(r.changedParams) : null;
   let status;
   if (code === "page_timeout") status = "timeout";
   else if (code) status = "error";
@@ -119,6 +121,7 @@ export function assemblePage(raw, { errorCode = null } = {}) {
     errorCode: code,
     query: cleanQuery(r.query),
     wasHidden: r.wasHidden === true,
+    ...(changedParams ? { changedParams } : {}),
   };
 }
 

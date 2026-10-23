@@ -2,7 +2,7 @@
 // chrome.scripting.executeScript 의 func 로 넘겨 확장이 연 시크릿 탭에서만 돈다(기본 ISOLATED 세계).
 // 그래서 두 함수 모두 자기완결이다: 이 파일 밖의 값·import·전역 상수를 쓰지 않는다(테스트가 node:vm 으로 확인).
 // 읽기 규칙은 수집기 tools/coupang-rank-collector/lib/extract.mjs EXTRACT_SOURCE 와 같다(선택자·광고 표식·제목 200자).
-// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜(경로·쿼리 값 전부) 표시.
+// 더한 것: 쿠팡 한국어 차단 화면 문구, 검색어(q), 주 문서 HTTP 상태, 측정 중 숨김·주소 바뀜(경로·쿼리 값 전부) 표시와 바뀐 쿼리 이름(값 없음).
 // 하지 않는 것: 누르기·입력·포커스 옮기기·주소 바꾸기·브라우저 표식 숨기기. 스크롤은 수집기와 같은 범위만 한다.
 
 // 페이지가 다 불러와졌는지(주 문서 load = readyState complete)를 본다. 화면을 바꾸지 않는다.
@@ -49,12 +49,17 @@ export async function miCoupangMeasure(options) {
   // 목록만 갈아 끼워도 잡는다. 무시하는 이름은 쿠팡 추적 꼬리로 근거가 확인된 것(ignoredParams)뿐이고 지금은 없다 —
   // 쿠팡이 측정 중에 스스로 값을 붙이면 이동으로 보아 순위를 기록하지 않는다(안전한 쪽 실패, user_navigated).
   // 빈 값 = 값 없음, 쪽 번호·목록 크기는 숫자로 맞추고(page=01 = page=1), 쿠팡 기본값(sorter=scoreDesc·page=1)은 값 없음과 같다.
+  // 값은 trim 하지 않는다(앞뒤 공백은 그대로 비교, 공백만 있는 값은 값이 있는 것).
   // 이름은 대소문자를 가리고, (이름, 값) 쌍을 정렬해 순서와 무관하게 비교한다.
-  // 이 세 표와 규칙은 lib/protocol.js searchParamsKey 와 같다(테스트). q 가 바뀐 목록은 서버 M2 query_mismatch 도 따로 잡는다.
+  // 쿼리만 바뀌어 멈추면 바뀐 이름(생김·없어짐·바뀜, 이름만·값 없음)을 changedParams 로 돌려준다: q 가 있으면 맨 앞, 나머지 이름 순,
+  // 제어 문자는 공백, 이름마다 40 코드 포인트, 빈 이름 뺌, 10개까지. 경로가 바뀌었으면 싣지 않는다.
+  // 이 표·상한과 규칙은 lib/protocol.js searchParamPairs·changedParamNames 와 같다(테스트). q 가 바뀐 목록은 서버 M2 query_mismatch 도 따로 잡는다.
   const ignoredParams = [];
   const paramDefaults = { sorter: "scoreDesc", page: "1" };
   const numericParams = ["page", "listSize"];
-  const addressKey = () => {
+  const changedMax = 10;
+  const changedNameMax = 40;
+  const addressPairs = () => {
     const pairs = [];
     try {
       for (const [name, raw] of new URLSearchParams(String(location.search || ""))) {
@@ -66,12 +71,31 @@ export async function miCoupangMeasure(options) {
         pairs.push([name, value]);
       }
     } catch {
-      return JSON.stringify([String(location.pathname || ""), null]);
+      return null;
     }
     pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
-    return JSON.stringify([String(location.pathname || ""), pairs]);
+    return pairs;
   };
-  const startAddress = addressKey();
+  const startPath = String(location.pathname || "");
+  const startPairs = addressPairs();
+  const startAddress = JSON.stringify([startPath, startPairs]);
+  const changedParams = () => {
+    const now = addressPairs();
+    if (String(location.pathname || "") !== startPath || !now || !startPairs) return null;
+    const valuesOf = (pairs, name) => JSON.stringify(pairs.filter((pair) => pair[0] === name).map((pair) => pair[1]));
+    const names = [];
+    for (const [name] of [...startPairs, ...now]) {
+      if (!names.includes(name) && valuesOf(startPairs, name) !== valuesOf(now, name)) names.push(name);
+    }
+    names.sort((a, b) => (a === b ? 0 : a === "q" ? -1 : b === "q" ? 1 : a < b ? -1 : a > b ? 1 : 0));
+    const out = [];
+    for (const name of names) {
+      if (out.length >= changedMax) break;
+      const clean = Array.from(name.replace(/[\u0000-\u001f\u007f]/g, " ")).slice(0, changedNameMax).join("");
+      if (clean && !out.includes(clean)) out.push(clean);
+    }
+    return out;
+  };
   let wasHidden = document.visibilityState === "hidden";
   const onVisibility = () => {
     if (document.visibilityState === "hidden") wasHidden = true;
@@ -98,7 +122,7 @@ export async function miCoupangMeasure(options) {
     }
     return Array.from(q.replace(/[\u0000-\u001f\u007f]/g, " ")).slice(0, 100).join("");
   };
-  const moved = () => addressKey() !== startAddress;
+  const moved = () => JSON.stringify([String(location.pathname || ""), addressPairs()]) !== startAddress;
 
   const read = () => {
     reads += 1;
@@ -141,16 +165,20 @@ export async function miCoupangMeasure(options) {
     }
   };
 
-  const finish = (latest, stable, navigated) => ({
-    ...latest,
-    httpStatus: statusOf(),
-    stable,
-    navigated,
-    scrolls,
-    reads,
-    wasHidden: wasHidden || document.visibilityState === "hidden",
-    visibility: String(document.visibilityState || ""),
-  });
+  const finish = (latest, stable, navigated) => {
+    const changed = navigated ? changedParams() : null;
+    return {
+      ...latest,
+      httpStatus: statusOf(),
+      stable,
+      navigated,
+      ...(Array.isArray(changed) ? { changedParams: changed } : {}),
+      scrolls,
+      reads,
+      wasHidden: wasHidden || document.visibilityState === "hidden",
+      visibility: String(document.visibilityState || ""),
+    };
+  };
 
   try {
     if (o.quick === true) return finish(read(), false, moved());

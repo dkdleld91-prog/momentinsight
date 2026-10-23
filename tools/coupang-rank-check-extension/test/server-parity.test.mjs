@@ -7,11 +7,12 @@ import test from "node:test";
 import * as contract from "../../../src/server/coupang-rank/contract.mjs";
 import * as pageResult from "../../../src/server/coupang-rank/page-result.mjs";
 import { handleCoupangRankTrackersRequest } from "../../../src/server/handlers/coupang-rank-trackers.mjs";
+import { manualChangedParams } from "../../../src/server/coupang-rank/manual.mjs";
 import { PRIMARY_AGENCY_CODE } from "../../../src/server/owner-identity.mjs";
 import { ZIP_FOLDER, extensionIdFromKey, publishedZipPath } from "../../../scripts/build-coupang-check-extension.mjs";
 import { assemblePage, isStopSignal, stopReasonOf } from "../lib/assemble.js";
 import {
-  BLOCKED_HTTP_STATUSES, CLAIM_ID_PARAM, CLAIM_TOKEN_HEADER, CLAIM_TOKEN_PATTERN, EXTENSION_VERSION, NOT_STARTED_CODES,
+  BLOCKED_HTTP_STATUSES, CHANGED_PARAMS_MAX, CHANGED_PARAM_NAME_MAX, CLAIM_ID_PARAM, CLAIM_TOKEN_HEADER, CLAIM_TOKEN_PATTERN, EXTENSION_VERSION, NOT_STARTED_CODES,
   PAGE_ERROR_CODES, SERVER_ORIGIN, STOP_REASONS, STOP_REASON_PARAM, STOP_VIEW, TRACKERS_PATH, UNREADABLE_ERROR_CODE,
   VERIFY_VIEW, reportStop, verifyClaim,
 } from "../lib/protocol.js";
@@ -36,6 +37,7 @@ const CASES = [
   ["120초", assemblePage({ ...SEARCH }, { errorCode: "browser_hard_cap" }), "error"],
   ["오류 쪽", assemblePage({ ...SEARCH }, { errorCode: "page_load_failed" }), "error"],
   ["상품 누름", assemblePage({ host: "www.coupang.com", path: "/vp/products/123" }, { errorCode: "user_navigated" }), "error"],
+  ["측정 중 쿼리만 바뀜(바뀐 이름)", assemblePage({ ...full, ...SEARCH, httpStatus: 200, navigated: true, changedParams: ["channel", "traceId"], query: "q" }), "error"],
   ["읽을 수 없는 곳(D1)", assemblePage({}, { errorCode: UNREADABLE_ERROR_CODE }), "error"],
   // 2026-10-23 검토 반영: 읽기를 끝내지 못한 회차도 본 신호를 싣는다
   ["시간 초과 중 권한 밖으로 보내짐(D1)", assemblePage({ httpStatus: null, blockedText: false, host: "", path: "" }, { errorCode: UNREADABLE_ERROR_CODE }), "error"],
@@ -94,6 +96,17 @@ test("서버 수동 판정: 확장 page 는 validateManualRecord 를 통과하�
   assert.equal(pageResult.classifyManualPage(assemblePage({}, { errorCode: UNREADABLE_ERROR_CODE })).status, "blocked");
   const adsOnly = CASES.find(([name]) => name === "광고만·일반 0")[1];
   assert.notEqual(pageResult.classifyManualPage(adsOnly).status, "blocked");
+});
+
+test("서버 수동 계약: 바뀐 쿼리 이름(page.changedParams) 상한이 같고, 확장이 만든 이름 목록은 서버가 그대로 받는다", () => {
+  assert.equal(contract.MANUAL_CHANGED_PARAMS_MAX, CHANGED_PARAMS_MAX);
+  assert.equal(contract.MANUAL_CHANGED_PARAM_NAME_MAX, CHANGED_PARAM_NAME_MAX);
+  const names = Array.from({ length: 12 }, (_, index) => `n${index}\u0001${"가".repeat(45)}`);
+  const page = assemblePage({ ...SEARCH, navigated: true, changedParams: ["q", " ", ...names] });
+  assert.equal(page.errorCode, "user_navigated");
+  assert.equal(page.changedParams.length, CHANGED_PARAMS_MAX);
+  assert.deepEqual(manualChangedParams(page), page.changedParams, "확장이 다듬은 목록 = 서버가 받는 목록");
+  assert.deepEqual(pageResult.validateManualRecord({ claimId: CLAIM_ID, page, durationMs: 14231, extensionVersion: EXTENSION_VERSION, browser: "chrome 141" }), { ok: true });
 });
 
 test("서버 수동 계약: 요청 이름(view·claimId·reason·토큰 머리글)·중지 사유·zip 폴더가 서버 contract 와 같다", () => {

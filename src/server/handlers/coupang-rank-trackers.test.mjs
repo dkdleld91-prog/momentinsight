@@ -1904,11 +1904,16 @@ test("manual-record: 서버 판정을 RPC 로 넘긴다 — 403·page_unreadable
     [{ query: "아이폰 케이스" }, "error", null, "query_mismatch"],
     [{ query: "아이폰  필름" }, "ok", null, null],
     [{ organic: [], ads: [{ p: "7000001", v: "", s: 1 }], itemCount: 1 }, "empty", null, null],
-    [{ finalPath: "/vp/products/1", errorCode: "user_navigated" }, "error", null, "user_navigated"],
-    [{ finalPath: "/np/campaigns/9" }, "unsupported", null, null],
-    [{ status: "error", errorCode: "window_closed", httpStatus: null }, "error", null, "window_closed"],
+    [{ finalPath: "/vp/products/1", errorCode: "user_navigated" }, "error", null, "user_navigated", "/vp/products/1"],
+    [{ finalPath: "/np/campaigns/9" }, "unsupported", null, null, "/np/campaigns/9"],
+    [{ status: "error", errorCode: "window_closed", httpStatus: null }, "error", null, "window_closed", "/np/search"],
+    // 측정 중 쿼리만 바뀐 이동: 바뀐 쿼리 이름(값 없음)을 회차 final_path 에 남긴다(기존 칸). 모양이 나쁜 이름은 빼고 저장은 한다.
+    [{ status: "error", errorCode: "user_navigated", organic: [], ads: [], itemCount: 0, changedParams: ["channel", "traceId"] }, "error", null, "user_navigated", "/np/search?channel&traceId"],
+    [{ status: "error", errorCode: "user_navigated", organic: [], ads: [], itemCount: 0, changedParams: ["traceId", 7, "a\u0001", "가".repeat(41)] }, "error", null, "user_navigated", "/np/search?traceId"],
+    [{ status: "error", errorCode: "user_navigated", organic: [], ads: [], itemCount: 0, changedParams: "traceId" }, "error", null, "user_navigated", "/np/search"],
+    [{ changedParams: ["traceId"] }, "ok", null, null, "/np/search"],
   ];
-  for (const [pageOverrides, status, stopCode, errorCode] of cases) {
+  for (const [pageOverrides, status, stopCode, errorCode, finalPath = null] of cases) {
     const state = manualState();
     const result = await post(state, ownerHeaders(), manualRecordBody({}, pageOverrides));
     assert.equal(result.status, 200, JSON.stringify(pageOverrides));
@@ -1916,10 +1921,12 @@ test("manual-record: 서버 판정을 RPC 로 넘긴다 — 403·page_unreadable
     assert.equal(args.p_status, status, JSON.stringify(pageOverrides));
     assert.equal(args.p_stop_code, stopCode, JSON.stringify(pageOverrides));
     assert.equal(args.p_run.errorCode, errorCode, JSON.stringify(pageOverrides));
+    if (finalPath !== null) assert.equal(args.p_run.finalPath, finalPath, JSON.stringify(pageOverrides));
     assert.deepEqual([args.p_claim_id, args.p_token_sha256, args.p_requested_by, args.p_outcome, args.p_outcome_code],
       [MANUAL_CLAIM_ID, sha256(MANUAL_TOKEN), "owner", "measured", null]);
     assert.equal(args.p_run.collectorVersion, "1.0.0");
     assert.equal(Object.hasOwn(args.p_run, "query"), false, "p_run 은 수집기와 같은 칸만");
+    assert.equal(Object.hasOwn(args.p_run, "changedParams"), false, "p_run 은 수집기와 같은 칸만");
   }
   // 시작 못 함·응답 없음: p_status·p_run 은 null, blocked_today 만 중지 사유
   for (const [outcome, outcomeCode, stopCode] of [

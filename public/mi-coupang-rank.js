@@ -842,6 +842,9 @@
   var MANUAL_EXTENSION_ID_PATTERN = /^[a-p]{32}$/;
   var MANUAL_CODE_PATTERN = /^[a-z0-9_]{1,60}$/;
   var MANUAL_VERSION_PATTERN = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
+  // 측정 중 쿼리만 바뀐 이동(user_navigated)에 확장이 싣는 바뀐 쿼리 이름(page.changedParams, 값 없음)의 상한(contract MANUAL_CHANGED_*).
+  var MANUAL_CHANGED_PARAMS_MAX = 10;
+  var MANUAL_CHANGED_PARAM_NAME_MAX = 40;
   var MANUAL_HELLO_TIMEOUT_MS = 5000;
   var MANUAL_HELLO_CACHE_MS = 30000;
   var MANUAL_CLAIM_TIMEOUT_MS = 20000;
@@ -943,6 +946,30 @@
     var safe = manualSafeCode(code);
     if (safe && MANUAL_CODE_TEXT[safe]) return MANUAL_CODE_TEXT[safe];
     return safe ? "확장이 끝내지 못했습니다(사유 코드 " + safe + ")" : "확장이 끝내지 못했습니다(사유를 받지 못함)";
+  }
+
+  // 확장 결과의 바뀐 쿼리 이름(서버 manualChangedParams 와 같은 규칙): 문자열·1~40 코드 포인트·제어 문자 없음만, 같은 이름 하나,
+  // 앞에서부터 10개. 배열이 아니면 null(경로·q 가 바뀐 이동이거나 이름을 싣지 않는 확장).
+  function manualChangedParams(page) {
+    var list = page && typeof page === "object" && Array.isArray(page.changedParams) ? page.changedParams : null;
+    if (!list) return null;
+    var out = [];
+    for (var index = 0; index < list.length && out.length < MANUAL_CHANGED_PARAMS_MAX; index += 1) {
+      var name = list[index];
+      if (typeof name !== "string" || !name || /[\u0000-\u001f\u007f]/.test(name)) continue;
+      if (Array.from(name).length > MANUAL_CHANGED_PARAM_NAME_MAX || out.indexOf(name) >= 0) continue;
+      out.push(name);
+    }
+    return out;
+  }
+
+  // 측정 중 검색 창 주소의 쿼리만 바뀌어 user_navigated 로 끝난 경우의 문구(사람 탓을 하지 않는다). 경로나 검색어(q)가 바뀌었거나
+  // 이름을 받지 못하면 null — 그때는 '다른 쪽으로 옮겨졌습니다' 문구(MANUAL_CODE_TEXT.user_navigated)를 쓴다.
+  function manualQueryChangedText(page) {
+    var names = manualChangedParams(page);
+    if (!names || names.indexOf("q") >= 0) return null;
+    return "확인 중에 검색 창 주소가 바뀌어 순위를 기록하지 않았습니다" + (names.length ? "(바뀐 값: " + names.join(", ") + ")" : "") +
+      ". 창 안을 누르지 않았다면 알려 주세요.";
   }
 
   // x.y.z 비교(contract.mjs compareVersion 과 같은 규칙).
@@ -1362,6 +1389,8 @@
     }
     if (status === "noresult") return { text: prefix + "확인 완료: " + quoted + "쿠팡 검색 결과가 없어 '결과 없음'으로 기록했습니다." + usage + left, tone: "is-ok" };
     var code = manualSafeCode(payload.errorCode) || manualSafeCode(check.page && check.page.errorCode);
+    var queryChanged = code === "user_navigated" ? manualQueryChangedText(check.page) : null;
+    if (queryChanged) return { text: prefix + quoted + queryChanged + usage + left, tone: "is-warn" };
     var reason;
     if (status === "partial" && check.page && check.page.wasHidden === true) reason = "확인 중에 창이 가려지거나 내려가 목록을 끝까지 읽지 못했습니다(다음에는 창을 가리지 마세요)";
     else if (code && MANUAL_CODE_TEXT[code]) reason = MANUAL_CODE_TEXT[code];
@@ -4558,6 +4587,7 @@
       manualRecordText: manualRecordText,
       manualClaimRefusalText: manualClaimRefusalText,
       manualCodeText: manualCodeText,
+      manualChangedParams: manualChangedParams,
       manualStopText: manualStopText,
       manualExtensionText: manualExtensionText,
       manualGuideSteps: manualGuideSteps,

@@ -98,6 +98,7 @@ export const PAGE_ERROR_CODES = Object.freeze([
   "extract_failed",
   "user_navigated",
 ]);
+export const USER_NAVIGATED_ERROR_CODE = "user_navigated"; // = 서버 MANUAL_USER_NAVIGATED_ERROR_CODE
 // D1(대표 결정 '예'): 쿠팡이 읽을 수 없는 곳(로그인 화면 등)으로 보내 읽지 못함 = 차단으로 본다.
 export const UNREADABLE_ERROR_CODE = "page_unreadable";
 
@@ -158,16 +159,22 @@ export function searchUrl(keyword) {
 //  그래서 쿠팡이 측정 중에 스스로 값을 붙이면 그 확인은 user_navigated(순위 기록 안 함·그날 중지 아님)로 끝난다 — 틀린 순위 대신
 //  '기록 안 함'으로 끝나는 안전한 쪽 실패다. 근거가 생기면(대표 첫 시험) 이 표와 lib/measure.js 표에 함께 넣는다.
 // 같은 값의 다른 모양은 맞춰 비교한다: 빈 값 = 값 없음, 쪽 번호·목록 크기는 숫자로(page=01 = page=1),
-// 쿠팡 기본값(sorter=scoreDesc·page=1)은 값 없음과 같다[추정: 기본값 이름은 실측 전]. 값의 앞뒤 공백은 그대로 비교한다.
+// 쿠팡 기본값(sorter=scoreDesc·page=1)은 값 없음과 같다[추정: 기본값 이름은 실측 전].
+// 값은 trim 하지 않는다: 앞뒤 공백은 그대로 비교하고, 공백만 있는 값(%20·+·%09)은 빈 값이 아니라 값이 있는 것이다(쪽 함수도 같다 — 테스트).
 // 이름은 대소문자를 가린다(Sorter 는 sorter 와 다른 값이라 생기면 이동). 순서·같은 이름 여러 개는 (이름, 값) 쌍을 정렬해 비교한다.
 // q 의 '+' 와 '%20' 은 같은 글자로 풀린다(URLSearchParams). 주소 끝 #… 은 쿼리가 아니라 보지 않는다.
 // lib/measure.js 쪽 함수에도 같은 표·규칙이 있다(쪽 함수는 자기완결이라 import 하지 못한다 — 테스트가 표와 판정이 같은지 본다).
 export const IGNORED_SEARCH_PARAMS = Object.freeze([]);
 export const SEARCH_PARAM_DEFAULTS = Object.freeze({ sorter: "scoreDesc", page: "1" });
 export const NUMERIC_SEARCH_PARAMS = Object.freeze(["page", "listSize"]);
+// 바뀐 쿼리 이름(2026-10-23 3차 재검사 반영): 측정 중 쿼리만 바뀌어 user_navigated 로 끝나면 어떤 이름이 생기거나·없어지거나·
+// 바뀌었는지 이름만(값은 남기지 않음) page.changedParams 에 싣는다. 대표 첫 시험에서 이 이름을 보고 무시 목록(위 표와
+// lib/measure.js ignoredParams)에 넣을지 정한다. 경로가 바뀐 이동에는 싣지 않는다. 쪽 함수에도 같은 상한·규칙이 있다(테스트).
+export const CHANGED_PARAMS_MAX = 10; // = 서버 MANUAL_CHANGED_PARAMS_MAX
+export const CHANGED_PARAM_NAME_MAX = 40; // 코드 포인트, = 서버 MANUAL_CHANGED_PARAM_NAME_MAX
 
-// 쿼리 → 비교용 문자열(위 규칙으로 맞춘 (이름, 값) 쌍을 정렬한 JSON).
-export function searchParamsKey(searchParams) {
+// 쿼리 → 위 규칙으로 맞춘 (이름, 값) 쌍을 정렬한 목록.
+export function searchParamPairs(searchParams) {
   const pairs = [];
   if (searchParams && typeof searchParams[Symbol.iterator] === "function") {
     for (const [name, raw] of searchParams) {
@@ -180,14 +187,48 @@ export function searchParamsKey(searchParams) {
     }
   }
   pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
-  return JSON.stringify(pairs);
+  return pairs;
 }
 
-// 주소 → { host, path, q, key }(key = searchParamsKey). 주소가 아니면 null.
+// 쿼리 → 비교용 문자열(searchParamPairs 의 JSON).
+export function searchParamsKey(searchParams) {
+  return JSON.stringify(searchParamPairs(searchParams));
+}
+
+// 바뀐 이름 목록을 보낼 모양으로: 문자열만, 제어 문자는 공백, 40 코드 포인트까지, 빈 이름 뺌, 같은 이름 하나, 앞에서부터 10개.
+// 배열이 아니면 null.
+export function cleanChangedParams(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  for (const name of list) {
+    if (out.length >= CHANGED_PARAMS_MAX) break;
+    if (typeof name !== "string") continue;
+    const clean = Array.from(name.replace(/[\u0000-\u001f\u007f]/g, " ")).slice(0, CHANGED_PARAM_NAME_MAX).join("");
+    if (clean && !out.includes(clean)) out.push(clean);
+  }
+  return out;
+}
+
+// 두 쌍 목록(searchParamPairs) 사이에 값이 생기거나·없어지거나·바뀐 이름. q 가 있으면 맨 앞(화면이 q 바뀜을 상한에 잘리지 않고 보게),
+// 나머지는 이름 순. 값은 돌려주지 않는다. 결과는 cleanChangedParams 모양.
+export function changedParamNames(beforePairs, afterPairs) {
+  const before = Array.isArray(beforePairs) ? beforePairs : [];
+  const after = Array.isArray(afterPairs) ? afterPairs : [];
+  const valuesOf = (pairs, name) => JSON.stringify(pairs.filter((pair) => pair[0] === name).map((pair) => pair[1]));
+  const names = [];
+  for (const [name] of [...before, ...after]) {
+    if (!names.includes(name) && valuesOf(before, name) !== valuesOf(after, name)) names.push(name);
+  }
+  names.sort((a, b) => (a === b ? 0 : a === "q" ? -1 : b === "q" ? 1 : a < b ? -1 : a > b ? 1 : 0));
+  return cleanChangedParams(names);
+}
+
+// 주소 → { host, path, q, key, pairs }(pairs = searchParamPairs, key = 그 JSON). 주소가 아니면 null.
 export function searchAddressOf(url) {
   try {
     const parsed = new URL(String(url || ""));
-    return { host: parsed.host.toLowerCase(), path: parsed.pathname, q: parsed.searchParams.get("q"), key: searchParamsKey(parsed.searchParams) };
+    const pairs = searchParamPairs(parsed.searchParams);
+    return { host: parsed.host.toLowerCase(), path: parsed.pathname, q: parsed.searchParams.get("q"), key: JSON.stringify(pairs), pairs };
   } catch {
     return null;
   }

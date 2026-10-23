@@ -5,7 +5,9 @@ import test from "node:test";
 import vm from "node:vm";
 import { miCoupangMeasure, miCoupangProbe } from "../lib/measure.js";
 import { splitItems } from "../lib/assemble.js";
-import { IGNORED_SEARCH_PARAMS, NUMERIC_SEARCH_PARAMS, SEARCH_PARAM_DEFAULTS, searchAddressOf } from "../lib/protocol.js";
+import {
+  CHANGED_PARAMS_MAX, CHANGED_PARAM_NAME_MAX, IGNORED_SEARCH_PARAMS, NUMERIC_SEARCH_PARAMS, SEARCH_PARAM_DEFAULTS, changedParamNames, searchAddressOf,
+} from "../lib/protocol.js";
 import { isSearchAddress } from "../background.js";
 import { EXTRACT_SOURCE, parseExtractResult, splitItems as collectorSplitItems } from "../../coupang-rank-collector/lib/extract.mjs";
 import { fixture } from "./helpers.mjs";
@@ -137,31 +139,49 @@ test("측정 중 쿠팡이 주소에 값을 붙이면(근거 없는 추적 값 c
 
 // 2026-10-23 재검사 2차 r1: 아는 값(sorter·page·listSize)만 보던 탓에 같은 쪽 안에서 거르기 값(로켓배송·브랜드·가격대·분류·filter)이
 // 바뀐 목록이 ok 로 저장됐다. 이제 쿼리 값 전부를 측정 시작 때와 비교한다(무시 목록 = 근거로 확인된 쿠팡 추적 꼬리, 지금은 없음).
-// 확장 쪽(background isSearchAddress = protocol searchParamsKey)과 판정이 같아야 한다. [시작 쿼리, 측정 중 쿼리, 이동?]
+// 확장 쪽(background isSearchAddress = protocol searchParamsKey)과 판정이 같아야 한다.
+// [시작 쿼리, 측정 중 쿼리, 이동?, 바뀐 이름(이동일 때 — 쪽 함수 changedParams = protocol changedParamNames)]
 const Q = `q=${encodeURIComponent("아이폰 케이스")}`;
 const ADDRESS_CASES = [
   // 거르기 값(재검사 F1~F5)
-  [`?${Q}`, `?${Q}&rocketAll=true`, true],
-  [`?${Q}`, `?${Q}&brand=1234`, true],
-  [`?${Q}`, `?${Q}&minPrice=1000&maxPrice=5000`, true],
-  [`?${Q}`, `?${Q}&component=194176`, true],
-  [`?${Q}`, `?${Q}&filter=${encodeURIComponent("1#attr_123")}`, true],
-  [`?${Q}&rocketAll=true`, `?${Q}`, true],
-  [`?${Q}&brand=1234`, `?${Q}&brand=5678`, true],
+  [`?${Q}`, `?${Q}&rocketAll=true`, true, ["rocketAll"]],
+  [`?${Q}`, `?${Q}&brand=1234`, true, ["brand"]],
+  [`?${Q}`, `?${Q}&minPrice=1000&maxPrice=5000`, true, ["maxPrice", "minPrice"]],
+  [`?${Q}`, `?${Q}&component=194176`, true, ["component"]],
+  [`?${Q}`, `?${Q}&filter=${encodeURIComponent("1#attr_123")}`, true, ["filter"]],
+  [`?${Q}&rocketAll=true`, `?${Q}`, true, ["rocketAll"]],
+  [`?${Q}&brand=1234`, `?${Q}&brand=5678`, true, ["brand"]],
   // 정렬·쪽 번호·목록 크기
-  [`?${Q}`, `?${Q}&sorter=saleCountDesc`, true],
-  [`?${Q}&channel=user`, `?${Q}&channel=user&sorter=salePriceAsc`, true],
-  [`?${Q}`, `?${Q}&page=2`, true],
-  [`?${Q}`, `?${Q}&listSize=72`, true],
-  [`?${Q}`, `?${Q}&listSize=36`, true],
-  [`?${Q}&listSize=36`, `?${Q}&listSize=72`, true],
-  [`?${Q}`, `?${Q}&page=2&page=1`, true],
+  [`?${Q}`, `?${Q}&sorter=saleCountDesc`, true, ["sorter"]],
+  [`?${Q}&channel=user`, `?${Q}&channel=user&sorter=salePriceAsc`, true, ["sorter"]],
+  [`?${Q}`, `?${Q}&page=2`, true, ["page"]],
+  [`?${Q}`, `?${Q}&listSize=72`, true, ["listSize"]],
+  [`?${Q}`, `?${Q}&listSize=36`, true, ["listSize"]],
+  [`?${Q}&listSize=36`, `?${Q}&listSize=72`, true, ["listSize"]],
+  [`?${Q}`, `?${Q}&page=2&page=1`, true, ["page"]],
   // 이름은 대소문자를 가린다 · 숫자로 맞추는 것은 쪽 번호·목록 크기뿐
-  [`?${Q}`, `?${Q}&Sorter=saleCountDesc`, true],
-  [`?${Q}&brand=123`, `?${Q}&brand=0123`, true],
+  [`?${Q}`, `?${Q}&Sorter=saleCountDesc`, true, ["Sorter"]],
+  [`?${Q}&brand=123`, `?${Q}&brand=0123`, true, ["brand"]],
   // 근거 없는 추적 값도 바뀜(안전한 쪽 실패)
-  [`?${Q}`, `?${Q}&channel=user`, true],
-  [`?${Q}&traceId=abc`, `?${Q}&traceId=def`, true],
+  [`?${Q}`, `?${Q}&channel=user`, true, ["channel"]],
+  [`?${Q}&traceId=abc`, `?${Q}&traceId=def`, true, ["traceId"]],
+  // q 가 바뀌면 이름 맨 앞에 q(화면은 그때 '다른 쪽으로 옮겨짐' 문구)
+  [`?${Q}`, `?q=${encodeURIComponent("다른 검색어")}&brand=1&channel=user`, true, ["q", "brand", "channel"]],
+  // 2026-10-23 3차 재검사: 공백만 있는 값·앞뒤 공백 값. 값은 trim 하지 않는다 — 공백만 있는 값은 값이 있는 것이고, 앞뒤 공백도 다른 값이다.
+  // (한쪽만 trim 하면 아래 경우에서 그쪽 판정만 '이동 아님'이 되어 시험이 실패한다)
+  [`?${Q}`, `?${Q}&brand=%20`, true, ["brand"]],
+  [`?${Q}`, `?${Q}&brand=+`, true, ["brand"]],
+  [`?${Q}`, `?${Q}&brand=%09`, true, ["brand"]],
+  [`?${Q}&brand=%20`, `?${Q}`, true, ["brand"]],
+  [`?${Q}&brand=%20`, `?${Q}&brand=%20%20`, true, ["brand"]],
+  [`?${Q}&brand=1`, `?${Q}&brand=%201%20`, true, ["brand"]],
+  [`?${Q}&brand=1`, `?${Q}&brand=1%20`, true, ["brand"]],
+  [`?${Q}&page=2`, `?${Q}&page=2%20`, true, ["page"]],
+  [`?${Q}`, `?${Q}&page=%201`, true, ["page"]],
+  [`?${Q}`, `?${Q}&sorter=scoreDesc%20`, true, ["sorter"]],
+  [`?${Q}`, `?q=${encodeURIComponent("아이폰 케이스 ")}`, true, ["q"]],
+  [`?${Q}`, `?q=${encodeURIComponent(" 아이폰 케이스")}`, true, ["q"]],
+  [`?${Q}`, `?${Q}&%20=1`, true, [" "]],
   // 같은 값의 다른 모양: 기본값·빈 값·숫자 모양·순서·q 의 + 와 %20·#… 은 바뀜이 아니다
   [`?${Q}`, `?${Q}&page=1`, false],
   [`?${Q}`, `?${Q}&sorter=scoreDesc`, false],
@@ -173,10 +193,12 @@ const ADDRESS_CASES = [
   [`?${Q}&listSize=36&brand=1&channel=user`, `?brand=1&channel=user&${Q}&listSize=36`, false],
   [`?q=${encodeURIComponent("아이폰 케이스")}`, "?q=아이폰+케이스", false],
   [`?${Q}&channel=user&traceId=abc`, `?${Q}&channel=user&traceId=abc#top`, false],
+  [`?${Q}&brand=%20`, `?${Q}&brand=+`, false],
+  [`?${Q}&brand=1%20`, `?brand=1+&${Q}`, false],
 ];
 
-test("측정 중 쿼리 값이 하나라도 생기거나·없어지거나·바뀌면 이동(navigated, stable 아님), 같은 값의 다른 모양이면 이동 아님 — 확장 판정과 같다", async () => {
-  for (const [startSearch, endSearch, expected] of ADDRESS_CASES) {
+test("측정 중 쿼리 값이 하나라도 생기거나·없어지거나·바뀌면 이동(navigated, stable 아님), 같은 값의 다른 모양이면 이동 아님 — 확장 판정·바뀐 이름과 같다", async () => {
+  for (const [startSearch, endSearch, expected, names] of ADDRESS_CASES) {
     const label = `${startSearch} → ${endSearch}`;
     const dom = makeDom({
       search: startSearch,
@@ -191,14 +213,59 @@ test("측정 중 쿼리 값이 하나라도 생기거나·없어지거나·바�
     const result = await run(dom);
     assert.equal(result.navigated, expected, label);
     if (expected) assert.equal(result.stable, false, label);
+    assert.deepEqual(result.changedParams, expected ? names : undefined, `쪽 함수 바뀐 이름 ${label}`);
     const start = searchAddressOf(`https://www.coupang.com/np/search${startSearch}`);
+    const end = searchAddressOf(`https://www.coupang.com/np/search${endSearch}`);
     assert.equal(!isSearchAddress(`https://www.coupang.com/np/search${endSearch}`, "아이폰 케이스", start.key), expected, `확장 판정 ${label}`);
+    assert.deepEqual(changedParamNames(start.pairs, end.pairs), expected ? names : [], `확장 바뀐 이름 ${label}`);
   }
   // 측정 시작 때 이미 붙어 있던 값은 기준이다(쿠팡이 불러오는 동안 붙였어도 그 뒤 바뀜만 본다)
   const already = makeDom({ search: `?${Q}&listSize=36&page=1&channel=user&traceId=x` });
   const kept = await run(already);
   assert.equal(kept.navigated, false);
   assert.equal(kept.stable, true);
+});
+
+test("바뀐 이름은 이름만(값 없음)·q 맨 앞·제어 문자는 공백·이름마다 40 코드 포인트·10개까지 — 쪽 함수 = protocol changedParamNames, 경로가 바뀌면 싣지 않는다", async () => {
+  const long = "가".repeat(45);
+  const tail = [
+    "zeta=1", "alpha=1", `${encodeURIComponent(long)}=1`, `${encodeURIComponent("a\u0001b")}=1`, "b2=secret-value", "c3=1", "d4=1", "e5=1", "f6=1", "g7=1", "h8=1",
+  ].join("&");
+  const endSearch = `?q=${encodeURIComponent("다른 검색어")}&${tail}`;
+  const dom = makeDom({
+    search: `?${Q}`,
+    onScroll: (state, count) => {
+      if (count === 2) {
+        Reflect.set(state.location, "search", endSearch);
+        state.forbidden.pop();
+      }
+    },
+  });
+  const result = await run(dom);
+  const expected = ["q", "a b", "alpha", "b2", "c3", "d4", "e5", "f6", "g7", "h8"];
+  assert.deepEqual(result.changedParams, expected);
+  assert.equal(JSON.stringify(result).includes("secret-value"), false, "값은 싣지 않는다");
+  const start = searchAddressOf(`https://www.coupang.com/np/search?${Q}`);
+  const end = searchAddressOf(`https://www.coupang.com/np/search${endSearch}`);
+  assert.deepEqual(changedParamNames(start.pairs, end.pairs), expected);
+  // 10개 안에 들면 긴 이름은 40 코드 포인트로 자른다
+  const few = searchAddressOf(`https://www.coupang.com/np/search?${Q}&${encodeURIComponent(long)}=1`);
+  assert.deepEqual(changedParamNames(start.pairs, few.pairs), ["가".repeat(40)]);
+
+  const pathMoved = makeDom({
+    onScroll: (state, count) => {
+      if (count === 2) {
+        Reflect.set(state.location, "pathname", "/vp/products/123456");
+        Reflect.set(state.location, "search", "?itemId=1&traceId=x");
+        state.forbidden.pop();
+        state.forbidden.pop();
+      }
+    },
+  });
+  const moved = await run(pathMoved);
+  assert.equal(moved.navigated, true);
+  assert.equal(Object.hasOwn(moved, "changedParams"), false, "경로가 바뀐 이동에는 이름을 싣지 않는다");
+  assert.equal(Object.hasOwn(await run(makeDom()), "changedParams"), false, "이동이 아니면 싣지 않는다");
 });
 
 test("쪽 함수의 주소 비교 표 = lib/protocol.js IGNORED_SEARCH_PARAMS·SEARCH_PARAM_DEFAULTS·NUMERIC_SEARCH_PARAMS(쪽 함수는 자기완결이라 import 못 함)", () => {
@@ -211,6 +278,8 @@ test("쪽 함수의 주소 비교 표 = lib/protocol.js IGNORED_SEARCH_PARAMS·S
   assert.deepEqual(literal(/const ignoredParams = (\[[^\]]*\]);/, "ignoredParams"), [...IGNORED_SEARCH_PARAMS]);
   assert.deepEqual(literal(/const paramDefaults = (\{[^}]*\});/, "paramDefaults"), { ...SEARCH_PARAM_DEFAULTS });
   assert.deepEqual(literal(/const numericParams = (\[[^\]]*\]);/, "numericParams"), [...NUMERIC_SEARCH_PARAMS]);
+  assert.equal(literal(/const changedMax = ([0-9]+);/, "changedMax"), CHANGED_PARAMS_MAX);
+  assert.equal(literal(/const changedNameMax = ([0-9]+);/, "changedNameMax"), CHANGED_PARAM_NAME_MAX);
   // 무시 목록은 근거로 확인된 쿠팡 추적 꼬리만(2026-10-23 저장소·수집기 기록에 근거 없음 → 비어 있음). 상품 링크 값은 넣지 않는다.
   assert.deepEqual([...IGNORED_SEARCH_PARAMS], []);
   for (const productLinkValue of ["sourceType", "rank", "searchRank", "itemsCount", "searchId"]) {

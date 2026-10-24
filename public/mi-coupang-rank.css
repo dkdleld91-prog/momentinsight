@@ -350,6 +350,8 @@
   min-width: 0;
   max-width: 100%;
   margin-bottom: 6px;
+  /* 칸 폭 계산에서 빠지는 대신 칸 폭만큼 늘려 둔다(안 늘리면 폭 0 으로 줄어든다) */
+  justify-self: stretch;
   contain: inline-size;
 }
 

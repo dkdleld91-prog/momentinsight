@@ -6413,13 +6413,20 @@
     var resizeTarget = typeof window !== "undefined" && window && typeof window.addEventListener === "function" ? window : null;
     if (resizeTarget) resizeTarget.addEventListener("resize", onResize);
 
-    if (observedRoot && typeof MutationObserver === "function") {
+    // 같은 지켜보기가 화면 칸(.mi-view)의 class 도 본다: 전체 확인 중 다른 메뉴로 옮기면(잠깐이라도) 바로 대기열을 멈춘다
+    // (1초 재확인을 기다리지 않는다 — 한 건 확인 중에 갔다가 그 건이 끝나기 전에 돌아와도 이어 가지 않게).
+    var observedView = host.closest ? host.closest(".mi-view") : null;
+    if ((observedRoot || observedView) && typeof MutationObserver === "function") {
       observer = new MutationObserver(function () {
-        var locked = observedRoot.classList.contains("is-locked");
-        if (locked && !wasLocked) reset();
-        wasLocked = locked;
+        if (observedRoot) {
+          var locked = observedRoot.classList.contains("is-locked");
+          if (locked && !wasLocked) reset();
+          wasLocked = locked;
+        }
+        if (!state.destroyed && state.manual.all && !isHostVisible()) allStop(MANUAL_ALL_MOVED_TEXT);
       });
-      observer.observe(observedRoot, { attributes: true, attributeFilter: ["class"] });
+      if (observedRoot) observer.observe(observedRoot, { attributes: true, attributeFilter: ["class"] });
+      if (observedView && observedView !== observedRoot) observer.observe(observedView, { attributes: true, attributeFilter: ["class"] });
     }
 
     // ── 카드 '다음' 남은 시간 다시 계산(N30 은 60초 건강 신호마다 순위판을 다시 그린다) ──

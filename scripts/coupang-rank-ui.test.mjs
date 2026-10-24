@@ -4916,7 +4916,7 @@ function mountAll(options = {}) {
   const server = options.server || allServer(clock, options);
   const bridge = options.bridge || fakeBridge(options);
   const screen = mountWith({ fetch: server.respond, extensionBridge: bridge, local: makeStorage(), deferTimersFrom: 1000, userAgent: CHROME_UA, clock,
-    ...(options.confirm ? { confirm: options.confirm } : {}) });
+    ...(options.confirm ? { confirm: options.confirm } : {}), ...(options.MutationObserver ? { MutationObserver: options.MutationObserver } : {}) });
   return { ...screen, server, bridge, clock };
 }
 
@@ -5611,6 +5611,43 @@ test("전체 확인(검토 3): 한 건 확인 중에 다른 메뉴로 갔다가 
   assert.equal(pendingTicks(screen).length, 0);
   await advanceAll(screen, 600000, 60000);
   assert.equal(screen.server.claimTimes.length, 2, "돌아와도 이어 가지 않는다");
+});
+
+test("전체 확인(검토 3): 화면 칸 class 가 바뀌는 순간(지켜보기) 멈춘다 — 1초 재확인이 돌기 전에 돌아와도 이어 가지 않는다", async () => {
+  const callbacks = [];
+  const observed = [];
+  class FakeMutationObserver {
+    constructor(callback) { callbacks.push(callback); }
+    observe(node, options) { observed.push({ node, options }); }
+    disconnect() {}
+  }
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const screen = mountAll({ MutationObserver: FakeMutationObserver, check: async () => { await gate; return { ok: true, reply: measuredReply() }; } });
+  assert.equal(callbacks.length, 1, "지켜보기는 하나(루트 잠김 · 화면 칸)");
+  assert.deepEqual(observed.map((entry) => entry.node), [screen.root, screen.view]);
+  await startAll(screen);
+  assert.equal(allCountdownOf(screen), " · 확인 중");
+  screen.view.classList.remove("is-active");
+  callbacks[0]([]);
+  screen.view.classList.add("is-active");
+  callbacks[0]([]);
+  screen.controller.show();
+  await settle();
+  assert.equal(allButtonOf(screen).textContent, "멈추는 중…", "재확인 타이머가 돌지 않았어도 바로 멈춤");
+  release();
+  await settle();
+  assert.equal(screen.server.of("manual-record").length, 1, "진행 중인 1건은 끝까지 기록");
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(1 / 4 '키워드 A'에서): 화면을 옮기거나 화면이 잠겨 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  await advanceAll(screen, 600000, 60000);
+  assert.equal(screen.server.claimTimes.length, 1);
+  // 대기열이 없을 때 화면 칸이 바뀌어도 아무 일도 하지 않는다(루트 잠김 reset 은 그대로)
+  screen.view.classList.remove("is-active");
+  callbacks[0]([]);
+  assert.ok(screen.host.childNodes.length > 0);
+  screen.root.classList.add("is-locked");
+  callbacks[0]([]);
+  assert.equal(screen.host.childNodes.length, 0, "잠기면 reset");
 });
 
 test("전체 확인(검토 4): 남은 횟수만큼 자른 대기열에서 앞 키워드를 건너뛰면 횟수가 모자라 뺀 키워드로 채운다(요약도 사실대로)", async () => {

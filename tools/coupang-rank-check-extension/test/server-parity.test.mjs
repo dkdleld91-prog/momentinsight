@@ -117,7 +117,7 @@ test("서버 수동 계약: 진단 상수(스키마·4KB·글자 200자·값 개
   assert.equal(contract.MANUAL_DIAGNOSTICS_TEXT_MAX, DIAG_TEXT_MAX);
   assert.equal(contract.MANUAL_DIAGNOSTICS_NODES_MAX, DIAGNOSTICS_NODES_MAX);
   assert.deepEqual([...contract.MANUAL_DIAGNOSTICS_TOP_KEYS], [...DIAGNOSTICS_TOP_KEYS]);
-  const names = ["verified", "nav", "load", "quick", "measureStart", "measureEnd", "retryStart", "retryLoad", "retryQuick", "retryMeasureStart", "retryMeasureEnd", "timeoutQuick", "capQuick", "end"];
+  const names = ["verified", "nav", "load", "quick", "measureStart", "measureEnd", "retryStart", "retryLoad", "retryQuick", "retryMeasureStart", "retryMeasureEnd", "movedQuick", "timeoutQuick", "capQuick", "end"];
   const ms = Object.fromEntries(names.map((name, index) => [name, 599990 + index]));
   const load = { how: "complete", loading: 999999, complete: 999999, urls: 999999, completeAt: [599999, 599998, 599997, 599996, 599995, 599994, 1] };
   const retry = { tried: true, skip: "address_changed", load: "complete", result: "address_changed" };
@@ -127,7 +127,7 @@ test("서버 수동 계약: 진단 상수(스키마·4KB·글자 200자·값 개
     const diag = buildDiagnostics({
       version: EXTENSION_VERSION, page: { status: "error", errorCode: "extract_failed", wasHidden: true }, ms, load,
       tries: Array.from({ length: 6 }, () => ({ kind: "extract_error", msg: text })), doc, firstDoc: { ...doc, nav: "navigate" }, retry,
-      hidden: true, unexpected: text || "x", seen: { httpStatus: 429, blockedText: true },
+      hidden: true, unexpected: text || "x", seen: { httpStatus: 429, blockedText: true, lastHttpStatus: 200 },
     });
     for (const key of Object.keys(diag)) {
       assert.ok(DIAGNOSTICS_TOP_KEYS.includes(key), `확장이 만든 맨 위 칸 ${key} 가 서버 목록에 없다`);

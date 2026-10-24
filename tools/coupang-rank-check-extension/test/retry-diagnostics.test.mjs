@@ -345,12 +345,12 @@ test("buildDiagnostics: 4KB 상한(덜 중요한 것부터 덜어 냄·cut)·제
   // 성공: 경과·load 횟수·재시도 여부만
   const ok = buildDiagnostics({ version: "1.0.1", page: { status: "ok", errorCode: null }, ms: { end: 12 }, load: { how: "complete", loading: 1, complete: 1 }, retry: { tried: false }, doc, tries: [{ kind: "ok" }], seen: { httpStatus: 429, blockedText: false } });
   assert.deepEqual(ok, { v: 1, ext: "1.0.1", ok: true, code: null, ms: { end: 12 }, load: { how: "complete", loading: 1, complete: 1, urls: 0, completeAt: [] }, retry: { tried: false } });
-  // 실패면 불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구(seen)를 싣는다(모르는 값은 null)
+  // 실패면 불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구·마지막으로 읽은 문서의 HTTP(seen)를 싣는다(모르는 값은 null)
   assert.deepEqual(small.seen, undefined, "seen 을 주지 않으면 없음");
-  const seen = buildDiagnostics({ ...input, seen: { httpStatus: 429, blockedText: true } });
-  assert.deepEqual(seen.seen, { http: 429, blocked: true });
-  assert.deepEqual(buildDiagnostics({ ...input, seen: { httpStatus: "x" } }).seen, { http: null, blocked: false });
-  // 경과 이름은 16개까지(확장이 남기는 이름은 14개까지) — 서버 값 개수 상한(120) 안에 머문다
+  const seen = buildDiagnostics({ ...input, seen: { httpStatus: 429, blockedText: true, lastHttpStatus: 200 } });
+  assert.deepEqual(seen.seen, { http: 429, blocked: true, last: 200 });
+  assert.deepEqual(buildDiagnostics({ ...input, seen: { httpStatus: "x" } }).seen, { http: null, blocked: false, last: null });
+  // 경과 이름은 16개까지(확장이 남기는 이름은 15개까지) — 서버 값 개수 상한(120) 안에 머문다
   const many = buildDiagnostics({ version: "1.0.1", page: { status: "error", errorCode: "extract_failed" }, ms: Object.fromEntries(Array.from({ length: 400 }, (_, index) => [`k${index}`, index])) });
   assert.equal(Object.keys(many.ms).length, 16);
   assert.ok(diagnosticsNodes(many) <= DIAGNOSTICS_NODES_MAX);
@@ -474,7 +474,7 @@ test("1번 더 읽기 전 기다리는 동안 load 확인이 본 차단 HTTP(429
     assert.ok(fake.storage.blockedDay, second);
     const diag = reply.page.diagnostics;
     assert.deepEqual(diag.retry, { tried: true, load: "complete", result: "blocked" }, second);
-    assert.deepEqual(diag.seen, { http: 429, blocked: false }, `${second}: 본 차단 HTTP 가 진단에도 남는다`);
+    assert.deepEqual(diag.seen, { http: 429, blocked: false, last: 200 }, `${second}: 본 차단 HTTP 와 마지막 문서의 HTTP 가 진단에 함께 남는다`);
     assertServerAccepts(reply);
   }
 });
@@ -554,4 +554,228 @@ test("1번 더 읽기 사이 같은 주소 다시 불러오기(주소 없는 loa
   assert.equal(measures(fake), 2);
   assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "complete", result: "measured" });
   assert.equal(fake.calls.update.length, 1);
+});
+
+// ── 1.0.1 재검사 반영(2026-10-24): 기다리는 사이 바뀐 쪽의 차단·최종 문서 HTTP·사용자 정보 ──
+
+const quickReads = (fake) => fake.calls.executeScript.filter((call) => call.func === "miCoupangMeasure" && call.args?.[0]?.quick === true).length;
+const blockedRawAt = (tab, { httpStatus = 403, blockedText = true } = {}) => ({
+  host: "www.coupang.com", path: new URL(tab.url).pathname, query: "", items: [], httpStatus, blockedText,
+  noResultText: false, loginWall: false, stable: false, navigated: false, wasHidden: false,
+});
+const loadingProbe = () => ({ readyState: "loading", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false });
+
+// 첫 측정은 결과 없음(측정 중 loading) → 기다리는 사이 주소가 move(url) 로 바뀜(주소 사건) → 40ms 뒤 complete.
+function moveWhileWaiting(move, marks) {
+  let count = 0;
+  return ({ tab, chrome: fakeRef }) => {
+    count += 1;
+    if (count > 1) return rawPage();
+    tab.status = "loading";
+    fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+    setTimeout(() => {
+      const next = move(tab.url);
+      tab.url = next.url;
+      marks.moved = true;
+      fakeRef.events.tabsOnUpdated.emit(tab.id, next.urlEvent === false ? { status: "loading" } : { status: "loading", url: tab.url });
+      setTimeout(() => { tab.status = "complete"; fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "complete" }); }, 40);
+    }, 40);
+    return undefined;
+  };
+}
+
+test("1.0.1 재검사: 1번 더 읽기를 기다리는 사이 주소가 바뀌어 다시 읽지 않아도, 바뀐 쪽이 쿠팡 주소면 짧은 읽기 1번으로 차단을 본다 — 차단 화면이면 그날 중지", async () => {
+  const shapes = [
+    ["같은 경로에 값이 붙음", (url) => ({ url: `${url}&captcha=1` })],
+    ["같은 호스트의 다른 경로", () => ({ url: "https://www.coupang.com/np/blocked" })],
+  ];
+  const signals = [
+    ["HTTP 403 + 차단 문구", { httpStatus: 403, blockedText: true }, "blocked_http_403"],
+    ["HTTP 200 + 차단 문구", { httpStatus: 200, blockedText: true }, "blocked_text"],
+    ["HTTP 429 만", { httpStatus: 429, blockedText: false }, "blocked_http_429"],
+  ];
+  for (const [shape, move] of shapes) {
+    for (const [signal, values, reason] of signals) {
+      const label = `${shape}·${signal}`;
+      const marks = { moved: false };
+      const { fake, fetchImpl, background } = setup({
+        chrome: {
+          scenario: {
+            measure: moveWhileWaiting(move, marks),
+            quick: ({ tab }) => (marks.moved ? blockedRawAt(tab, values) : rawPage({ items: [], stable: false, scrolls: 0, reads: 1 })),
+            probe: loadingProbe,
+          },
+        },
+      });
+      const reply = await send(background, checkMessage());
+      assert.equal(reply.stopSignal, true, label);
+      assert.equal(reply.stopReason, reason, label);
+      assert.equal(reply.page.status, "blocked", label);
+      assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), [reason], label);
+      assert.ok(fake.storage.blockedDay, label);
+      assert.equal(measures(fake), 1, `${label}: 바뀐 주소에서는 측정(스크롤)하지 않는다`);
+      assert.equal(quickReads(fake), 2, `${label}: 불러온 직후 1번 + 바뀐 쪽 1번`);
+      assert.equal(fake.calls.update.length, 1, `${label}: 쿠팡 주소 넣기는 1번뿐`);
+      const diag = reply.page.diagnostics;
+      assert.deepEqual(diag.retry, { tried: true, load: "complete", result: "address_changed" }, label);
+      assert.ok(Number.isInteger(diag.ms.movedQuick), label);
+      assertServerAccepts(reply);
+    }
+  }
+});
+
+test("1.0.1 재검사: 기다리는 사이 바뀐 쪽이 차단이 아니면 지금처럼 user_navigated·중지 없음(1.0.0 과 같은 판정), 권한 밖으로 바뀌면 짧은 읽기 없이 page_unreadable", async () => {
+  // 쿠팡 주소(같은 경로에 값이 붙음): 짧은 읽기 1번은 하지만 차단 신호가 없으니 user_navigated(바뀐 이름 captcha)
+  {
+    const marks = { moved: false };
+    const { fake, fetchImpl, background } = setup({
+      chrome: { scenario: { measure: moveWhileWaiting((url) => ({ url: `${url}&captcha=1` }), marks), probe: loadingProbe } },
+    });
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, "user_navigated");
+    assert.deepEqual(reply.page.changedParams, ["captcha"]);
+    assert.equal(reply.stopSignal, false);
+    assert.deepEqual(fetchImpl.stops(), []);
+    assert.equal(measures(fake), 1);
+    assert.equal(quickReads(fake), 2);
+    assert.equal(fake.calls.update.length, 1);
+    assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "complete", result: "address_changed" });
+    assertServerAccepts(reply);
+  }
+  // 권한 밖(로그인 화면 — 크롬은 주소를 보여 주지 않음): 읽을 수 없으니 짧은 읽기를 넣지 않고, 지금처럼 탭 주소로 page_unreadable(그날 중지)
+  {
+    const marks = { moved: false };
+    const { fake, fetchImpl, background } = setup({
+      chrome: { scenario: { measure: moveWhileWaiting(() => ({ url: LOGIN_URL, urlEvent: false }), marks), probe: loadingProbe } },
+    });
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, "page_unreadable");
+    assert.equal(reply.stopReason, "page_unreadable");
+    assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
+    assert.equal(measures(fake), 1);
+    assert.equal(quickReads(fake), 1, "권한 밖에는 짧은 읽기를 넣지 않는다");
+    assert.equal(fake.calls.update.length, 1);
+    assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "complete", result: "not_search" });
+    assertServerAccepts(reply);
+  }
+});
+
+test("1.0.1 재검사: 1번 더 읽기 직전(짧은 읽기 뒤) 주소가 바뀌어 두 번째 측정을 하지 않을 때도, 바뀐 쪽 짧은 읽기 1번으로 차단을 보면 그날 중지", async () => {
+  let quicks = 0;
+  const { fake, fetchImpl, background } = setup({
+    chrome: {
+      scenario: {
+        measure: () => undefined,
+        quick: ({ tab, chrome: fakeRef }) => {
+          quicks += 1;
+          if (quicks === 2) {
+            // 다시 읽기 전 짧은 읽기 도중 주소가 같은 호스트의 차단 화면으로 바뀜(탭은 이미 다 불러온 상태)
+            tab.url = "https://www.coupang.com/np/blocked";
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading", url: tab.url });
+            return rawPage({ items: [], stable: false, scrolls: 0, reads: 1 });
+          }
+          if (quicks >= 3) return blockedRawAt(tab);
+          return rawPage({ items: [], stable: false, scrolls: 0, reads: 1 });
+        },
+      },
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.stopReason, "blocked_http_403");
+  assert.equal(reply.page.status, "blocked");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_403"]);
+  assert.equal(measures(fake), 1, "두 번째 쪽 함수(스크롤)는 넣지 않는다");
+  assert.equal(quickReads(fake), 3, "불러온 직후·다시 읽기 전·바뀐 쪽 각 1번");
+  assert.equal(fake.calls.update.length, 1);
+  assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "already", result: "address_changed" });
+  assertServerAccepts(reply);
+});
+
+test("1.0.1 재검사: 쪽 안 예외 결과는 본 차단 HTTP 를 우선해 그날 중지하고, 진단에는 본 차단 HTTP(seen.http)와 최종 문서의 HTTP(seen.last)를 둘 다 남긴다", async () => {
+  const extractError = (httpStatus) => ({
+    extractError: true, host: "www.coupang.com", path: "/np/search", query: "", items: [], httpStatus, error: "TypeError",
+    doc: { nav: "reload", ready: "complete", title: "쿠팡", bodyLen: 100, bodyHead: "본문", units: 0, links: 0, blocked: false, hidden: false },
+  });
+  // 중간 문서만 429(첫 load 중 확인), 최종 문서는 200
+  {
+    const { fake, fetchImpl, background } = setup({
+      chrome: { scenario: { loadDelayMs: 60, measure: () => extractError(200), probe: probe429WhileLoading } },
+    });
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.errorCode, "extract_failed");
+    assert.equal(reply.page.httpStatus, 429, "결과 HTTP 는 차단 쪽 우선(안전)");
+    assert.equal(reply.stopReason, "blocked_http_429");
+    assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_429"]);
+    assert.deepEqual(reply.page.diagnostics.seen, { http: 429, blocked: false, last: 200 }, "중간 문서 429·최종 문서 200");
+    assert.equal(fake.calls.update.length, 1);
+    assertServerAccepts(reply);
+  }
+  // 최종 문서 자신이 429(불러오는 동안은 200)
+  {
+    const { fake, background } = setup({
+      chrome: {
+        scenario: {
+          loadDelayMs: 60,
+          measure: () => extractError(429),
+          probe: ({ tab }) => ({ readyState: tab.status === "loading" ? "loading" : "complete", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false }),
+        },
+      },
+    });
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.page.httpStatus, 429);
+    assert.equal(reply.stopReason, "blocked_http_429");
+    assert.deepEqual(reply.page.diagnostics.seen, { http: 200, blocked: false, last: 429 }, "최종 문서 429 — 위 경우와 진단으로 가려진다");
+    assert.equal(fake.calls.update.length, 1);
+    assertServerAccepts(reply);
+  }
+});
+
+test("1.0.1 재검사: 진단 주소는 어떤 모양이든 호스트·경로만 — scheme 없음·// 시작·인코딩·따옴표·; 가 든 사용자 정보도 지우고 @·%40 이 남지 않는다", () => {
+  const cases = [
+    ["user:SECRET@www.coupang.com/a", "www.coupang.com/a"],
+    ["//user:SECRET@www.coupang.com/np/search?q=S", "//www.coupang.com/np/search"],
+    ["https://user:SECRET@www.coupang.com/a?b=1", "https://www.coupang.com/a"],
+    ["HTTPS://USER:SECRET@WWW.COUPANG.COM/np", "HTTPS://WWW.COUPANG.COM/np"],
+    ["user:SECRET@www.coupang.com", "www.coupang.com"],
+    ["user%3ASECRET%40www.coupang.com/a", "www.coupang.com/a"],
+    ["https%3A%2F%2Fuser%3ASECRET%40www.coupang.com%2Fa", "www.coupang.com%2Fa"],
+    ["https://user;x:SECRET@www.coupang.com/a;jsessionid=SECRET?q=SECRET#SECRET", "https://www.coupang.com/a"],
+    ["https://user:p%40SECRET@www.coupang.com/a", "https://www.coupang.com/a"],
+    ['https://user:p"SECRET@www.coupang.com/a', "https://www.coupang.com/a"],
+    ["a@b@www.coupang.com/x", "www.coupang.com/x"],
+    ['url "//user:SECRET@www.coupang.com/x?y".', 'url "//www.coupang.com/x".'],
+    ["rtnUrl=https://user:SECRET@x.y/z?q", "rtnUrl=https://x.y/z"],
+    ["rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch%3Fq%3DSECRET%40y", "rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch"],
+    ["www.coupang.com/a?x=SECRET@y#z", "www.coupang.com/a"],
+    ["문의 SECRET@coupang.com", "문의 coupang.com"],
+  ];
+  for (const [input, expected] of cases) {
+    const out = diagnosticText(input);
+    assert.equal(out, expected, input);
+    assert.equal(/SECRET|@|%40/i.test(out), false, input);
+  }
+  // 무작위 글(주소 조각·인코딩·따옴표·제어 문자를 섞음): 다듬은 글에는 @·%40 이 없고 서버 검사를 통과한다
+  const parts = ["a", "b", ":", "@", "%40", "%3F", "%23", "/", "?", "#", " ", '"', ";", "%", "4", "0", "3", "f", "\u0000", "www.coupang.com", "//", "https://"];
+  let seed = 7;
+  const next = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 2 ** 32; };
+  for (let round = 0; round < 3000; round += 1) {
+    let text = "";
+    const length = 1 + Math.floor(next() * 16);
+    for (let index = 0; index < length; index += 1) text += parts[Math.floor(next() * parts.length)];
+    const out = diagnosticText(text);
+    assert.equal(/@|%40/i.test(out), false, JSON.stringify(text));
+    assert.notEqual(manualDiagnostics({ diagnostics: { v: 1, ext: EXTENSION_VERSION, unexpected: out } }), null, JSON.stringify(text));
+  }
+  // 아주 긴 글(크롬 오류 문구 안의 긴 주소 등)도 빨리 끝나고 200자 상한 그대로
+  const started = Date.now();
+  assert.equal(Array.from(diagnosticText(`https://${"a.".repeat(500000)}`)).length, 200);
+  assert.equal(diagnosticText("@".repeat(100000)), "");
+  assert.ok(Date.now() - started < 2000, `${Date.now() - started}ms`);
+  // 실행 전체(진단 tries): 넣지 못한 오류 문구 속 사용자 정보도 지워져 서버에 닿는다
+  const diag = buildDiagnostics({
+    version: EXTENSION_VERSION, page: { status: "error", errorCode: "extract_failed" },
+    tries: [{ kind: "rejected", msg: 'Cannot access "//user:SECRET@www.coupang.com/np/search?q=S" and user:SECRET@www.coupang.com/a' }],
+  });
+  assert.equal(diag.tries[0].msg, 'Cannot access "//www.coupang.com/np/search" and www.coupang.com/a');
+  assert.notEqual(manualDiagnostics({ page: { diagnostics: diag } }), null);
 });

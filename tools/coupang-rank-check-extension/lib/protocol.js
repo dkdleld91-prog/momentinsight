@@ -71,7 +71,7 @@ export const DIAGNOSTICS_TOP_KEYS = Object.freeze([
   "v", "ext", "ok", "code", "ms", "load", "retry", "tries", "doc", "firstDoc", "hidden", "unexpected", "seen", "cut",
 ]);
 export const DIAG_TEXT_MAX = 200; // 진단 글자 칸 하나의 상한(코드 포인트, = 서버 MANUAL_DIAGNOSTICS_TEXT_MAX)
-export const DIAG_MS_KEYS_MAX = 16; // 경과 ms 이름 수 상한(확장이 남기는 이름은 14개까지)
+export const DIAG_MS_KEYS_MAX = 16; // 경과 ms 이름 수 상한(확장이 남기는 이름은 15개까지)
 export const DIAG_TITLE_MAX = 80; // 문서 제목 앞부분
 export const DIAG_BODY_HEAD_MAX = 160; // 본문 앞부분
 export const DIAG_COMPLETE_TIMES_MAX = 6; // load complete 시각을 남기는 개수

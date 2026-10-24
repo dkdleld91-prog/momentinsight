@@ -166,22 +166,30 @@ const DIAG_FORMAT_PATTERN = /\p{Cf}/gu;
 // 주소처럼 보이는 낱말(공백·따옴표·<> 로 나뉜 덩어리)은 호스트·경로만 남긴다: 사용자 정보(user:pass@)를 지우고 첫 ? # ;
 // (%3F·%23·%3B 포함, data: 주소는 , 도) 앞까지만. 주소처럼 보인다 = scheme://(또는 %3A%2F%2F)가 들었거나, / 가 들었거나,
 // 점 든 호스트 바로 뒤에 ? # ; 가 오거나, data: 가 든 낱말 — scheme 없는 주소·;jsessionid= 같은 경로 매개변수도 뗀다.
+// 사용자 정보(1.0.1 재검사 반영 — 어떤 모양이든): 낱말로 나누기 전에, 글 전체에서 @(또는 %40)와 그 바로 앞 덩어리(공백·/·?·#·%3F·%23
+// 까지 — 따옴표·;·제어 문자가 든 것도)를 지운다. scheme 있는 주소(https://user:pw@host)·scheme 없는 주소(user:pw@host/a)·
+// // 로 시작하는 주소(//user:pw@host)·인코딩된 주소(https%3A%2F%2Fuser%3Apw%40host) 모두 호스트부터 남고, 진단 글자에는 @·%40 이
+// 하나도 남지 않는다(전자우편 앞부분·경로 안의 @ 앞 덩어리도 함께 지움 — 더 지우는 쪽). 쿼리 안의 @ 는 쿼리 안에서만 지운다(? 에서 멈춤).
 const ADDRESS_WORD_PATTERN = /[^\s"'<>]+/g;
 const ADDRESS_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/|%3a%2f%2f|\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::[0-9]{1,5})?[?#;]|data:/i;
-const USERINFO_PATTERN = /([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]*@/gi;
+// 덩어리는 경계(글 처음·공백·/ ? # @ 와 %3F %23 %40 바로 뒤)에서만 시작한다(인코딩 글자 %3F 의 중간에서 시작해 앞 주소를 지우지 않게).
+const USERINFO_PATTERN = /(?<=^|[\s/?#@]|%3f|%23|%40)(?:(?!%3f|%23)[^\s/?#@])*(?:@|%40)/gi;
 const ADDRESS_CUT_PATTERN = /[?#;]|%3f|%23|%3b/i;
 const DATA_CUT_PATTERN = /[?#;,]|%3f|%23|%3b/i;
+// 다듬기 전 입력 상한(UTF-16 단위). 결과는 200 코드 포인트 이하라 충분하고, 아주 긴 글(크롬 오류 문구 안의 긴 주소 등)에서
+// 주소 정규식이 오래 돌지 않게 한다(1.0.1 재검사 중 실측: 상한 없이 10만 자면 13초 남짓).
+const DIAG_INPUT_MAX = 2000;
 
 function addressWord(word) {
   if (!ADDRESS_LIKE_PATTERN.test(word)) return word;
-  const plain = word.replace(USERINFO_PATTERN, "$1");
-  const cut = /data:/i.test(plain) ? plain.search(DATA_CUT_PATTERN) : plain.search(ADDRESS_CUT_PATTERN);
-  return cut >= 0 ? plain.slice(0, cut) : plain;
+  const cut = /data:/i.test(word) ? word.search(DATA_CUT_PATTERN) : word.search(ADDRESS_CUT_PATTERN);
+  return cut >= 0 ? word.slice(0, cut) : word;
 }
 
 export function diagnosticText(value, max = DIAG_TEXT_MAX) {
   if (value === null || value === undefined) return "";
-  const text = toWellFormedText(String(value))
+  const text = toWellFormedText(String(value).slice(0, DIAG_INPUT_MAX))
+    .replace(USERINFO_PATTERN, "")
     .replace(DIAG_CONTROL_PATTERN, " ")
     .replace(DIAG_FORMAT_PATTERN, "")
     .replace(ADDRESS_WORD_PATTERN, addressWord)
@@ -233,9 +241,11 @@ function diagnosticsFit(value) {
 }
 
 // input = { version, page, ms:{이름: ms}, load:{how, loading, complete, urls, completeAt[]}, tries:[{kind, msg}], doc(마지막 쪽 모양),
-//           firstDoc(불러온 직후 쪽 모양), retry:{tried, skip, load, result}, hidden, unexpected, seen:{httpStatus, blockedText} }.
+//           firstDoc(불러온 직후 쪽 모양), retry:{tried, skip, load, result}, hidden, unexpected, seen:{httpStatus, blockedText, lastHttpStatus} }.
 // 돌려주는 값은 JSON 그대로 보낼 수 있는 새 객체(4KB·값 DIAGNOSTICS_NODES_MAX 개 이하, 맨 위 칸은 DIAGNOSTICS_TOP_KEYS 안).
-// firstDoc 은 실패이고 doc 과 다른 읽기일 때만 싣는다. seen(불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구)은 실패 때만.
+// firstDoc 은 실패이고 doc 과 다른 읽기일 때만 싣는다. seen 은 실패 때만: http = 불러오는 동안·짧은 읽기에서 본 HTTP 상태(차단 값은
+// 한 번 보면 남음 = 본 차단 HTTP), blocked = 본 차단 문구, last = 마지막으로 읽은 문서 자신의 HTTP(측정 포함, 차단 값으로 바꾸지 않음 —
+// 결과 httpStatus 는 차단 쪽을 우선하므로 '중간 문서만 429·최종 문서 200' 과 '최종 문서 429' 를 이 값으로 가린다). 모르면 null.
 export function buildDiagnostics(input) {
   const source = input && typeof input === "object" ? input : {};
   const page = source.page && typeof source.page === "object" ? source.page : {};
@@ -276,7 +286,7 @@ export function buildDiagnostics(input) {
     const unexpected = diagnosticText(source.unexpected);
     if (unexpected) out.unexpected = unexpected;
     if (source.seen && typeof source.seen === "object") {
-      out.seen = { http: httpStatusOf(source.seen.httpStatus), blocked: source.seen.blockedText === true };
+      out.seen = { http: httpStatusOf(source.seen.httpStatus), blocked: source.seen.blockedText === true, last: httpStatusOf(source.seen.lastHttpStatus) };
     }
   }
   // 4KB·값 개수 상한: 덜 중요한 것부터 덜어 낸다.

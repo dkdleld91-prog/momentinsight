@@ -142,13 +142,18 @@
   바뀌었으면 두 번째 측정 없이 지금처럼 `user_navigated`(두 번째 측정도 첫 측정 기준을 그대로 쓴다). 기다리는 동안(load 확인)·짧은 읽기에서
   차단 HTTP(403·429·503)·차단 문구를 봤으면 측정(스크롤) 없이 그날 중지. 쪽 안 예외로 끝난 회차도 이 창에서 본 차단 신호를 결과에 싣는다
   (그날 중지 — 측정이 목록을 다 읽은 회차는 지금처럼 그 결과대로). 120초 상한·창 닫힘이 이미 걸렸으면 쪽 함수를 넣지 않는다.
+  재검사 반영(같은 날): 주소가 바뀌어 두 번째 측정을 하지 않을 때도, 바뀐 쪽이 쿠팡 주소(`www.coupang.com`)면 끝내기 전에 짧은 읽기 1번
+  (스크롤·기다림 없음, 쿠팡에 새 요청 없음)으로 차단 HTTP·차단 문구를 보고, 차단이면 그날 중지(권한 밖 주소는 지금처럼 `page_unreadable`).
   ② 어느 길로 끝나든 결과 `page.diagnostics` 에 짧은 진단을 싣는다(직렬화 4KB 이하, 개인 정보 없음): 확장 버전, 단계별 경과 ms
-  (`verified`·`nav`·`load`·`quick`·`measureStart/End`·`retry*`·`end`), 탭 load 사건 수(`load.loading`·`complete`·`completeAt` — loading→complete 가
+  (`verified`·`nav`·`load`·`quick`·`measureStart/End`·`retry*`·`movedQuick`·`end`), 탭 load 사건 수(`load.loading`·`complete`·`completeAt` — loading→complete 가
   되풀이되면 쪽이 스스로 다시 불러온 것), 쪽 함수 결과 종류(`tries`: `ok`·`navigated`·`no_result`·`rejected`·`extract_error` + 오류 문구 앞 200자,
   주소는 쿼리를 뗌), 쪽 모양 요약(`doc`: 열린 방식 navigate·reload·back_forward, readyState, 제목 앞 80자, 본문 글자 수·앞 160자, 상품 칸·상품 링크 수,
-  차단 문구, 숨김), 재시도 여부·결과(`retry`), 실패면 불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구(`seen`). 성공이면 경과·load 횟수·재시도 여부만 짧게.
+  차단 문구, 숨김), 재시도 여부·결과(`retry`), 실패면 불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구(`seen.http`·`seen.blocked` — 차단 값은
+  한 번 보면 남음)와 마지막으로 읽은 문서 자신의 HTTP(`seen.last` — 결과 HTTP 는 본 차단 값을 우선하므로 최종 문서의 HTTP 는 여기에 남음).
+  성공이면 경과·load 횟수·재시도 여부만 짧게.
   글자는 제어 문자(C0·DEL·C1)를 공백으로, 서식 문자(양방향 재정렬·폭 없는 글자 등)를 없애고, 주소처럼 보이는 낱말(scheme 없는 주소 포함)은
-  쿼리·`#`·`;` 경로 매개변수·사용자 정보를 뗀다. 값은 모두 합쳐 120개 이하(서버도 같은 규칙으로 본다).
+  쿼리·`#`·`;` 경로 매개변수를 뗀다. 사용자 정보(`user:pw@`)는 어떤 모양이든(scheme 없음·`//` 시작·인코딩) 지운다 — 진단 글자에는
+  `@`·`%40` 이 남지 않는다(그 바로 앞 덩어리도 지움). 값은 모두 합쳐 120개 이하(서버도 같은 규칙으로 본다).
   화면은 `page` 를 그대로 보내므로 화면 변경 없이 서버에 닿고, 서버는 모양·크기를 본 뒤 그 회차 `coupang_rank_runs.diagnostics` 에 따로 적는다
   (대표 SQL `docs/sql/c30-3-run-diagnostics.sql` 전에는 조용히 건너뜀. 진단이 틀려도 순위 기록은 거절하지 않음). 1.0.0 확장도 그대로 쓸 수 있다(진단만 없음).
 - 화면 ↔ 확장 메시지: `mi-coupang-hello`(상태·남은 결과 `pending`·남은 창 `leftover`), `mi-coupang-check {claimId, claimToken}`(검색어는 서버 확인 응답의 값만 씀),

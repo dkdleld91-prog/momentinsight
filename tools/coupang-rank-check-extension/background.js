@@ -417,7 +417,15 @@ export function createBackground(chromeApi, deps = {}) {
     let navigationIssued = false;
     let navigationStarted = false;
     // 이 창에서 본 차단 신호(읽기 실패·창 닫힘 때 결과를 만들 재료). 차단 HTTP·차단 문구·읽을 수 없는 곳은 한 번 보면 남긴다.
-    const seen = { httpStatus: null, blockedText: false, host: "", path: "", unreadable: false };
+    // lastHttpStatus = 마지막으로 읽은 문서 자신의 HTTP 상태(load 확인·짧은 읽기·측정 — 차단 값으로 바꾸지 않는다). 진단에만 쓴다
+    // (1.0.1 재검사 반영: 결과 httpStatus 는 본 차단 값을 우선하므로, 최종 문서의 HTTP 는 진단 seen.last 로 따로 남긴다).
+    const seen = { httpStatus: null, blockedText: false, host: "", path: "", unreadable: false, lastHttpStatus: null };
+    // 문서를 읽은 결과(httpStatus 칸이 있는 것 — load 확인·짧은 읽기·측정)면 그 문서 자신의 HTTP 를 마지막 값으로 남긴다(진단 전용).
+    // 탭 주소만 본 것(noteAddress)은 문서를 읽은 것이 아니라 바꾸지 않는다. 결과·차단 판정에는 쓰지 않는다.
+    const noteLastHttp = (raw) => {
+      if (!raw || typeof raw !== "object" || !Object.prototype.hasOwnProperty.call(raw, "httpStatus")) return;
+      seen.lastHttpStatus = Number.isInteger(raw.httpStatus) ? raw.httpStatus : null;
+    };
     let rejectStop;
     const stopped = new Promise((_, reject) => { rejectStop = reject; });
     stopped.catch(() => {});
@@ -518,7 +526,8 @@ export function createBackground(chromeApi, deps = {}) {
           hidden: diag.doc?.hidden === true,
           unexpected: diag.unexpected,
           // 불러오는 동안(load 확인)·짧은 읽기에서 본 HTTP 상태·차단 문구(차단 HTTP 는 한 번 보면 남는다) — 쪽 함수 결과와 따로.
-          seen: { httpStatus: seen.httpStatus, blockedText: seen.blockedText },
+          // lastHttpStatus = 마지막으로 읽은 문서 자신의 HTTP(측정 포함, 차단 값으로 바꾸지 않음).
+          seen: { httpStatus: seen.httpStatus, blockedText: seen.blockedText, lastHttpStatus: seen.lastHttpStatus },
         });
       },
       markNavigationIssued() { navigationIssued = true; },
@@ -549,6 +558,7 @@ export function createBackground(chromeApi, deps = {}) {
       // 쪽 안 읽기 결과(load 확인·짧은 읽기)에서 차단 신호·주소를 남긴다.
       noteRead(raw) {
         if (!raw || typeof raw !== "object") return;
+        noteLastHttp(raw);
         if (Number.isInteger(raw.httpStatus) && !BLOCKED_HTTP_STATUSES.includes(seen.httpStatus)) seen.httpStatus = raw.httpStatus;
         if (raw.blockedText === true) seen.blockedText = true;
         if (typeof raw.host === "string" && raw.host) {
@@ -557,6 +567,7 @@ export function createBackground(chromeApi, deps = {}) {
           seen.unreadable = false;
         }
       },
+      noteLastHttp,
       // 쿠팡 주소를 넣은 뒤 쪽 안을 읽지 못했고 주소도 보이지 않음 = 확장 권한 밖(www.coupang.com 밖)으로 보내짐(D1).
       noteUnreadable() {
         if (navigationStarted) seen.unreadable = true;
@@ -719,6 +730,7 @@ export function createBackground(chromeApi, deps = {}) {
       return { raw: null, rejected: false };
     }
     const extractError = raw.extractError === true;
+    run.noteLastHttp(raw);
     run.noteDoc(raw.doc);
     run.noteTry(extractError ? "extract_error" : raw.navigated === true ? "navigated" : "ok", extractError ? raw.error : null);
     return { raw, rejected: false };
@@ -744,6 +756,19 @@ export function createBackground(chromeApi, deps = {}) {
     if (run.addressChanged) return "address_changed";
     if (!isSearchAddress(address.url, keyword, run.baselineKey)) return "not_search";
     return null;
+  }
+
+  // 1번 더 읽기를 주소 바뀜으로 그만둘 때(1.0.1 재검사 반영): 탭이 쿠팡 주소(www.coupang.com — 확장이 읽을 수 있는 곳)면 끝내기 전에
+  // 짧은 읽기 1번(기존 quickRead: 스크롤·기다림 없음, 쿠팡에 새 요청 없음)으로 바뀐 쪽의 차단 HTTP·차단 문구를 모은다.
+  // 그 쪽이 차단 화면이면 그 결과(그날 중지 — 다시 읽기 전 짧은 읽기와 같은 규칙). 아니면 null(본 신호는 실행 기록에 남아 결과에 실린다).
+  // 탭이 없거나 주소가 안 보이면(권한 밖) 읽지 않는다(권한 밖은 지금처럼 탭 주소로 page_unreadable 을 가린다).
+  async function readMovedPage(run, tabId) {
+    const address = await tabAddress(tabId);
+    if (!address.exists || address.host !== SEARCH_HOST) return null;
+    const raw = await quickRead(run, tabId, "movedQuick");
+    if (!raw) return null;
+    const page = assemblePage(raw);
+    return page.status === "blocked" ? page : null;
   }
 
   // 한 번 더 읽기 전: 탭이 다시 불러오는 중이면 load complete(또는 쪽 안 readyState complete)를 기다린다
@@ -828,10 +853,13 @@ export function createBackground(chromeApi, deps = {}) {
           run.setRetry({ result: "timeout" });
           return { page: unfinishedPage(run, "page_timeout") };
         }
-        // 기다리는 사이 주소가 바뀌었으면(쪽 번호·정렬·다른 쪽·권한 밖 = 사람이 옮겼거나 보내짐) 더 읽지 않는다.
+        // 기다리는 사이 주소가 바뀌었으면(쪽 번호·정렬·다른 쪽·권한 밖 = 사람이 옮겼거나 보내짐) 더 읽지 않는다(두 번째 측정 없음).
+        // 그래도 바뀐 쪽이 쿠팡 주소면 끝내기 전에 짧은 읽기 1번으로 차단 신호를 모은다(차단 화면이면 그날 중지).
         const moved = addressSkipReason(run, await tabAddress(tabId), keyword);
         if (moved) {
           run.setRetry({ result: moved });
+          const movedBlocked = await readMovedPage(run, tabId);
+          if (movedBlocked) return { page: movedBlocked };
           break;
         }
         const again = await quickRead(run, tabId, "retryQuick");
@@ -849,7 +877,10 @@ export function createBackground(chromeApi, deps = {}) {
         }
         const second = await measureOnce(run, tabId, "retryMeasure", keyword);
         if (second.skipped) {
+          // 짧은 읽기 뒤 주소가 바뀌었으면 바뀐 쪽은 아직 읽지 않았다: 위와 같이 쿠팡 주소면 짧은 읽기 1번으로 차단 신호를 모은다.
           run.setRetry({ result: second.skipped });
+          const movedBlocked = await readMovedPage(run, tabId);
+          if (movedBlocked) return { page: movedBlocked };
           break;
         }
         attempt = second;

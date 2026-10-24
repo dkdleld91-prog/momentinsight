@@ -26,7 +26,8 @@ import {
   MANUAL_STOP_CODES,
   MANUAL_TO_HOUR,
 } from "../src/server/coupang-rank/contract.mjs";
-import { manualNavigatedFinalPath } from "../src/server/coupang-rank/manual.mjs";
+import { manualDiagnostics, manualNavigatedFinalPath } from "../src/server/coupang-rank/manual.mjs";
+import { buildDiagnostics } from "../tools/coupang-rank-check-extension/lib/assemble.js";
 import {
   auditMigrationRuntimeLiterals,
   collectFinalFunctionDeclarations,
@@ -1033,5 +1034,75 @@ test("c30-3 확인문 기대값(jsonb | YES | 1 | true | 0) · 되돌리기 두 
     await assert.rejects(h.one(DIAG_VERIFY), /diagnostics/, "되돌린 뒤 확인문은 칸 없음 오류");
     await db.exec(diagSql);
     assert.equal((await h.one(DIAG_VERIFY)).column_type, "jsonb");
+  });
+});
+
+// 1.0.1 검토 반영: 서버 진단 검사(직렬화 4KB·값 120개)를 통과하는 것은 꾸민 최악(작은 수·긴 칸 이름 가득)도 칸 제약(8KB)을 넘지 않는다.
+// 검토 재현(칸 5 × 이름 24 × 숫자 0 배열 10, 4KB 이하)은 jsonb 16KB 라 제약에 걸렸다 — 이제 서버가 값 개수로 먼저 버린다.
+test("c30-3 제약 ↔ 서버 진단 검사: 서버가 받는 꾸민 최악·확장 최대 진단은 모두 8KB 안에 들어가 저장된다", async () => {
+  await withDb(async (db, h) => {
+    await db.exec(diagSql);
+    const tracker = await h.addTracker();
+    const job = await h.verified(tracker);
+    await h.record(job.claimId, job.hash, { status: "ok", run: okRun(organicList(3)) });
+    const runId = (await h.claimRow(job.claimId)).run_id;
+    const bytes = (value) => Buffer.byteLength(JSON.stringify(value), "utf8");
+    const cases = [];
+    // 꾸민 모양: 맨 위 칸(객체)마다 이름 32자 × 작은 값, 남는 바이트는 4바이트 글자로 채움 — 값 120개·4KB 안에서 최대한
+    const leaves = { zero: () => 0, neg: () => -0.000001, big: () => 123456789.12345679, short: () => "a", emptyObject: () => ({}), emptyArray: () => [], nil: () => null };
+    for (const [name, leaf] of Object.entries(leaves)) {
+      for (const longKeys of [true, false]) {
+        const out = { v: 1, ext: "1.0.1" };
+        let nodes = 4; // 맨 위 + v + ext + unexpected
+        for (const box of ["ms", "load", "retry", "doc", "firstDoc", "seen"]) {
+          if (nodes + 2 > 120) break;
+          out[box] = {};
+          nodes += 1;
+          for (let index = 0; index < 24 && nodes < 120; index += 1) {
+            out[box][longKeys ? `k${String(index).padStart(2, "0")}${"x".repeat(29)}` : `k${index}`] = leaf();
+            nodes += 1;
+          }
+        }
+        const fill = () => ({ ...out, unexpected: "\u{1F600}".repeat(Math.max(0, Math.min(200, Math.floor((4096 - bytes({ ...out, unexpected: "" })) / 4)))) });
+        let candidate = fill();
+        while (!manualDiagnostics({ diagnostics: candidate })) {
+          const box = ["seen", "firstDoc", "doc", "retry", "load", "ms"].find((key) => out[key] && Object.keys(out[key]).length);
+          delete out[box][Object.keys(out[box]).at(-1)];
+          candidate = fill();
+        }
+        cases.push([`${name}${longKeys ? "·긴 이름" : ""}`, candidate]);
+      }
+    }
+    // 확장 buildDiagnostics 의 최대(모든 칸·긴 글자)
+    for (const text of ["가".repeat(300), "\u{1F600}".repeat(300), "\"\\".repeat(300)]) {
+      const doc = { nav: "back_forward", ready: "interactive", title: text, bodyLen: 999999, bodyHead: text, units: 999999, links: 999999, blocked: true, hidden: true };
+      cases.push([`확장 ${text.slice(0, 1)}`, buildDiagnostics({
+        version: "1.0.1", page: { status: "error", errorCode: "extract_failed", wasHidden: true },
+        ms: Object.fromEntries(Array.from({ length: 14 }, (_, index) => [`m${index}`, 599990 + index])),
+        load: { how: "complete", loading: 999999, complete: 999999, urls: 999999, completeAt: [1, 2, 3, 4, 5, 6] },
+        tries: Array.from({ length: 6 }, () => ({ kind: "extract_error", msg: text })), doc, firstDoc: { ...doc, nav: "navigate" },
+        retry: { tried: true, skip: "address_changed", load: "complete", result: "failed" }, hidden: true, unexpected: text, seen: { httpStatus: 429, blockedText: true },
+      })]);
+    }
+    let largest = 0;
+    for (const [name, diagnostics] of cases) {
+      const accepted = manualDiagnostics({ diagnostics });
+      assert.notEqual(accepted, null, `${name}: 서버가 받는 모양`);
+      const size = Number((await h.one("select pg_column_size($1::jsonb) as n", [JSON.stringify(accepted)])).n);
+      largest = Math.max(largest, size);
+      assert.ok(size <= 8192, `${name}: jsonb ${size}`);
+      await db.query("update public.coupang_rank_runs set diagnostics = null where id = $1", [runId]);
+      await db.query("update public.coupang_rank_runs set diagnostics = $2::jsonb where id = $1", [runId, JSON.stringify(accepted)]);
+    }
+    assert.ok(largest > 4096 && largest < 6144, `가장 큰 jsonb ${largest}(마이그레이션 주석 '약 5.4KB')`);
+    // 검토 재현 모양: 4KB 이하인데 jsonb 는 8KB 를 넘는다 → 서버가 값 개수로 먼저 버린다(제약까지 가지 않음)
+    const forged = { v: 1, ext: "1.0.1", ok: false, code: "x" };
+    for (const key of ["ms", "load", "retry", "doc", "firstDoc"]) {
+      forged[key] = Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`k${index}`, Array.from({ length: 10 }, () => 0)]));
+    }
+    while (bytes(forged) > 4096) delete forged.firstDoc[Object.keys(forged.firstDoc).at(-1)];
+    assert.equal(manualDiagnostics({ diagnostics: forged }), null);
+    assert.ok(Number((await h.one("select pg_column_size($1::jsonb) as n", [JSON.stringify(forged)])).n) > 8192);
+    await assert.rejects(db.query("update public.coupang_rank_runs set diagnostics = $2::jsonb where id = $1", [runId, JSON.stringify(forged)]), /coupang_rank_runs_diagnostics_shape/);
   });
 });

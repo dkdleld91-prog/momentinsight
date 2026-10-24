@@ -7,12 +7,13 @@ import test from "node:test";
 import * as contract from "../../../src/server/coupang-rank/contract.mjs";
 import * as pageResult from "../../../src/server/coupang-rank/page-result.mjs";
 import { handleCoupangRankTrackersRequest } from "../../../src/server/handlers/coupang-rank-trackers.mjs";
-import { manualChangedParams } from "../../../src/server/coupang-rank/manual.mjs";
+import { manualChangedParams, manualDiagnostics } from "../../../src/server/coupang-rank/manual.mjs";
 import { PRIMARY_AGENCY_CODE } from "../../../src/server/owner-identity.mjs";
 import { ZIP_FOLDER, extensionIdFromKey, publishedZipPath } from "../../../scripts/build-coupang-check-extension.mjs";
-import { assemblePage, isStopSignal, stopReasonOf } from "../lib/assemble.js";
+import { assemblePage, buildDiagnostics, diagnosticText, diagnosticsBytes, diagnosticsNodes, isStopSignal, stopReasonOf } from "../lib/assemble.js";
 import {
-  BLOCKED_HTTP_STATUSES, CHANGED_PARAMS_MAX, CHANGED_PARAM_NAME_MAX, CLAIM_ID_PARAM, CLAIM_TOKEN_HEADER, CLAIM_TOKEN_PATTERN, EXTENSION_VERSION, NOT_STARTED_CODES,
+  BLOCKED_HTTP_STATUSES, CHANGED_PARAMS_MAX, CHANGED_PARAM_NAME_MAX, CLAIM_ID_PARAM, CLAIM_TOKEN_HEADER, CLAIM_TOKEN_PATTERN, DIAGNOSTICS_MAX_BYTES,
+  DIAGNOSTICS_NODES_MAX, DIAGNOSTICS_SCHEMA, DIAGNOSTICS_TOP_KEYS, DIAG_TEXT_MAX, EXTENSION_VERSION, NOT_STARTED_CODES,
   PAGE_ERROR_CODES, SERVER_ORIGIN, STOP_REASONS, STOP_REASON_PARAM, STOP_VIEW, TRACKERS_PATH, UNREADABLE_ERROR_CODE,
   VERIFY_VIEW, reportStop, verifyClaim,
 } from "../lib/protocol.js";
@@ -107,6 +108,50 @@ test("서버 수동 계약: 바뀐 쿼리 이름(page.changedParams) 상한이 �
   assert.equal(page.changedParams.length, CHANGED_PARAMS_MAX);
   assert.deepEqual(manualChangedParams(page), page.changedParams, "확장이 다듬은 목록 = 서버가 받는 목록");
   assert.deepEqual(pageResult.validateManualRecord({ claimId: CLAIM_ID, page, durationMs: 14231, extensionVersion: EXTENSION_VERSION, browser: "chrome 141" }), { ok: true });
+});
+
+// 1.0.1 검토 반영: 진단 상수가 주석으로만 이어져 있었다 — 한쪽만 바뀌면 진단이 조용히 버려지므로 값·칸 목록을 직접 대조한다.
+test("서버 수동 계약: 진단 상수(스키마·4KB·글자 200자·값 개수·맨 위 칸 목록)가 서버와 같고, 확장이 만드는 가장 큰 진단·다듬은 글자를 서버가 그대로 받는다", () => {
+  assert.equal(contract.MANUAL_DIAGNOSTICS_SCHEMA, DIAGNOSTICS_SCHEMA);
+  assert.equal(contract.MANUAL_DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_MAX_BYTES);
+  assert.equal(contract.MANUAL_DIAGNOSTICS_TEXT_MAX, DIAG_TEXT_MAX);
+  assert.equal(contract.MANUAL_DIAGNOSTICS_NODES_MAX, DIAGNOSTICS_NODES_MAX);
+  assert.deepEqual([...contract.MANUAL_DIAGNOSTICS_TOP_KEYS], [...DIAGNOSTICS_TOP_KEYS]);
+  const names = ["verified", "nav", "load", "quick", "measureStart", "measureEnd", "retryStart", "retryLoad", "retryQuick", "retryMeasureStart", "retryMeasureEnd", "timeoutQuick", "capQuick", "end"];
+  const ms = Object.fromEntries(names.map((name, index) => [name, 599990 + index]));
+  const load = { how: "complete", loading: 999999, complete: 999999, urls: 999999, completeAt: [599999, 599998, 599997, 599996, 599995, 599994, 1] };
+  const retry = { tried: true, skip: "address_changed", load: "complete", result: "address_changed" };
+  const kept = new Set();
+  for (const text of ["가".repeat(300), "😀".repeat(300), "\"\\".repeat(300), "a", ""]) {
+    const doc = { nav: "back_forward", ready: "interactive", title: text, bodyLen: 999999, bodyHead: text, units: 999999, links: 999999, blocked: true, hidden: true };
+    const diag = buildDiagnostics({
+      version: EXTENSION_VERSION, page: { status: "error", errorCode: "extract_failed", wasHidden: true }, ms, load,
+      tries: Array.from({ length: 6 }, () => ({ kind: "extract_error", msg: text })), doc, firstDoc: { ...doc, nav: "navigate" }, retry,
+      hidden: true, unexpected: text || "x", seen: { httpStatus: 429, blockedText: true },
+    });
+    for (const key of Object.keys(diag)) {
+      assert.ok(DIAGNOSTICS_TOP_KEYS.includes(key), `확장이 만든 맨 위 칸 ${key} 가 서버 목록에 없다`);
+      kept.add(key);
+    }
+    assert.ok(diagnosticsBytes(diag) <= DIAGNOSTICS_MAX_BYTES);
+    assert.ok(diagnosticsNodes(diag) <= DIAGNOSTICS_NODES_MAX, String(diagnosticsNodes(diag)));
+    assert.deepEqual(manualDiagnostics({ page: { diagnostics: diag } }), JSON.parse(JSON.stringify(diag)), `서버 통과(${text.slice(0, 2)})`);
+  }
+  assert.deepEqual([...kept].sort(), [...DIAGNOSTICS_TOP_KEYS].sort(), "확장이 실제로 쓰는 맨 위 칸 = 서버 목록(남는 이름 없음)");
+  // 서버가 진단에서 버리는 글자 범주(제어 Cc·서식 Cf·줄/문단 구분) 전부: 확장이 다듬은 글은 서버를 통과한다.
+  const forbidden = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
+  let checked = 0;
+  for (let point = 0; point <= 0x10ffff; point += 1) {
+    if (point >= 0xd800 && point <= 0xdfff) continue;
+    const char = String.fromCodePoint(point);
+    if (!forbidden.test(char)) continue;
+    checked += 1;
+    const text = diagnosticText(`a${char}b https://x.y/z?q=${char}`);
+    assert.equal(forbidden.test(text), false, point.toString(16));
+    assert.notEqual(manualDiagnostics({ diagnostics: { v: 1, ext: EXTENSION_VERSION, unexpected: text } }), null, point.toString(16));
+    assert.equal(manualDiagnostics({ diagnostics: { v: 1, ext: EXTENSION_VERSION, unexpected: `a${char}b` } }), null, `서버는 다듬지 않은 ${point.toString(16)} 를 버린다`);
+  }
+  assert.ok(checked > 200, String(checked));
 });
 
 test("서버 수동 계약: 요청 이름(view·claimId·reason·토큰 머리글)·중지 사유·zip 폴더가 서버 contract 와 같다", () => {

@@ -7,6 +7,7 @@ import {
   ERROR_HTTP_STATUS,
   MANUAL_CLAIM_TTL_SECONDS,
   MANUAL_DIAGNOSTICS_MAX_BYTES,
+  MANUAL_DIAGNOSTICS_NODES_MAX,
   MANUAL_EXTENSION_FOLDER,
   MANUAL_EXTENSION_ID,
   MANUAL_EXTENSION_VERSION,
@@ -268,4 +269,48 @@ test("manualDiagnostics: page.diagnostics(또는 맨 위 diagnostics)를 모양�
   const huge = { ...DIAG, tries: Array.from({ length: 8 }, () => ({ kind: "rejected", msg: "가".repeat(200) })) };
   assert.ok(Buffer.byteLength(JSON.stringify(huge), "utf8") > MANUAL_DIAGNOSTICS_MAX_BYTES);
   assert.equal(manualDiagnostics({ page: { diagnostics: huge } }), null);
+});
+
+test("manualDiagnostics(1.0.1 검토 반영): 진단 글자의 C1 제어 문자·서식 문자(양방향·폭 없는 글자)·줄 구분을 버리고, 값 120개를 넘는 진단을 버린다", () => {
+  const char = (point) => String.fromCodePoint(point);
+  for (const point of [0x80, 0x85, 0x9b, 0x9f, 0xad, 0x200b, 0x200d, 0x200e, 0x202a, 0x202e, 0x2060, 0x2066, 0x2069, 0xfeff, 0x2028, 0x2029, 0xe0001]) {
+    for (const diagnostics of [
+      { ...DIAG, unexpected: `x${char(point)}y` },
+      { ...DIAG, doc: { ...DIAG.doc, title: `t${char(point)}` } },
+      { ...DIAG, tries: [{ kind: "rejected", msg: `${char(point)}[31m` }] },
+    ]) {
+      assert.equal(manualDiagnostics({ page: { diagnostics } }), null, point.toString(16));
+    }
+  }
+  // 보통 글자(한글·이모지·NBSP 등)와 seen(불러오는 동안 본 HTTP·차단 문구)은 그대로 받는다
+  const fine = { ...DIAG, unexpected: `가😀${char(0xa0)}é`, seen: { http: 429, blocked: false } };
+  assert.deepEqual(manualDiagnostics({ page: { diagnostics: fine } }), fine);
+  // 검토 재현: 칸 5개 × 이름 24개 × 숫자 0 배열 10개(직렬화 4KB 이하) — jsonb 가 8KB 를 넘던 모양은 값 개수로 버린다
+  const forged = { v: 1, ext: "1.0.1", ok: false, code: "x" };
+  for (const key of ["ms", "load", "retry", "doc", "firstDoc"]) {
+    forged[key] = Object.fromEntries(Array.from({ length: 24 }, (_, index) => [`k${index}`, Array.from({ length: 10 }, () => 0)]));
+  }
+  while (Buffer.byteLength(JSON.stringify(forged), "utf8") > MANUAL_DIAGNOSTICS_MAX_BYTES) {
+    const keys = Object.keys(forged.firstDoc);
+    if (!keys.length) break;
+    delete forged.firstDoc[keys.at(-1)];
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(forged), "utf8") <= MANUAL_DIAGNOSTICS_MAX_BYTES);
+  assert.equal(manualDiagnostics({ diagnostics: forged }), null);
+  // 경계: 값 정확히 120개는 받고 121개는 버린다(맨 위 객체 1 + v·ext 2 + ms 객체 1 + 숫자 n)
+  const nodes = (total) => {
+    const out = { v: 1, ext: "1.0.1" };
+    let left = total - 3;
+    let index = 0;
+    while (left > 0) {
+      const box = {};
+      left -= 1;
+      for (let item = 0; item < 24 && left > 0; item += 1) { box[`k${item}`] = 0; left -= 1; }
+      out[["ms", "load", "retry", "doc", "firstDoc", "seen"][index]] = box;
+      index += 1;
+    }
+    return out;
+  };
+  assert.notEqual(manualDiagnostics({ diagnostics: nodes(MANUAL_DIAGNOSTICS_NODES_MAX) }), null);
+  assert.equal(manualDiagnostics({ diagnostics: nodes(MANUAL_DIAGNOSTICS_NODES_MAX + 1) }), null);
 });

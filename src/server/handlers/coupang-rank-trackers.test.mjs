@@ -2384,3 +2384,38 @@ test("manual-record 진단: 기록 RPC 가 거절하면(늦음·확인 없음) �
   assert.equal((await post(notStarted, ownerHeaders(), body)).status, 200);
   assert.equal(notStarted.queries.some((query) => query.table === "coupang_rank_runs"), false);
 });
+
+test("manual-record 진단(1.0.1 검토 반영): 회차 갱신이 끝나지 않아도 저장 상한 뒤 응답 200 그대로 — 경고 1줄(timeout), 기록 RPC 1번", async () => {
+  const state = diagnosticsState();
+  const ctx = makeCtx(state);
+  ctx.manualDiagnosticsTimeoutMs = 50; // 시험용(기본 2.5초)
+  const from = ctx.supabaseAdmin.from;
+  ctx.supabaseAdmin.from = (table) => (table === "coupang_rank_runs"
+    ? { update: () => ({ eq: () => ({ eq: () => ({ is: () => new Promise(() => {}) }) }) }) }
+    : from(table));
+  const started = Date.now();
+  const { result, lines } = await captureLogs(async () => {
+    const response = await handleCoupangRankTrackersRequest(
+      makeRequest("POST", { headers: ownerHeaders(), body: manualRecordBody({}, { diagnostics: diagnosticsSample() }) }), ctx, { now: NOW });
+    return { status: response.status, body: JSON.parse(await response.text()) };
+  });
+  assert.ok(Date.now() - started < 1500, "멈춘 DB 를 끝없이 기다리지 않는다");
+  assert.equal(result.status, 200);
+  assert.deepEqual([result.body.ok, result.body.accepted], [true, true]);
+  assert.equal(rpcArgs(state, "coupang_rank_manual_record").length, 1);
+  const warned = lines.filter((line) => line.includes("coupang_rank_trackers_manual_diagnostics_failed"));
+  assert.equal(warned.length, 1);
+  assert.equal(JSON.parse(warned[0]).errorCode, "timeout");
+  assert.equal(lines.some((line) => line.includes("coupang_rank_trackers_failed")), false);
+  // 기본 상한 2.5초, 시험용 값은 양수일 때만 쓴다
+  assert.match(HANDLER_SOURCE, /const DIAGNOSTICS_SAVE_TIMEOUT_MS = 2500;/);
+  assert.match(HANDLER_SOURCE, /Number\.isFinite\(override\) && override > 0 \? override : DIAGNOSTICS_SAVE_TIMEOUT_MS/);
+  // 빠른 DB 는 그대로 저장(상한 안)
+  const quick = diagnosticsState();
+  const quickCtx = makeCtx(quick);
+  quickCtx.manualDiagnosticsTimeoutMs = 50;
+  const saved = await handleCoupangRankTrackersRequest(
+    makeRequest("POST", { headers: ownerHeaders(), body: manualRecordBody({}, { diagnostics: diagnosticsSample() }) }), quickCtx, { now: NOW });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(quick.tables.coupang_rank_runs[0].diagnostics, diagnosticsSample());
+});

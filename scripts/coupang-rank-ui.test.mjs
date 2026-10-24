@@ -4901,6 +4901,8 @@ function allServer(clock, options = {}) {
       }
       return response({ ok: false, code: "COUPANG_ACTION_INVALID" }, 400);
     }
+    // failGets: 목록 GET 이 서버 오류로 답한다(시험이 켜고 끈다)
+    if (world.failGets) return response({ ok: false, code: "SERVER_ERROR", message: "잠시 뒤 다시 시도하세요." }, 503);
     const day = today();
     return response(listPayload({ trackers: JSON.parse(JSON.stringify(world.trackers)), todayKst: day, days30: days30(day), manual: world.manual() }));
   };
@@ -4919,6 +4921,12 @@ function mountAll(options = {}) {
 }
 
 const allButtonOf = (screen) => screen.host.querySelector("[data-coupang-rank-all-button]");
+// 전체 확인 버튼은 꺼도 disabled 를 쓰지 않는다(누른 버튼이 꺼질 때 포커스가 사라지지 않게 aria-disabled).
+const allOff = (screen) => {
+  const node = allButtonOf(screen);
+  assert.equal(node.disabled, false, "전체 확인 버튼에는 disabled 를 쓰지 않는다");
+  return node.getAttribute("aria-disabled") === "true";
+};
 const allHintOf = (screen) => screen.host.querySelector("[data-coupang-rank-all-hint]").textContent;
 const allStepOf = (screen) => screen.host.querySelector("[data-coupang-rank-all-step]").textContent;
 const allCountdownOf = (screen) => screen.host.querySelector("[data-coupang-rank-all-countdown]").textContent;
@@ -5014,9 +5022,9 @@ test("전체 확인 결과 판정·멈춤 사유·요약 한 줄", () => {
   assert.equal(internals.manualAllClaimStopText({ transport: true }, server), "서버에 연결하지 못해 멈췄습니다");
   for (const stateName of ["ready", "gap", "busy"]) assert.equal(internals.manualAllStateStopText(stateName, server), "", stateName);
   assert.equal(internals.manualAllStateStopText("weird", server), "지금 확인 상태를 알 수 없어 멈췄습니다(코드 weird)");
-  assert.deepEqual(plain(internals.manualAllSummary({ total: 5, checked: 5, recorded: 7, failed: 0 })), { text: "전체 확인 끝: 5개 키워드 · 기록 7개 · 실패 0.", tone: "is-ok" });
+  assert.deepEqual(plain(internals.manualAllSummary({ total: 5, checked: 5, recorded: 7, failed: 0 })), { text: "전체 확인 끝: 5개 키워드 · 상품 7개 기록 · 실패 0.", tone: "is-ok" });
   assert.deepEqual(plain(internals.manualAllSummary({ reason: "멈추기를 눌러 멈췄습니다", at: { number: 2, keyword: "키워드 C" }, total: 5, checked: 1, recorded: 2, failed: 0, left: 4, skipped: 1, shortage: 2 })), {
-    text: "전체 확인 멈춤(2 / 5 '키워드 C'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인) · 남은 4개 키워드는 하지 않음 · 키워드 2개는 오늘 횟수가 모자라 못 함.",
+    text: "전체 확인 멈춤(2 / 5 '키워드 C'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인) · 남은 4개 키워드는 하지 않음 · 키워드 2개는 오늘 횟수가 모자라 못 함.",
     tone: "is-warn",
   });
 });
@@ -5030,19 +5038,22 @@ test("전체 확인: 화면 차례대로 키워드마다 한 번(같은 키워�
   assert.ok(side.children[0].hasAttribute("data-coupang-rank-all"), "전체 확인 자리가 먼저");
   assert.ok(side.children[1].hasAttribute("data-coupang-rank-manual-toggle"), "바로 옆(아래)이 '지금 확인 끄기'");
   assert.equal(allButtonOf(screen).textContent, "전체 확인");
-  assert.equal(allButtonOf(screen).disabled, false);
+  assert.equal(allOff(screen), false);
   assert.equal(allHintOf(screen), "키워드 4개 · 약 12분");
-  // 확인 창 취소면 아무 요청도 없다
+  // 확인 창 취소면 확인 창 전의 목록 GET 1번(화면 목록 요청과 같은 것) 말고는 요청이 없다(claim·확장 check 없음)
   const logBefore = screen.server.log.length;
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
   dispatch(allButtonOf(screen), "click");
   await settle();
-  assert.equal(screen.server.log.length, logBefore);
+  assert.deepEqual(screen.server.log.slice(logBefore).map((entry) => `${entry.method} ${entry.url}`), ["GET /api/coupang-rank-trackers?limit=500"]);
   assert.equal(screen.bridge.of("mi-coupang-check").length, 0);
+  assert.equal(allOff(screen), false, "취소하면 다시 누를 수 있다");
   const confirmText = screen.confirmCalls.at(-1);
   assert.match(confirmText, /^'전체 확인'을 시작합니다\.\n오늘 아직 확인 안 한 상품 5개\(일시중지 빼고 · 키워드 4개\)를 키워드마다 한 번씩 차례로 확인합니다\./u);
   assert.ok(confirmText.includes("\n키워드 4개 · 약 12분(검색 사이 3분)\n"));
-  assert.ok(confirmText.includes("진행하는 동안 이 관리자 화면과 열리는 시크릿 창을 닫거나 누르지 마세요. '멈추기'로 언제든 멈출 수 있습니다"));
+  // 금지 네 가지(창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기)는 지금 확인 경고 문장 그대로(검토 결함: '내리지(가리지)' 빠짐)
+  assert.ok(confirmText.includes(`진행하는 동안 키워드마다 ${MANUAL_WARN_SENTENCE} '멈추기'로 언제든 멈출 수 있습니다`));
+  assert.ok(confirmText.includes("내리지(가리지)"));
   assert.doesNotMatch(confirmText, /횟수가 모자라|정해진 시간/u);
   // 확인 → 첫 키워드(A)는 바로(서버가 바로 가능)
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return true; };
@@ -5058,10 +5069,10 @@ test("전체 확인: 화면 차례대로 키워드마다 한 번(같은 키워�
   assert.equal(manualLine(screen).textContent, ALL_WAIT_TEXT);
   assert.equal(manualMetric(screen, "next"), "3분 00초 뒤", "상태판 '다음 확인'과 같은 근거");
   assert.equal(allButtonOf(screen).textContent, "멈추기");
-  assert.equal(allHintOf(screen), "남은 키워드 3개 취소");
-  // 카드: 기록한 A 두 장·오늘 한 E 는 '전체 확인 중', 나머지는 차례, 모두 꺼짐. 카드를 눌러도 claim 없음.
+  assert.equal(allHintOf(screen), "누르면 남은 3개 취소");
+  // 카드: 기록한 A 두 장·오늘 한 E 는 '잠김(전체 확인 중)', 나머지는 차례, 모두 꺼짐. 카드를 눌러도 claim 없음.
   const label = (n) => manualButtonFor(screen, allId(n)).textContent;
-  assert.deepEqual([1, 2, 3, 4, 6, 7].map(label), ["전체 확인 중", "대기 2번째", "대기 1번째", "전체 확인 중", "전체 확인 중", "대기 3번째"]);
+  assert.deepEqual([1, 2, 3, 4, 6, 7].map(label), ["잠김(전체 확인 중)", "대기 2번째", "대기 1번째", "잠김(전체 확인 중)", "잠김(전체 확인 중)", "대기 3번째"]);
   assert.ok(manualButtons(screen).every((node) => node.disabled));
   manualButtonFor(screen, allId(3)).disabled = false;
   dispatch(manualButtonFor(screen, allId(3)), "click");
@@ -5080,12 +5091,12 @@ test("전체 확인: 화면 차례대로 키워드마다 한 번(같은 키워�
   const times = screen.server.claimTimes.map((entry) => entry.at);
   for (let index = 1; index < times.length; index += 1) assert.ok(times[index] - times[index - 1] >= ALL_GAP_MS + ALL_PAD_MS, `간격 ${times[index] - times[index - 1]}`);
   assert.equal(screen.server.of("manual-record").length, 4);
-  assert.equal(allSummaryOf(screen), "전체 확인 끝: 4개 키워드 · 기록 5개 · 실패 0.");
+  assert.equal(allSummaryOf(screen), "전체 확인 끝: 4개 키워드 · 상품 5개 기록 · 실패 0.");
   assert.ok(screen.host.querySelector("[data-coupang-rank-all-summary]").classList.contains("is-ok"));
   assert.equal(screen.host.querySelector("[data-coupang-rank-all-summary]").getAttribute("aria-live"), "polite");
   assert.equal(screen.host.querySelector("[data-coupang-rank-all-progress]").hidden, true);
   assert.equal(allButtonOf(screen).textContent, "전체 확인");
-  assert.equal(allButtonOf(screen).disabled, true);
+  assert.equal(allOff(screen), true);
   assert.equal(allHintOf(screen), "확인할 상품 없음");
   assert.equal(manualPill(screen), "3분 간격 기다리는 중");
   assert.equal(pendingTicks(screen).length, 0, "끝나면 재확인 타이머가 없다");
@@ -5110,17 +5121,33 @@ test("전체 확인 한 건의 서버 요청·확장 메시지는 카드 '지금
   await settle();
   const fromCard = card.server.log.slice(cardLog);
   const fromQueue = queue.server.log.slice(queueLog);
+  // 화면을 열 때 받은 목록 GET(카드 한 번 누름에서도 같은 요청이 끝에 한 번 나간다)
+  const listGet = queue.server.log[0];
+  assert.equal(`${listGet.method} ${listGet.url}`, "GET /api/coupang-rank-trackers?limit=500");
   assert.deepEqual(fromCard.map((entry) => `${entry.method} ${entry.url}`), [
     "POST /api/coupang-rank-trackers", "POST /api/coupang-rank-trackers", "GET /api/coupang-rank-trackers?limit=500",
   ]);
-  assert.deepEqual(fromQueue, fromCard, "본문(JSON 바이트)·머리글·cache·timeoutMs 까지 같다");
-  assert.equal(fromQueue[0].body, JSON.stringify({ action: "manual-claim", trackerId: allId(1) }));
+  // 전체 확인은 시작 직전(확인 창 전)에 우리 서버 목록 GET 1번(지휘 결정 2026-10-24 — 쿠팡 요청 아님)을 더할 뿐, 그 뒤는 카드 한 번과 같다.
+  assert.deepEqual(fromQueue.map((entry) => `${entry.method} ${entry.url}`), [
+    "GET /api/coupang-rank-trackers?limit=500", "POST /api/coupang-rank-trackers", "POST /api/coupang-rank-trackers", "GET /api/coupang-rank-trackers?limit=500",
+  ]);
+  assert.deepEqual(fromQueue[0], listGet, "시작 직전 GET 은 화면 목록 요청과 바이트 단위로 같다(새 파라미터 없음)");
+  assert.deepEqual(fromQueue.slice(1), fromCard, "claim·record·뒤 목록 GET 은 본문(JSON 바이트)·머리글·cache·timeoutMs 까지 카드 한 번과 같다");
+  assert.equal(fromQueue[1].body, JSON.stringify({ action: "manual-claim", trackerId: allId(1) }));
   assert.deepEqual(queue.bridge.messages.slice(queueMessages), card.bridge.messages.slice(cardMessages));
   assert.deepEqual(queue.bridge.messages.slice(queueMessages).map((entry) => entry.message.type), ["mi-coupang-hello", "mi-coupang-check", "mi-coupang-ack"]);
-  // 다음 키워드도 같은 모양(claim 은 trackerId 하나뿐)
+  // 다음 키워드: 직전에 같은 목록 GET 1번 → claim(trackerId 하나뿐) → record → 목록 GET. 확장에는 hello·check·ack 그대로.
+  const secondFrom = queue.server.log.length;
+  const secondMessages = queue.bridge.messages.length;
   await advanceAll(queue, ALL_GAP_MS + ALL_PAD_MS, 3000);
-  assert.equal(queue.server.of("manual-claim").at(-1).body, JSON.stringify({ action: "manual-claim", trackerId: allId(3) }));
-  assert.deepEqual(Object.keys(JSON.parse(queue.server.of("manual-record").at(-1).body)), ["action", "claimId", "claimToken", "outcome", "page", "durationMs", "extensionVersion", "browser"]);
+  const second = queue.server.log.slice(secondFrom);
+  assert.deepEqual(second.map((entry) => `${entry.method} ${entry.url}`), [
+    "GET /api/coupang-rank-trackers?limit=500", "POST /api/coupang-rank-trackers", "POST /api/coupang-rank-trackers", "GET /api/coupang-rank-trackers?limit=500",
+  ]);
+  assert.deepEqual(second[0], listGet, "매 건 직전 GET 도 화면 목록 요청과 같다");
+  assert.equal(second[1].body, JSON.stringify({ action: "manual-claim", trackerId: allId(3) }));
+  assert.deepEqual(Object.keys(JSON.parse(second[2].body)), ["action", "claimId", "claimToken", "outcome", "page", "durationMs", "extensionVersion", "browser"]);
+  assert.deepEqual(queue.bridge.messages.slice(secondMessages).map((entry) => entry.message.type), ["mi-coupang-hello", "mi-coupang-check", "mi-coupang-ack"]);
 });
 
 test("전체 확인: 매 건 직전에 다시 고른다 — 그사이 일시중지·이미 오늘 확인(다른 탭)한 키워드는 건너뛰고, 요약에 건너뜀 수", async () => {
@@ -5137,7 +5164,7 @@ test("전체 확인: 매 건 직전에 다시 고른다 — 그사이 일시중�
   assert.equal(allStepOf(screen), "전체 확인 3 / 4 · '키워드 B'", "C 를 건너뛰고 B 가 다음");
   await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
   assert.deepEqual(claimedIds(screen), [allId(1), allId(2)]);
-  assert.equal(allSummaryOf(screen), "전체 확인 끝: 2개 키워드 · 기록 3개 · 실패 0 · 건너뜀 2개(일시중지·삭제·이미 확인).");
+  assert.equal(allSummaryOf(screen), "전체 확인 끝: 2개 키워드 · 상품 3개 기록 · 실패 0 · 건너뜀 2개(일시중지·삭제·이미 확인).");
   assert.equal(pendingTicks(screen).length, 0);
 });
 
@@ -5167,7 +5194,7 @@ test("전체 확인: 서버가 간격으로 거절하면 응답의 다음 시각
   await advanceAll(twice, 30000 + ALL_PAD_MS, 2000);
   assert.equal(twice.server.claimTimes.length, 2);
   assert.equal(twice.bridge.of("mi-coupang-check").length, 0);
-  assert.equal(allSummaryOf(twice), "전체 확인 멈춤(1 / 4 '키워드 A'에서): 간격을 기다린 뒤에도 서버가 간격을 이유로 받지 않아 멈췄습니다. 0개 키워드 · 기록 0개 · 실패 0 · 남은 4개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(twice), "전체 확인 멈춤(1 / 4 '키워드 A'에서): 간격을 기다린 뒤에도 서버가 간격을 이유로 받지 않아 멈췄습니다. 0개 키워드 · 상품 0개 기록 · 실패 0 · 남은 4개 키워드는 하지 않음.");
   assert.equal(pendingTicks(twice).length, 0);
   await advanceAll(twice, 600000, 60000);
   assert.equal(twice.server.claimTimes.length, 2);
@@ -5197,9 +5224,13 @@ test("전체 확인: 차단(그날 중지)이면 그 자리에서 멈추고 남�
   await startAll(screen);
   await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
   assert.deepEqual(claimedIds(screen), [allId(1), allId(3)]);
-  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 쿠팡 차단으로 보이는 화면이 나와 오늘 지금 확인이 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 1 · 남은 2개 키워드는 하지 않음.");
+  // 위 그날 중지 띠(role=alert)가 사유를 이미 보이고 읽으므로, 끝 요약(aria-live)은 같은 사유를 짧게 가리킨다(같은 말을 두 번 보이거나 읽지 않게).
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 그날 중지(위 안내 참고). 1개 키워드 · 상품 2개 기록 · 실패 1 · 남은 2개 키워드는 하지 않음.");
   assert.equal(manualBanner(screen).hidden, false, "그날 중지 띠");
-  assert.equal(allButtonOf(screen).disabled, true);
+  assert.match(manualBanner(screen).textContent, /차단으로 보이는 화면/u);
+  assert.doesNotMatch(allSummaryOf(screen), /차단으로 보이는 화면/u);
+  assert.equal(manualResult(screen).hidden, true, "'직전 확인' 줄도 띠와 겹치면 숨는다(기존 규칙)");
+  assert.equal(allOff(screen), true);
   assert.equal(allHintOf(screen), "그날 중지");
   assert.equal(pendingTicks(screen).length, 0);
   await advanceAll(screen, 600000, 60000);
@@ -5219,16 +5250,25 @@ test("전체 확인: 시작할 때 남은 횟수가 모자라면 할 수 있는 
   assert.equal(manualPill(short), "전체 확인 2 / 2");
   await advanceAll(short, ALL_GAP_MS + ALL_PAD_MS, 3000);
   assert.deepEqual(claimedIds(short), [allId(1), allId(3)]);
-  assert.equal(allSummaryOf(short), "전체 확인 끝: 2개 키워드 · 기록 3개 · 실패 0 · 키워드 2개는 오늘 횟수가 모자라 못 함.");
+  assert.equal(allSummaryOf(short), "전체 확인 끝: 2개 키워드 · 상품 3개 기록 · 실패 0 · 키워드 2개는 오늘 횟수가 모자라 못 함.");
   assert.equal(allHintOf(short), "오늘 횟수 다 씀");
 
+  // 중간에 다른 탭이 남은 횟수를 다 썼다: 다음 건 직전 목록 GET 이 '오늘 횟수 다 씀'을 받아 claim 없이 멈춘다.
   const mid = mountAll();
   await startAll(mid);
   mid.server.used = mid.server.max;
   await advanceAll(mid, ALL_GAP_MS + ALL_PAD_MS, 3000);
-  assert.equal(mid.server.claimTimes.length, 2, "서버가 거절(쿠팡 검색 없음)");
+  assert.equal(mid.server.claimTimes.length, 1, "목록 GET 으로 먼저 알아 claim 을 보내지 않는다");
   assert.equal(mid.bridge.of("mi-coupang-check").length, 1);
-  assert.equal(allSummaryOf(mid), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 오늘 확인 횟수를 모두 써서 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(mid), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 오늘 확인 횟수를 모두 써서 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  // 목록 GET 뒤 claim 사이에 마지막 횟수가 쓰였으면 서버가 claim 을 거절한다(쿠팡 검색 없음) → 그 자리에서 멈춘다.
+  const race = mountAll({ claim: (body, world) => (world.claimTimes.length === 2 ? { status: 409, payload: { ok: false, code: "COUPANG_MANUAL_DAILY_CAP", manual: { ...world.manual(), state: "daily_cap", usedToday: 30 } } } : null) });
+  await startAll(race);
+  await advanceAll(race, ALL_GAP_MS + ALL_PAD_MS, 3000);
+  assert.equal(race.server.claimTimes.length, 2);
+  assert.equal(race.bridge.of("mi-coupang-check").length, 1, "거절된 claim 은 확장에 보내지 않는다");
+  assert.equal(allSummaryOf(race), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 오늘 확인 횟수를 모두 써서 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(pendingTicks(race).length, 0);
 });
 
 test("전체 확인: 정해진 시간(19시)이 지나면 다음 키워드를 누르지 않고 멈춘다(시작 전 확인 창에 미리 알림)", async () => {
@@ -5242,7 +5282,7 @@ test("전체 확인: 정해진 시간(19시)이 지나면 다음 키워드를 �
   assert.deepEqual(claimedIds(screen), [allId(1)]);
   await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
   assert.deepEqual(claimedIds(screen), [allId(1)], "19시가 지나 누르지 않는다");
-  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 정해진 시간(09~19시) 밖이 되어 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 정해진 시간(09~19시) 밖이 되어 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
 });
 
 test("전체 확인: 그 밖의 실패(확장 응답 없음 · 시작 안 함 · 기록 실패)는 그 자리에서 안전하게 멈추고 어디서 왜 멈췄는지 알린다", async () => {
@@ -5255,7 +5295,7 @@ test("전체 확인: 그 밖의 실패(확장 응답 없음 · 시작 안 함 ·
     const screen = mountAll(item);
     await startAll(screen);
     assert.equal(screen.server.claimTimes.length, 1);
-    assert.equal(allSummaryOf(screen), `전체 확인 멈춤(1 / 4 '키워드 A'에서): ${item.reason}. 0개 키워드 · 기록 0개 · 실패 1 · 남은 3개 키워드는 하지 않음.`);
+    assert.equal(allSummaryOf(screen), `전체 확인 멈춤(1 / 4 '키워드 A'에서): ${item.reason}. 0개 키워드 · 상품 0개 기록 · 실패 1 · 남은 3개 키워드는 하지 않음.`);
     assert.match(resultText(screen), item.detail, "자세한 사유는 '직전 확인' 줄");
     assert.equal(pendingTicks(screen).length, 0);
     await advanceAll(screen, 600000, 60000);
@@ -5271,7 +5311,7 @@ test("전체 확인 '멈추기': 기다리는 중이면 바로 멈추고, 확인
   dispatch(allButtonOf(waiting), "click");
   await settle();
   assert.equal(tick.cleared, true, "재확인 타이머를 지운다");
-  assert.equal(allSummaryOf(waiting), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(waiting), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
   assert.ok(waiting.host.querySelector("[data-coupang-rank-all-summary]").classList.contains("is-warn"));
   assert.equal(allButtonOf(waiting).textContent, "전체 확인");
   assert.match(manualButtonFor(waiting, allId(3)).textContent, /^\d분 \d{2}초 뒤$/u, "카드 버튼은 원래 글자로");
@@ -5289,14 +5329,14 @@ test("전체 확인 '멈추기': 기다리는 중이면 바로 멈추고, 확인
   dispatch(allButtonOf(running), "click");
   await settle();
   assert.equal(allButtonOf(running).textContent, "멈추는 중…");
-  assert.equal(allButtonOf(running).disabled, true);
+  assert.equal(allOff(running), true);
   assert.equal(allStepOf(running), "전체 확인 1 / 4 · '키워드 A' · 멈추는 중(진행 중인 1건은 끝까지 기록합니다)");
-  assert.equal(manualButtonFor(running, allId(3)).textContent, "전체 확인 중", "남은 대기열은 바로 취소");
+  assert.equal(manualButtonFor(running, allId(3)).textContent, "잠김(전체 확인 중)", "남은 대기열은 바로 취소");
   assert.equal(running.server.of("manual-record").length, 0);
   release();
   await settle();
   assert.equal(running.server.of("manual-record").length, 1, "진행 중인 1건은 끝까지 기록");
-  assert.equal(allSummaryOf(running), "전체 확인 멈춤(1 / 4 '키워드 A'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(running), "전체 확인 멈춤(1 / 4 '키워드 A'에서): 멈추기를 눌러 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
   assert.equal(pendingTicks(running).length, 0);
   await advanceAll(running, 600000, 60000);
   assert.equal(running.server.claimTimes.length, 1);
@@ -5308,7 +5348,7 @@ test("전체 확인: '지금 확인 끄기' · 화면 이동이면 대기열도 
   dispatch(off.host.querySelector("[data-coupang-rank-manual-toggle]"), "click");
   await settle();
   assert.deepEqual(JSON.parse(off.server.of("settings-update").at(-1).body), { action: "settings-update", settings: { manualEnabled: false } });
-  assert.equal(allSummaryOf(off), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 지금 확인을 꺼서 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(off), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 지금 확인을 꺼서 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
   assert.equal(off.host.querySelector("[data-coupang-rank-all]").hidden, true, "꺼지면 전체 확인 버튼도 숨는다");
   await advanceAll(off, 600000, 60000);
   assert.equal(off.server.claimTimes.length, 1);
@@ -5317,7 +5357,7 @@ test("전체 확인: '지금 확인 끄기' · 화면 이동이면 대기열도 
   await startAll(moved);
   moved.view.classList.remove("is-active");
   await runTicks(moved);
-  assert.equal(allSummaryOf(moved), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 화면을 옮기거나 화면이 잠겨 멈췄습니다. 1개 키워드 · 기록 2개 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(moved), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 화면을 옮기거나 화면이 잠겨 멈췄습니다. 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
   moved.view.classList.add("is-active");
   await advanceAll(moved, 600000, 60000);
   assert.equal(moved.server.claimTimes.length, 1);
@@ -5375,7 +5415,7 @@ test("전체 확인 버튼(화면): 꺼짐이면 숨고, 못 누르는 사유를
     screen.controller.show();
     await settle();
     const block = screen.host.querySelector("[data-coupang-rank-all]");
-    return { hidden: block.hidden, disabled: allButtonOf(screen).disabled, hint: allHintOf(screen), title: allButtonOf(screen).getAttribute("title") };
+    return { hidden: block.hidden, disabled: allOff(screen), hint: allHintOf(screen), title: allButtonOf(screen).getAttribute("title") };
   };
   let seen = await reasonOf({ used: 30 });
   assert.deepEqual([seen.disabled, seen.hint], [true, "오늘 횟수 다 씀"]);
@@ -5399,7 +5439,8 @@ test("전체 확인 버튼(화면): 꺼짐이면 숨고, 못 누르는 사유를
   screen.controller.show();
   await settle();
   const items = screen.host.querySelector("[data-coupang-rank-guide]").querySelectorAll("li").map((li) => li.textContent);
-  assert.equal(items[2], "전체 확인: 위 상태판의 '전체 확인'을 누르면 오늘 아직 확인 안 한 상품(일시중지 빼고)을 키워드마다 한 번씩, 검색 사이 3분을 기다리며 차례로 확인합니다(키워드 수 × 약 3분). 진행하는 동안 이 화면과 열리는 시크릿 창을 닫거나 누르지 마세요. '멈추기'를 누르면 남은 키워드를 바로 취소합니다.");
+  assert.equal(items[2], `전체 확인: 위 상태판의 '전체 확인'을 누르면 오늘 아직 확인 안 한 상품(일시중지 빼고)을 키워드마다 한 번씩, 검색 사이 3분을 기다리며 차례로 확인합니다(키워드 수 × 약 3분). 진행하는 동안 키워드마다 ${MANUAL_WARN_SENTENCE} '멈추기'를 누르면 남은 키워드를 바로 취소합니다.`);
+  assert.ok(items[2].includes("내리지(가리지)"), "금지 네 가지를 줄이지 않는다");
 });
 
 test("전체 확인 CSS: 새 선택자 짝 · 토큰 색 · 진행 줄과 요약은 상태판 한 줄 전체", () => {
@@ -5413,4 +5454,265 @@ test("전체 확인 CSS: 새 선택자 짝 · 토큰 색 · 진행 줄과 요약
     const rule = cssSource.slice(at, cssSource.indexOf("}", at));
     assert.ok(rule.includes("grid-column: 1 / -1;") && rule.includes("overflow-wrap: anywhere;"), selector);
   }
+});
+
+// ── 전체 확인 검토 결함 고정(2026-10-24 검토 11건) ──
+
+// 노드의 textContent 쓰기를 모두 기록한다(aria-live 줄이 같은 말을 또 쓰는지 본다).
+function recordWrites(node) {
+  const writes = [];
+  const proto = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(node), "textContent");
+  Object.defineProperty(node, "textContent", {
+    configurable: true,
+    get() { return proto.get.call(this); },
+    set(value) { writes.push(String(value)); proto.set.call(this, value); },
+  });
+  return writes;
+}
+
+const otherTabChecked = (screen, keyword) => {
+  const today = internals.kstDayAt(screen.clock.now);
+  const cell = { d: today, s: "found", r: 4, n: 50, a: null, t: "12:00", c: 1, f: 0, b: 4, k: 0 };
+  screen.server.trackers.filter((tracker) => tracker.keywordKey === keyword && tracker.status === "active").forEach((tracker) => {
+    tracker.days = [cell, ...tracker.days.filter((day) => day.d !== today)];
+  });
+  screen.server.used += 1;
+  screen.server.lastSearchAt = screen.clock.now;
+};
+
+test("전체 확인(검토 1): 시작 직전(확인 창 전)에 우리 서버 목록 GET 1번으로 다시 고른다 — 화면을 연 뒤 다른 탭·다른 PC가 오늘 확인한 키워드는 확인 창에도 대기열에도 넣지 않는다", async () => {
+  const screen = mountAll();
+  screen.controller.show();
+  await settle();
+  assert.equal(allHintOf(screen), "키워드 4개 · 약 12분");
+  // 다른 탭이 키워드 A(T1·T4 함께 기록)를 확인했고 4분이 지났다(서버 간격도 지남). 이 화면 목록은 옛 것이다.
+  otherTabChecked(screen, "키워드 A");
+  screen.clock.now += 240000;
+  const logBefore = screen.server.log.length;
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  const sent = screen.server.log.slice(logBefore).map((entry) => `${entry.method} ${entry.url}${entry.body ? ` ${JSON.parse(entry.body).action}` : ""}`);
+  assert.deepEqual(sent.slice(0, 2), ["GET /api/coupang-rank-trackers?limit=500", "POST /api/coupang-rank-trackers manual-claim"], "확인 창 전에 목록 GET, 확인 창을 바로 누르면 첫 키워드는 다시 받지 않는다");
+  assert.match(screen.confirmCalls.at(-1), /오늘 아직 확인 안 한 상품 3개\(일시중지 빼고 · 키워드 3개\)/u, "확인 창도 최신 목록 기준");
+  assert.deepEqual(claimedIds(screen), [allId(3)], "A 는 다시 검색하지 않고 C 부터");
+  assert.deepEqual(screen.bridge.of("mi-coupang-check").map((entry) => entry.message.keyword), ["키워드 C"]);
+  assert.equal(manualPill(screen), "전체 확인 2 / 3");
+  // 확인 창 전 목록을 받지 못하면 시작하지 않는다(쿠팡 검색·claim 없음)
+  const offline = mountAll();
+  offline.controller.show();
+  await settle();
+  offline.server.failGets = true;
+  const confirms = offline.confirmCalls.length;
+  dispatch(allButtonOf(offline), "click");
+  await settle();
+  assert.equal(offline.confirmCalls.length, confirms, "확인 창을 띄우지 않는다");
+  assert.equal(offline.server.claimTimes.length, 0);
+  assert.equal(allSummaryOf(offline), "전체 확인을 시작하지 않았습니다: 서버에서 최신 목록을 받지 못했습니다(인터넷 연결 확인). 쿠팡 검색은 하지 않았습니다.");
+  assert.equal(allOff(offline), false, "다시 누를 수 있다");
+});
+
+test("전체 확인(검토 1): 매 건 시작 직전에도 목록 GET 1번 — 기다리는 3분 사이 다른 탭이 다음 키워드를 확인했으면 건너뛰고, 새 간격을 기다려 간격 거절 없이 다음으로 간다", async () => {
+  const screen = mountAll();
+  await startAll(screen);
+  assert.deepEqual(claimedIds(screen), [allId(1)]);
+  assert.equal(allStepOf(screen), "전체 확인 2 / 4 · '키워드 C'");
+  // 2분 뒤 다른 탭이 C 를 확인했다(서버 간격이 그때부터 다시 3분). 이 화면은 아직 모른다.
+  await advanceAll(screen, 120000, 10000);
+  otherTabChecked(screen, "키워드 C");
+  const otherAt = screen.clock.now;
+  const gets = () => screen.server.log.filter((entry) => entry.method === "GET").length;
+  const getsBefore = gets();
+  // 이 화면 기준 간격(첫 확인 + 3분 + 2초)이 지나면 누르기 직전에 목록을 받는다 → C 는 건너뛰고, 새 간격(다른 탭 + 3분 + 2초)을 기다린다.
+  await advanceAll(screen, 62000 + 1000, 1000);
+  assert.equal(gets() - getsBefore, 1, "누르기 직전 목록 GET 1번");
+  assert.deepEqual(claimedIds(screen), [allId(1)], "C 를 다시 claim 하지 않고, 새 간격 전이라 B 도 아직");
+  assert.equal(allStepOf(screen), "전체 확인 3 / 4 · '키워드 B'");
+  assert.match(allCountdownOf(screen), /^ · 다음 확인 \d분 \d{2}초 뒤$/u);
+  await advanceAll(screen, otherAt + ALL_GAP_MS + ALL_PAD_MS - screen.clock.now, 1000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(2)]);
+  assert.ok(screen.server.claimTimes[1].at >= otherAt + ALL_GAP_MS + ALL_PAD_MS, "다른 탭 확인으로 늘어난 서버 간격을 지킨다");
+  assert.equal(screen.server.log.filter((entry) => entry.method === "POST" && /COUPANG_MANUAL_GAP/u.test(entry.body || "")).length, 0);
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 2000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(2), allId(7)]);
+  assert.equal(screen.bridge.of("mi-coupang-check").filter((entry) => entry.message.keyword === "키워드 C").length, 0, "C 는 쿠팡에서 다시 검색하지 않았다");
+  assert.equal(allSummaryOf(screen), "전체 확인 끝: 3개 키워드 · 상품 4개 기록 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인).");
+  assert.equal(screen.server.used, 3 + 4, "하루 횟수: 이 화면 3번 + 다른 탭 1번");
+  // 매 건 직전 GET 은 '새 목록을 받는 중입니다…' 줄을 띄우지 않는다(진행 줄이 이미 말한다)
+  assert.equal(pendingTicks(screen).length, 0);
+});
+
+test("전체 확인(검토 1): 매 건 직전 목록 GET 이 실패하면 옛 목록으로 누르지 않고 멈춘다", async () => {
+  const screen = mountAll();
+  await startAll(screen);
+  screen.server.failGets = true;
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS + 1000, 3000);
+  assert.equal(screen.server.claimTimes.length, 1);
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 서버에서 최신 목록을 받지 못해 멈췄습니다(인터넷 연결 확인). 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(pendingTicks(screen).length, 0);
+});
+
+test("전체 확인(검토 2): '멈추기'를 두 번 누르면(더블클릭·Enter 반복) 두 번째 누름이 바로 바뀐 '전체 확인'을 시작하지 않는다", async () => {
+  const screen = mountAll();
+  await startAll(screen);
+  const confirms = screen.confirmCalls.length;
+  const logLength = screen.server.log.length;
+  dispatch(allButtonOf(screen), "click");
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.match(allSummaryOf(screen), /^전체 확인 멈춤\(2 \/ 4 '키워드 C'에서\): 멈추기를 눌러 멈췄습니다\./u);
+  assert.equal(allButtonOf(screen).textContent, "전체 확인");
+  assert.equal(screen.confirmCalls.length, confirms, "확인 창이 뜨지 않는다");
+  assert.equal(screen.server.log.length, logLength, "목록 GET 도 보내지 않는다");
+  screen.clock.now += 900;
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms, "1초 안의 누름은 받지 않는다");
+  // 1초가 지난 누름은 사람이 다시 누른 것이다 → 목록을 받고 확인 창
+  screen.clock.now += 200;
+  screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms + 1);
+  // 확인 중에 누른 '멈추기'는 '멈추는 중…'(꺼짐)이라 두 번째 누름을 받지 않는다
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const running = mountAll({ check: async () => { await gate; return { ok: true, reply: measuredReply() }; } });
+  await startAll(running);
+  dispatch(allButtonOf(running), "click");
+  dispatch(allButtonOf(running), "click");
+  await settle();
+  assert.equal(allButtonOf(running).textContent, "멈추는 중…");
+  release();
+  await settle();
+  const runningConfirms = running.confirmCalls.length;
+  dispatch(allButtonOf(running), "click");
+  await settle();
+  assert.equal(running.confirmCalls.length, runningConfirms, "끝난 직후(1초 안) 누름도 받지 않는다");
+});
+
+test("전체 확인(검토 3): 한 건 확인 중에 다른 메뉴로 갔다가 그 건이 끝나기 전에 돌아와도 대기열은 멈춘다(그 1건은 끝까지 기록)", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const screen = mountAll({ check: async (message) => { if (message.claimId === allClaimId(2)) await gate; return { ok: true, reply: measuredReply() }; } });
+  await startAll(screen);
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(3)]);
+  assert.equal(allCountdownOf(screen), " · 확인 중");
+  assert.ok(pendingTicks(screen).length >= 1, "확인 중에도 1초마다 화면 이동을 본다");
+  screen.view.classList.remove("is-active");
+  await runTicks(screen);
+  assert.equal(allButtonOf(screen).textContent, "멈추는 중…");
+  screen.view.classList.add("is-active");
+  await runTicks(screen);
+  release();
+  await settle();
+  assert.equal(screen.server.of("manual-record").length, 2, "진행 중인 1건은 끝까지 기록");
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 화면을 옮기거나 화면이 잠겨 멈췄습니다. 2개 키워드 · 상품 3개 기록 · 실패 0 · 남은 2개 키워드는 하지 않음.");
+  assert.equal(pendingTicks(screen).length, 0);
+  await advanceAll(screen, 600000, 60000);
+  assert.equal(screen.server.claimTimes.length, 2, "돌아와도 이어 가지 않는다");
+});
+
+test("전체 확인(검토 4): 남은 횟수만큼 자른 대기열에서 앞 키워드를 건너뛰면 횟수가 모자라 뺀 키워드로 채운다(요약도 사실대로)", async () => {
+  const screen = mountAll({ used: 28 });
+  screen.controller.show();
+  await settle();
+  assert.equal(allHintOf(screen), "키워드 2개 · 약 6분 · 2개는 횟수 모자람");
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(manualPill(screen), "전체 확인 2 / 2");
+  // 기다리는 중에 C 를 일시중지한다 → 1번이 남으므로 뺐던 B 를 채운다
+  dispatch(screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${allId(3)}"]`), "click");
+  await settle();
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(2)]);
+  assert.equal(screen.server.used, 30, "오늘 횟수를 남김없이 썼다(서버 상한은 그대로)");
+  assert.equal(allSummaryOf(screen), "전체 확인 끝: 2개 키워드 · 상품 3개 기록 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인) · 키워드 1개는 오늘 횟수가 모자라 못 함.");
+  assert.equal(allHintOf(screen), "오늘 횟수 다 씀");
+});
+
+test("전체 확인(검토 5): 버튼을 꺼도 disabled 를 쓰지 않아(aria-disabled) 키보드 포커스가 같은 버튼에 남고, 꺼진 동안 누름은 받지 않는다", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  // 같은 키워드만 남은 목록: 끝나면 '확인할 상품 없음'으로 꺼진다
+  const screen = mountAll({ check: async () => { await gate; return { ok: true, reply: measuredReply() }; }, trackers: allTrackers("2026-10-23").filter((tracker) => tracker.keyword === "키워드 A") });
+  screen.controller.show();
+  await settle();
+  const node = allButtonOf(screen);
+  node.focus();
+  dispatch(node, "click");
+  await settle();
+  assert.equal(allButtonOf(screen), node, "같은 버튼 노드(포커스 자리 그대로)");
+  assert.equal(node.textContent, "멈추기");
+  dispatch(node, "click");
+  await settle();
+  assert.equal(node.textContent, "멈추는 중…");
+  assert.equal(allOff(screen), true);
+  assert.equal(screen.document.activeElement, node);
+  assert.ok(screen.host.contains(screen.document.activeElement));
+  release();
+  await settle();
+  assert.equal(allButtonOf(screen), node);
+  assert.equal(node.textContent, "전체 확인");
+  assert.equal(allOff(screen), true);
+  assert.equal(allHintOf(screen), "확인할 상품 없음");
+  assert.equal(screen.document.activeElement, node, "끝나 사유로 꺼져도 포커스가 같은 버튼에");
+  // 꺼진(aria-disabled) 버튼 누름은 받지 않는다
+  screen.clock.now += 5000;
+  const confirms = screen.confirmCalls.length;
+  const logLength = screen.server.log.length;
+  dispatch(node, "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms);
+  assert.equal(screen.server.log.length, logLength);
+});
+
+test("전체 확인(검토 8): 끝나는 순간 aria-live 줄이 같은 말을 또 쓰지 않고, 알약 바뀜도 따로 읽지 않는다(끝 요약 한 줄이 읽는다)", async () => {
+  const screen = mountAll({ trackers: allTrackers("2026-10-23").filter((tracker) => ["키워드 A", "키워드 C"].includes(tracker.keyword)) });
+  screen.controller.show();
+  await settle();
+  const listWrites = recordWrites(screen.host.querySelector("[data-coupang-rank-list-note]"));
+  const announceWrites = recordWrites(screen.host.querySelector("[data-coupang-rank-manual-announce]"));
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
+  assert.equal(screen.server.claimTimes.length, 2);
+  assert.match(allSummaryOf(screen), /^전체 확인 끝: 2개 키워드/u);
+  const loadingWrites = listWrites.filter((text) => text === "새 목록을 받는 중입니다…").length;
+  assert.equal(loadingWrites, 2, `기록 뒤 목록 GET 마다 1번씩(끝날 때 두 번 쓰지 않고, 시작·매 건 직전 GET 은 띄우지 않는다): ${JSON.stringify(listWrites)}`);
+  // 상태 알림 줄은 시크릿 창 경고 문장만 읽는다. 끝나는 순간 알약('3분 간격 기다리는 중' 등) 바뀜은 끝 요약이 대신한다.
+  assert.deepEqual(announceWrites, [`지금 확인 상태: 확인 중입니다… ${MANUAL_WARN_SENTENCE}`]);
+});
+
+test("전체 확인(검토 11): 다음 키워드 상품을 일시중지하면 뒤 카드의 '대기 n번째'·'누르면 남은 n개 취소'가 바로 한 칸씩 당겨진다", async () => {
+  const screen = mountAll();
+  await startAll(screen);
+  const label = (n) => manualButtonFor(screen, allId(n)).textContent;
+  assert.deepEqual([3, 2, 7].map(label), ["대기 1번째", "대기 2번째", "대기 3번째"]);
+  assert.equal(allHintOf(screen), "누르면 남은 3개 취소");
+  dispatch(screen.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${allId(3)}"]`), "click");
+  await settle();
+  assert.equal(manualButtonFor(screen, allId(3)), null, "일시중지한 카드는 버튼이 없다");
+  assert.deepEqual([2, 7].map(label), ["대기 1번째", "대기 2번째"]);
+  assert.equal(allHintOf(screen), "누르면 남은 2개 취소");
+  await runTicks(screen);
+  assert.deepEqual([2, 7].map(label), ["대기 1번째", "대기 2번째"], "1초 재확인 뒤에도 같다");
+});
+
+test("전체 확인 CSS(검토 5·9): 꺼진 버튼은 aria-disabled 로 같은 모양 · 넓은 화면에서 전체 확인 자리는 오른쪽 칸 폭을 넓히지 않는다(contain: inline-size)", () => {
+  const rule = (selector) => {
+    const at = cssSource.indexOf(selector);
+    assert.ok(at >= 0, selector);
+    return cssSource.slice(at, cssSource.indexOf("}", at));
+  };
+  assert.ok(!/mi-coupang-rank-all-button:disabled/u.test(cssSource), "disabled 선택자는 쓰지 않는다");
+  const off = rule('#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button[aria-disabled="true"],');
+  assert.ok(off.includes("color: var(--mi-muted);") && off.includes("transform: none;") && off.includes("box-shadow: none;"), off);
+  assert.ok(cssSource.includes('#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button[aria-disabled="true"]'));
+  // 전체 확인 자리는 오른쪽 칸 폭 계산에서 빠지고(넓은 화면), 900px 이하(한 줄 전체 폭)는 푼다.
+  const base = rule("#mi-admin .mi-coupang-rank-all,\n#mi-clean .mi-coupang-rank-all {");
+  assert.ok(base.includes("contain: inline-size;"), base);
+  const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px) {"));
+  const phoneRule = phone.slice(phone.indexOf("  #mi-admin .mi-coupang-rank-all,\n  #mi-clean .mi-coupang-rank-all {"));
+  assert.ok(phoneRule.slice(0, phoneRule.indexOf("}")).includes("contain: none;"), "900px 이하는 contain 을 푼다");
 });

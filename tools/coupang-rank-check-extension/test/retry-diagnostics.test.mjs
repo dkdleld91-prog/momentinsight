@@ -730,6 +730,42 @@ test("1.0.1 재검사: 쪽 안 예외 결과는 본 차단 HTTP 를 우선해 �
   }
 });
 
+test("1.0.1 재검사 4차: 상한(2000자)에서 잘린 끝 낱말은 버린다 — 'user:SECRET@' 가운데가 잘려도 비밀 앞부분이 남지 않는다", () => {
+  const url = "https://user:SECRET@www.coupang.com/a";
+  for (const pad of [" ".repeat(1985), "\u200b".repeat(1985), "\u0001".repeat(1990), "가 ".repeat(993)]) {
+    const out = diagnosticText(pad + url);
+    assert.equal(/SECRET|SE$|user:/u.test(out), false, JSON.stringify(out));
+  }
+  // 상한보다 짧으면 지금처럼 끝까지 다듬는다
+  assert.equal(diagnosticText(" ".repeat(100) + url), "https://www.coupang.com/a");
+});
+
+test("1.0.1 재검사 4차: 첫 측정이 쪽 안 예외로 끝나고 기다리는 사이 권한 밖(로그인 화면)으로 보내지면 page_unreadable·그날 중지", async () => {
+  const marks = { moved: false };
+  let count = 0;
+  const measure = ({ tab, chrome: fakeRef }) => {
+    count += 1;
+    if (count > 1) return rawPage();
+    tab.status = "loading";
+    fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+    setTimeout(() => {
+      tab.url = LOGIN_URL;
+      marks.moved = true;
+      fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+      setTimeout(() => { tab.status = "complete"; fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "complete" }); }, 40);
+    }, 40);
+    return { extractError: true, host: "www.coupang.com", path: "/np/search", query: "", items: [], httpStatus: 200, error: "TypeError" };
+  };
+  const { fake, fetchImpl, background } = setup({ chrome: { scenario: { measure, probe: loadingProbe } } });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "page_unreadable");
+  assert.equal(reply.stopReason, "page_unreadable");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
+  assert.equal(measures(fake), 1, "권한 밖에서는 다시 측정하지 않는다");
+  assert.equal(fake.calls.update.length, 1, "쿠팡 주소 넣기는 1번뿐");
+  assertServerAccepts(reply);
+});
+
 test("1.0.1 재검사: 진단 주소는 어떤 모양이든 호스트·경로만 — scheme 없음·// 시작·인코딩·따옴표·; 가 든 사용자 정보도 지우고 @·%40 이 남지 않는다", () => {
   const cases = [
     ["user:SECRET@www.coupang.com/a", "www.coupang.com/a"],
@@ -745,7 +781,12 @@ test("1.0.1 재검사: 진단 주소는 어떤 모양이든 호스트·경로만
     ["a@b@www.coupang.com/x", "www.coupang.com/x"],
     ['url "//user:SECRET@www.coupang.com/x?y".', 'url "//www.coupang.com/x".'],
     ["rtnUrl=https://user:SECRET@x.y/z?q", "rtnUrl=https://x.y/z"],
-    ["rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch%3Fq%3DSECRET%40y", "rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch"],
+    // 인코딩된 쿼리 안의 %40 은 덩어리가 %3F 에서 멈추지 않아 앞 주소까지 지워진다(더 지우는 쪽, 1.0.1 재검사 4차)
+    ["rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch%3Fq%3DSECRET%40y", "y"],
+    // 크롬은 사용자 정보의 ?·# 를 %3F·%23 으로 쓴다 — 비밀번호 앞부분도 남지 않는다(1.0.1 재검사 4차)
+    ["https://alice:pa%3FSECRET%23word@www.coupang.com/np/search?q=abc", "https://www.coupang.com/np/search"],
+    ["https://us%3FSECRET:pw@www.coupang.com/a", "https://www.coupang.com/a"],
+    ['Cannot access contents of url "https://alice:pa%3FSECRET%23w@www.coupang.com/np/search?q=abc". x', 'Cannot access contents of url "https://www.coupang.com/np/search". x'],
     ["www.coupang.com/a?x=SECRET@y#z", "www.coupang.com/a"],
     ["문의 SECRET@coupang.com", "문의 coupang.com"],
   ];
@@ -768,7 +809,9 @@ test("1.0.1 재검사: 진단 주소는 어떤 모양이든 호스트·경로만
   }
   // 아주 긴 글(크롬 오류 문구 안의 긴 주소 등)도 빨리 끝나고 200자 상한 그대로
   const started = Date.now();
-  assert.equal(Array.from(diagnosticText(`https://${"a.".repeat(500000)}`)).length, 200);
+  // 상한(2000자)을 넘는 한 낱말은 잘린 끝 낱말이라 버린다(1.0.1 재검사 4차) — 200자 상한 안, 비밀 조각 없음
+  assert.ok(Array.from(diagnosticText(`https://${"a.".repeat(500000)}`)).length <= 200);
+  assert.equal(Array.from(diagnosticText("word ".repeat(100000))).length, 200, "낱말 사이가 있으면 200자 상한 그대로");
   assert.equal(diagnosticText("@".repeat(100000)), "");
   assert.ok(Date.now() - started < 2000, `${Date.now() - started}ms`);
   // 실행 전체(진단 tries): 넣지 못한 오류 문구 속 사용자 정보도 지워져 서버에 닿는다

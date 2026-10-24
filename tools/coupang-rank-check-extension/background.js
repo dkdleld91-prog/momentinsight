@@ -796,7 +796,13 @@ export function createBackground(chromeApi, deps = {}) {
   // 쪽 안 예외(extractError)로 끝났으면 이 창에서 본 차단 신호(HTTP 403·429·503·차단 문구)를 함께 싣는다(1.0.1 검토 반영):
   // 1번 더 읽기를 '차단'으로 건너뛰었으면 결과도 그날 중지가 되게(결과 없음 길은 원래 본 신호를 싣는다).
   async function attemptPage(run, tabId, attempt) {
-    if (attempt.raw && attempt.raw.extractError === true) return assemblePage(withSeenBlock(attempt.raw, run.signals()));
+    if (attempt.raw && attempt.raw.extractError === true) {
+      // 쪽 안 예외로 끝난 뒤 읽을 수 없는 곳(권한 밖 — 로그인 화면 등)으로 보내진 것을 봤으면 결과 없음 길과 같이 page_unreadable(D1 = 그날 중지)
+      // (1.0.1 재검사 4차: 기다리는 사이 권한 밖으로 옮겨지면 extract_failed 로 끝나 중지가 빠졌다).
+      const address = await tabAddress(tabId);
+      if (run.unreadable || (address.exists && !address.url)) return assemblePage(run.signals(), { errorCode: UNREADABLE_ERROR_CODE });
+      return assemblePage(withSeenBlock(attempt.raw, run.signals()));
+    }
     if (attempt.raw) return assemblePage(attempt.raw);
     const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
     const code = !attempt.rejected && failure.errorCode === "page_load_failed" ? "extract_failed" : failure.errorCode;

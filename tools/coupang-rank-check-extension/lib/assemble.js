@@ -173,7 +173,9 @@ const DIAG_FORMAT_PATTERN = /\p{Cf}/gu;
 const ADDRESS_WORD_PATTERN = /[^\s"'<>]+/g;
 const ADDRESS_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/|%3a%2f%2f|\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::[0-9]{1,5})?[?#;]|data:/i;
 // 덩어리는 경계(글 처음·공백·/ ? # @ 와 %3F %23 %40 바로 뒤)에서만 시작한다(인코딩 글자 %3F 의 중간에서 시작해 앞 주소를 지우지 않게).
-const USERINFO_PATTERN = /(?<=^|[\s/?#@]|%3f|%23|%40)(?:(?!%3f|%23)[^\s/?#@])*(?:@|%40)/gi;
+// 덩어리 안의 %3F·%23 에서는 멈추지 않는다: 크롬은 사용자 정보의 ?·# 를 %3F·%23 으로 쓰므로 거기서 멈추면 앞부분(비밀번호 앞)이 남는다
+// (1.0.1 재검사 4차). 그래서 인코딩된 쿼리 안의 %40 이면 호스트까지 지워진다 — 더 지우는 쪽.
+const USERINFO_PATTERN = /(?<=^|[\s/?#@]|%3f|%23|%40)[^\s/?#@]*(?:@|%40)/gi;
 const ADDRESS_CUT_PATTERN = /[?#;]|%3f|%23|%3b/i;
 const DATA_CUT_PATTERN = /[?#;,]|%3f|%23|%3b/i;
 // 다듬기 전 입력 상한(UTF-16 단위). 결과는 200 코드 포인트 이하라 충분하고, 아주 긴 글(크롬 오류 문구 안의 긴 주소 등)에서
@@ -186,9 +188,17 @@ function addressWord(word) {
   return cut >= 0 ? word.slice(0, cut) : word;
 }
 
+// 상한에서 자르면 끝 낱말은 잘린 조각이라 버린다: 'user:SECRET@' 가운데가 잘리면 @ 가 없어져 사용자 정보로 알아보지 못하고 앞부분이
+// 남는다(1.0.1 재검사 4차). 낱말 = 공백·따옴표·<> 가 아닌 글자의 이어짐(주소 낱말과 같은 기준).
+function diagnosticInput(value) {
+  const text = String(value);
+  if (text.length <= DIAG_INPUT_MAX) return text;
+  return text.slice(0, DIAG_INPUT_MAX).replace(/[^\s"'<>]*$/u, "");
+}
+
 export function diagnosticText(value, max = DIAG_TEXT_MAX) {
   if (value === null || value === undefined) return "";
-  const text = toWellFormedText(String(value).slice(0, DIAG_INPUT_MAX))
+  const text = toWellFormedText(diagnosticInput(value))
     .replace(USERINFO_PATTERN, "")
     .replace(DIAG_CONTROL_PATTERN, " ")
     .replace(DIAG_FORMAT_PATTERN, "")

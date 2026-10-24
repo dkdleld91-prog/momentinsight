@@ -1836,7 +1836,7 @@
     transport: ["서버에 연결하지 못해 ", "(인터넷 연결 확인)"],
     session: ["로그인이 풀려 ", "(다시 로그인해 주세요)"],
     server: ["서버 오류로 ", "(잠시 뒤 다시 눌러 주세요)"],
-    other: ["", "(목록 안내 줄 참고)"]
+    other: ["", "(위 안내 줄 참고)"]
   };
   function manualAllListFailText(kind, stopped) {
     var parts = Object.prototype.hasOwnProperty.call(MANUAL_ALL_LIST_FAIL_PARTS, kind) ? MANUAL_ALL_LIST_FAIL_PARTS[kind] : MANUAL_ALL_LIST_FAIL_PARTS.other;
@@ -5726,16 +5726,14 @@
     function manualAllStart() {
       var manual = state.manual;
       if (manual.all || manual.allPreparing || state.destroyed || !manualVisible()) return;
-      // '멈추기' 두 번 누름 · Enter 누름 유지: 같은 자리가 막 '전체 확인'으로 바뀐 직후의 누름은 시작으로 받지 않는다.
-      // 막은 누름마다 시각을 다시 적어, 누름이 1초 넘게 끊긴 뒤에야 받는다. 키 되풀이(keydown repeat) 바로 뒤의 누름은 늘 받지 않는다.
+      // '멈추기' 두 번 누름 · Enter 누름 유지: 같은 자리가 막 '전체 확인'으로 바뀐 직후(1초)의 누름은 시작으로 받지 않는다.
+      // 막은 누름으로 그 1초를 늘리지 않는다(끝난 뒤 1초가 지나면 받는다 — 거듭 눌러도 계속 막히지 않게, 2026-10-24 재검사 3차).
+      // 누름 유지는 이 버튼 위 키 되풀이(keydown repeat) 바로 뒤의 누름을 받지 않는 것으로 막는다(다른 칸의 되풀이는 보지 않는다).
       var now = Date.now();
       var since = now - Number(manual.allEndedAt || 0);
       var repeatAge = now - keyRepeatAt;
       var repeated = keyRepeatAt > 0 && repeatAge >= 0 && repeatAge < MANUAL_ALL_KEY_REPEAT_MS;
-      if (repeated || (manual.allEndedAt && since >= 0 && since < MANUAL_ALL_RESTART_GUARD_MS)) {
-        if (manual.allEndedAt) manual.allEndedAt = now;
-        return;
-      }
+      if (repeated || (manual.allEndedAt && since >= 0 && since < MANUAL_ALL_RESTART_GUARD_MS)) return;
       var info = allCheckInfo(currentManualView());
       if (info.reason || !info.take) {
         renderManual();
@@ -5848,16 +5846,6 @@
       return null;
     }
 
-    // 고를 때 오늘 아직이던 이 키워드 카드가 지금은 오늘 확인됨 = 다른 탭·다른 PC가 확인했다(그쪽이 오늘 횟수 1번을 이미 썼다).
-    function allCheckedElsewhere(item) {
-      var todayKst = todayKstValue();
-      if (!todayKst) return false;
-      return (item.trackerIds || []).some(function (id) {
-        var tracker = findTracker(id);
-        return Boolean(tracker) && checkedToday(tracker, todayKst);
-      });
-    }
-
     // 오늘 남은 횟수(서버가 준 최신 값) 가운데 대기열에 남은(할 카드가 있는) 키워드가 쓰고도 남는 수.
     function allSpareRoom(queue) {
       var projected = manualProjected(state.manual.server || {}, manualNow());
@@ -5871,13 +5859,14 @@
 
     // 할 카드가 없는 키워드(일시중지·삭제·이미 오늘 확인)를 건너뛴다. 일시중지·삭제로 건너뛰면 그만큼 오늘 횟수가 남으므로, 시작할 때
     // 횟수가 모자라 뺀 키워드(spare) 가운데 아직 할 카드가 남은 첫 키워드를 대기열 끝에 채운다(할 수 있는 만큼 — 하루 상한은 그대로 서버가 지킨다).
-    // 다른 탭·다른 PC가 확인해서 건너뛰면 그쪽이 횟수를 썼으므로 채우지 않는다. 서버가 준 남은 횟수가 대기열에 남은 키워드 수보다 많을 때만 채운다
+    // 채울지는 서버가 준 최신 남은 횟수로만 정한다: 남은 횟수가 대기열에 남은 키워드 수보다 많을 때만 채운다(다른 탭·다른 PC가 확인해서 횟수를
+    // 썼으면 그 값에 이미 들어 있어 채우지 않고, 횟수를 쓰지 않은 기록으로 건너뛰었으면 남은 만큼 채운다, 2026-10-24 재검사 3차)
     // (채운 키워드가 하루 상한에 걸려 '멈춤'으로 끝나지 않게 — 못 한 키워드는 끝 요약의 '오늘 횟수가 모자라 못 함'에 센다).
     function allSkip(queue, item) {
       item.status = "skipped";
       queue.skipped += 1;
       queue.index += 1;
-      if (allCheckedElsewhere(item) || allSpareRoom(queue) <= 0) return;
+      if (allSpareRoom(queue) <= 0) return;
       while (queue.spare.length) {
         var spare = queue.spare.shift();
         if (allTrackerFor(spare.key)) {
@@ -6455,8 +6444,9 @@
 
     // 날짜 줄: 탭 정지는 한 칸뿐이고 화살표(←→)·Home·End 로 칸을 옮긴다(roving tabindex). Enter·Space 는 버튼 기본 동작(누름)이다.
     function onKeydown(event) {
-      // 키를 누르고 있으면(되풀이) 그 시각을 적는다. 크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다(manualAllStart 가 본다).
-      if (event && event.repeat === true) keyRepeatAt = Date.now();
+      // '전체 확인' 버튼 위에서 키를 누르고 있으면(되풀이) 그 시각을 적는다. 크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다(manualAllStart 가 본다).
+      // 다른 칸(검색칸 등)의 되풀이는 적지 않는다(그 직후 마우스 누름이 아무 표시 없이 무시되지 않게).
+      if (event && event.repeat === true && event.target && event.target.hasAttribute && event.target.hasAttribute("data-coupang-rank-all-button")) keyRepeatAt = Date.now();
       var target = event && event.target;
       if (!target || !target.hasAttribute || !target.hasAttribute("data-coupang-rank-day")) return;
       var key = event.key;

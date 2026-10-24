@@ -281,9 +281,11 @@
   background: var(--mi-panel);
 }
 
+/* 한 줄 글은 어절 단위로 줄을 바꾼다(글자 중간 꺾임 '닫|습니다' 방지, 2026-10-24 재검사 3차). 아주 긴 낱말만 넘칠 때 끊는다. */
 #mi-admin .mi-coupang-rank-manual .mi-coupang-rank-manual-line,
 #mi-clean .mi-coupang-rank-manual .mi-coupang-rank-manual-line {
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 #mi-admin .mi-coupang-rank-manual .mi-coupang-rank-manual-line.is-warn,

@@ -5568,17 +5568,13 @@ test("전체 확인(검토 2): '멈추기'를 두 번 누르면(더블클릭·En
   dispatch(allButtonOf(screen), "click");
   await settle();
   assert.equal(screen.confirmCalls.length, confirms, "1초 안의 누름은 받지 않는다");
-  // 막은 누름마다 다시 센다(2026-10-24 재검사 2차): 끝난 지 1.1초여도 막은 누름 0.2초 뒤면 받지 않는다(누름 유지 · Enter 되풀이)
+  // 막은 누름으로 1초를 늘리지 않는다(2026-10-24 재검사 3차): 끝난 지 1.1초면 마우스 누름은 사람이 다시 누른 것이다 → 목록을 받고 확인 창
+  // (누름 유지 · Enter 되풀이는 버튼 위 keydown repeat 로 따로 막는다 — 재검사 2차 5 시험)
   screen.clock.now += 200;
-  dispatch(allButtonOf(screen), "click");
-  await settle();
-  assert.equal(screen.confirmCalls.length, confirms, "누름이 1초 넘게 끊기지 않았으면 받지 않는다");
-  // 누름이 1초 끊긴 뒤의 누름은 사람이 다시 누른 것이다 → 목록을 받고 확인 창
-  screen.clock.now += 1000;
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
   dispatch(allButtonOf(screen), "click");
   await settle();
-  assert.equal(screen.confirmCalls.length, confirms + 1);
+  assert.equal(screen.confirmCalls.length, confirms + 1, "끝난 지 1초가 지나면 막힌 누름이 있었어도 받는다");
   // 확인 중에 누른 '멈추기'는 '멈추는 중…'(꺼짐)이라 두 번째 누름을 받지 않는다
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
@@ -5892,9 +5888,9 @@ test("전체 확인(재검사 2차 3): 목록 GET 을 받지 못한 이유를 �
   assert.equal(list("transport", true), "서버에 연결하지 못해 최신 목록을 받지 못하고 멈췄습니다(인터넷 연결 확인)");
   assert.equal(list("session", true), "로그인이 풀려 최신 목록을 받지 못하고 멈췄습니다(다시 로그인해 주세요)");
   assert.equal(list("server", true), "서버 오류로 최신 목록을 받지 못하고 멈췄습니다(잠시 뒤 다시 눌러 주세요)");
-  assert.equal(list("other", true), "최신 목록을 받지 못하고 멈췄습니다(목록 안내 줄 참고)");
-  assert.equal(list("", false), "최신 목록을 받지 못했습니다(목록 안내 줄 참고)");
-  assert.equal(list("constructor", false), "최신 목록을 받지 못했습니다(목록 안내 줄 참고)");
+  assert.equal(list("other", true), "최신 목록을 받지 못하고 멈췄습니다(위 안내 줄 참고)");
+  assert.equal(list("", false), "최신 목록을 받지 못했습니다(위 안내 줄 참고)");
+  assert.equal(list("constructor", false), "최신 목록을 받지 못했습니다(위 안내 줄 참고)");
   assert.equal(list("session", false), "로그인이 풀려 최신 목록을 받지 못했습니다(다시 로그인해 주세요)");
 
   const withGets = (answer) => {
@@ -5950,8 +5946,9 @@ test("전체 확인(재검사 2차 5): '멈추기' 위에서 Enter 를 누르고
   const confirms = screen.confirmCalls.length;
   const gets = () => screen.server.log.filter((entry) => entry.method === "GET").length;
   const getsBefore = gets();
-  // 30ms 마다 누름 1.5초(크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다): 첫 누름이 '멈추기', 나머지는 바뀐 '전체 확인' 위
+  // 30ms 마다 누름 1.5초(크롬은 버튼 위 Enter 되풀이마다 keydown(repeat) 뒤 click 을 보낸다): 첫 누름이 '멈추기', 나머지는 바뀐 '전체 확인' 위
   for (let ms = 0; ms <= 1500; ms += 30) {
+    dispatchWith(allButtonOf(screen), "keydown", { key: "Enter", repeat: ms > 0 });
     dispatch(allButtonOf(screen), "click");
     await settle();
     screen.clock.now += 30;
@@ -6022,4 +6019,28 @@ test("전체 확인(재검사 2차 4): 작은 글은 단어 단위로만 줄을 
   const fullNode = full.host.querySelector("[data-coupang-rank-all-hint]");
   assert.equal(fullNode.textContent, "키워드 4개 · 약 12분");
   assert.equal(fullNode.querySelector(".mi-coupang-rank-all-hint-more"), null, "모자람이 없으면 따로 둔 칸도 없다");
+});
+
+// ── 2026-10-24 재검사 3차: 다른 칸의 키 되풀이는 '전체 확인' 누름을 막지 않는다 · 한 줄 글은 어절 단위 줄바꿈 ──
+test("전체 확인(재검사 3차): 다른 칸(검색칸 등)의 키 되풀이 바로 뒤 마우스 누름은 막지 않는다(버튼 위 되풀이만 본다)", async () => {
+  const screen = mountAll();
+  screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
+  screen.controller.show();
+  await settle();
+  const confirms = screen.confirmCalls.length;
+  const search = screen.host.querySelector("input");
+  assert.ok(search, "화면 안에 다른 입력 칸이 있다");
+  dispatchWith(search, "keydown", { key: "Backspace", repeat: true });
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms + 1, "검색칸 되풀이 뒤에도 확인 창이 뜬다");
+});
+
+test("C30 CSS(재검사 3차): '지금 확인' 한 줄 글은 글자 중간이 아니라 어절 단위로 줄을 바꾼다", () => {
+  const at = cssSource.indexOf("#mi-admin .mi-coupang-rank-manual .mi-coupang-rank-manual-line,");
+  assert.ok(at >= 0);
+  const rule = cssSource.slice(cssSource.indexOf("{", at), cssSource.indexOf("}", at));
+  assert.ok(rule.includes("word-break: keep-all;"));
+  assert.ok(rule.includes("overflow-wrap: break-word;"));
+  assert.doesNotMatch(rule, /overflow-wrap:\s*anywhere/u);
 });

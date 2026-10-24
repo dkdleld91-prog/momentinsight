@@ -281,9 +281,11 @@
   background: var(--mi-panel);
 }
 
+/* 한 줄 글은 어절 단위로 줄을 바꾼다(글자 중간 꺾임 '닫|습니다' 방지, 2026-10-24 재검사 3차). 아주 긴 낱말만 넘칠 때 끊는다. */
 #mi-admin .mi-coupang-rank-manual .mi-coupang-rank-manual-line,
 #mi-clean .mi-coupang-rank-manual .mi-coupang-rank-manual-line {
-  overflow-wrap: anywhere;
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 
 #mi-admin .mi-coupang-rank-manual .mi-coupang-rank-manual-line.is-warn,
@@ -336,6 +338,115 @@
   font-size: var(--mi-font-label);
   font-weight: var(--mi-weight-bold);
   text-align: right;
+}
+
+/* ── 전체 확인(대표 승인 2026-10-24): '지금 확인 끄기' 위 버튼 + 사유·예상 한 줄 · 진행 줄 · 끝 요약 ──
+   상태판 오른쪽 칸(auto)은 '지금 확인 끄기' 자리 폭 그대로 둔다: 전체 확인 자리(버튼·사유 한 줄)는 칸 폭 계산에서 빼고
+   (contain: inline-size) 그 폭 안에서 줄바꿈한다 — '…2개는 횟수 모자람'처럼 긴 사유나 '멈추는 중…'이 칸을 넓혀 옆 칸 3개를 줄이거나
+   시작·멈춤마다 칸 폭이 흔들리지 않게(2026-10-24 검토). 901~1360px 는 세 칸이 아래 줄이라 정한 폭(136px)으로 조금 넓히고(아래 901~1360px 규칙),
+   900px 이하는 한 줄 전체 폭이라 풀어 둔다(아래 900px 규칙). 작은 글은 단어(띄어쓰기) 단위로만 줄을 바꾼다(2026-10-24 재검사 2차). */
+#mi-admin .mi-coupang-rank-all,
+#mi-clean .mi-coupang-rank-all {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 6px;
+  /* 칸 폭 계산에서 빠지는 대신 칸 폭만큼 늘려 둔다(안 늘리면 폭 0 으로 줄어든다) */
+  justify-self: stretch;
+  contain: inline-size;
+}
+
+/* 한국어도 글자 사이가 아니라 띄어쓰기에서만 줄을 바꾼다('끝까 / 지 기록' 막기). 한 단어가 칸보다 길 때만 그 단어를 자른다. */
+#mi-admin .mi-coupang-rank-all-hint,
+#mi-clean .mi-coupang-rank-all-hint {
+  max-width: 100%;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+/* '횟수 모자람'은 다음 줄에 따로(줄 앞 '·' 없이). 900px 이하(한 줄 전체 폭)는 ' · '로 이어 쓴다(아래 900px 규칙). */
+#mi-admin .mi-coupang-rank-all-hint-sep,
+#mi-clean .mi-coupang-rank-all-hint-sep {
+  display: none;
+}
+
+#mi-admin .mi-coupang-rank-all-hint-more,
+#mi-clean .mi-coupang-rank-all-hint-more {
+  display: block;
+}
+
+/* 못 누를 때도 버튼 모양이 보이게(상태판 회색 바탕 위 흰 바탕 · 회색 테두리). 사유는 아래 작은 글.
+   꺼짐은 disabled 대신 aria-disabled(누른 '멈추기'가 꺼질 때 포커스가 사라지지 않게) → 공용 .mi-button:disabled 모양(흐림·움직임 없음)을 여기서 맞춘다. */
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button[aria-disabled="true"],
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button[aria-disabled="true"] {
+  border: 1px solid var(--mi-line);
+  color: var(--mi-muted);
+  background: var(--mi-panel);
+  cursor: not-allowed;
+  opacity: 0.64;
+  transform: none;
+  box-shadow: none;
+}
+
+#mi-admin .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button.is-stop:not([aria-disabled="true"]),
+#mi-clean .mi-coupang-rank-root .mi-coupang-rank-manual-side .mi-coupang-rank-all-button.is-stop:not([aria-disabled="true"]) {
+  border: 1px solid var(--mi-warn);
+  color: var(--mi-warn);
+  background: var(--mi-panel);
+}
+
+#mi-admin .mi-coupang-rank-all-hint.is-warn,
+#mi-clean .mi-coupang-rank-all-hint.is-warn {
+  color: var(--mi-warn);
+}
+
+#mi-admin .mi-coupang-rank-all-progress,
+#mi-clean .mi-coupang-rank-all-progress {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--mi-line);
+  border-left: 4px solid var(--mi-blue);
+  border-radius: var(--mi-radius);
+  padding: 8px 12px;
+  color: var(--mi-navy);
+  background: var(--mi-panel);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-all-countdown,
+#mi-clean .mi-coupang-rank-all-countdown {
+  color: var(--mi-blue);
+  font-variant-numeric: tabular-nums;
+}
+
+#mi-admin .mi-coupang-rank-all-summary,
+#mi-clean .mi-coupang-rank-all-summary {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin: 0;
+  border-top: 1px solid var(--mi-line);
+  padding-top: 8px;
+  color: var(--mi-ink);
+  font-size: var(--mi-font-body);
+  font-weight: var(--mi-weight-black);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+#mi-admin .mi-coupang-rank-all-summary.is-ok,
+#mi-clean .mi-coupang-rank-all-summary.is-ok {
+  color: var(--mi-green);
+}
+
+#mi-admin .mi-coupang-rank-all-summary.is-warn,
+#mi-clean .mi-coupang-rank-all-summary.is-warn {
+  color: var(--mi-warn);
 }
 
 /* '안 한 상품 N개 보기'(링크 모양 단추) */
@@ -1762,6 +1873,14 @@
     grid-column: 1 / -1;
     grid-row: 2;
   }
+
+  /* 세 칸이 아래 줄이라 오른쪽 칸을 넓혀도 세 칸 크기는 그대로다 → 전체 확인 자리를 정한 폭으로 조금 넓혀 작은 글 한 마디
+     (가장 긴 '진행 중인 1건은 끝까지 기록' 맥 122px · 윈도우 글꼴 여유 포함)를 한 줄에 둔다. 더 넓히면 왼쪽 '지금 확인' 한 줄 글이
+     1024px 등에서 새로 꺾인다(2026-10-24 실측). 폭을 정해 두어(글 길이를 따르지 않음) 시작·진행·멈춤마다 칸 폭이 흔들리지 않는다(contain 은 그대로). */
+  #mi-admin .mi-coupang-rank-all,
+  #mi-clean .mi-coupang-rank-all {
+    width: 136px;
+  }
 }
 
 /* 901~1180px: 카드가 좁아 현재·30일 최고·지금 확인·일시중지·삭제를 1행 아래 줄로 내린다(N30 같은 너비 규칙과 같음).
@@ -1872,6 +1991,20 @@
   #mi-clean .mi-coupang-rank-manual-side {
     grid-auto-flow: row;
     justify-items: start;
+  }
+
+  /* 전체 확인 자리도 왼쪽 정렬(아래 '지금 확인 끄기'와 같은 줄 시작) · 한 줄 전체 폭이라 칸 폭 빼기를 푼다 */
+  #mi-admin .mi-coupang-rank-all,
+  #mi-clean .mi-coupang-rank-all {
+    justify-items: start;
+    contain: none;
+  }
+
+  #mi-admin .mi-coupang-rank-all-hint-sep,
+  #mi-admin .mi-coupang-rank-all-hint-more,
+  #mi-clean .mi-coupang-rank-all-hint-sep,
+  #mi-clean .mi-coupang-rank-all-hint-more {
+    display: inline;
   }
 
   #mi-admin .mi-coupang-rank-manual-hint,

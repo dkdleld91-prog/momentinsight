@@ -113,6 +113,8 @@
   // 진행 중에 '지금 확인 끄기'를 눌렀을 때 상태판에 덧붙이는 말. 끄기는 새 확인만 막는다: 확장이 서버 확인(verify)을 받은 뒤면
   // 결과를 끝까지 기록하고, 그 전이면 서버가 그 확인을 닫아 검색 없이 끝난다(SQL coupang_rank_manual_verify).
   var MANUAL_RUN_OFF_TEXT = "지금 확인을 껐지만, 이미 시작한 이 확인은 끝까지 마치고 결과를 기록합니다(시크릿 창이 열리기 전이었다면 검색하지 않고 끝납니다).";
+  // 확인 중 경고(금지 네 가지: 창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기). 카드 '지금 확인'과 '전체 확인'이 같은 문장을 쓴다.
+  var MANUAL_WARN_TEXT = "새 시크릿 창이 약 20초 열렸다 저절로 닫힙니다. 그 창을 닫거나 누르거나 내리지(가리지) 말고, 이 화면도 닫지 마세요.";
   // 선택 항목 정리 결과 한 줄을 휴대폰 아래 막대에 남겨 두는 시간(선택이 0개가 되어 막대가 접혀도).
   var BULK_NOTE_FLOAT_MS = 6000;
   // 날짜 줄: 오른쪽 끝 흐림 폭(CSS .mi-coupang-rank-days-scroll::after · scroll-padding-inline 과 같다)과, 흐리지 않는 작은 넘침(px).
@@ -917,7 +919,8 @@
   // 화면 순서: 확장에 묻기(hello) → 서버 1회용 확인(manual-claim) → 확장에 맡기기(check: 확장이 창을 열기 전에
   // 서버에 그 확인을 직접 확인받는다) → 결과를 서버에 보내기(manual-record) → 목록 다시 받기.
   // 간격·하루 상한·시간·그날 중지는 서버가 서버 시각으로 정한다. 화면은 서버가 준 시각(serverTime)과 내 시계의
-  // 차이만 보정해 남은 시간을 보여 준다. 예약·반복·전체 확인은 없다(확장에 check 를 보내는 곳은 startManualCheck 하나).
+  // 차이만 보정해 남은 시간을 보여 준다. 예약·자동 반복은 없다(확장에 check 를 보내는 곳은 startManualCheck 하나).
+  // 상태판 '전체 확인'(대표 승인 2026-10-24)도 누를 때만 시작하고, 같은 startManualCheck 를 키워드마다 한 번씩 차례로 부른다.
   // 확장이 따로 기억한 '오늘 차단'으로 화면이 먼저 막지 않는다. 차단 보고는 언제나 서버 기록 경로로 보낸다.
 
   var MANUAL_HELLO_TYPE = "mi-coupang-hello";
@@ -1303,7 +1306,7 @@
     if (phase === "record") return run.resumed ? "지금 확인: 앞서 보내지 못한 확인 결과를 서버에 보내는 중입니다…" : "지금 확인: 결과를 서버에 기록하는 중입니다…";
     if (run && run.slow) return "지금 확인: 확장 응답이 늦습니다. 최대 9분까지 기다립니다. 이 화면을 닫지 마세요.";
     // 금지 네 가지(창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기)는 줄이지 않는다. 결과는 이 화면이 서버에 보낸다.
-    return "확인 중입니다… 새 시크릿 창이 약 20초 열렸다 저절로 닫힙니다. 그 창을 닫거나 누르거나 내리지(가리지) 말고, 이 화면도 닫지 마세요.";
+    return "확인 중입니다… " + MANUAL_WARN_TEXT;
   }
 
   // 상태 줄 하나(spec-manual §7.3 표 + 반박 검토 반영). 위에서부터 처음 맞는 것을 쓴다.
@@ -1663,6 +1666,222 @@
     return { text: prefix + quoted + reason + "." + keep + usage + left, tone: "is-warn" };
   }
 
+  // ── 전체 확인(대표 승인 2026-10-24) ─────────────────────────────
+  // 상태판 '지금 확인 끄기' 옆 '전체 확인': 오늘 아직 확인 안 한 활성 상품(일시중지 빼고)을 키워드마다 한 번씩, 카드 '지금 확인'
+  // 한 건 흐름(startManualCheck → finishManualRun)을 그대로 차례로 부른다. 서버 요청 모양·순서는 카드 버튼 한 번과 같다(새 API·파라미터 없음).
+  // 다음 건은 서버가 준 간격(manual.nextAt, 상태판 '다음 확인'과 같은 근거)이 지난 뒤에만 시작한다. 절대 시각으로 1초마다 다시 보고,
+  // 숨은 탭에서 타이머가 늦으면 늦게 시작할 뿐 앞당기지 않는다. 서버가 간격으로 거절하면 한 번만 다시 기다리고, 그 밖의 거절·실패는 멈춘다.
+  // 시작 직전(확인 창 전)과 매 건 시작 직전에 우리 서버 목록 GET(화면 목록 요청과 같은 것) 1번으로 최신 상태를 받아 다시 고른다:
+  // 다른 탭·다른 PC가 그사이 확인한 키워드를 다시 검색해 하루 횟수를 쓰지 않게(지휘 결정 2026-10-24). 쿠팡 요청이 아니고,
+  // claim·확장 check 요청 모양은 카드 한 번 누름과 그대로다.
+
+  var MANUAL_ALL_TICK_MS = 1000;
+  // 서버 간격이 끝난 뒤 이만큼 더 기다린다(내 시계 보정 오차로 서버보다 먼저 누르지 않게).
+  var MANUAL_ALL_PAD_MS = 2000;
+  // 매 건 직전 목록 GET 사이 최소 간격(받은 목록이 '아직 기다려야 함'이라고 하면 다음 GET 은 이만큼 뒤에야 — 요청이 몰리지 않게).
+  var MANUAL_ALL_REFRESH_MIN_MS = 10000;
+  var MANUAL_ALL_WAIT_TEXT = "전체 확인 중입니다. 키워드마다 " + MANUAL_WARN_TEXT;
+  var MANUAL_ALL_BLOCKED_TEXT = "쿠팡 차단으로 보이는 화면이 나와 오늘 지금 확인이 멈췄습니다";
+  // 위 그날 중지 띠(role=alert)가 같은 사유를 이미 보이고 읽을 때 끝 요약에 쓰는 짧은 말(같은 문장을 두 번 보이거나 읽지 않게).
+  var MANUAL_ALL_BLOCKED_REF = "그날 중지(위 안내 참고)";
+  // 대기열이 끝난 직후 같은 자리를 누르면 '전체 확인' 시작으로 받지 않는다('멈추기' 두 번 누름 · Enter 반복이 바로 바뀐 '전체 확인'을
+  // 누르는 것을 막는다). 막은 누름마다 다시 센다: 누름이 이 시간 넘게 끊긴 뒤의 누름만 사람이 다시 누른 것으로 받는다
+  // (Enter 를 누르고 있으면 30ms 마다 누름이 와서 끝나지 않는다 — 2026-10-24 재검사 2차).
+  var MANUAL_ALL_RESTART_GUARD_MS = 1000;
+  // 키를 누르고 있어 되풀이된 keydown(event.repeat) 바로 뒤의 누름은 시간과 상관없이 '전체 확인' 시작으로 받지 않는다
+  // (크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다. 되풀이 첫 간격이 1초보다 긴 맥 설정에서도 막는다).
+  var MANUAL_ALL_KEY_REPEAT_MS = 200;
+  var MANUAL_ALL_MOVED_TEXT = "화면을 옮기거나 화면이 잠겨 멈췄습니다";
+  // 시작 직전(확인 창 전)에 받은 목록이 이 시간 안이면(확인 창을 바로 눌렀으면) 첫 키워드 직전에 다시 받지 않는다.
+  var MANUAL_ALL_FRESH_MS = 2000;
+  var MANUAL_ALL_BUSY_KINDS = { run: true, own_pending: true, busy_other: true, own_lost: true, own_unsent: true, unsent_maybe: true, ext_busy: true };
+
+  function manualKeywordKey(tracker) {
+    return String(tracker && (tracker.keywordKey || tracker.keyword) || "").trim().toLowerCase();
+  }
+
+  // 화면 차례(그룹이 처음 나온 차례 → 그룹 안 목록 차례, 목록 그리기와 같다)로 펼친 추적 목록.
+  function manualDisplayOrder(list) {
+    var names = [];
+    // 그룹 이름·키워드는 사람이 적은 글이라 'constructor' 같은 이름도 올 수 있다 → 원형 없는 객체를 쓴다.
+    var groups = Object.create(null);
+    (Array.isArray(list) ? list : []).forEach(function (tracker) {
+      if (!tracker) return;
+      var name = String(tracker.groupName || DEFAULT_GROUP);
+      if (!groups[name]) {
+        groups[name] = [];
+        names.push(name);
+      }
+      groups[name].push(tracker);
+    });
+    var out = [];
+    names.forEach(function (name) { out.push.apply(out, groups[name]); });
+    return out;
+  }
+
+  // 오늘 아직 확인 안 한 활성 상품을 같은 키워드(keywordKey)끼리 하나로 묶은 대기열 후보. 서버가 같은 키워드를 한 번에 함께 기록한다.
+  // 반환 { items: [{ key, keyword, trackerIds }], products(상품 수) }
+  function manualAllPlan(list, todayKst) {
+    var day = String(todayKst || "");
+    var items = [];
+    var byKey = Object.create(null);
+    var products = 0;
+    if (!day) return { items: items, products: 0 };
+    manualDisplayOrder(list).forEach(function (tracker) {
+      if (tracker.status !== "active" || checkedToday(tracker, day)) return;
+      var key = manualKeywordKey(tracker);
+      if (!key) return;
+      products += 1;
+      if (!byKey[key]) {
+        byKey[key] = { key: key, keyword: String(tracker.keyword || "").trim(), trackerIds: [] };
+        items.push(byKey[key]);
+      }
+      byKey[key].trackerIds.push(tracker.id);
+    });
+    return { items: items, products: products };
+  }
+
+  // '전체 확인'을 못 누르는 사유(짧은 말, 버튼 옆에 그대로 보인다). 누를 수 있으면 "".
+  // input: { view(manualView 결과), keywords(대상 키워드 수), remaining(오늘 남은 횟수), busy, cleanup, running }
+  function manualAllBlock(input) {
+    var options = input || {};
+    var kind = options.view && options.view.kind || "";
+    if (options.cleanup) return "정리용 화면이라 쓸 수 없음";
+    if (kind === "stopped") return "그날 중지";
+    if (kind === "daily_cap") return "오늘 횟수 다 씀";
+    if (kind === "hours") return "시간 밖";
+    if (MANUAL_ALL_BUSY_KINDS[kind] || options.running) return "다른 확인 진행 중";
+    if (kind === "hello_pending") return "확장 확인 중";
+    if (kind === "hello_block") return "확장 확인 필요";
+    if (kind === "budget") return "용량 상한으로 멈춤";
+    if (kind === "review") return "대표 확인 필요";
+    if (kind === "cooldown") return "쉬는 중";
+    if (kind !== "ready" && kind !== "gap" && kind !== "incognito") return "상태를 알 수 없음";
+    if (!(options.keywords > 0)) return "확인할 상품 없음";
+    if (!(options.remaining > 0)) return "오늘 횟수 다 씀";
+    if (options.busy) return "다른 작업 중";
+    return "";
+  }
+
+  // 걸리는 시간(대략): 키워드 수 × 검색 사이 간격(기본 3분).
+  function manualAllMinutes(count, server) {
+    return Math.max(1, Math.round((Number(count) || 0) * manualGapMinutes(server)));
+  }
+
+  // 대상(오늘 남은 횟수만큼 자른 것) · 모자란 키워드 수.
+  function manualAllTake(plan, remaining) {
+    var total = plan && Array.isArray(plan.items) ? plan.items.length : 0;
+    var room = Math.max(0, Math.floor(Number(remaining) || 0));
+    var take = Math.min(total, room);
+    return { take: take, shortage: total - take };
+  }
+
+  // 버튼 아래 작은 글: [앞 말, 뒤 말(횟수 모자람, 없으면 "")]. 넓은 화면의 좁은 오른쪽 칸에서는 뒤 말을 다음 줄에 따로 둔다(줄 앞 '·' 없이).
+  function manualAllHintParts(take, shortage, server) {
+    return ["키워드 " + take + "개 · 약 " + manualAllMinutes(take, server) + "분", shortage > 0 ? shortage + "개는 횟수 모자람" : ""];
+  }
+
+  function manualAllHint(take, shortage, server) {
+    var parts = manualAllHintParts(take, shortage, server);
+    return parts[0] + (parts[1] ? " · " + parts[1] : "");
+  }
+
+  // 시작 전 확인 창(기존 확인 창 방식). input: { plan, take, shortage, remaining, server, now }
+  function manualAllConfirmText(input) {
+    var options = input || {};
+    var server = options.server || {};
+    var plan = options.plan || { items: [], products: 0 };
+    var take = options.take;
+    var minutes = manualAllMinutes(take, server);
+    var hours = manualHours(server);
+    var lines = ["'전체 확인'을 시작합니다.",
+      "오늘 아직 확인 안 한 상품 " + plan.products + "개(일시중지 빼고 · 키워드 " + plan.items.length + "개)를 키워드마다 한 번씩 차례로 확인합니다. 같은 키워드 상품은 함께 기록됩니다."];
+    if (options.shortage > 0) lines.push("오늘 남은 횟수가 " + options.remaining + "번이라 키워드 " + take + "개만 하고, " + options.shortage + "개는 오늘 횟수가 모자라 못 합니다.");
+    lines.push("키워드 " + take + "개 · 약 " + minutes + "분(검색 사이 " + manualGapMinutes(server) + "분)");
+    var now = isNum(options.now) ? options.now : Date.now();
+    var endAt = now + minutes * 60000;
+    if (kstDayAt(endAt) !== kstDayAt(now) || kstHourAt(endAt) >= hours.to) lines.push("정해진 시간(" + hours.text + ")이 지나면 남은 키워드는 하지 못하고 멈춥니다.");
+    // 금지 네 가지(창 닫기·창 안 누르기·창 내리기/가리기·이 화면 닫기)는 지금 확인 경고 문장(MANUAL_WARN_TEXT)을 그대로 쓴다.
+    lines.push("진행하는 동안 키워드마다 " + MANUAL_WARN_TEXT + " '멈추기'로 언제든 멈출 수 있습니다(이미 진행 중인 1건은 끝까지 기록).");
+    lines.push("시작할까요?");
+    return lines.join("\n");
+  }
+
+  // 서버 상태(지금 시각으로 옮긴 것) 또는 claim 거절 코드 → 대기열을 멈추는 사유. 기다리면 되는 상태(간격·진행 중·바로 가능)는 "".
+  var MANUAL_ALL_CODE_STATE = {
+    COUPANG_MANUAL_STOPPED: "stopped", COUPANG_MANUAL_DAILY_CAP: "daily_cap", COUPANG_MANUAL_HOURS: "hours", COUPANG_MANUAL_BUDGET: "budget",
+    COUPANG_MANUAL_COOLDOWN: "cooldown", COUPANG_MANUAL_OFF: "off", COUPANG_MANUAL_SETUP_REQUIRED: "setup_required"
+  };
+  function manualAllStateStopText(stateName, server) {
+    switch (stateName) {
+      case "ready":
+      case "gap":
+      case "busy":
+        return "";
+      case "stopped": return MANUAL_ALL_BLOCKED_TEXT;
+      case "daily_cap": return "오늘 확인 횟수를 모두 써서 멈췄습니다";
+      case "hours": return "정해진 시간(" + manualHours(server).text + ") 밖이 되어 멈췄습니다";
+      case "budget": return "저장 용량 상한으로 지금 확인이 멈춘 상태라 멈췄습니다";
+      case "review": return "대표 확인이 필요한 상태라 멈췄습니다";
+      case "cooldown": return "쿠팡 차단 감지로 쉬는 중이라 멈췄습니다";
+      case "off": return "지금 확인이 꺼져 멈췄습니다";
+      case "setup_required": return "지금 확인을 쓸 수 없는 상태(SQL 전)라 멈췄습니다";
+      default: return "지금 확인 상태를 알 수 없어 멈췄습니다(코드 " + (manualSafeCode(stateName) || "?") + ")";
+    }
+  }
+
+  // 우리 서버 목록 GET 을 받지 못한 이유(loadList 가 state.listFail 에 남긴 것) → 쉬운 말.
+  // stopped: 대기열 도중(…받지 못하고 멈췄습니다) · 아니면 시작 전(…받지 못했습니다). 로그인 풀림·서버 오류를 '인터넷 연결 확인'으로 쓰지 않는다.
+  var MANUAL_ALL_LIST_FAIL_PARTS = {
+    transport: ["서버에 연결하지 못해 ", "(인터넷 연결 확인)"],
+    session: ["로그인이 풀려 ", "(다시 로그인해 주세요)"],
+    server: ["서버 오류로 ", "(잠시 뒤 다시 눌러 주세요)"],
+    other: ["", "(위 안내 줄 참고)"]
+  };
+  function manualAllListFailText(kind, stopped) {
+    var parts = Object.prototype.hasOwnProperty.call(MANUAL_ALL_LIST_FAIL_PARTS, kind) ? MANUAL_ALL_LIST_FAIL_PARTS[kind] : MANUAL_ALL_LIST_FAIL_PARTS.other;
+    return parts[0] + "최신 목록을 받지 못" + (stopped ? "하고 멈췄습니다" : "했습니다") + parts[1];
+  }
+
+  // claim 거절(쿠팡 검색 전) → 멈춤 사유. 간격 거절 1번째는 부르는 쪽이 다시 기다린다.
+  function manualAllClaimStopText(result, server) {
+    var info = result || {};
+    if (info.transport) return "서버에 연결하지 못해 멈췄습니다";
+    var code = String(info.code || "");
+    if (code === "COUPANG_MANUAL_GAP") return "간격을 기다린 뒤에도 서버가 간격을 이유로 받지 않아 멈췄습니다";
+    if (code === "COUPANG_MANUAL_BUSY") return "다른 확인이 진행 중이라 멈췄습니다";
+    if (Object.prototype.hasOwnProperty.call(MANUAL_ALL_CODE_STATE, code)) return manualAllStateStopText(MANUAL_ALL_CODE_STATE[code], server);
+    return "서버가 확인을 받지 않아 멈췄습니다(위 '직전 확인' 참고)";
+  }
+
+  // 한 건이 끝난 결과(startManualCheck 의 record 갈래) → { success, matched } 또는 { success: false, reason }.
+  // 기록 성공(ok·결과 없음)만 다음 키워드로 간다. 차단·보내지 못함·시작 안 함·응답 없음·기록 실패는 모두 멈춘다.
+  function manualAllRecordVerdict(result) {
+    var info = result || {};
+    var payload = info.payload || {};
+    if (info.stopped === true || payload.stopped === true || payload.status === "blocked") return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
+    if (info.final !== true) return { success: false, reason: "결과를 서버에 보내지 못해 멈췄습니다(위 '직전 확인' 참고)" };
+    if (info.outcome === "not_started") return { success: false, reason: "확장이 확인을 시작하지 않아 멈췄습니다(위 '직전 확인' 참고)" };
+    if (info.outcome !== "measured") return { success: false, reason: "확장 응답이 없어 멈췄습니다(위 '직전 확인' 참고)" };
+    if (payload.ok !== true) return { success: false, reason: "확인 결과를 저장하지 못해 멈췄습니다(위 '직전 확인' 참고)" };
+    if (payload.status === "ok" || payload.status === "noresult") return { success: true, matched: isNum(payload.matched) && payload.matched > 0 ? payload.matched : 1 };
+    return { success: false, reason: "순위를 기록하지 못해 멈췄습니다(위 '직전 확인' 참고)" };
+  }
+
+  // 끝 요약 한 줄. input: { reason(멈춘 사유, 끝까지 했으면 ""), at({ number, keyword }), total, checked, recorded, failed, skipped, left, shortage }
+  function manualAllSummary(input) {
+    var info = input || {};
+    var count = function (value) { return isNum(value) ? value : 0; };
+    // '상품 n개 기록': 같은 키워드 상품을 함께 기록하므로 키워드 수와 다르다(기록한 것이 상품이라는 것을 글로 밝힌다).
+    var tail = count(info.checked) + "개 키워드 · 상품 " + count(info.recorded) + "개 기록 · 실패 " + count(info.failed);
+    if (count(info.skipped)) tail += " · 건너뜀 " + count(info.skipped) + "개(일시중지·삭제·이미 확인)";
+    if (count(info.left)) tail += " · 남은 " + count(info.left) + "개 키워드는 하지 않음";
+    if (count(info.shortage)) tail += " · 키워드 " + count(info.shortage) + "개는 오늘 횟수가 모자라 못 함";
+    if (!info.reason) return { text: "전체 확인 끝: " + tail + ".", tone: count(info.failed) ? "is-warn" : "is-ok" };
+    var at = info.at && isNum(info.at.number) ? "(" + info.at.number + " / " + count(info.total) + (info.at.keyword ? " '" + info.at.keyword + "'" : "") + "에서)" : "";
+    return { text: "전체 확인 멈춤" + at + ": " + info.reason + ". " + tail + ".", tone: "is-warn" };
+  }
+
   // 설치 안내(대표가 따라 할 순서). 문자열은 그대로, { b } 는 굵게.
   function manualGuideSteps(zipName, folderName) {
     var folder = MANUAL_FOLDER_PATTERN.test(String(folderName || "")) ? String(folderName) : MANUAL_FOLDER_NAME;
@@ -1850,6 +2069,10 @@
     var seqCounter = 0;
     // ① 지금 확인 간격 초 세기(1초). 화면이 보이고 간격 대기일 때만 돈다.
     var manualTimer = 0;
+    // 전체 확인 대기열 재확인(1초 setTimeout 사슬). 숨은 탭에서도 돈다(늦어지면 늦게 시작할 뿐). reset·destroy 에서 지운다.
+    var allTimer = 0;
+    // 마지막으로 키를 누르고 있어 되풀이된 keydown(event.repeat)의 시각. 그 바로 뒤의 누름은 '전체 확인' 시작으로 받지 않는다.
+    var keyRepeatAt = 0;
     // 휴대폰 아래 막대 높이 지켜보기(ResizeObserver)와 창 크기 바뀜(날짜 줄 흐림 다시 맞추기) 타이머.
     var dockObserver = null;
     var resizeTimer = 0;
@@ -1864,6 +2087,9 @@
         setupRequired: false,
         loading: false,
         listSeq: 0,
+        // 마지막 목록 요청이 false(받지 못함)였을 때 그 이유: transport(연결 실패·시간 초과) · session(로그인 풀림 401) · server(5xx) · other.
+        // 전체 확인의 멈춤·시작 안 함 사유 글이 쓴다(화면 목록 안내 줄은 그대로).
+        listFail: "",
         // 합치기용: 마지막 목록 요청의 범위 키, 받는 중인 요청 순번, 받아 쓴 시각.
         listKey: "",
         listFlight: 0,
@@ -1895,7 +2121,11 @@
         // ① 지금 확인. server 는 목록 GET 의 manual 칸(총관리자만, 캐시에 남기지 않음), offsetMs 는 서버 시각 - 내 시계.
         // note 는 켜기·끄기 결과(상태판 안 한 줄), extNote 는 확장 상태 다시 보기 결과('내 크롬 확장' 칸 안 한 줄).
         manual: { server: null, offsetMs: 0, hello: null, helloFlight: null, run: null, result: null, stopDetail: "", busyRefreshFor: "", toggling: false,
-          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null, unsent: null, note: { text: "", tone: "" }, extNote: { text: "", tone: "" }, announced: "", announcedWarn: "" }
+          resuming: false, resumePolls: 0, resumeTriedAt: {}, settled: {}, lost: null, unsent: null, note: { text: "", tone: "" }, extNote: { text: "", tone: "" }, announced: "", announcedWarn: "",
+          // 전체 확인: all = 진행 중인 대기열(없으면 null), allSummary = 마지막 대기열의 끝 요약 한 줄 { text, tone, refText }(refText = 그날 중지 띠가
+          // 보일 때 쓰는 짧은 글), allPreparing = 시작 직전 목록 GET 중, allPrepareMoved = 그 GET 중에 화면을 옮김(확인 창을 띄우지 않음),
+          // allEndedAt = 마지막 대기열이 끝났거나 끝난 직후 누름을 막은 시각(다시 누름 막기), allEndQuiet = 끝난 직후 첫 그리기에서 알약 바뀜을 읽지 않음.
+          all: null, allSummary: null, allPreparing: false, allPrepareMoved: false, allEndedAt: 0, allEndQuiet: false }
       };
     }
 
@@ -2045,6 +2275,15 @@
       return !state.destroyed && seq === state.listSeq && sameScope(scope);
     }
 
+    // 받은 응답으로 화면을 바꾸지 못한 이유(연결 실패는 loadList 가 따로 'transport'로 남긴다).
+    function listFailKind(response, payload) {
+      var status = response && isNum(response.status) ? response.status : 0;
+      var code = String(payload && payload.code || "");
+      if (status === 401 || code === "SESSION_REQUIRED" || code === "COUPANG_SESSION_REQUIRED") return "session";
+      if (status >= 500) return "server";
+      return "other";
+    }
+
     function recentlyDone(doneAt) {
       if (!doneAt) return false;
       var age = Date.now() - doneAt;
@@ -2068,21 +2307,26 @@
     // options.reuse: 화면 열기(show)에서만 true — 같은 범위 목록을 받는 중이거나 방금 받았으면 보내지 않는다.
     // options.afterWrite: 추적기를 바꾼 직후 새로 받기(runBulk). 화면의 옛 목록이 낡았다는 뜻이다.
     // 쓰기 뒤 새로 받기는 합치지 않는다(받는 중인 요청은 쓰기 전 목록일 수 있다).
+    // options.quiet: '새 목록을 받는 중입니다…' 줄(aria-live)을 띄우지 않는다(전체 확인의 시작·매 건 직전 GET — 진행 줄이 이미 말한다).
+    // 요청 모양은 같다. 반환: true = 받은 목록을 반영함 · false = 받지 못함(오류 줄을 띄움) · null = 보내지 않았거나 뒤 요청에 밀림.
     async function loadList(options) {
       var opts = options || {};
       var scope = currentScope();
       if (!scope) {
         renderAll();
-        return;
+        return null;
       }
-      if (opts.reuse === true && listReusable(scope)) return;
+      if (opts.reuse === true && listReusable(scope)) return null;
       var seq = state.listSeq = ++seqCounter;
       state.listKey = scope.key;
       state.listFlight = seq;
       state.listDoneAt = 0;
+      state.listFail = "";
       try {
-        state.loading = true;
-        renderListNote();
+        if (opts.quiet !== true) {
+          state.loading = true;
+          renderListNote();
+        }
         var url = API_PATH + "?limit=" + LIST_LIMIT;
         var requestOptions = { method: "GET", cache: "no-store", headers: requestHeaders(scope), timeoutMs: 30000 };
         var response;
@@ -2091,26 +2335,30 @@
             response = await deps.fetch(url, requestOptions);
           } catch (firstError) {
             // 일시적 연결 실패·시간 초과면 1.5초 뒤 한 번만 다시 시도한다(N30 목록 조회와 같은 규칙).
-            if (!stillCurrent(seq, scope)) return;
+            if (!stillCurrent(seq, scope)) return null;
             await wait(1500);
-            if (!stillCurrent(seq, scope)) return;
+            if (!stillCurrent(seq, scope)) return null;
             response = await deps.fetch(url, requestOptions);
           }
         } catch (error) {
-          if (!stillCurrent(seq, scope)) return;
+          if (!stillCurrent(seq, scope)) return null;
           state.loading = false;
+          state.listFail = "transport";
           // 원문(브라우저 영어 오류)은 마우스를 올리면 보이는 title 에만 둔다.
           state.listNote = { text: "서버에 연결하지 못해 목록을 받지 못했습니다(인터넷 연결 확인). 화면의 이전 목록을 그대로 둡니다.", tone: "is-warn", detail: String(error && error.message || "") };
           renderAll();
-          return;
+          return false;
         }
         var payload = await readJson(response);
-        if (!stillCurrent(seq, scope)) return;
+        if (!stillCurrent(seq, scope)) return null;
         state.loading = false;
         if (applyListPayload(payload, scope, opts.afterWrite === true)) {
           state.listDoneAt = Date.now();
           ensureManualHello();
+          return true;
         }
+        state.listFail = listFailKind(response, payload);
+        return false;
       } finally {
         if (state.listFlight === seq) state.listFlight = 0;
       }
@@ -2726,12 +2974,24 @@
       shell.manualToggleHint = el("small", { className: "mi-coupang-rank-manual-hint" });
       shell.manualGuideButton = button("설치 안내 열기", "manual-guide-open", { className: "mi-button subtle mi-coupang-rank-manual-guide-open", hidden: true });
       shell.manualJump = button("자동 수집 칸에서 해제하기", "owner-jump", { className: "mi-button subtle", "data-coupang-rank-manual-jump": true, hidden: true });
-      shell.manualBox.appendChild(el("div", { className: "mi-coupang-rank-manual-side" }, [shell.manualToggle, shell.manualToggleHint, shell.manualGuideButton, shell.manualJump]));
+      // 전체 확인: '지금 확인 끄기' 옆(위). 누를 수 없으면 그 사유를, 누를 수 있으면 키워드 수·걸리는 시간을 아래 작은 글로 보인다.
+      // 진행 중에는 같은 자리가 '멈추기'가 된다.
+      shell.allButton = el("button", { type: "button", className: "mi-button mi-coupang-rank-all-button", "data-coupang-rank-action": "manual-all-start", "data-coupang-rank-all-button": true, text: "전체 확인" });
+      shell.allHint = el("small", { className: "mi-coupang-rank-manual-hint mi-coupang-rank-all-hint", "data-coupang-rank-all-hint": true });
+      shell.allBlock = el("div", { className: "mi-coupang-rank-all", "data-coupang-rank-all": true, hidden: true }, [shell.allButton, shell.allHint]);
+      shell.manualBox.appendChild(el("div", { className: "mi-coupang-rank-manual-side" }, [shell.allBlock, shell.manualToggle, shell.manualToggleHint, shell.manualGuideButton, shell.manualJump]));
       shell.manualBanner = el("div", { className: "mi-coupang-rank-manual-banner is-warn", role: "alert", "data-coupang-rank-manual-banner": true, hidden: true });
       shell.manualNote = el("p", { className: "mi-coupang-rank-manual-note", "data-coupang-rank-manual-note": true, "aria-live": "polite", hidden: true });
       shell.manualResult = el("p", { className: "mi-coupang-rank-manual-result", "data-coupang-rank-manual-result": true, "aria-live": "polite", hidden: true });
       shell.manualAnnounce = el("span", { className: "mi-coupang-rank-sr", "aria-live": "polite", "data-coupang-rank-manual-announce": true });
+      // 전체 확인 진행 줄: '전체 확인 2 / 5 · 키워드'(aria-live, 한 건이 바뀔 때만 바뀐다) + 남은 시간(1초 초 세기, aria-live 밖). 끝나면 요약 한 줄.
+      shell.allStep = el("span", { className: "mi-coupang-rank-all-step", "aria-live": "polite", "data-coupang-rank-all-step": true });
+      shell.allCountdown = el("span", { className: "mi-coupang-rank-all-countdown", "data-coupang-rank-all-countdown": true });
+      shell.allProgress = el("p", { className: "mi-coupang-rank-all-progress", "data-coupang-rank-all-progress": true, hidden: true }, [shell.allStep, shell.allCountdown]);
+      shell.allSummary = el("p", { className: "mi-coupang-rank-all-summary", "data-coupang-rank-all-summary": true, "aria-live": "polite", hidden: true });
       shell.manualBox.appendChild(shell.manualBanner);
+      shell.manualBox.appendChild(shell.allProgress);
+      shell.manualBox.appendChild(shell.allSummary);
       shell.manualBox.appendChild(shell.manualNote);
       shell.manualBox.appendChild(shell.manualResult);
       shell.manualBox.appendChild(shell.manualAnnounce);
@@ -2841,7 +3101,9 @@
       var note = state.listNote;
       var text = note.text;
       if (!text && state.loading) text = state.payload ? "새 목록을 받는 중입니다…" : "";
-      shell.listNote.textContent = text;
+      // aria-live 줄이라 같은 글이면 다시 쓰지 않는다(다시 쓰면 화면 읽기 프로그램이 같은 말을 또 읽는다 — 전체 확인이 끝나는 순간처럼
+      // 목록을 받는 중에 다시 그리면 두 번 읽었다).
+      setText(shell.listNote, text);
       shell.listNote.hidden = !text;
       shell.listNote.className = "mi-coupang-rank-list-note" + (note.tone ? " " + note.tone : "");
       if (note.text && note.detail) shell.listNote.setAttribute("title", note.detail);
@@ -2858,7 +3120,7 @@
     var cardContext = null;
 
     function keywordKeyOf(tracker) {
-      return String(tracker && (tracker.keywordKey || tracker.keyword) || "").trim().toLowerCase();
+      return manualKeywordKey(tracker);
     }
 
     function makeCardContext() {
@@ -2877,7 +3139,9 @@
         view: showManual || runOnly ? currentManualView() : null,
         keywordCounts: counts,
         todayKst: todayKstValue(),
-        auto: autoActive() || readonlyView()
+        auto: autoActive() || readonlyView(),
+        // 전체 확인 중이면 키워드 → 차례(0 = 확인 중, n = 대기 n번째). 카드마다 다시 세지 않게 한 번만 센다.
+        allPositions: allQueuePositions()
       };
     }
 
@@ -3229,11 +3493,11 @@
         } else {
           // ① 지금 확인: 총관리자·지금 확인 켜짐·활성 추적·정리용 아님일 때만. 같은 키워드 카드는 한 번에 함께 기록된다.
           if (!cleanup && context.manual) {
-            actions.push(manualCardButton(tracker, context.view, context.todayKst));
+            actions.push(manualCardButton(tracker, context.view, context.todayKst, context.allPositions));
             var same = context.keywordCounts[keywordKeyOf(tracker)] || 0;
             if (same > 1) actions.push(el("small", { className: "mi-coupang-rank-same-kw", title: "같은 키워드 카드는 한 번 누르면 모두 기록됩니다(하루 횟수도 1번만 씁니다)", text: "같은 키워드 " + same + "개 함께 기록" }));
           } else if (!cleanup && context.runOnly && context.runOnly === tracker.id) {
-            actions.push(manualCardButton(tracker, context.view, context.todayKst));
+            actions.push(manualCardButton(tracker, context.view, context.todayKst, context.allPositions));
           }
           tools.push(button("일시중지", "pause", { "data-coupang-rank-id": tracker.id, disabled: state.busy }));
         }
@@ -3821,6 +4085,9 @@
         items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(" + manualRule +
           "). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다.");
         items.push("같은 키워드 카드는 한 번 누르면 함께 기록됩니다(하루 횟수도 1번만 씁니다). 그래서 같은 키워드 카드를 따로 누를 필요가 없습니다.");
+        items.push("전체 확인: 위 상태판의 '전체 확인'을 누르면 오늘 아직 확인 안 한 상품(일시중지 빼고)을 키워드마다 한 번씩, 검색 사이 " + manualGapMinutes(server) +
+          "분을 기다리며 차례로 확인합니다(키워드 수 × 약 " + manualGapMinutes(server) + "분). 진행하는 동안 키워드마다 " + MANUAL_WARN_TEXT +
+          " '멈추기'를 누르면 남은 키워드를 바로 취소합니다.");
         items.push(register + " 등록한 뒤 새 카드의 '지금 확인'을 누르면 첫 순위가 기록됩니다.");
       } else if (mode === "auto") {
         // 지금 확인은 꺼져 있고 자동 수집이 켜져 있다. 켜 둔 뒤의 경보(멈춤·확인 필요)면 '다음 수집 때 기록'이라고 단정하지 않는다.
@@ -4741,6 +5008,8 @@
     }
 
     function manualButtonTitle(view) {
+      if (state.manual.all) return "전체 확인이 진행 중이라 카드의 '지금 확인'은 막아 두었습니다(위 상태판의 '멈추기'로 멈출 수 있습니다)";
+      if (state.manual.allPreparing === true) return "전체 확인을 시작하려고 최신 목록을 받는 중이라 카드의 '지금 확인'은 잠시 막아 두었습니다";
       if (view.enabled) return "누르면 이 크롬이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 순위를 확인합니다";
       if (view.kind === "busy_other") return "다른 확인이 끝나기를 기다리는 중입니다";
       if (view.countdown && view.state === "busy") return "방금 확인이 끝나기를 기다리는 중입니다";
@@ -4750,17 +5019,68 @@
 
     // 카드 '지금 확인'(주 버튼). 버튼 글자가 곧 상태다('지금 확인' / '1분 58초 뒤' / '확인 중…' / '내일 09:00').
     // 오늘 이미 확인한 카드는 테두리 모양(is-done)으로 두어 남색 주 버튼이 '오늘 아직'인 카드에만 남게 한다.
-    function manualCardButton(tracker, view, todayKst) {
+    // positions: allQueuePositions() 결과(목록을 그릴 때 한 번만 센 것). 없으면 여기서 센다.
+    function manualCardButton(tracker, view, todayKst, positions) {
       var running = state.manual.run;
-      var mine = Boolean(running && running.trackerId === tracker.id);
+      var position = allPositionOf(positions || allQueuePositions(), tracker);
+      var mine = Boolean(running && running.trackerId === tracker.id) || position === 0;
       var done = checkedToday(tracker, todayKst);
-      return button(manualButtonLabel(view, mine, state.manual.server, manualNow()), "manual-check", {
+      return button(manualCardLabel(position, view, mine, state.manual.server, manualNow()), "manual-check", {
         className: "mi-link-button mi-coupang-rank-manual-button" + (done ? " is-done" : "") + (mine ? " is-running" : ""),
         "data-coupang-rank-id": tracker.id,
         "data-coupang-rank-manual": true,
         title: manualButtonTitle(view),
-        disabled: !view.enabled || Boolean(running) || state.busy
+        disabled: !view.enabled || Boolean(running) || state.busy || Boolean(state.manual.all) || state.manual.allPreparing === true
       });
+    }
+
+    // 지금 할 카드가 남은 키워드(활성 · 오늘 아직 확인 안 한 카드가 하나라도 있는 keywordKey). 원형 없는 객체.
+    function allDueKeys() {
+      var due = Object.create(null);
+      var todayKst = todayKstValue();
+      if (!todayKst) return due;
+      trackers().forEach(function (tracker) {
+        if (tracker && tracker.status === "active" && !checkedToday(tracker, todayKst)) due[keywordKeyOf(tracker)] = true;
+      });
+      return due;
+    }
+
+    // 전체 확인 대기열의 차례: keywordKey → 0(지금 확인 중) · n(대기 n번째, 1 = 다음). 대기열에 없으면 키가 없다.
+    // 할 카드가 남은 키워드만 센다 — 그사이 일시중지했거나 다른 탭이 오늘 확인한 키워드는 시작 직전에 건너뛸 것이라 차례에 넣지 않는다.
+    function allQueuePositions() {
+      var positions = Object.create(null);
+      var queue = state.manual.all;
+      if (!queue) return positions;
+      var due = allDueKeys();
+      var position = 0;
+      for (var index = queue.index; index < queue.items.length; index += 1) {
+        var item = queue.items[index];
+        if (item.status === "run") {
+          positions[item.key] = 0;
+          continue;
+        }
+        if (item.status !== "wait" || !due[item.key]) continue;
+        position += 1;
+        if (!(item.key in positions)) positions[item.key] = position;
+      }
+      return positions;
+    }
+
+    function allPositionOf(positions, tracker) {
+      if (!state.manual.all || !tracker) return -1;
+      var key = keywordKeyOf(tracker);
+      return key in positions ? positions[key] : -1;
+    }
+
+    // 카드 버튼 글자: 전체 확인 중이면 '확인 중…' · '대기 n번째' · '잠김(전체 확인 중)'(대기열 밖 카드 — 오늘 이미 확인했거나 방금 끝난 카드),
+    // 아니면 예전 글자(manualButtonLabel).
+    function manualCardLabel(position, view, mine, server, now) {
+      if (state.manual.all) {
+        if (mine || position === 0) return "확인 중…";
+        if (position > 0) return "대기 " + position + "번째";
+        return "잠김(전체 확인 중)";
+      }
+      return manualButtonLabel(view, mine, server, now);
     }
 
     function setText(node, text) {
@@ -4774,10 +5094,17 @@
       var now = manualNow();
       var title = manualButtonTitle(view);
       var active = typeof document !== "undefined" && document ? document.activeElement : null;
+      var queued = Boolean(state.manual.all);
+      var byId = Object.create(null);
+      var positions = queued ? allQueuePositions() : null;
+      if (queued) trackers().forEach(function (tracker) { byId[tracker.id] = tracker; });
       Array.prototype.forEach.call(shell.list.querySelectorAll("[data-coupang-rank-manual]"), function (node) {
-        var mine = Boolean(running && running.trackerId === node.getAttribute("data-coupang-rank-id"));
-        setText(node, manualButtonLabel(view, mine, server, now));
-        var off = !view.enabled || Boolean(running) || state.busy;
+        var id = node.getAttribute("data-coupang-rank-id");
+        var position = queued ? allPositionOf(positions, byId[id]) : -1;
+        var mine = Boolean(running && running.trackerId === id) || position === 0;
+        setText(node, manualCardLabel(position, view, mine, server, now));
+        // 전체 확인 준비 중(확인 창 전 목록 GET)에도 막는다: 그 사이 카드 확인이 끼어 횟수·간격을 먼저 쓰지 않게.
+        var off = !view.enabled || Boolean(running) || state.busy || queued || state.manual.allPreparing === true;
         // 키보드로 누른 버튼이 꺼지면 포커스가 몸통으로 사라진다 → 그 카드에 맡기고, 다시 그릴 때 버튼으로 돌린다.
         if (off && !node.disabled && active === node) parkFocusOnCard(node.closest ? node.closest("[data-coupang-rank-card]") : null, focusKey(node));
         node.disabled = off;
@@ -4815,6 +5142,15 @@
       var model = manualBoardModel({ view: view, server: state.manual.server, now: manualNow(), trackers: trackers(), todayKst: todayKstValue(), autoState: autoMode(), autoCode: collectorStateName() });
       box.hidden = false;
       box.setAttribute("data-coupang-rank-manual-kind", model.kind);
+      // 전체 확인 중: 알약은 '전체 확인 n / N', 다음 건을 기다리는 동안 한 줄은 경고 문장(확인 중 단계는 지금 확인 경고 그대로).
+      var queue = state.manual.all;
+      if (queue) {
+        model.pill = { text: "전체 확인 " + allNumber(queue) + " / " + queue.items.length, tone: "is-wait" };
+        if (queue.phase === "wait" && !model.banner) {
+          model.line = MANUAL_ALL_WAIT_TEXT;
+          model.lineTone = "";
+        }
+      }
       setText(shell.manualPill, model.pill.text);
       shell.manualPill.className = "mi-rank-auto-status mi-coupang-rank-manual-pill" + (model.pill.tone ? " " + model.pill.tone : "");
       shell.manualLine.hidden = model.banner;
@@ -4841,6 +5177,7 @@
       setText(shell.manualToggleHint, enable ? "켜기 전에 확인 창이 뜹니다" : "누르면 바로 멈춥니다");
       shell.manualGuideButton.hidden = !model.guide;
       shell.manualJump.hidden = !model.jump || shell.owner.hidden;
+      renderManualAll(view, model.banner === true);
       var note = state.manual.note;
       shell.manualNote.hidden = !note.text;
       setText(shell.manualNote, note.text);
@@ -4861,9 +5198,13 @@
       var warnPhase = model.kind === "run" && running && running.phase === "check" ? (running.slow ? "|slow" : "|check") : "";
       var pillChanged = state.manual.announced !== model.pill.text;
       var warnChanged = Boolean(warnPhase) && state.manual.announcedWarn !== warnPhase;
+      // 전체 확인이 막 끝난 첫 그리기의 알약 바뀜도 읽지 않는다(끝 요약 한 줄 aria-live 가 읽는다 — 끝나는 순간 여러 줄이 한꺼번에 읽히지 않게).
+      var quietPill = Boolean(queue) || state.manual.allEndQuiet === true;
+      state.manual.allEndQuiet = false;
       if (pillChanged || warnChanged) {
         state.manual.announced = model.pill.text;
-        setText(shell.manualAnnounce, "지금 확인 상태: " + (warnPhase ? model.line : model.pill.text));
+        // 전체 확인 중의 차례 바뀜은 진행 줄(aria-live)이 읽는다. 여기서는 경고 문장만 읽는다(같은 말을 두 번 읽지 않게).
+        if (warnPhase || !quietPill) setText(shell.manualAnnounce, "지금 확인 상태: " + (warnPhase ? model.line : model.pill.text));
       }
       state.manual.announcedWarn = warnPhase;
       syncManualButtons(view);
@@ -4959,6 +5300,8 @@
         stopManualTicker();
         return;
       }
+      // 전체 확인: 숨은 탭에서 늦어진 재확인을 바로 한 번 한다(절대 시각으로 보므로 앞당기지 않는다).
+      if (state.manual.all && state.manual.all.phase === "wait") allTick();
       if (!manualVisible() || !isHostVisible()) return;
       renderManual();
       ensureManualHello();
@@ -5135,12 +5478,13 @@
       settleManualRecord(recorded, candidate.parsed, candidate.claim, "앞서 끝나지 않은 확인 결과를 보냈습니다. ");
     }
 
-    // 카드 '지금 확인'(사람이 누를 때만). 확장에 check 를 보내는 곳은 이 함수 하나다.
+    // 카드 '지금 확인'(사람이 누를 때만)과 상태판 '전체 확인'(사람이 누른 뒤 키워드마다 한 번씩)이 함께 쓴다.
+    // 확장에 check 를 보내는 곳은 이 함수 하나다. 반환값은 끝난 단계({ step: skip·gone·preflight·resend·claim·record, … })이고 요청 모양에는 영향이 없다.
     async function startManualCheck(trackerId) {
       var manual = state.manual;
-      if (manual.run || manual.resuming || state.busy || !manualVisible() || cleanupMode()) return;
+      if (manual.run || manual.resuming || state.busy || !manualVisible() || cleanupMode()) return { step: "skip" };
       var tracker = findTracker(trackerId);
-      if (!tracker || tracker.status !== "active") return;
+      if (!tracker || tracker.status !== "active") return { step: "skip" };
       var owner = state;
       var scope = currentScope();
       var keyword = String(tracker.keyword || "");
@@ -5153,11 +5497,11 @@
       renderManual();
       // 1. 누르기 직전에 확장 상태를 새로 묻는다. 막히면 서버 요청 없이 끝낸다(횟수도 쓰지 않는다).
       var hello = await refreshHello(true);
-      if (owner !== state) return;
+      if (owner !== state) return { step: "gone" };
       var blocked = manualPreflightText(hello, manual.server, userAgentText());
       if (blocked) {
         finishManualRun(blocked, "is-warn", false, false, { text: "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true });
-        return;
+        return { step: "preflight" };
       }
       // 2. 앞서 보내지 못한 결과(이 브라우저에 남긴 것 · 확장이 들고 있는 것)가 있으면 먼저 보낸다.
       //    차단 보고가 새 검색보다 먼저 서버에 닿아야 한다. 보냈으면 새 확인은 대표가 다시 누를 때 한다.
@@ -5168,26 +5512,27 @@
         manual.run.resumed = true;
         renderManual();
         var resent = await postManualRecord(earlier.body, scope, owner);
-        if (owner !== state) return;
+        if (owner !== state) return { step: "gone" };
         if (!manualRecordFinal(resent)) {
           rememberUnsent(earlier.claim.claimId);
           finishManualRun("앞서 보내지 못한 확인 결과를 먼저 보내야 하는데 아직 보내지 못했습니다(인터넷 연결 확인). 새 확인은 시작하지 않았고, 쿠팡 검색도 하지 않았습니다.", "is-warn", false, false,
             { text: "앞 결과를 먼저 보내야 해 시작하지 않음", tone: "is-warn", notStarted: true });
-          return;
+          return { step: "resend", ok: false };
         }
-        settleManualRecord(resent, earlier.parsed, earlier.claim, "앞서 끝나지 않은 확인 결과를 먼저 보냈습니다. 새 확인은 다시 눌러 주세요. ");
-        return;
+        var resentOutcome = settleManualRecord(resent, earlier.parsed, earlier.claim, "앞서 끝나지 않은 확인 결과를 먼저 보냈습니다. 새 확인은 다시 눌러 주세요. ");
+        return { step: "resend", ok: true, stopped: resentOutcome.stopped === true };
       }
       // 3. 서버 1회용 확인(간격·하루 상한·시간·그날 중지는 서버가 서버 시각으로 정한다)
       manual.run.phase = "claim";
       renderManual();
       var claimed = await postManual({ action: "manual-claim", trackerId: trackerId }, MANUAL_CLAIM_TIMEOUT_MS, scope);
-      if (owner !== state) return;
+      if (owner !== state) return { step: "gone" };
       var claim = claimed.payload || {};
       if (claim.manual) setManualServer(claim.manual);
       if (claim.ok !== true || typeof claim.claimId !== "string" || !claim.claimId || typeof claim.claimToken !== "string" || !claim.claimToken) {
         finishManualRun(manualClaimRefusalText(claimed, manual.server), "is-warn", false, false, { text: "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true });
-        return;
+        return { step: "claim", code: typeof claim.code === "string" ? claim.code : "", transport: claimed.transport === true, httpStatus: claimed.httpStatus,
+          retryAfterSec: isNum(claim.retryAfterSec) ? claim.retryAfterSec : null };
       }
       var record = { claimId: claim.claimId, claimToken: claim.claimToken, trackerId: trackerId, keyword: String(claim.keyword || keyword), savedAt: Date.now() };
       writePending(record);
@@ -5216,24 +5561,28 @@
       record.report = manualRecordBody(record, parsed, hello);
       writePending(record);
       // 화면이 잠겼으면(로그아웃 등) 남긴 결과를 다음에 화면을 열 때 보낸다.
-      if (owner !== state) return;
+      if (owner !== state) return { step: "gone" };
       // 5. 결과를 서버에 보낸다(차단 신호면 서버가 그날 중지를 건다). 받으면 확장에 ack 를 보낸다.
       manual.run.phase = "record";
       renderManual();
       var recorded = await postManualRecord(record.report, scope, owner);
-      if (owner !== state) return;
+      if (owner !== state) return { step: "gone" };
       // 응답 없음이면 서버가 이 확인을 잠시 '진행 중'으로 센다. 그동안 상태 줄이 '다른 확인'이라고 하지 않게 기억한다.
       if (parsed.outcome === "lost") manual.lost = { claimId: record.claimId, at: Date.now() };
-      settleManualRecord(recorded, parsed, record, "");
+      var outcome = settleManualRecord(recorded, parsed, record, "");
       // 확장이 '보고 안 된 앞 결과가 있다'며 시작하지 않았으면 그 결과를 바로 보낸다(차단 보고가 먼저).
       if (parsed.outcome === "not_started" && parsed.code === "report_pending" && parsed.held) {
         resumeManualPending({ status: "ok", busy: false, pending: parsed.held }).catch(function () {});
       }
       // 확장이 답 없이 멈췄으면 한 번 깨워 남은 시크릿 창을 정리하게 한다(캐시 무시).
       if (parsed.outcome === "lost") refreshHello(true).catch(function () {});
+      // 전체 확인이 이 결과로 다음 키워드로 갈지·멈출지 정한다(카드 한 번 누름에는 쓰지 않는다).
+      return { step: "record", outcome: parsed.outcome, final: manualRecordFinal(recorded), payload: recorded && recorded.payload || {}, stopped: outcome.stopped === true };
     }
 
     function runManualCheck(trackerId) {
+      // 전체 확인 중·준비 중(확인 창 전 목록 GET)에는 카드 '지금 확인'을 막는다(겹침 방지 — 버튼도 꺼져 있다).
+      if (state.manual.all || state.manual.allPreparing === true) return;
       startManualCheck(trackerId).catch(function () {
         if (state.destroyed) return;
         state.manual.run = null;
@@ -5243,11 +5592,524 @@
       });
     }
 
+    // ── 전체 확인(대표 승인 2026-10-24) ──
+    // 상태판 '전체 확인' → 확인 창 → 대기열(오늘 아직 확인 안 한 활성 상품의 키워드, 화면 차례, 오늘 남은 횟수만큼) →
+    // 키워드마다 startManualCheck 한 번(카드 한 번 누름과 같은 요청) → 서버 간격(nextAt) + 2초가 지나면 다음 키워드. 1초마다 절대 시각으로 다시 본다.
+
+    // 지금 대기열의 차례(1부터, 진행 중이거나 다음에 할 키워드).
+    function allNumber(queue) {
+      return Math.min(queue.index + 1, queue.items.length);
+    }
+
+    // 시작 전 판단: { reason(못 누르는 사유), plan, take, shortage, remaining, hint }
+    function allCheckInfo(view) {
+      var server = state.manual.server || {};
+      var plan = manualAllPlan(trackers(), todayKstValue());
+      var projected = manualProjected(server, manualNow());
+      var remaining = Math.max(0, projected.max - projected.used);
+      var cut = manualAllTake(plan, remaining);
+      var reason = manualAllBlock({
+        view: view, keywords: plan.items.length, remaining: remaining, busy: state.busy, cleanup: cleanupMode(),
+        running: Boolean(state.manual.run) || state.manual.resuming === true
+      });
+      return { reason: reason, plan: plan, take: cut.take, shortage: cut.shortage, remaining: remaining,
+        hintParts: reason ? [reason, ""] : manualAllHintParts(cut.take, cut.shortage, server) };
+    }
+
+    // 버튼 아래 작은 글. more(횟수 모자람)가 있으면 ' · '(따로 둔 칸)와 함께 덧붙인다 — 넓은 화면 오른쪽 칸(좁음)에서는 CSS 가 ' · '를 숨기고
+    // more 를 다음 줄로 내린다(줄 앞 '·' 없이). 글이 같으면 다시 쓰지 않는다(1초 초 세기마다 그린다).
+    function setAllHint(main, more) {
+      var node = shell.allHint;
+      var key = main + "\n" + (more || "");
+      if (node.getAttribute("data-coupang-rank-hint-key") === key) return;
+      node.setAttribute("data-coupang-rank-hint-key", key);
+      node.replaceChildren(document.createTextNode(main));
+      if (more) {
+        node.appendChild(el("span", { className: "mi-coupang-rank-all-hint-sep", text: " · " }));
+        node.appendChild(el("span", { className: "mi-coupang-rank-all-hint-more", text: more }));
+      }
+    }
+
+    // 상태판의 전체 확인 자리(버튼·작은 글·진행 줄·끝 요약). renderManual 이 부른다(1초 초 세기 포함).
+    // 버튼은 끌 때 disabled 대신 aria-disabled 를 쓴다: 키보드로 누른 '멈추기'가 '멈추는 중…'이 되거나, 대기열이 끝나 '전체 확인'이
+    // 사유(확인할 상품 없음 등)로 꺼질 때 포커스가 몸통으로 사라지지 않고 같은 버튼에 남는다. 꺼진 버튼의 누름은 onClick 이 받지 않는다.
+    // bannerShown: 그날 중지 띠(role=alert)가 보이는지 — 보이면 끝 요약은 같은 사유를 짧게(refText) 쓴다(두 번 보이거나 읽지 않게).
+    function renderManualAll(view, bannerShown) {
+      var manual = state.manual;
+      var queue = manual.all;
+      var allButton = shell.allButton;
+      shell.allBlock.hidden = !queue && !manualVisible();
+      var off = null;
+      if (queue) {
+        var stopping = queue.phase === "stopping";
+        allButton.setAttribute("data-coupang-rank-action", "manual-all-stop");
+        setText(allButton, stopping ? "멈추는 중…" : "멈추기");
+        var stopClass = "mi-button subtle mi-coupang-rank-all-button is-stop";
+        if (allButton.className !== stopClass) allButton.className = stopClass;
+        off = stopping;
+        allButton.setAttribute("title", "남은 키워드를 취소합니다(이미 진행 중인 1건은 끝까지 기록합니다)");
+        var waiting = allWaitingCount(queue);
+        // 옆 '지금 확인 끄기' 아래 글('누르면 바로 멈춥니다')처럼 누르면 생길 일을 쓴다(이미 취소된 일처럼 읽히지 않게).
+        setAllHint(stopping ? "진행 중인 1건은 끝까지 기록" : (waiting ? "누르면 남은 " + waiting + "개 취소" : "누르면 바로 멈춥니다"), "");
+        shell.allHint.classList.remove("is-warn");
+      } else if (manualVisible()) {
+        var preparing = manual.allPreparing === true;
+        var info = allCheckInfo(view);
+        allButton.setAttribute("data-coupang-rank-action", "manual-all-start");
+        setText(allButton, "전체 확인");
+        var startClass = "mi-button mi-coupang-rank-all-button";
+        if (allButton.className !== startClass) allButton.className = startClass;
+        off = preparing || Boolean(info.reason) || manual.toggling === true;
+        allButton.setAttribute("title", preparing
+          ? "서버에서 최신 목록을 받는 중입니다(받은 뒤 확인 창이 뜹니다)"
+          : (info.reason
+            ? "지금은 전체 확인을 할 수 없습니다: " + info.reason
+            : "오늘 아직 확인 안 한 상품을 키워드마다 한 번씩 차례로 확인합니다(누르면 확인 창이 뜹니다)"));
+        if (preparing) setAllHint("최신 목록을 받는 중…", "");
+        else setAllHint(info.hintParts[0], info.hintParts[1]);
+        shell.allHint.classList.toggle("is-warn", !preparing && !info.reason && info.shortage > 0);
+      }
+      if (off !== null) {
+        if (off) allButton.setAttribute("aria-disabled", "true");
+        else allButton.removeAttribute("aria-disabled");
+      }
+      // 진행 줄
+      shell.allProgress.hidden = !queue;
+      if (queue) {
+        var item = queue.items[Math.min(queue.index, queue.items.length - 1)] || null;
+        var step = "전체 확인 " + allNumber(queue) + " / " + queue.items.length + (item && item.keyword ? " · '" + item.keyword + "'" : "");
+        if (queue.phase === "stopping") step += " · 멈추는 중(진행 중인 1건은 끝까지 기록합니다)";
+        setText(shell.allStep, step);
+        setText(shell.allCountdown, allCountdownText(queue));
+      } else {
+        setText(shell.allStep, "");
+        setText(shell.allCountdown, "");
+      }
+      var summary = manual.allSummary;
+      shell.allSummary.hidden = Boolean(queue) || !summary;
+      setText(shell.allSummary, !queue && summary ? (bannerShown && summary.refText ? summary.refText : summary.text) : "");
+      shell.allSummary.classList.toggle("is-ok", Boolean(summary) && summary.tone === "is-ok");
+      shell.allSummary.classList.toggle("is-warn", Boolean(summary) && summary.tone === "is-warn");
+    }
+
+    // 진행 줄 뒤쪽(aria-live 밖): 다음 확인까지 남은 시간(상태판 '다음 확인'과 같은 서버 근거) · 확인 중 · 곧 시작.
+    function allCountdownText(queue) {
+      if (queue.phase === "run") return " · 확인 중";
+      if (queue.phase === "fetch") return " · 곧 시작";
+      if (queue.phase !== "wait") return "";
+      var server = state.manual.server || {};
+      var now = manualNow();
+      var projected = manualProjected(server, now);
+      if (projected.state === "gap" && projected.remainingMs > 0) return " · 다음 확인 " + countdownText(projected.remainingMs) + " 뒤";
+      if (projected.state === "busy") return " · 다른 확인이 끝나기를 기다리는 중";
+      return " · 곧 시작";
+    }
+
+    // 아직 할 차례가 남은 대기열 키워드 수(할 카드가 남은 것만 — 카드 '대기 n번째'와 같은 기준).
+    function allWaitingCount(queue) {
+      var due = allDueKeys();
+      var count = 0;
+      for (var index = queue.index; index < queue.items.length; index += 1) {
+        var item = queue.items[index];
+        if (item.status === "wait" && due[item.key]) count += 1;
+      }
+      return count;
+    }
+
+    // trackerIds: 고를 때 오늘 아직이던 이 키워드의 활성 카드(건너뛸 때 '다른 곳이 확인함 = 횟수를 씀'인지 가린다).
+    function allQueueItem(planItem) {
+      return { key: planItem.key, keyword: planItem.keyword, trackerIds: (planItem.trackerIds || []).slice(), status: "wait", gapRetried: false };
+    }
+
+    // '전체 확인' 누름: 확인 창을 띄우기 직전에 우리 서버 목록 GET 1번(화면 목록 요청과 같은 것)으로 최신 상태를 받아 다시 고른다
+    // (다른 탭·다른 PC가 그사이 확인한 상품을 대상에 넣지 않게 · 확인 창의 상품 수도 최신으로). 쿠팡 요청이 아니다.
+    function manualAllStart() {
+      var manual = state.manual;
+      if (manual.all || manual.allPreparing || state.destroyed || !manualVisible()) return;
+      // '멈추기' 두 번 누름 · Enter 누름 유지: 같은 자리가 막 '전체 확인'으로 바뀐 직후(1초)의 누름은 시작으로 받지 않는다.
+      // 막은 누름으로 그 1초를 늘리지 않는다(끝난 뒤 1초가 지나면 받는다 — 거듭 눌러도 계속 막히지 않게, 2026-10-24 재검사 3차).
+      // 누름 유지는 이 버튼 위 키 되풀이(keydown repeat) 바로 뒤의 누름을 받지 않는 것으로 막는다(다른 칸의 되풀이는 보지 않는다).
+      var now = Date.now();
+      var since = now - Number(manual.allEndedAt || 0);
+      var repeatAge = now - keyRepeatAt;
+      var repeated = keyRepeatAt > 0 && repeatAge >= 0 && repeatAge < MANUAL_ALL_KEY_REPEAT_MS;
+      if (repeated || (manual.allEndedAt && since >= 0 && since < MANUAL_ALL_RESTART_GUARD_MS)) return;
+      var info = allCheckInfo(currentManualView());
+      if (info.reason || !info.take) {
+        renderManual();
+        return;
+      }
+      var owner = state;
+      var startScope = currentScope();
+      manual.allPreparing = true;
+      // 준비 중(목록 GET)에 다른 메뉴로 옮기거나 화면이 잠기면(잠깐이라도) 받은 뒤 확인 창을 띄우지 않는다. 화면 칸 지켜보기가 적는다.
+      manual.allPrepareMoved = false;
+      renderManual();
+      loadList({ quiet: true }).then(function (loaded) { return loaded; }, function () { return false; }).then(function (loaded) {
+        if (owner !== state || state.destroyed) return;
+        manual.allPreparing = false;
+        // 받는 사이 대상 광고주가 바뀌었으면 시작하지 않는다(새 대상 화면에 옛 대상의 말을 남기지 않는다).
+        if (!sameScope(startScope)) {
+          renderManual();
+          return;
+        }
+        var moved = manual.allPrepareMoved === true || !isHostVisible();
+        manual.allPrepareMoved = false;
+        if (moved || loaded !== true) {
+          var why = moved ? "최신 목록을 받는 사이 화면을 옮겼습니다"
+            : (loaded === false ? manualAllListFailText(state.listFail, false) : "목록을 새로 받는 중이었습니다. 잠시 뒤 다시 눌러 주세요");
+          manual.allSummary = { text: "전체 확인을 시작하지 않았습니다: " + why + ". 쿠팡 검색은 하지 않았습니다.", tone: "is-warn", refText: "" };
+          renderManual();
+          return;
+        }
+        allBegin(Date.now());
+      });
+    }
+
+    // 받은 최신 목록으로 다시 골라 확인 창 → 대기열 시작. fetchedAt: 방금 받은 목록의 시각(확인 창을 바로 눌렀으면 첫 키워드는 다시 받지 않는다).
+    function allBegin(fetchedAt) {
+      var manual = state.manual;
+      renderManual();
+      // 다른 메뉴·잠긴 화면 위에는 확인 창을 띄우지 않는다.
+      if (manual.all || state.destroyed || !manualVisible() || !isHostVisible()) return;
+      var info = allCheckInfo(currentManualView());
+      if (info.reason || !info.take) return;
+      var server = manual.server || {};
+      var agreed = confirmAction(manualAllConfirmText({ plan: info.plan, take: info.take, shortage: info.shortage, remaining: info.remaining, server: server, now: manualNow() }));
+      if (!agreed || manual.all || state.destroyed || !manualVisible()) return;
+      var scope = currentScope();
+      manual.all = {
+        scopeKey: scope ? scope.key : "",
+        items: info.plan.items.slice(0, info.take).map(allQueueItem),
+        // 시작할 때 오늘 횟수가 모자라 뺀 키워드(화면 차례). 앞 키워드를 건너뛰면 그만큼 여기서 채운다.
+        spare: info.plan.items.slice(info.take).map(allQueueItem),
+        index: 0,
+        // wait(다음 건 기다림) · fetch(매 건 직전 목록 GET 중) · run(한 건 진행 중) · stopping(멈추기 — 진행 중인 1건만 끝까지)
+        phase: "wait",
+        // 간격 거절 응답의 retryAfterSec 로 정한 '이 시각 전에는 누르지 않음'(서버 시각 기준 ms, 0 = 없음)
+        notBefore: 0,
+        // 마지막으로 받은 최신 목록의 시각(내 시계 ms). 이 시각에서 MANUAL_ALL_FRESH_MS 안이면 다시 받지 않고 시작한다.
+        freshAt: fetchedAt || 0,
+        // 받은 목록이 '아직 기다려야 함'이라고 했으면 이 시각 전에는 목록을 다시 받지 않는다(내 시계 ms).
+        refetchAfter: 0,
+        resent: false,
+        checked: 0,
+        recorded: 0,
+        failed: 0,
+        skipped: 0,
+        stopReason: ""
+      };
+      manual.allSummary = null;
+      manual.note = { text: "", tone: "" };
+      renderAll();
+      allTick();
+    }
+
+    function scheduleAllTick() {
+      if (allTimer) clearTimeout(allTimer);
+      allTimer = setTimeout(function () {
+        allTimer = 0;
+        allTick();
+      }, MANUAL_ALL_TICK_MS);
+      if (allTimer && typeof allTimer.unref === "function") allTimer.unref();
+    }
+
+    function clearAllTimer() {
+      if (allTimer) {
+        clearTimeout(allTimer);
+        allTimer = 0;
+      }
+    }
+
+    // 다음 건 전에 대기열을 멈춰야 하는 화면 쪽 사유(화면 이동·잠김·대상 바뀜·지금 확인 꺼짐 등). 없으면 "".
+    function allInterruptText(queue) {
+      if (!isHostVisible()) return MANUAL_ALL_MOVED_TEXT;
+      var scope = currentScope();
+      if (!scope || scope.key !== queue.scopeKey) return "대상 광고주가 바뀌어 멈췄습니다";
+      if (!manualVisible()) {
+        var server = state.manual.server;
+        return server && server.state === "off" ? "지금 확인이 꺼져 멈췄습니다" : "지금 확인을 쓸 수 없는 상태가 되어 멈췄습니다";
+      }
+      if (cleanupMode()) return "정리용 화면이 되어 멈췄습니다";
+      return "";
+    }
+
+    // 이 키워드로 지금 확인할 카드(화면 차례로 첫 번째, 활성 · 오늘 아직). 없으면 null(일시중지·삭제·이미 오늘 확인 — 건너뛴다).
+    function allTrackerFor(key) {
+      var todayKst = todayKstValue();
+      if (!todayKst) return null;
+      var list = manualDisplayOrder(trackers());
+      for (var index = 0; index < list.length; index += 1) {
+        var tracker = list[index];
+        if (tracker.status === "active" && keywordKeyOf(tracker) === key && !checkedToday(tracker, todayKst)) return tracker;
+      }
+      return null;
+    }
+
+    // 오늘 남은 횟수(서버가 준 최신 값) 가운데 대기열에 남은(할 카드가 있는) 키워드가 쓰고도 남는 수.
+    function allSpareRoom(queue) {
+      var projected = manualProjected(state.manual.server || {}, manualNow());
+      var room = Math.max(0, projected.max - projected.used);
+      for (var index = queue.index; index < queue.items.length; index += 1) {
+        var item = queue.items[index];
+        if (item.status === "wait" && allTrackerFor(item.key)) room -= 1;
+      }
+      return room;
+    }
+
+    // 할 카드가 없는 키워드(일시중지·삭제·이미 오늘 확인)를 건너뛴다. 일시중지·삭제로 건너뛰면 그만큼 오늘 횟수가 남으므로, 시작할 때
+    // 횟수가 모자라 뺀 키워드(spare) 가운데 아직 할 카드가 남은 첫 키워드를 대기열 끝에 채운다(할 수 있는 만큼 — 하루 상한은 그대로 서버가 지킨다).
+    // 채울지는 서버가 준 최신 남은 횟수로만 정한다: 남은 횟수가 대기열에 남은 키워드 수보다 많을 때만 채운다(다른 탭·다른 PC가 확인해서 횟수를
+    // 썼으면 그 값에 이미 들어 있어 채우지 않고, 횟수를 쓰지 않은 기록으로 건너뛰었으면 남은 만큼 채운다, 2026-10-24 재검사 3차)
+    // (채운 키워드가 하루 상한에 걸려 '멈춤'으로 끝나지 않게 — 못 한 키워드는 끝 요약의 '오늘 횟수가 모자라 못 함'에 센다).
+    function allSkip(queue, item) {
+      item.status = "skipped";
+      queue.skipped += 1;
+      queue.index += 1;
+      if (allSpareRoom(queue) <= 0) return;
+      while (queue.spare.length) {
+        var spare = queue.spare.shift();
+        if (allTrackerFor(spare.key)) {
+          queue.items.push(spare);
+          break;
+        }
+      }
+    }
+
+    // 매 건 시작 직전에 대상을 다시 고른다. 할 카드가 없는 키워드는 건너뛴다.
+    function allNextPick(queue) {
+      while (queue.index < queue.items.length) {
+        var item = queue.items[queue.index];
+        var tracker = allTrackerFor(item.key);
+        if (tracker) return { item: item, tracker: tracker };
+        allSkip(queue, item);
+      }
+      return null;
+    }
+
+    // 다음 건을 지금 시작해도 되는지(화면 목록·서버 상태 기준). 반환: { end, reason, at } · { wait } · { item, tracker }
+    function allEvaluate(queue) {
+      var manual = state.manual;
+      var interrupt = allInterruptText(queue);
+      if (interrupt) return { end: true, reason: interrupt, at: queue.items[queue.index] || null };
+      var picked = allNextPick(queue);
+      if (!picked) return { end: true, reason: "", at: null };
+      var server = manual.server || {};
+      var now = manualNow();
+      var projected = manualProjected(server, now);
+      var serverStop = manualAllStateStopText(projected.state, server);
+      if (serverStop) return { end: true, reason: serverStop, at: picked.item };
+      var nextAt = Date.parse(server.nextAt);
+      var busyUntil = Date.parse(server.busyUntil);
+      var waiting = projected.state !== "ready" ||
+        (isFinite(nextAt) && now < nextAt + MANUAL_ALL_PAD_MS) ||
+        (isFinite(busyUntil) && now < busyUntil + MANUAL_ALL_PAD_MS) ||
+        (queue.notBefore > 0 && now < queue.notBefore) ||
+        Boolean(manual.run) || manual.resuming === true || state.busy;
+      if (waiting) return { wait: true };
+      return { item: picked.item, tracker: picked.tracker };
+    }
+
+    // 1초마다(그리고 시작·탭이 다시 보일 때) 부른다. 서버가 준 간격이 지났는지 절대 시각으로 다시 보고, 지났으면 우리 서버 목록을
+    // 한 번 새로 받아(allRefresh) 다시 고른 뒤에만 다음 건을 시작한다. 한 건 진행 중·목록을 받는 중에는 화면 이동·잠김만 지켜본다.
+    function allTick() {
+      clearAllTimer();
+      var manual = state.manual;
+      var queue = manual.all;
+      if (!queue || state.destroyed) return;
+      if (queue.phase === "run" || queue.phase === "fetch") {
+        // 다른 메뉴로 옮기거나 화면이 잠기면 대기열을 멈춘다(진행 중인 1건은 지금 확인 규칙대로 끝까지 기록하고, 다시 돌아와도 이어 가지 않는다).
+        if (!isHostVisible()) allStop(MANUAL_ALL_MOVED_TEXT);
+        else scheduleAllTick();
+        return;
+      }
+      if (queue.phase !== "wait") return;
+      var next = allEvaluate(queue);
+      if (next.end) {
+        allEnd(queue, next.reason, next.at);
+        return;
+      }
+      var now = Date.now();
+      if (next.wait || (queue.refetchAfter > 0 && now < queue.refetchAfter)) {
+        renderManual();
+        scheduleAllTick();
+        return;
+      }
+      var age = now - queue.freshAt;
+      if (queue.freshAt > 0 && age >= 0 && age < MANUAL_ALL_FRESH_MS) {
+        allStartItem(queue, next.item, next.tracker);
+        return;
+      }
+      allRefresh(queue);
+    }
+
+    // 매 건 시작 직전: 우리 서버 목록 GET 1번(화면 목록 요청과 같은 것)으로 최신 상태(다른 탭·다른 PC의 확인 · 서버 간격)를 받고 다시 본다.
+    // 받지 못하면 멈춘다(그대로 누르면 옛 목록으로 고르게 된다). 받은 목록이 아직 기다리라고 하면 기다렸다가 다시 받는다.
+    function allRefresh(queue) {
+      var owner = state;
+      queue.phase = "fetch";
+      renderManual();
+      scheduleAllTick();
+      loadList({ quiet: true }).then(function (loaded) { return loaded; }, function () { return false; }).then(function (loaded) {
+        if (owner !== state || state.destroyed || state.manual.all !== queue || queue.phase !== "fetch") return;
+        clearAllTimer();
+        queue.phase = "wait";
+        if (loaded === false) {
+          allEnd(queue, manualAllListFailText(state.listFail, true), queue.items[queue.index] || null);
+          return;
+        }
+        var next = loaded === true ? allEvaluate(queue) : { wait: true };
+        if (loaded === true) queue.freshAt = Date.now();
+        if (next.end) {
+          allEnd(queue, next.reason, next.at);
+          return;
+        }
+        if (next.wait) {
+          queue.refetchAfter = Date.now() + MANUAL_ALL_REFRESH_MIN_MS;
+          renderManual();
+          scheduleAllTick();
+          return;
+        }
+        allStartItem(queue, next.item, next.tracker);
+      });
+    }
+
+    function allStartItem(queue, item, tracker) {
+      var owner = state;
+      queue.phase = "run";
+      queue.notBefore = 0;
+      queue.freshAt = 0;
+      queue.refetchAfter = 0;
+      item.status = "run";
+      scheduleAllTick();
+      startManualCheck(tracker.id).then(function (result) {
+        allAfterRun(queue, item, result);
+      }, function () {
+        if (owner !== state || state.destroyed) return;
+        state.manual.run = null;
+        state.manual.resuming = false;
+        setStatus("지금 확인 중 화면 오류가 났습니다. 화면을 새로고침한 뒤 다시 눌러 주세요.", "is-warn");
+        allAfterRun(queue, item, { step: "error" });
+      });
+    }
+
+    // 한 건이 끝난 뒤: 기록 성공이면 다음 키워드, 간격 거절 1번째면 같은 키워드를 다시 기다림, 그 밖은 멈춤.
+    function allAfterRun(queue, item, result) {
+      var manual = state.manual;
+      if (manual.all !== queue || state.destroyed) return;
+      clearAllTimer();
+      var info = result || { step: "error" };
+      if (info.step === "gone") return;
+      var stopping = queue.phase === "stopping" ? (queue.stopReason || "멈추기를 눌러 멈췄습니다") : "";
+      queue.phase = "wait";
+      item.status = "wait";
+      var stop = "";
+      if (info.step === "record") {
+        var verdict = manualAllRecordVerdict(info);
+        queue.index += 1;
+        if (verdict.success) {
+          item.status = "done";
+          queue.checked += 1;
+          queue.recorded += verdict.matched;
+        } else {
+          item.status = "failed";
+          queue.failed += 1;
+          stop = verdict.reason;
+        }
+      } else if (info.step === "claim") {
+        if (info.code === "COUPANG_MANUAL_GAP" && !info.transport && !item.gapRetried) {
+          // 서버 간격으로 거절: 응답의 manual(nextAt)로 한 번만 다시 기다린다(쿠팡 검색 안 함 · 횟수 안 씀).
+          // 응답에 manual 이 없어도 서버가 준 남은 초(retryAfterSec)만큼은 기다린다. 다시 누르기 직전에 목록을 다시 받는다.
+          item.gapRetried = true;
+          if (isNum(info.retryAfterSec) && info.retryAfterSec > 0) queue.notBefore = manualNow() + info.retryAfterSec * 1000 + MANUAL_ALL_PAD_MS;
+        } else if (info.code === "COUPANG_MANUAL_TRACKER_PAUSED" || info.code === "COUPANG_TRACKER_NOT_FOUND") {
+          allSkip(queue, item);
+        } else {
+          stop = manualAllClaimStopText(info, manual.server);
+        }
+      } else if (info.step === "resend") {
+        if (info.ok && info.stopped) stop = MANUAL_ALL_BLOCKED_TEXT;
+        else if (info.ok && !queue.resent) queue.resent = true;
+        else stop = "앞서 보내지 못한 확인 결과를 먼저 보내지 못해 멈췄습니다(위 '직전 확인' 참고)";
+      } else if (info.step === "preflight") {
+        stop = "확장 확인이 필요해 멈췄습니다(위 '직전 확인' 참고)";
+      } else if (info.step !== "skip") {
+        stop = "화면 오류가 나 멈췄습니다. 화면을 새로고침해 주세요";
+      }
+      if (stop || stopping) {
+        allEnd(queue, stop || stopping, item);
+        return;
+      }
+      // 남은 키워드에 할 카드가 없으면(마지막까지 했거나 남은 것이 모두 건너뛸 것) 다음 재확인을 기다리지 않고 바로 끝낸다.
+      // 시작 직전에는 목록을 새로 받아 다시 고른다(allTick → allRefresh).
+      if (!allNextPick(queue)) {
+        allEnd(queue, "", null);
+        return;
+      }
+      renderManual();
+      scheduleAllTick();
+    }
+
+    // '멈추기' · '지금 확인 끄기' · 대상 바뀜 · 화면 이동: 남은 대기열을 바로 취소한다. 진행 중인 1건은 지금 확인 규칙대로 끝까지 가고,
+    // 끝나면 요약을 쓴다.
+    function allStop(reason) {
+      var queue = state.manual.all;
+      if (!queue || queue.phase === "stopping") return;
+      if (queue.phase === "run") {
+        clearAllTimer();
+        queue.phase = "stopping";
+        queue.stopReason = reason;
+        queue.items.forEach(function (item) { if (item.status === "wait") item.status = "canceled"; });
+        renderManual();
+        syncManualButtons(currentManualView());
+        return;
+      }
+      allEnd(queue, reason, queue.items[queue.index] || null);
+    }
+
+    function allEnd(queue, reason, atItem) {
+      var manual = state.manual;
+      if (manual.all !== queue) return;
+      clearAllTimer();
+      manual.all = null;
+      manual.allEndedAt = Date.now();
+      manual.allEndQuiet = true;
+      var left = 0;
+      queue.items.forEach(function (item) {
+        if (item.status === "wait" || item.status === "canceled") {
+          left += 1;
+          item.status = "canceled";
+        }
+      });
+      // 오늘 횟수가 모자라 못 한 키워드: 시작할 때 뺀 것 가운데 아직 할 카드가 남은 것만 센다(그사이 다른 탭이 했으면 빼고).
+      var due = allDueKeys();
+      var shortage = queue.spare.filter(function (item) { return due[item.key]; }).length;
+      var position = atItem ? queue.items.indexOf(atItem) : -1;
+      var input = {
+        reason: reason,
+        at: reason && position >= 0 ? { number: position + 1, keyword: atItem.keyword } : null,
+        total: queue.items.length,
+        checked: queue.checked,
+        recorded: queue.recorded,
+        failed: queue.failed,
+        skipped: queue.skipped,
+        left: left,
+        shortage: shortage
+      };
+      var summary = manualAllSummary(input);
+      // 차단(그날 중지)이면 위 띠(role=alert)가 같은 사유를 이미 보이고 읽는다 → 띠가 보이는 동안 요약은 짧은 말로 쓴다.
+      summary.refText = reason === MANUAL_ALL_BLOCKED_TEXT ? manualAllSummary(Object.assign({}, input, { reason: MANUAL_ALL_BLOCKED_REF })).text : "";
+      manual.allSummary = summary;
+      renderAll();
+    }
+
     // 상태판의 '지금 확인 끄기·켜기'. 결과·오류는 상태판 안 한 줄(aria-live)에 쓴다(자동 수집 패널 문구 자리와 섞지 않는다).
     async function manualToggle(enable) {
       var manual = state.manual;
       if (manual.toggling) return;
       var server = manual.server || {};
+      // 끄기는 전체 확인 대기열도 바로 멈춘다(진행 중인 1건은 끝까지 기록).
+      if (!enable && manual.all) allStop("지금 확인을 꺼서 멈췄습니다");
       if (enable) {
         var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
         var agreed = confirmAction("'지금 확인'을 켭니다.\n총관리자 카드에 '지금 확인' 버튼이 보이고, 누를 때만 이 크롬이 새 시크릿 창으로 쿠팡 검색을 한 번 합니다(검색 사이 " +
@@ -5332,7 +6194,7 @@
         ? "대표 SQL(지금 확인) 실행 전입니다"
         : (on ? manualExtensionText(hello).replace(/^확장:\s*/, "") : "지금 확인이 꺼져 있어 확장에 묻지 않습니다") + " · 확장 내려받기 · 설치 안내";
       section.replaceChildren();
-      section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다. 예약·자동 반복·전체 확인은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 그날 중지는 서버가 지킵니다." }));
+      section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다('전체 확인'도 누를 때만, 키워드마다 한 번씩 차례로). 예약·자동 반복은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 그날 중지는 서버가 지킵니다." }));
       var lines = [];
       if (setup) {
         lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 위 상태판에 켜기 버튼이 생깁니다.");
@@ -5382,7 +6244,8 @@
         return;
       }
       var node = target.closest("[data-coupang-rank-action]");
-      if (!node || !host.contains(node) || node.disabled) return;
+      // aria-disabled: 꺼도 포커스를 지키려고 disabled 대신 쓰는 버튼(전체 확인·멈추기). 누름은 받지 않는다.
+      if (!node || !host.contains(node) || node.disabled || node.getAttribute("aria-disabled") === "true") return;
       var action = node.getAttribute("data-coupang-rank-action");
       var id = node.getAttribute("data-coupang-rank-id") || "";
       switch (action) {
@@ -5462,6 +6325,12 @@
           return;
         case "manual-disable":
           manualToggle(false);
+          return;
+        case "manual-all-start":
+          manualAllStart();
+          return;
+        case "manual-all-stop":
+          allStop("멈추기를 눌러 멈췄습니다");
           return;
         case "manual-hello":
           setExtNote("확장 상태를 다시 확인하는 중입니다…", "");
@@ -5575,6 +6444,9 @@
 
     // 날짜 줄: 탭 정지는 한 칸뿐이고 화살표(←→)·Home·End 로 칸을 옮긴다(roving tabindex). Enter·Space 는 버튼 기본 동작(누름)이다.
     function onKeydown(event) {
+      // '전체 확인' 버튼 위에서 키를 누르고 있으면(되풀이) 그 시각을 적는다. 크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다(manualAllStart 가 본다).
+      // 다른 칸(검색칸 등)의 되풀이는 적지 않는다(그 직후 마우스 누름이 아무 표시 없이 무시되지 않게).
+      if (event && event.repeat === true && event.target && event.target.hasAttribute && event.target.hasAttribute("data-coupang-rank-all-button")) keyRepeatAt = Date.now();
       var target = event && event.target;
       if (!target || !target.hasAttribute || !target.hasAttribute("data-coupang-rank-day")) return;
       var key = event.key;
@@ -5627,13 +6499,22 @@
     var resizeTarget = typeof window !== "undefined" && window && typeof window.addEventListener === "function" ? window : null;
     if (resizeTarget) resizeTarget.addEventListener("resize", onResize);
 
-    if (observedRoot && typeof MutationObserver === "function") {
+    // 같은 지켜보기가 화면 칸(.mi-view)의 class 도 본다: 전체 확인 중 다른 메뉴로 옮기면(잠깐이라도) 바로 대기열을 멈춘다
+    // (1초 재확인을 기다리지 않는다 — 한 건 확인 중에 갔다가 그 건이 끝나기 전에 돌아와도 이어 가지 않게).
+    var observedView = host.closest ? host.closest(".mi-view") : null;
+    if ((observedRoot || observedView) && typeof MutationObserver === "function") {
       observer = new MutationObserver(function () {
-        var locked = observedRoot.classList.contains("is-locked");
-        if (locked && !wasLocked) reset();
-        wasLocked = locked;
+        if (observedRoot) {
+          var locked = observedRoot.classList.contains("is-locked");
+          if (locked && !wasLocked) reset();
+          wasLocked = locked;
+        }
+        if (!state.destroyed && state.manual.all && !isHostVisible()) allStop(MANUAL_ALL_MOVED_TEXT);
+        // 시작 직전 목록 GET 중(준비 중)이면 받은 뒤 확인 창을 띄우지 않게 적어 둔다(돌아와도 그대로 — 다시 누르면 된다).
+        if (!state.destroyed && state.manual.allPreparing === true && !isHostVisible()) state.manual.allPrepareMoved = true;
       });
-      observer.observe(observedRoot, { attributes: true, attributeFilter: ["class"] });
+      if (observedRoot) observer.observe(observedRoot, { attributes: true, attributeFilter: ["class"] });
+      if (observedView && observedView !== observedRoot) observer.observe(observedView, { attributes: true, attributeFilter: ["class"] });
     }
 
     // ── 카드 '다음' 남은 시간 다시 계산(N30 은 60초 건강 신호마다 순위판을 다시 그린다) ──
@@ -5697,6 +6578,9 @@
         return;
       }
       if (scope.key !== state.scopeKey) {
+        // 대상 광고주가 바뀌면 전체 확인을 멈춘다(요약은 남긴다). 대기열이 없으면 옛 대상의 요약을 지운다.
+        if (state.manual.all) allStop("대상 광고주가 바뀌어 멈췄습니다");
+        else state.manual.allSummary = null;
         state.scopeKey = scope.key;
         state.payload = null;
         state.partial = false;
@@ -5743,6 +6627,7 @@
       stopOwnerPoll();
       stopNextTicker();
       stopManualTicker();
+      clearAllTimer();
       clearTimeout(searchTimer);
       clearTimeout(resizeTimer);
       if (dockObserver) {
@@ -5820,6 +6705,19 @@
       // ① 지금 확인
       manualView: manualView,
       manualBoardModel: manualBoardModel,
+      // 전체 확인
+      manualAllPlan: manualAllPlan,
+      manualAllBlock: manualAllBlock,
+      manualAllTake: manualAllTake,
+      manualAllHint: manualAllHint,
+      manualAllHintParts: manualAllHintParts,
+      manualAllListFailText: manualAllListFailText,
+      manualAllConfirmText: manualAllConfirmText,
+      manualAllStateStopText: manualAllStateStopText,
+      manualAllClaimStopText: manualAllClaimStopText,
+      manualAllRecordVerdict: manualAllRecordVerdict,
+      manualAllSummary: manualAllSummary,
+      manualDisplayOrder: manualDisplayOrder,
       manualOffLine: manualOffLine,
       manualButtonLabel: manualButtonLabel,
       manualCardNote: manualCardNote,

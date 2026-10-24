@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   ERROR_HTTP_STATUS,
   MANUAL_CLAIM_TTL_SECONDS,
+  MANUAL_DIAGNOSTICS_MAX_BYTES,
   MANUAL_EXTENSION_FOLDER,
   MANUAL_EXTENSION_ID,
   MANUAL_EXTENSION_VERSION,
@@ -24,6 +25,7 @@ import {
   hasManualColumns,
   isManualToken,
   manualChangedParams,
+  manualDiagnostics,
   manualNavigatedFinalPath,
   manualPayload,
   manualRecordStopCode,
@@ -227,4 +229,43 @@ test("수동 칸 감지·모듈 경계: manual_enabled 열이 있을 때만, imp
   assert.deepEqual(imports, ["./contract.mjs", "./inputs.mjs", "./page-result.mjs", "node:crypto"]);
   assert.equal(/Date\.now\(|new Date\(/.test(SOURCE), false, "시간 판정은 SQL(서버 시계)만 한다");
   assert.equal(SOURCE.includes("naver_"), false);
+});
+
+// ── 확장 1.0.1 실패 진단 ──
+const DIAG = Object.freeze({
+  v: 1, ext: "1.0.1", ok: false, code: "extract_failed",
+  ms: { verified: 410, nav: 520, load: 1630, measureStart: 1710, measureEnd: 2950, end: 3010 },
+  load: { how: "complete", loading: 2, complete: 2, urls: 1, completeAt: [1625, 2930] },
+  retry: { tried: false, skip: "not_search" },
+  tries: [{ kind: "no_result" }],
+  doc: { nav: "reload", ready: "complete", title: "제목", bodyLen: 10, bodyHead: "본문", units: 0, links: 0, blocked: false, hidden: false },
+});
+
+test("manualDiagnostics: page.diagnostics(또는 맨 위 diagnostics)를 모양·크기 검사 뒤 새 객체로, 아니면 null", () => {
+  const fromPage = manualDiagnostics({ page: { diagnostics: DIAG } });
+  assert.deepEqual(fromPage, DIAG);
+  assert.notEqual(fromPage, DIAG, "새 객체");
+  assert.deepEqual(manualDiagnostics({ diagnostics: { ...DIAG, code: "page_timeout" }, page: { diagnostics: DIAG } }).code, "page_timeout", "맨 위가 먼저");
+  assert.equal(manualDiagnostics({ diagnostics: null, page: { diagnostics: DIAG } }), null, "맨 위가 있으면(null 이어도) 그것만 본다");
+  for (const body of [null, "x", {}, { page: null }, { page: { diagnostics: [DIAG] } }, { page: { diagnostics: "x" } }]) {
+    assert.equal(manualDiagnostics(body), null, JSON.stringify(body));
+  }
+  const bad = [
+    { ...DIAG, v: 2 }, { ...DIAG, v: "1" }, { ...DIAG, ext: "v1.0.1" }, { ...DIAG, ext: undefined }, { ...DIAG, other: 1 }, { ...DIAG, __proto__x: 1 },
+    { ...DIAG, unexpected: "가".repeat(201) }, { ...DIAG, unexpected: "a\nb" }, { ...DIAG, unexpected: "\udc00" },
+    { ...DIAG, ms: { ...DIAG.ms, end: Infinity } }, { ...DIAG, ms: { ...DIAG.ms, end: -2e9 } }, { ...DIAG, ms: { "1bad": 1 } }, { ...DIAG, ms: { ["k".repeat(33)]: 1 } },
+    { ...DIAG, load: { ...DIAG.load, completeAt: Array.from({ length: 11 }, () => 1) } },
+    { ...DIAG, doc: { a: { b: { c: 1 } } } }, { ...DIAG, doc: Object.fromEntries(Array.from({ length: 25 }, (_, index) => [`k${index}`, 1])) },
+    { ...DIAG, tries: Array.from({ length: 10 }, () => ({ kind: "rejected", msg: "가".repeat(200) })) },
+  ];
+  for (const diagnostics of bad) assert.equal(manualDiagnostics({ page: { diagnostics } }), null, JSON.stringify(diagnostics).slice(0, 80));
+  // 크기: 4KB 경계(UTF-8 바이트)
+  const base = JSON.stringify({ ...DIAG, unexpected: "" });
+  const room = MANUAL_DIAGNOSTICS_MAX_BYTES - Buffer.byteLength(base, "utf8");
+  const fill = (bytes) => ({ ...DIAG, unexpected: "a".repeat(Math.min(200, bytes)), tries: [{ kind: "x", msg: "a".repeat(Math.max(0, Math.min(200, bytes - 200))) }] });
+  assert.ok(room > 0);
+  assert.notEqual(manualDiagnostics({ page: { diagnostics: fill(300) } }), null);
+  const huge = { ...DIAG, tries: Array.from({ length: 8 }, () => ({ kind: "rejected", msg: "가".repeat(200) })) };
+  assert.ok(Buffer.byteLength(JSON.stringify(huge), "utf8") > MANUAL_DIAGNOSTICS_MAX_BYTES);
+  assert.equal(manualDiagnostics({ page: { diagnostics: huge } }), null);
 });

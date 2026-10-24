@@ -153,7 +153,7 @@ test("hello: 버전·시크릿 허용·사이트 액세스·다른 시크릿 창
   assert.deepEqual(await send(background, { type: "mi-coupang-hello" }), {
     ok: true,
     type: "hello",
-    version: "1.0.0",
+    version: "1.0.1",
     incognitoAllowed: true,
     hostAccess: true,
     incognitoWindowOpen: false,
@@ -268,7 +268,7 @@ test("서버 확인: 빈 시크릿 창 검사 뒤·쿠팡 주소를 넣기 전�
   assert.equal(init.redirect, "error");
   assert.equal(init.referrerPolicy, "no-referrer");
   assert.equal(init.headers["x-mi-coupang-claim-token"], CLAIM_TOKEN);
-  assert.equal(init.headers["x-mi-coupang-check"], "1.0.0");
+  assert.equal(init.headers["x-mi-coupang-check"], "1.0.1");
   assert.equal(init.body, undefined);
   // 빈 창(쿠팡 요청 0) → 다른 시크릿 창 검사 → 서버 확인 → 그 탭만 쿠팡으로(지난 검토: 확인을 먼저 하면 창을 못 열 때 1번을 헛되이 씀)
   const order = fake.log.filter((name) => ["fetch", "windows.create", "windows.getAll", "tabs.update"].includes(name));
@@ -417,7 +417,7 @@ test("정상: measured 답 모양·page 칸·창 닫음·보고 대기 저장(�
     "browser", "claimId", "durationMs", "extensionVersion", "keyword", "ok", "outcome", "page", "stopReason", "stopReported", "stopSignal", "windowLeftOpen",
   ].sort());
   assert.equal(reply.claimId, CLAIM_ID);
-  assert.equal(reply.extensionVersion, "1.0.0");
+  assert.equal(reply.extensionVersion, "1.0.1");
   assert.equal(reply.browser, "chrome 141");
   assert.equal(reply.windowLeftOpen, false);
   assert.equal(reply.stopSignal, false);

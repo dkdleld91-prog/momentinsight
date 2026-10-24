@@ -7,23 +7,24 @@
 //   → 4) 서버 확인(GET manual-verify: 토큰·기한·상태·전역 간격을 서버 시각으로 판정, 이 요청을 '검색함'으로 한 번만 표시)
 //      — 창을 못 열거나 검사에서 멈추면 서버 확인 전이라 횟수·간격을 쓰지 않는다
 //   → 5) 확인을 받은 뒤에만 창을 앞으로 가져오고(windows.update focused) 그 탭만 서버가 준 검색어의 쿠팡 검색 1쪽으로
-//   → 6) 읽기 → 7) 창 닫기(항상)
+//   → 6) 읽기(1.0.1: 결과 없이 끝나면 탭이 그대로 같은 검색 1쪽일 때만 load 를 다시 기다려 1번 더 읽음 — 새 검색 없음) → 7) 창 닫기(항상)
 //   → 8) 차단 신호면 서버에 바로 '그날 중지'(GET manual-stop, 실패하면 같은 실행 안에서 0·3·10초에 다시)
 //   → 9) 결과를 storage.local 에 남기고 화면에 답
 //      (화면이 manual-record 로 서버에 보낸 뒤 ack 할 때까지. 탭이 닫혀도 다음 hello 가 다시 준다).
 // 사람이 첫 읽기 전에 창을 닫아도 차단 신호를 잃지 않게, 불러오는 동안(load 확인)·불러온 직후(짧은 읽기 1번)에 본
 // HTTP 상태·차단 문구·주소를 실행 기록에 남겨 그 값으로 결과를 만든다.
 // 창을 연 뒤에는 상품을 누르지 않고 입력하지 않는다. 스크롤은 수집기와 같은 범위만 한다.
+// 1.0.1: 어느 길로 끝나든 결과 page.diagnostics 에 짧은 진단(단계별 경과·load 횟수·쪽 함수 결과 종류·쪽 모양 요약·재시도)을 싣는다.
 import {
-  ACTIVE_STALE_MS, BLOCKED_HTTP_STATUSES, CLOSE_TIMEOUT_MS, COUPANG_ORIGIN_PATTERN, EXTENSION_REPORTED_STOP, EXTENSION_VERSION,
-  EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
+  ACTIVE_STALE_MS, BLOCKED_HTTP_STATUSES, CLOSE_TIMEOUT_MS, COUPANG_ORIGIN_PATTERN, DIAG_COMPLETE_TIMES_MAX, EXTENSION_REPORTED_STOP, EXTENSION_VERSION,
+  EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, MEASURE_RETRY_MAX, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
   READ_GAP_MS, RESULT_RESEND_MS, SCROLL_COUNT, SCROLL_GAP_MS, SCROLL_PIXELS, SEARCH_HOST, SEARCH_PATH, SERVER_ORIGIN_PATTERN,
   SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
   browserLabel, changedParamNames, cleanChangedParams, isAllowedSender, isUuid, kstDayOf, parseMessage, reportStop, searchAddressOf,
   searchKeyOf, searchUrl, splitAddress, verifyClaim,
 } from "./lib/protocol.js";
 import { miCoupangMeasure, miCoupangProbe } from "./lib/measure.js";
-import { assemblePage, stopReasonOf } from "./lib/assemble.js";
+import { assemblePage, buildDiagnostics, stopReasonOf } from "./lib/assemble.js";
 
 export const DEFAULT_TIMING = Object.freeze({
   loadTimeoutMs: LOAD_TIMEOUT_MS,
@@ -58,6 +59,16 @@ class StopError extends Error {
   }
 }
 
+// 진단용 오류 문구(다듬기·200자 자르기는 buildDiagnostics 가 한다). 문구를 못 읽으면 빈 글.
+function errorMessage(error) {
+  try {
+    if (error && typeof error === "object" && typeof error.message === "string") return error.message;
+    return error === undefined || error === null ? "" : String(error);
+  } catch {
+    return "";
+  }
+}
+
 // 주소가 서버가 준 검색어의 쿠팡 검색 1쪽이고, 쿼리 값 전부(근거로 확인된 쿠팡 추적 꼬리만 빼고 — 지금은 없음)가
 // 측정 시작 때와 같은지(baselineKey = 그때 주소의 searchParamsKey, 없으면 확장이 연 ?q= 주소). 규칙은 lib/protocol.js searchParamsKey 설명.
 export function isSearchAddress(url, keyword, baselineKey = null) {
@@ -78,6 +89,10 @@ export function createBackground(chromeApi, deps = {}) {
     clearInterval: (id) => clearInterval(id),
   };
   const now = typeof deps.now === "function" ? deps.now : () => Date.now();
+  // 진단 경과 ms 용 시계(맥 시계가 바뀌어도 거꾸로 가지 않는 것). 날짜·간격 판정에는 쓰지 않는다(그것은 now).
+  const mono = typeof deps.monoNow === "function"
+    ? deps.monoNow
+    : () => (globalThis.performance && typeof globalThis.performance.now === "function" ? globalThis.performance.now() : Date.now());
   const fetchImpl = typeof deps.fetch === "function" ? deps.fetch : (url, init) => globalThis.fetch(url, init);
   const browser = browserLabel(typeof deps.uaText === "string" ? deps.uaText : globalThis.navigator?.userAgent);
   const serverOptions = { version: EXTENSION_VERSION, timeoutMs: t.serverTimeoutMs, timers };
@@ -360,6 +375,20 @@ export function createBackground(chromeApi, deps = {}) {
   // 창 하나의 수명: 120초 상한, 사람이 닫음, 15초마다 깨우기, 측정 중 주소 바뀜 표시, 본 차단 신호 기록.
   function createRun(windowId) {
     let stopCode = null;
+    // 진단(1.0.1): 경과 ms 는 이 실행(빈 창을 연 직후)부터 잰다.
+    const startedMono = mono();
+    const elapsed = () => mono() - startedMono;
+    const diag = {
+      ms: {},
+      load: { how: null, loading: 0, complete: 0, urls: 0, completeAt: [] },
+      tries: [],
+      doc: null,
+      firstDoc: null,
+      retry: { tried: false },
+      unexpected: null,
+    };
+    // 측정 중 탭 주소가 기준과 다른 주소로 바뀐 것을 봤는지(주소 없이 다시 불러오기만 한 것은 아님 — 재시도 판정용).
+    let addressChanged = false;
     let windowGone = false;
     let tabId = null;
     let keyword = null;
@@ -410,11 +439,23 @@ export function createBackground(chromeApi, deps = {}) {
         if (!changedNames.includes(name)) changedNames.push(name);
       }
     };
+    // 쿠팡 주소를 넣은 뒤 탭의 load 사건 수(loading → complete 가 되풀이되면 쪽이 스스로 다시 불러온 것)와 complete 시각.
+    const countLoadEvent = (info) => {
+      if (info.status === "loading") diag.load.loading += 1;
+      if (info.status === "complete") {
+        diag.load.complete += 1;
+        if (diag.load.completeAt.length < DIAG_COMPLETE_TIMES_MAX) diag.load.completeAt.push(elapsed());
+      }
+      if (typeof info.url === "string") diag.load.urls += 1;
+    };
     const onTabUpdated = (id, info) => {
-      if (tabId === null || id !== tabId || !measuring || !info) return;
+      if (tabId === null || id !== tabId || !info) return;
+      if (navigationIssued) countLoadEvent(info);
+      if (!measuring) return;
       if (typeof info.url === "string") {
         if (!isSearchAddress(info.url, keyword, baselineKey)) {
           navigatedDuringMeasure = true;
+          addressChanged = true;
           noteChangedAddress(info.url);
         }
         return;
@@ -438,6 +479,33 @@ export function createBackground(chromeApi, deps = {}) {
       get navigationIssued() { return navigationIssued; },
       get navigationStarted() { return navigationStarted; },
       get unreadable() { return seen.unreadable; },
+      get addressChanged() { return addressChanged; },
+      get baselineKey() { return baselineKey; },
+      // ── 진단 기록 ──
+      mark(name) { diag.ms[name] = elapsed(); },
+      noteLoad(how) { diag.load.how = typeof how === "string" ? how : null; },
+      noteTry(kind, message = null) { diag.tries.push({ kind, msg: message }); },
+      noteDoc(doc) {
+        if (!doc || typeof doc !== "object") return;
+        diag.doc = doc;
+        if (!diag.firstDoc) diag.firstDoc = doc;
+      },
+      setRetry(patch) { Object.assign(diag.retry, patch); },
+      noteUnexpected(error) { diag.unexpected = errorMessage(error); },
+      diagnostics(page) {
+        return buildDiagnostics({
+          version: EXTENSION_VERSION,
+          page,
+          ms: diag.ms,
+          load: diag.load,
+          tries: diag.tries,
+          doc: diag.doc,
+          firstDoc: diag.firstDoc,
+          retry: diag.retry,
+          hidden: diag.doc?.hidden === true,
+          unexpected: diag.unexpected,
+        });
+      },
       markNavigationIssued() { navigationIssued = true; },
       markNavigationStarted() { navigationStarted = true; },
       watchTab(id, searchKeyword) {
@@ -445,12 +513,15 @@ export function createBackground(chromeApi, deps = {}) {
         keyword = searchKeyword;
       },
       // 측정 시작 때(value=true) 탭 주소가 같은 검색어의 쿠팡 검색 1쪽이면 그 쿼리 값을 기준으로 삼는다(아니면 확장이 연 ?q= 주소).
+      // 측정마다 '측정 중 다시 불러옴' 표시를 새로 센다: 1번 더 읽기는 탭이 같은 검색 1쪽이고 다른 주소로 바뀐 것을 보지 않았을 때만
+      // 하므로, 첫 측정 중 본 같은 주소 다시 불러오기가 두 번째 측정의 판정(user_navigated)으로 넘어가지 않게 한다.
       setMeasuring(value, startUrl) {
         if (value === true) {
           const start = searchAddressOf(startUrl);
           const base = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start : searchAddressOf(searchUrl(keyword));
           baselineKey = base ? base.key : searchKeyOf(keyword);
           baselinePairs = base ? base.pairs : null;
+          navigatedDuringMeasure = false;
         }
         measuring = value;
       },
@@ -567,7 +638,8 @@ export function createBackground(chromeApi, deps = {}) {
   }
 
   // 짧은 읽기 1번(기다림·스크롤 없음). 읽으면 그 결과, 못 읽으면 탭 주소만. 어느 쪽이든 실행 기록에 남긴다.
-  async function quickRead(run, tabId) {
+  // label = 진단 경과 이름(불러온 직후 quick · 재시도 전 retryQuick · 시간 초과·상한 때 timeoutQuick·capQuick).
+  async function quickRead(run, tabId, label = "quick") {
     try {
       const results = await withTimeout(c.scripting.executeScript({
         target: { tabId }, func: miCoupangMeasure, args: [{ ...measureOptions, quick: true }], injectImmediately: true,
@@ -575,6 +647,8 @@ export function createBackground(chromeApi, deps = {}) {
       const raw = Array.isArray(results) ? results[0]?.result : null;
       if (raw && typeof raw === "object") {
         run.noteRead(raw);
+        run.noteDoc(raw.doc);
+        run.mark(label);
         return raw;
       }
     } catch {
@@ -582,6 +656,7 @@ export function createBackground(chromeApi, deps = {}) {
     }
     const address = await tabAddress(tabId);
     noteAddress(run, address);
+    run.mark(label);
     return null;
   }
 
@@ -591,6 +666,77 @@ export function createBackground(chromeApi, deps = {}) {
     return assemblePage(run.signals(), { errorCode: run.unreadable ? UNREADABLE_ERROR_CODE : errorCode });
   }
 
+  // 측정 1번(쪽 함수 실행). executeScript 결과 종류를 진단에 남긴다(결과 있음·이동·쪽 안 예외 / 결과 없음 / 넣지 못함).
+  // 돌려주는 값: { raw }(쪽 함수 결과 객체) 또는 { raw: null, rejected }(결과 없음 = rejected false, 넣지 못함 = true).
+  // 결과 객체를 읽다 생긴 예외는 잡지 않는다(지금처럼 예기치 못한 오류 → extract_failed).
+  async function measureOnce(run, tabId, label) {
+    const startAddress = await tabAddress(tabId);
+    run.setMeasuring(true, startAddress.url);
+    run.mark(`${label}Start`);
+    let results;
+    try {
+      results = await run.guard(c.scripting.executeScript({ target: { tabId }, func: miCoupangMeasure, args: [measureOptions] }));
+    } catch (error) {
+      if (error instanceof StopError) throw error;
+      run.noteTry("rejected", errorMessage(error));
+      return { raw: null, rejected: true };
+    } finally {
+      run.setMeasuring(false);
+      run.mark(`${label}End`);
+    }
+    const raw = Array.isArray(results) ? results[0]?.result : null;
+    if (!raw || typeof raw !== "object") {
+      run.noteTry("no_result");
+      return { raw: null, rejected: false };
+    }
+    const extractError = raw.extractError === true;
+    run.noteDoc(raw.doc);
+    run.noteTry(extractError ? "extract_error" : raw.navigated === true ? "navigated" : "ok", extractError ? raw.error : null);
+    return { raw, rejected: false };
+  }
+
+  // 한 번 더 읽을지(1.0.1). 읽지 않을 이유가 있으면 그 이름, 읽어도 되면 null.
+  // 차단 신호를 이미 봤거나(그날 중지가 먼저)·탭이 없거나·측정 중 주소가 다른 주소로 바뀌었거나(사람이 옮김)·
+  // 지금 탭이 측정 시작 때와 같은 검색 1쪽(같은 q·같은 쿼리 값)이 아니면 읽지 않는다.
+  async function retrySkipReason(run, tabId, keyword, attempt) {
+    if (attempt.raw && stopReasonOf(assemblePage(attempt.raw))) return "blocked";
+    if (stopReasonOf(assemblePage(run.signals()))) return "blocked";
+    const address = await tabAddress(tabId);
+    if (!address.exists) return "tab_gone";
+    if (run.addressChanged) return "address_changed";
+    if (!isSearchAddress(address.url, keyword, run.baselineKey)) return "not_search";
+    return null;
+  }
+
+  // 한 번 더 읽기 전: 탭이 다시 불러오는 중이면 load complete(또는 쪽 안 readyState complete)를 기다린다
+  // (첫 load 와 같은 45초, 전체 120초 상한 안). 이미 다 불러왔으면 바로("already"). 탭 주소는 다시 넣지 않는다.
+  async function waitReload(run, tabId) {
+    let status = "";
+    try {
+      const tab = await run.guard(c.tabs.get(tabId));
+      status = typeof tab?.status === "string" ? tab.status : "";
+    } catch (error) {
+      if (error instanceof StopError) throw error;
+      status = "";
+    }
+    if (status !== "loading") return "already";
+    const loader = startLoadWatch(run, tabId);
+    loader.markStarted();
+    try {
+      return await loader.wait();
+    } finally {
+      loader.cancel();
+    }
+  }
+
+  // 측정 결과 → page. 결과가 없으면 지금처럼 탭 주소로 원인을 가린다(결과 없음 + 검색 쪽 = extract_failed).
+  async function attemptPage(run, tabId, attempt) {
+    if (attempt.raw) return assemblePage(attempt.raw);
+    const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
+    const code = !attempt.rejected && failure.errorCode === "page_load_failed" ? "extract_failed" : failure.errorCode;
+    return assemblePage(run.signals(failureSignals(run, failure)), { errorCode: code });
+  }
+
   async function measureTab(run, tabId, keyword) {
     const loader = startLoadWatch(run, tabId);
     try {
@@ -598,14 +744,17 @@ export function createBackground(chromeApi, deps = {}) {
         run.markNavigationIssued();
         const updated = await run.guard(c.tabs.update(tabId, { url: searchUrl(keyword) }));
         run.markNavigationStarted();
+        run.mark("nav");
         if (updated && (updated.status === "loading" || typeof updated.pendingUrl === "string")) loader.markStarted();
       } catch (error) {
         if (error instanceof StopError) throw error;
         return { notStarted: "window_create_failed" };
       }
       const how = await loader.wait();
+      run.noteLoad(how);
+      run.mark("load");
       if (how === "timeout") {
-        await quickRead(run, tabId);
+        await quickRead(run, tabId, "timeoutQuick");
         return { page: unfinishedPage(run, "page_timeout") };
       }
       // 불러온 직후 한 번 짧게 읽어 차단 신호를 남긴다(사람이 첫 읽기 전에 창을 닫아도 그날 중지가 걸리게).
@@ -615,26 +764,38 @@ export function createBackground(chromeApi, deps = {}) {
         const firstPage = assemblePage(first);
         if (firstPage.status === "blocked") return { page: firstPage };
       }
-      let results;
       // 측정 시작 때의 탭 주소를 기준으로 그 뒤 주소 바뀜(경로·쿼리 값 전부)을 본다. 쪽 함수도 자기 시작 때와 비교한다.
-      const startAddress = await tabAddress(tabId);
-      run.setMeasuring(true, startAddress.url);
-      try {
-        results = await run.guard(c.scripting.executeScript({ target: { tabId }, func: miCoupangMeasure, args: [measureOptions] }));
-      } catch (error) {
-        if (error instanceof StopError) throw error;
-        const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
-        return { page: assemblePage(run.signals(failureSignals(run, failure)), { errorCode: failure.errorCode }) };
-      } finally {
-        run.setMeasuring(false);
+      let attempt = await measureOnce(run, tabId, "measure");
+      // 1.0.1: 결과 없이 끝났거나(넣지 못함 포함) 쪽 안 예외면, 탭이 그대로 같은 검색 1쪽일 때만 1번 더 읽는다.
+      // 쿠팡 주소는 다시 넣지 않는다(새 검색 없음). 다시 불러오는 중이면 load 를 기다리고, 짧은 읽기로 차단을 먼저 본다.
+      for (let retries = 0; retries < MEASURE_RETRY_MAX && (!attempt.raw || attempt.raw.extractError === true); retries += 1) {
+        const skip = await retrySkipReason(run, tabId, keyword, attempt);
+        if (skip) {
+          run.setRetry({ tried: false, skip });
+          break;
+        }
+        run.setRetry({ tried: true });
+        run.mark("retryStart");
+        const reloaded = await waitReload(run, tabId);
+        run.setRetry({ load: reloaded });
+        run.mark("retryLoad");
+        if (reloaded === "timeout") {
+          await quickRead(run, tabId, "retryQuick");
+          run.setRetry({ result: "timeout" });
+          return { page: unfinishedPage(run, "page_timeout") };
+        }
+        const again = await quickRead(run, tabId, "retryQuick");
+        if (again) {
+          const againPage = assemblePage(again);
+          if (againPage.status === "blocked") {
+            run.setRetry({ result: "blocked" });
+            return { page: againPage };
+          }
+        }
+        attempt = await measureOnce(run, tabId, "retryMeasure");
+        run.setRetry({ result: attempt.raw && attempt.raw.extractError !== true ? "measured" : "failed" });
       }
-      const raw = Array.isArray(results) ? results[0]?.result : null;
-      if (!raw || typeof raw !== "object") {
-        const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
-        const code = failure.errorCode === "page_load_failed" ? "extract_failed" : failure.errorCode;
-        return { page: assemblePage(run.signals(failureSignals(run, failure)), { errorCode: code }) };
-      }
-      return { page: assemblePage(raw) };
+      return { page: await attemptPage(run, tabId, attempt) };
     } finally {
       loader.cancel();
     }
@@ -723,6 +884,7 @@ export function createBackground(chromeApi, deps = {}) {
         } else if (run.stopCode) {
           result = { notStarted: "window_closed_early" };
         } else {
+          run.mark("verified");
           const verifiedAtLocal = now();
           if (Number.isFinite(verified.serverTimeMs)) await save({ serverOffsetMs: verified.serverTimeMs - verifiedAtLocal });
           serverDay = kstDayOf(Number.isFinite(verified.serverTimeMs) ? verified.serverTimeMs : verifiedAtLocal);
@@ -733,14 +895,17 @@ export function createBackground(chromeApi, deps = {}) {
             result = await measureTab(run, tabId, keyword);
           } catch (error) {
             if (!(error instanceof StopError)) throw error;
-            if (error.code === "browser_hard_cap" && !run.windowGone) await quickRead(run, tabId);
+            if (error.code === "browser_hard_cap" && !run.windowGone) await quickRead(run, tabId, "capQuick");
             result = { page: unfinishedPage(run, error.code === "browser_hard_cap" ? "browser_hard_cap" : "window_closed") };
           }
         }
       }
     } catch (error) {
       if (error instanceof StopError) result = { notStarted: error.code === "window_closed" ? "window_closed_early" : "window_create_failed" };
-      else unexpected = error;
+      else {
+        unexpected = error;
+        run.noteUnexpected(error);
+      }
     } finally {
       run.dispose();
     }
@@ -754,6 +919,13 @@ export function createBackground(chromeApi, deps = {}) {
     if (result.notStarted) return notStarted(result.notStarted, claimId, { ...(result.detail || {}), windowLeftOpen: closed.leftOpen });
 
     const page = result.page;
+    // 진단(1.0.1): 어느 길로 끝났든 결과에 싣는다. 만들다 실패해도 결과는 그대로 보낸다(진단만 빠짐).
+    run.mark("end");
+    try {
+      page.diagnostics = run.diagnostics(page);
+    } catch {
+      // 진단 없이 보낸다.
+    }
     const durationMs = Math.max(0, Math.min(DURATION_MAX_MS, now() - startedAt));
     const stopReason = stopReasonOf(page);
     const reply = {

@@ -2,7 +2,7 @@
 // 이 파일은 크롬 서비스 워커와 Node 테스트가 함께 읽는다(ESM). 크롬 API 는 쓰지 않는다.
 // 서버 요청은 이 파일의 serverGet 한 곳뿐이다(정적 테스트). 쿠팡에는 fetch 하지 않는다(창을 열어 읽기만).
 
-export const EXTENSION_VERSION = "1.0.0"; // manifest.json version 과 같아야 한다(테스트)
+export const EXTENSION_VERSION = "1.0.1"; // manifest.json version 과 같아야 한다(테스트)
 
 // ── 보내는 쪽(관리자 화면)과 서버 ──
 export const PAGE_ORIGIN = "https://insight.momentlabs.co.kr";
@@ -58,6 +58,16 @@ export const ACTIVE_STALE_MS = 7 * 60 * 1000; // 이보다 오래된 '작업 중
 export const RESULT_RESEND_MS = 10 * 60 * 1000; // 차단 아닌 결과는 10분(서버 늦은 보고 기한)까지만 다시 준다
 // 그날 중지 알림이 실패하면 같은 실행 안에서 다시 보낸다(0초 → 3초 뒤 → 그 7초 뒤 = 0·3·10초, 알람 없이 기다리기만).
 export const STOP_RETRY_DELAYS_MS = Object.freeze([3000, 7000]);
+// 측정 결과가 없으면(쪽 함수가 결과 없이 끝남·넣지 못함·쪽 안 예외) 탭이 그대로 같은 검색 1쪽일 때만 1번 더 읽는다(1.0.1).
+// 새 검색은 하지 않는다(탭 주소를 다시 넣지 않음 — 쿠팡 검색 횟수 그대로). 기다림·읽기는 120초 상한 안에서만.
+export const MEASURE_RETRY_MAX = 1;
+// 실패 진단(1.0.1): 결과(page.diagnostics)에 싣는 짧은 기록. 개인 정보 없음, 직렬화 4KB 이하(= 서버 MANUAL_DIAGNOSTICS_MAX_BYTES).
+export const DIAGNOSTICS_SCHEMA = 1; // = 서버 MANUAL_DIAGNOSTICS_SCHEMA
+export const DIAGNOSTICS_MAX_BYTES = 4096;
+export const DIAG_TEXT_MAX = 200; // 진단 글자 칸 하나의 상한(코드 포인트, = 서버 MANUAL_DIAGNOSTICS_TEXT_MAX)
+export const DIAG_TITLE_MAX = 80; // 문서 제목 앞부분
+export const DIAG_BODY_HEAD_MAX = 160; // 본문 앞부분
+export const DIAG_COMPLETE_TIMES_MAX = 6; // load complete 시각을 남기는 개수
 export const WINDOW_WIDTH = 1280;
 export const WINDOW_HEIGHT = 900;
 export const KST_OFFSET_MS = 9 * 60 * 60 * 1000;

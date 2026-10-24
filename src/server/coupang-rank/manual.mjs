@@ -8,6 +8,9 @@ import {
   MANUAL_CHANGED_PARAMS_MAX,
   MANUAL_CHANGED_PARAM_NAME_MAX,
   MANUAL_CLAIM_TTL_SECONDS,
+  MANUAL_DIAGNOSTICS_MAX_BYTES,
+  MANUAL_DIAGNOSTICS_SCHEMA,
+  MANUAL_DIAGNOSTICS_TEXT_MAX,
   MANUAL_EXTENSION_FOLDER,
   MANUAL_EXTENSION_ID,
   MANUAL_EXTENSION_VERSION,
@@ -18,6 +21,7 @@ import {
   MANUAL_STOP_NOT_STARTED_CODES,
   MANUAL_TOKEN_PATTERN,
   MANUAL_USER_NAVIGATED_ERROR_CODE,
+  VERSION_PATTERN,
 } from "./contract.mjs";
 import { coupangKeywordKey, normalizeCoupangKeyword } from "./inputs.mjs";
 import { manualStopSignal } from "./page-result.mjs";
@@ -252,4 +256,50 @@ export function manualRecordStopCode(outcome, outcomeCode, page) {
   if (outcome === "measured") return manualStopSignal(page);
   if (outcome === "not_started" && MANUAL_STOP_NOT_STARTED_CODES.includes(outcomeCode)) return STOP_EXTENSION_REPORTED;
   return null;
+}
+
+// ── 확장 1.0.1 실패 진단 ──────────────────────────────────────────────────
+// 확장이 결과 page.diagnostics 에 싣는 짧은 기록(지금 화면은 page 를 그대로 보내므로 여기로 온다). 본문 맨 위 diagnostics 가
+// 있으면 그것을 쓴다(화면이 따로 싣게 바뀌어도 그대로 받게). 모양·크기를 보고 통과한 것만 새 객체로 돌려주고, 아니면 null(진단만 버림 —
+// 순위 기록은 거절하지 않는다). 받는 모양: 맨 위 칸은 아래 목록만, v = 1, ext = 버전 형식, 값은 null·참거짓·유한한 수(절댓값 10억 이하)·
+// 글자(200 코드 포인트 이하·제어 문자·깨진 글자 없음)·배열(10개 이하)·객체(칸 24개 이하, 칸 이름 영문·숫자·밑줄 32자)로 3단까지,
+// 직렬화(UTF-8) 4KB 이하.
+const DIAGNOSTICS_TOP_KEYS = new Set([
+  "v", "ext", "ok", "code", "ms", "load", "retry", "tries", "doc", "firstDoc", "hidden", "unexpected", "cut",
+]);
+const DIAGNOSTICS_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+const DIAGNOSTICS_DEPTH_MAX = 3;
+const DIAGNOSTICS_KEYS_MAX = 24;
+const DIAGNOSTICS_ARRAY_MAX = 10;
+const DIAGNOSTICS_NUMBER_MAX = 1e9;
+
+function diagnosticsValueOk(value, depth) {
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= DIAGNOSTICS_NUMBER_MAX;
+  if (typeof value === "string") {
+    return value.isWellFormed() && !CONTROL_CHAR_PATTERN.test(value) && Array.from(value).length <= MANUAL_DIAGNOSTICS_TEXT_MAX;
+  }
+  if (depth >= DIAGNOSTICS_DEPTH_MAX) return false;
+  if (Array.isArray(value)) return value.length <= DIAGNOSTICS_ARRAY_MAX && value.every((item) => diagnosticsValueOk(item, depth + 1));
+  if (!plainObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return false;
+  const keys = Object.keys(value);
+  return keys.length <= DIAGNOSTICS_KEYS_MAX && keys.every((key) => DIAGNOSTICS_KEY_PATTERN.test(key) && diagnosticsValueOk(value[key], depth + 1));
+}
+
+export function manualDiagnostics(body) {
+  if (!plainObject(body)) return null;
+  const source = body.diagnostics !== undefined ? body.diagnostics : (plainObject(body.page) ? body.page.diagnostics : undefined);
+  if (!plainObject(source)) return null;
+  if (!Object.keys(source).every((key) => DIAGNOSTICS_TOP_KEYS.has(key))) return null;
+  if (source.v !== MANUAL_DIAGNOSTICS_SCHEMA) return null;
+  if (typeof source.ext !== "string" || !VERSION_PATTERN.test(source.ext)) return null;
+  if (!diagnosticsValueOk(source, 0)) return null;
+  let text;
+  try {
+    text = JSON.stringify(source);
+  } catch {
+    return null;
+  }
+  if (new TextEncoder().encode(text).length > MANUAL_DIAGNOSTICS_MAX_BYTES) return null;
+  return JSON.parse(text);
 }

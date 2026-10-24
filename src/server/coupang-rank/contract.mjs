@@ -170,9 +170,10 @@ export const COLLECTOR_ERROR_CODES = Object.freeze([
 // chrome-extension:// 이라 운영 허용 목록(https 만)에 들 수 없다. GET 은 게이트가 출처·CSRF 를 보지 않는다.
 // 서버는 시간 판정에 서버 시계만 쓴다(확장·화면 시계를 받지 않는다).
 export const MANUAL_EXTENSION_ID = "onbmdfamcmbljplkgalameendlmgnjeg"; // manifest key 에서 계산(확장 테스트가 대조)
-export const MANUAL_EXTENSION_VERSION = "1.0.0";
+export const MANUAL_EXTENSION_VERSION = "1.0.1"; // 내려받기 zip 의 버전(1.0.1 = 실패 진단 + 스스로 새로고침 때 1번 더 읽기)
+// 화면이 '새 버전으로 바꿔 주세요'로 막는 아래 버전. 1.0.0 은 그대로 받는다(진단만 없음 — 서버는 확장 버전을 형식만 본다).
 export const MANUAL_MIN_EXTENSION_VERSION = "1.0.0";
-export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.0.zip";
+export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.1.zip";
 export const MANUAL_EXTENSION_FOLDER = "mi-coupang-check"; // zip 안 폴더 이름(버전 없음 — 업데이트 때 같은 자리에 덮어 풀기)
 export const MANUAL_ALLOWED_ROLES = Object.freeze(["owner"]); // 공개 순서: owner → team → client
 export const MANUAL_CLAIM_TTL_SECONDS = 60; // 요청 뒤 이 안에 확장 확인이 와야 한다(SQL interval '60 seconds')
@@ -212,6 +213,11 @@ export const MANUAL_USER_NAVIGATED_ERROR_CODE = "user_navigated";
 // 서버는 그 회차 final_path 에 '경로?이름&이름'으로 남긴다(manual.mjs manualNavigatedFinalPath, 마이그레이션 없음).
 export const MANUAL_CHANGED_PARAMS_MAX = 10;
 export const MANUAL_CHANGED_PARAM_NAME_MAX = 40; // 코드 포인트
+// 확장 1.0.1 실패 진단(page.diagnostics 또는 본문 diagnostics): 서버가 모양·크기를 보고 통과한 것만 회차 diagnostics 칸
+// (대표 SQL docs/sql/c30-3-run-diagnostics.sql)에 따로 둔다. 진단이 틀려도 순위 기록은 거절하지 않는다(진단만 버림).
+export const MANUAL_DIAGNOSTICS_SCHEMA = 1; // = 확장 DIAGNOSTICS_SCHEMA
+export const MANUAL_DIAGNOSTICS_MAX_BYTES = 4096; // 직렬화(UTF-8) 상한 = 확장 DIAGNOSTICS_MAX_BYTES (SQL 칸 제약은 8192)
+export const MANUAL_DIAGNOSTICS_TEXT_MAX = 200; // 글자 칸 하나의 상한(코드 포인트) = 확장 DIAG_TEXT_MAX
 // 아래 세 목록은 화면·확장 공용 이름이다. 서버는 outcomeCode·errorCode 의 형식(^[a-z0-9_]{1,60}$)만 검사한다.
 export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
   "page_timeout", "window_closed", "browser_hard_cap", "page_load_failed", "page_unreadable", "extract_failed", "user_navigated",

@@ -46,6 +46,7 @@ import {
   generateManualClaimToken,
   hasManualColumns,
   isManualToken,
+  manualDiagnostics,
   manualNavigatedFinalPath,
   manualPayload,
   manualRecordStopCode,
@@ -1341,6 +1342,41 @@ async function manualClaimAction(request, ctx, settings, access, body, now, trac
   });
 }
 
+// 확장 1.0.1 실패 진단 저장(기록 RPC 가 성공한 뒤, 따로). 그 요청의 회차(claims.run_id)에 diagnostics 가 비어 있을 때만 쓴다
+// (같은 보고를 다시 보내도 덮어쓰지 않음). 칸이 없으면(대표 SQL c30-3 전: 42703·PGRST204) 조용히 건너뛰고, 그 밖의 오류도
+// 기록만 남긴다 — 어떤 경우에도 순위 기록 결과·응답은 그대로다.
+const DIAGNOSTICS_MISSING_CODES = new Set(["42703", "PGRST204"]);
+
+function noteDiagnosticsFailure(error) {
+  const code = String(error?.code || "");
+  if (DIAGNOSTICS_MISSING_CODES.has(code) || isSetupMissing(error)) return false;
+  console.warn(JSON.stringify({ event: "coupang_rank_trackers_manual_diagnostics_failed", errorCode: code }));
+  return false;
+}
+
+async function saveManualDiagnostics(ctx, claimId, diagnostics) {
+  try {
+    const claimRow = await ctx.supabaseAdmin
+      .from(TABLES.manualClaims)
+      .select("run_id")
+      .eq("id", claimId)
+      .maybeSingle();
+    if (claimRow.error) return noteDiagnosticsFailure(claimRow.error);
+    const runId = claimRow.data?.run_id;
+    if (!isUuid(runId)) return false;
+    const updated = await ctx.supabaseAdmin
+      .from(TABLES.runs)
+      .update({ diagnostics })
+      .eq("id", runId)
+      .eq("source", "manual")
+      .is("diagnostics", null);
+    if (updated.error) return noteDiagnosticsFailure(updated.error);
+    return true;
+  } catch (error) {
+    return noteDiagnosticsFailure(error);
+  }
+}
+
 function manualRecordInvalid(request, field, extra = {}) {
   return failure(request, "COUPANG_MANUAL_RECORD_INVALID", { field, ...extra });
 }
@@ -1422,6 +1458,9 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
   }, "manual_record");
   if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   if (data.ok !== true) return manualFailure(request, data);
+  // 확장 1.0.1 진단: 모양·크기를 통과한 것만, 저장한(또는 이미 저장된) 측정 회차에만 따로 남긴다(실패해도 응답 그대로).
+  const diagnostics = measured ? manualDiagnostics(body) : null;
+  if (diagnostics && (data.accepted === true || data.duplicate === true)) await saveManualDiagnostics(ctx, claimId, diagnostics);
   return respond(request, {
     ok: true,
     accepted: data.accepted === true,

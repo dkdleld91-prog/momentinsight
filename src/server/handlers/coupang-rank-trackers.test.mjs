@@ -2266,3 +2266,121 @@ test("기록 로그에 요청 토큰·요청 id·검색어가 남지 않는다(�
   assert.equal(HANDLER_SOURCE.includes("claimToken:"), true, "토큰은 claim 응답에만 싣는다");
   assert.equal(/console\.(?:log|warn|error)\([^)]*claim(?:Token|Id)/.test(HANDLER_SOURCE), false);
 });
+
+// ── 확장 1.0.1 실패 진단(2026-10-24): 기록 RPC 가 성공한 뒤 회차 diagnostics 칸에 따로, 실패해도 응답 그대로 ──
+
+const DIAG_RUN_ID = "6b2e3d4c-5f60-4b7c-9d8e-0f1a2b3c4d5e";
+
+function diagnosticsSample(overrides = {}) {
+  return {
+    v: 1, ext: "1.0.1", ok: false, code: "extract_failed",
+    ms: { verified: 410, nav: 520, load: 1630, quick: 1702, measureStart: 1710, measureEnd: 2950, end: 3010 },
+    load: { how: "complete", loading: 2, complete: 2, urls: 1, completeAt: [1625, 2930] },
+    retry: { tried: true, load: "already", result: "failed" },
+    tries: [{ kind: "no_result" }, { kind: "rejected", msg: "The frame was removed." }],
+    doc: { nav: "reload", ready: "complete", title: "아이폰 필름 - 쿠팡!", bodyLen: 5123, bodyHead: "쿠팡 로그인 회원가입", units: 0, links: 0, blocked: false, hidden: false },
+    hidden: false,
+    ...overrides,
+  };
+}
+
+// 기록 RPC 흉내: 측정이면 회차 1줄을 만들고 요청 줄에 run_id 를 적는다(SQL coupang_rank_manual_record 와 같은 결과 모양).
+function diagnosticsState({ duplicate = false } = {}) {
+  const state = manualState();
+  const base = state.rpc.coupang_rank_manual_record;
+  state.rpc.coupang_rank_manual_record = (args, current) => {
+    const reply = base(args, current);
+    if (args.p_outcome === "measured") {
+      const claim = current.tables.coupang_rank_manual_claims.find((row) => row.id === args.p_claim_id);
+      if (!current.tables.coupang_rank_runs.some((row) => row.id === DIAG_RUN_ID)) {
+        current.tables.coupang_rank_runs.push({ id: DIAG_RUN_ID, source: "manual", status: args.p_status, diagnostics: null });
+      }
+      if (claim) claim.run_id = DIAG_RUN_ID;
+      if (duplicate) reply.data = { ...reply.data, accepted: false, duplicate: true };
+    }
+    return reply;
+  };
+  return state;
+}
+
+test("manual-record 진단: page.diagnostics 가 맞으면 기록 RPC 뒤 그 회차에만 따로 저장(빈 칸일 때만), 응답·RPC 인자는 그대로", async () => {
+  const state = diagnosticsState();
+  const plain = manualState();
+  const withDiag = await post(state, ownerHeaders(), manualRecordBody({}, { status: "error", errorCode: "extract_failed", organic: [], ads: [], itemCount: 0, diagnostics: diagnosticsSample() }));
+  const without = await post(plain, ownerHeaders(), manualRecordBody({}, { status: "error", errorCode: "extract_failed", organic: [], ads: [], itemCount: 0 }));
+  assert.equal(withDiag.status, 200);
+  assert.deepEqual(withDiag.body, without.body, "응답은 진단과 무관하게 같다");
+  const [args] = rpcArgs(state, "coupang_rank_manual_record");
+  assert.equal(Object.hasOwn(args.p_run, "diagnostics"), false, "기록 RPC 의 p_run 은 수집기와 같은 칸만");
+  assert.deepEqual(state.tables.coupang_rank_runs[0].diagnostics, diagnosticsSample());
+  const update = state.queries.find((query) => query.table === "coupang_rank_runs" && query.operation === "update");
+  assert.deepEqual(update.filters.map((filter) => [filter.op, filter.column, filter.value]), [["eq", "id", DIAG_RUN_ID], ["eq", "source", "manual"], ["is", "diagnostics", null]]);
+  assert.deepEqual(Object.keys(update.values), ["diagnostics"]);
+  // 같은 보고를 다시 보내면(중복) 이미 있는 진단을 덮어쓰지 않는다
+  const again = diagnosticsState({ duplicate: true });
+  again.tables.coupang_rank_runs.push({ id: DIAG_RUN_ID, source: "manual", status: "error", diagnostics: { v: 1, ext: "1.0.1", first: true } });
+  await post(again, ownerHeaders(), manualRecordBody({}, { diagnostics: diagnosticsSample({ ok: true, code: null }) }));
+  assert.deepEqual(again.tables.coupang_rank_runs[0].diagnostics, { v: 1, ext: "1.0.1", first: true });
+  // 본문 맨 위 diagnostics 도 받는다(있으면 page 쪽보다 먼저)
+  const top = diagnosticsState();
+  await post(top, ownerHeaders(), manualRecordBody({ diagnostics: diagnosticsSample({ code: "page_timeout" }) }, { diagnostics: diagnosticsSample() }));
+  assert.equal(top.tables.coupang_rank_runs[0].diagnostics.code, "page_timeout");
+});
+
+test("manual-record 진단: 칸 없음(42703·PGRST204)은 조용히 건너뛰고, 그 밖의 오류는 기록만 — 어느 쪽이든 응답 200 그대로", async () => {
+  for (const [code, logged] of [["PGRST204", false], ["42703", false], ["23514", true], ["57014", true]]) {
+    const state = diagnosticsState();
+    state.errors.push({ table: "coupang_rank_runs", operation: "update", error: { code, message: "x" } });
+    const { result, lines } = await captureLogs(() => post(state, ownerHeaders(), manualRecordBody({}, { diagnostics: diagnosticsSample() })));
+    assert.equal(result.status, 200, code);
+    assert.equal(result.body.ok, true, code);
+    assert.equal(result.body.accepted, true, code);
+    const warned = lines.filter((line) => line.includes("coupang_rank_trackers_manual_diagnostics_failed"));
+    assert.equal(warned.length, logged ? 1 : 0, code);
+    if (logged) assert.equal(JSON.parse(warned[0]).errorCode, code);
+  }
+  // 요청 줄을 다시 읽지 못해도(표 오류) 응답 그대로
+  const claimFails = diagnosticsState();
+  claimFails.errors.push({ table: "coupang_rank_manual_claims", operation: "select", when: (query) => query.log.length === 1 && claimFails.rpcCalls.length > 0, error: { code: "08006", message: "x" } });
+  const { result } = await captureLogs(() => post(claimFails, ownerHeaders(), manualRecordBody({}, { diagnostics: diagnosticsSample() })));
+  assert.equal(result.status, 200);
+  assert.equal(claimFails.tables.coupang_rank_runs[0].diagnostics, null);
+});
+
+test("manual-record 진단: 모양·크기가 틀린 진단은 버리고 순위 기록은 그대로(꾸민 결과 검사도 그대로), 진단 없는 1.0.0 본문은 추가 조회 0번", async () => {
+  const bad = [
+    "문자열", [diagnosticsSample()], diagnosticsSample({ v: 2 }), diagnosticsSample({ ext: "1.0" }), diagnosticsSample({ extra: 1 }),
+    diagnosticsSample({ unexpected: "가".repeat(201) }), diagnosticsSample({ unexpected: "a\u0001b" }), diagnosticsSample({ unexpected: "\ud800" }),
+    diagnosticsSample({ load: { completeAt: Array.from({ length: 11 }, () => 1) } }), diagnosticsSample({ doc: { deep: { deeper: { deepest: 1 } } } }),
+    diagnosticsSample({ ms: { measureStart: Number.MAX_SAFE_INTEGER } }), diagnosticsSample({ tries: Array.from({ length: 10 }, () => ({ kind: "rejected", msg: "가".repeat(200) })) }),
+  ];
+  for (const diagnostics of bad) {
+    const state = diagnosticsState();
+    const result = await post(state, ownerHeaders(), manualRecordBody({}, { diagnostics }));
+    assert.equal(result.status, 200, JSON.stringify(diagnostics).slice(0, 60));
+    assert.equal(rpcArgs(state, "coupang_rank_manual_record").length, 1);
+    assert.equal(state.queries.some((query) => query.table === "coupang_rank_runs" && query.operation === "update"), false, JSON.stringify(diagnostics).slice(0, 60));
+  }
+  // 1.0.0 본문(진단 없음): 기록 뒤 요청 줄 다시 읽기·회차 갱신이 없다
+  const old = diagnosticsState();
+  const before = await post(old, ownerHeaders(), manualRecordBody());
+  assert.equal(before.status, 200);
+  assert.deepEqual(old.queries.map((query) => `${query.table}:${query.operation}`).filter((name) => name.startsWith("coupang_rank_runs") || name === "coupang_rank_manual_claims:select"), ["coupang_rank_manual_claims:select"], "요청 줄 1번(기존)뿐");
+  // 진단이 있어도 꾸민 결과 검사는 그대로(형식 오류는 400, 진단 저장 없음)
+  const broken = diagnosticsState();
+  const invalid = await post(broken, ownerHeaders(), manualRecordBody({ durationMs: -1 }, { diagnostics: diagnosticsSample() }));
+  assert.deepEqual([invalid.status, invalid.body.field], [400, "durationMs"]);
+  assert.equal(broken.queries.some((query) => query.table === "coupang_rank_runs"), false);
+});
+
+test("manual-record 진단: 기록 RPC 가 거절하면(늦음·확인 없음) 진단을 저장하지 않고, 시작 못 함 보고의 진단도 저장하지 않는다", async () => {
+  const refused = diagnosticsState();
+  refused.rpc.coupang_rank_manual_record = () => ({ data: { ok: false, code: "COUPANG_MANUAL_CLAIM_EXPIRED", stopped: false }, error: null });
+  const late = await post(refused, ownerHeaders(), manualRecordBody({}, { diagnostics: diagnosticsSample() }));
+  assert.equal(late.status, 410);
+  assert.equal(refused.queries.some((query) => query.table === "coupang_rank_runs"), false);
+  const notStarted = diagnosticsState();
+  const body = { action: "manual-record", claimId: MANUAL_CLAIM_ID, claimToken: MANUAL_TOKEN, outcome: "not_started", outcomeCode: "verify_refused", diagnostics: diagnosticsSample() };
+  assert.equal((await post(notStarted, ownerHeaders(), body)).status, 200);
+  assert.equal(notStarted.queries.some((query) => query.table === "coupang_rank_runs"), false);
+});

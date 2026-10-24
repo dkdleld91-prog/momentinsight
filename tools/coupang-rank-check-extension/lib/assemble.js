@@ -2,8 +2,8 @@
 // 나누기 규칙은 수집기 tools/coupang-rank-collector/lib/extract.mjs splitItems 와 같다(패리티 테스트).
 // 판정은 서버가 한다(page-result 규칙). 여기서는 사실만 채운다: 실패해도 httpStatus·차단 문구·주소를 아는 만큼 넣는다.
 import {
-  BLOCKED_HTTP_STATUSES, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_SCHEMA, DIAG_BODY_HEAD_MAX, DIAG_COMPLETE_TIMES_MAX, DIAG_TEXT_MAX, DIAG_TITLE_MAX,
-  UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, cleanChangedParams,
+  BLOCKED_HTTP_STATUSES, DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_NODES_MAX, DIAGNOSTICS_SCHEMA, DIAG_BODY_HEAD_MAX, DIAG_COMPLETE_TIMES_MAX, DIAG_MS_KEYS_MAX,
+  DIAG_TEXT_MAX, DIAG_TITLE_MAX, UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, cleanChangedParams,
 } from "./protocol.js";
 
 export const ORGANIC_MAX = 100;
@@ -157,11 +157,36 @@ const DIAG_WORD_PATTERN = /^[a-z0-9_]{1,40}$/;
 const DIAG_MS_MAX = 600000;
 const DIAG_COUNT_MAX = 1000000;
 const DIAG_TRIES_MAX = 4;
-const URL_TAIL_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/[^\s"'<>?#]*)[^\s"'<>]*/gi;
+// 진단 글자에서 지우는 것(1.0.1 검토 반영 — SQL 결과를 터미널·편집기로 볼 때 표시가 뒤틀리지 않게):
+// 제어 문자 전부(C0·DEL·C1 = 유니코드 Cc)는 공백으로, 서식 문자(양방향 재정렬 U+202A~202E·U+2066~2069, 폭 없는 글자 U+200B~200D·U+2060,
+// BOM U+FEFF 등 = 유니코드 Cf)는 없앤다. 줄·문단 구분(U+2028·2029) 같은 나머지 공백은 아래에서 공백 하나로 모은다.
+// 서버 진단 검사(manual.mjs)는 이 글자들(Cc·Cf·U+2028·2029)이 든 진단을 버린다 — 같은 규칙(서버 대조 테스트).
+const DIAG_CONTROL_PATTERN = /\p{Cc}/gu;
+const DIAG_FORMAT_PATTERN = /\p{Cf}/gu;
+// 주소처럼 보이는 낱말(공백·따옴표·<> 로 나뉜 덩어리)은 호스트·경로만 남긴다: 사용자 정보(user:pass@)를 지우고 첫 ? # ;
+// (%3F·%23·%3B 포함, data: 주소는 , 도) 앞까지만. 주소처럼 보인다 = scheme://(또는 %3A%2F%2F)가 들었거나, / 가 들었거나,
+// 점 든 호스트 바로 뒤에 ? # ; 가 오거나, data: 가 든 낱말 — scheme 없는 주소·;jsessionid= 같은 경로 매개변수도 뗀다.
+const ADDRESS_WORD_PATTERN = /[^\s"'<>]+/g;
+const ADDRESS_LIKE_PATTERN = /[a-z][a-z0-9+.-]*:\/\/|%3a%2f%2f|\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?::[0-9]{1,5})?[?#;]|data:/i;
+const USERINFO_PATTERN = /([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]*@/gi;
+const ADDRESS_CUT_PATTERN = /[?#;]|%3f|%23|%3b/i;
+const DATA_CUT_PATTERN = /[?#;,]|%3f|%23|%3b/i;
+
+function addressWord(word) {
+  if (!ADDRESS_LIKE_PATTERN.test(word)) return word;
+  const plain = word.replace(USERINFO_PATTERN, "$1");
+  const cut = /data:/i.test(plain) ? plain.search(DATA_CUT_PATTERN) : plain.search(ADDRESS_CUT_PATTERN);
+  return cut >= 0 ? plain.slice(0, cut) : plain;
+}
 
 export function diagnosticText(value, max = DIAG_TEXT_MAX) {
   if (value === null || value === undefined) return "";
-  const text = toWellFormedText(String(value)).replace(URL_TAIL_PATTERN, "$1").replace(CONTROL_PATTERN, " ").replace(/\s+/g, " ").trim();
+  const text = toWellFormedText(String(value))
+    .replace(DIAG_CONTROL_PATTERN, " ")
+    .replace(DIAG_FORMAT_PATTERN, "")
+    .replace(ADDRESS_WORD_PATTERN, addressWord)
+    .replace(/\s+/g, " ")
+    .trim();
   return Array.from(text).slice(0, Math.max(0, Math.min(max, DIAG_TEXT_MAX))).join("");
 }
 
@@ -196,9 +221,21 @@ export function diagnosticsBytes(value) {
   return new TextEncoder().encode(JSON.stringify(value)).length;
 }
 
+// 값 개수(객체·배열·글자·수·참거짓·null 모두 1개씩). 서버는 이 개수도 본다(jsonb 칸 크기가 8KB 제약을 넘지 않게).
+export function diagnosticsNodes(value) {
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + diagnosticsNodes(item), 1);
+  if (value && typeof value === "object") return Object.values(value).reduce((sum, item) => sum + diagnosticsNodes(item), 1);
+  return 1;
+}
+
+function diagnosticsFit(value) {
+  return diagnosticsBytes(value) <= DIAGNOSTICS_MAX_BYTES && diagnosticsNodes(value) <= DIAGNOSTICS_NODES_MAX;
+}
+
 // input = { version, page, ms:{이름: ms}, load:{how, loading, complete, urls, completeAt[]}, tries:[{kind, msg}], doc(마지막 쪽 모양),
-//           firstDoc(불러온 직후 쪽 모양), retry:{tried, skip, load, result}, hidden, unexpected }.
-// 돌려주는 값은 JSON 그대로 보낼 수 있는 새 객체(4KB 이하). firstDoc 은 실패이고 doc 과 다른 읽기일 때만 싣는다.
+//           firstDoc(불러온 직후 쪽 모양), retry:{tried, skip, load, result}, hidden, unexpected, seen:{httpStatus, blockedText} }.
+// 돌려주는 값은 JSON 그대로 보낼 수 있는 새 객체(4KB·값 DIAGNOSTICS_NODES_MAX 개 이하, 맨 위 칸은 DIAGNOSTICS_TOP_KEYS 안).
+// firstDoc 은 실패이고 doc 과 다른 읽기일 때만 싣는다. seen(불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구)은 실패 때만.
 export function buildDiagnostics(input) {
   const source = input && typeof input === "object" ? input : {};
   const page = source.page && typeof source.page === "object" ? source.page : {};
@@ -207,7 +244,7 @@ export function buildDiagnostics(input) {
   const ms = {};
   for (const [name, value] of Object.entries(source.ms && typeof source.ms === "object" ? source.ms : {})) {
     const at = diagMs(value);
-    if (DIAG_KEY_PATTERN.test(name) && at !== null) ms[name] = at;
+    if (DIAG_KEY_PATTERN.test(name) && at !== null && Object.keys(ms).length < DIAG_MS_KEYS_MAX) ms[name] = at;
   }
   const loadSource = source.load && typeof source.load === "object" ? source.load : {};
   const load = {
@@ -238,8 +275,11 @@ export function buildDiagnostics(input) {
     out.hidden = source.hidden === true || page.wasHidden === true;
     const unexpected = diagnosticText(source.unexpected);
     if (unexpected) out.unexpected = unexpected;
+    if (source.seen && typeof source.seen === "object") {
+      out.seen = { http: httpStatusOf(source.seen.httpStatus), blocked: source.seen.blockedText === true };
+    }
   }
-  // 4KB 상한: 덜 중요한 것부터 덜어 낸다.
+  // 4KB·값 개수 상한: 덜 중요한 것부터 덜어 낸다.
   const steps = [
     (value) => { delete value.firstDoc; },
     (value) => { if (value.doc) delete value.doc.bodyHead; },
@@ -248,10 +288,10 @@ export function buildDiagnostics(input) {
     (value) => { value.load.completeAt = []; },
   ];
   for (const step of steps) {
-    if (diagnosticsBytes(out) <= DIAGNOSTICS_MAX_BYTES) return out;
+    if (diagnosticsFit(out)) return out;
     step(out);
     out.cut = true;
   }
-  if (diagnosticsBytes(out) <= DIAGNOSTICS_MAX_BYTES) return out;
+  if (diagnosticsFit(out)) return out;
   return { v: DIAGNOSTICS_SCHEMA, ext: out.ext, ok: out.ok, code: out.code, cut: true };
 }

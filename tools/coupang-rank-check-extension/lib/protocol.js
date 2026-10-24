@@ -63,8 +63,15 @@ export const STOP_RETRY_DELAYS_MS = Object.freeze([3000, 7000]);
 export const MEASURE_RETRY_MAX = 1;
 // 실패 진단(1.0.1): 결과(page.diagnostics)에 싣는 짧은 기록. 개인 정보 없음, 직렬화 4KB 이하(= 서버 MANUAL_DIAGNOSTICS_MAX_BYTES).
 export const DIAGNOSTICS_SCHEMA = 1; // = 서버 MANUAL_DIAGNOSTICS_SCHEMA
-export const DIAGNOSTICS_MAX_BYTES = 4096;
+export const DIAGNOSTICS_MAX_BYTES = 4096; // = 서버 MANUAL_DIAGNOSTICS_MAX_BYTES
+// 값 개수 상한(객체·배열·글자·수·참거짓·null 모두 1개씩, = 서버 MANUAL_DIAGNOSTICS_NODES_MAX). 확장이 만드는 진단은 많아야 약 80개.
+export const DIAGNOSTICS_NODES_MAX = 120;
+// 진단 맨 위 칸 이름(= 서버 MANUAL_DIAGNOSTICS_TOP_KEYS — 서버는 이 밖의 칸이 있으면 진단을 버린다).
+export const DIAGNOSTICS_TOP_KEYS = Object.freeze([
+  "v", "ext", "ok", "code", "ms", "load", "retry", "tries", "doc", "firstDoc", "hidden", "unexpected", "seen", "cut",
+]);
 export const DIAG_TEXT_MAX = 200; // 진단 글자 칸 하나의 상한(코드 포인트, = 서버 MANUAL_DIAGNOSTICS_TEXT_MAX)
+export const DIAG_MS_KEYS_MAX = 16; // 경과 ms 이름 수 상한(확장이 남기는 이름은 14개까지)
 export const DIAG_TITLE_MAX = 80; // 문서 제목 앞부분
 export const DIAG_BODY_HEAD_MAX = 160; // 본문 앞부분
 export const DIAG_COMPLETE_TIMES_MAX = 6; // load complete 시각을 남기는 개수

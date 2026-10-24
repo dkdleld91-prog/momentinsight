@@ -935,7 +935,7 @@ test("자동 경로 무변경: 수동 SQL 뒤에도 수집기 claim → record �
 // 회차 표에 diagnostics(jsonb) 칸 하나: 다시 실행 안전·기존 행 null·객체만·8KB 이하·되돌리기·확인문. 기록 RPC 는 그대로.
 const DIAG_NAME = "20261024120000_coupang_rank_run_diagnostics.sql";
 const diagSql = fs.readFileSync(path.join(migrationDirectory, DIAG_NAME), "utf8");
-const DIAG_SHA256 = "2ce04d7e89b32c21e112ccd7bfc8b6f72e3e54ffde6e2e75c2c90f45a1ad2823";
+const DIAG_SHA256 = "eb3870dc318ae0dbc79551ceb5e81321b689cfb1935abd9a39f82a4fe5de95c1";
 const DIAG_DOCS = path.join(root, "docs", "sql", "c30-3-run-diagnostics.sql");
 const DIAG_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-3-run-diagnostics.rollback.sql"), "utf8");
 const DIAG_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-3-run-diagnostics.verify-applied.sql"), "utf8");

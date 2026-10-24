@@ -78,6 +78,15 @@ export function isSearchAddress(url, keyword, baselineKey = null) {
   return address.key === (typeof baselineKey === "string" ? baselineKey : searchKeyOf(keyword));
 }
 
+// 쪽 안 예외 결과(raw)에 이 창에서 본 차단 신호를 더한 새 객체: 차단 HTTP(403·429·503)를 봤으면 그 값, 차단 문구를 봤으면 true.
+// 차단이 아닌 값은 바꾸지 않는다(쪽 함수가 읽은 HTTP 상태 그대로).
+function withSeenBlock(raw, signals) {
+  const out = { ...raw };
+  if (BLOCKED_HTTP_STATUSES.includes(signals.httpStatus) && !BLOCKED_HTTP_STATUSES.includes(raw.httpStatus)) out.httpStatus = signals.httpStatus;
+  if (signals.blockedText === true) out.blockedText = true;
+  return out;
+}
+
 export function createBackground(chromeApi, deps = {}) {
   const c = chromeApi;
   const t = { ...DEFAULT_TIMING, ...(deps.timing || {}) };
@@ -393,6 +402,9 @@ export function createBackground(chromeApi, deps = {}) {
     let tabId = null;
     let keyword = null;
     let measuring = false;
+    // 1번 더 읽기 사이(첫 측정 끝 ~ 두 번째 측정 시작 — 기다림·짧은 읽기 포함)에도 주소 바뀜을 본다(1.0.1 검토 반영).
+    // 이때 주소 없는 다시 불러오기(loading)는 기다리는 대상이라 바뀜이 아니다. 주소가 기준과 달라진 것만 센다.
+    let between = false;
     // 측정 시작 때 탭 주소의 쿼리 값(searchParamsKey·searchParamPairs). 쿠팡이 불러오는 동안 값을 붙였어도 그 뒤 '바뀜'만 본다.
     let baselineKey = null;
     let baselinePairs = null;
@@ -451,7 +463,7 @@ export function createBackground(chromeApi, deps = {}) {
     const onTabUpdated = (id, info) => {
       if (tabId === null || id !== tabId || !info) return;
       if (navigationIssued) countLoadEvent(info);
-      if (!measuring) return;
+      if (!measuring && !between) return;
       if (typeof info.url === "string") {
         if (!isSearchAddress(info.url, keyword, baselineKey)) {
           navigatedDuringMeasure = true;
@@ -461,7 +473,8 @@ export function createBackground(chromeApi, deps = {}) {
         return;
       }
       // 주소 없이 다시 불러오기 시작(새로고침 등): 무엇이 바뀌었는지 모르므로 이름은 그 뒤 본 주소에서만 얻는다.
-      if (info.status === "loading") navigatedDuringMeasure = true;
+      // 측정 중일 때만 센다(1번 더 읽기 사이의 같은 주소 다시 불러오기는 기다리는 대상).
+      if (measuring && info.status === "loading") navigatedDuringMeasure = true;
     };
     c.windows.onRemoved.addListener(onWindowRemoved);
     c.tabs.onRemoved.addListener(onTabRemoved);
@@ -504,6 +517,8 @@ export function createBackground(chromeApi, deps = {}) {
           retry: diag.retry,
           hidden: diag.doc?.hidden === true,
           unexpected: diag.unexpected,
+          // 불러오는 동안(load 확인)·짧은 읽기에서 본 HTTP 상태·차단 문구(차단 HTTP 는 한 번 보면 남는다) — 쪽 함수 결과와 따로.
+          seen: { httpStatus: seen.httpStatus, blockedText: seen.blockedText },
         });
       },
       markNavigationIssued() { navigationIssued = true; },
@@ -513,18 +528,24 @@ export function createBackground(chromeApi, deps = {}) {
         keyword = searchKeyword;
       },
       // 측정 시작 때(value=true) 탭 주소가 같은 검색어의 쿠팡 검색 1쪽이면 그 쿼리 값을 기준으로 삼는다(아니면 확장이 연 ?q= 주소).
+      // 1번 더 읽기(keepBaseline)는 첫 측정의 기준을 그대로 쓴다: 기다리는 사이 바뀐 주소(쪽 번호·정렬 등)를 새 기준으로 삼지 않는다.
       // 측정마다 '측정 중 다시 불러옴' 표시를 새로 센다: 1번 더 읽기는 탭이 같은 검색 1쪽이고 다른 주소로 바뀐 것을 보지 않았을 때만
       // 하므로, 첫 측정 중 본 같은 주소 다시 불러오기가 두 번째 측정의 판정(user_navigated)으로 넘어가지 않게 한다.
-      setMeasuring(value, startUrl) {
+      setMeasuring(value, startUrl, { keepBaseline = false } = {}) {
         if (value === true) {
-          const start = searchAddressOf(startUrl);
-          const base = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start : searchAddressOf(searchUrl(keyword));
-          baselineKey = base ? base.key : searchKeyOf(keyword);
-          baselinePairs = base ? base.pairs : null;
+          if (!keepBaseline || baselineKey === null) {
+            const start = searchAddressOf(startUrl);
+            const base = start && start.host === SEARCH_HOST && start.path === SEARCH_PATH && start.q === keyword ? start : searchAddressOf(searchUrl(keyword));
+            baselineKey = base ? base.key : searchKeyOf(keyword);
+            baselinePairs = base ? base.pairs : null;
+          }
           navigatedDuringMeasure = false;
+          between = false;
         }
         measuring = value;
       },
+      // 1번 더 읽기 사이 주소 보기 켜기·끄기(첫 측정 기준과 다른 주소를 보면 addressChanged).
+      watchBetween(value) { between = value === true; },
       // 쪽 안 읽기 결과(load 확인·짧은 읽기)에서 차단 신호·주소를 남긴다.
       noteRead(raw) {
         if (!raw || typeof raw !== "object") return;
@@ -667,11 +688,19 @@ export function createBackground(chromeApi, deps = {}) {
   }
 
   // 측정 1번(쪽 함수 실행). executeScript 결과 종류를 진단에 남긴다(결과 있음·이동·쪽 안 예외 / 결과 없음 / 넣지 못함).
-  // 돌려주는 값: { raw }(쪽 함수 결과 객체) 또는 { raw: null, rejected }(결과 없음 = rejected false, 넣지 못함 = true).
+  // 돌려주는 값: { raw }(쪽 함수 결과 객체) 또는 { raw: null, rejected }(결과 없음 = rejected false, 넣지 못함 = true),
+  // 1번 더 읽기(retryKeyword)에서 넣기 전에 멈춘 경우 { raw: null, skipped }(쪽 함수를 넣지 않음).
   // 결과 객체를 읽다 생긴 예외는 잡지 않는다(지금처럼 예기치 못한 오류 → extract_failed).
-  async function measureOnce(run, tabId, label) {
+  async function measureOnce(run, tabId, label, retryKeyword = null) {
     const startAddress = await tabAddress(tabId);
-    run.setMeasuring(true, startAddress.url);
+    // 120초 상한·창 닫힘이 이미 걸렸으면 쪽 함수(스크롤)를 넣지 않는다(1.0.1 검토 반영: 짧은 읽기 중 상한이 걸린 경우).
+    if (run.stopCode) throw new StopError(run.stopCode);
+    if (retryKeyword !== null) {
+      // 1번 더 읽기: 첫 측정 끝 뒤 주소가 바뀌었거나(쪽 번호·정렬 등) 지금 탭이 첫 측정 기준의 같은 검색 1쪽이 아니면 넣지 않는다.
+      const skipped = addressSkipReason(run, startAddress, retryKeyword);
+      if (skipped) return { raw: null, rejected: false, skipped };
+    }
+    run.setMeasuring(true, startAddress.url, { keepBaseline: retryKeyword !== null });
     run.mark(`${label}Start`);
     let results;
     try {
@@ -700,8 +729,17 @@ export function createBackground(chromeApi, deps = {}) {
   // 지금 탭이 측정 시작 때와 같은 검색 1쪽(같은 q·같은 쿼리 값)이 아니면 읽지 않는다.
   async function retrySkipReason(run, tabId, keyword, attempt) {
     if (attempt.raw && stopReasonOf(assemblePage(attempt.raw))) return "blocked";
-    if (stopReasonOf(assemblePage(run.signals()))) return "blocked";
-    const address = await tabAddress(tabId);
+    if (seenBlock(run)) return "blocked";
+    return addressSkipReason(run, await tabAddress(tabId), keyword);
+  }
+
+  // 이 창에서 본 차단 신호(불러오는 동안 load 확인·짧은 읽기에서 본 HTTP 403·429·503·차단 문구)가 있는지.
+  function seenBlock(run) {
+    return Boolean(stopReasonOf(assemblePage(run.signals())));
+  }
+
+  // 주소 쪽 이유: 탭이 없음 / 첫 측정 시작 뒤 다른 주소로 바뀐 것을 봄(측정 중·1번 더 읽기 사이) / 지금 탭이 첫 측정 기준의 같은 검색 1쪽이 아님.
+  function addressSkipReason(run, address, keyword) {
     if (!address.exists) return "tab_gone";
     if (run.addressChanged) return "address_changed";
     if (!isSearchAddress(address.url, keyword, run.baselineKey)) return "not_search";
@@ -730,7 +768,10 @@ export function createBackground(chromeApi, deps = {}) {
   }
 
   // 측정 결과 → page. 결과가 없으면 지금처럼 탭 주소로 원인을 가린다(결과 없음 + 검색 쪽 = extract_failed).
+  // 쪽 안 예외(extractError)로 끝났으면 이 창에서 본 차단 신호(HTTP 403·429·503·차단 문구)를 함께 싣는다(1.0.1 검토 반영):
+  // 1번 더 읽기를 '차단'으로 건너뛰었으면 결과도 그날 중지가 되게(결과 없음 길은 원래 본 신호를 싣는다).
   async function attemptPage(run, tabId, attempt) {
+    if (attempt.raw && attempt.raw.extractError === true) return assemblePage(withSeenBlock(attempt.raw, run.signals()));
     if (attempt.raw) return assemblePage(attempt.raw);
     const failure = await classifyInjectFailure(tabId, run.navigatedDuringMeasure);
     const code = !attempt.rejected && failure.errorCode === "page_load_failed" ? "extract_failed" : failure.errorCode;
@@ -768,7 +809,10 @@ export function createBackground(chromeApi, deps = {}) {
       let attempt = await measureOnce(run, tabId, "measure");
       // 1.0.1: 결과 없이 끝났거나(넣지 못함 포함) 쪽 안 예외면, 탭이 그대로 같은 검색 1쪽일 때만 1번 더 읽는다.
       // 쿠팡 주소는 다시 넣지 않는다(새 검색 없음). 다시 불러오는 중이면 load 를 기다리고, 짧은 읽기로 차단을 먼저 본다.
+      // 첫 측정이 끝난 뒤부터 두 번째 측정을 시작할 때까지도 주소 바뀜을 본다(같은 주소 다시 불러오기는 바뀜이 아님).
+      // 두 번째 측정 바로 앞에서 주소(첫 측정 기준)·본 차단 신호를 다시 보고, 어긋나면 넣지 않고 첫 결과로 끝낸다.
       for (let retries = 0; retries < MEASURE_RETRY_MAX && (!attempt.raw || attempt.raw.extractError === true); retries += 1) {
+        run.watchBetween(true);
         const skip = await retrySkipReason(run, tabId, keyword, attempt);
         if (skip) {
           run.setRetry({ tried: false, skip });
@@ -784,6 +828,12 @@ export function createBackground(chromeApi, deps = {}) {
           run.setRetry({ result: "timeout" });
           return { page: unfinishedPage(run, "page_timeout") };
         }
+        // 기다리는 사이 주소가 바뀌었으면(쪽 번호·정렬·다른 쪽·권한 밖 = 사람이 옮겼거나 보내짐) 더 읽지 않는다.
+        const moved = addressSkipReason(run, await tabAddress(tabId), keyword);
+        if (moved) {
+          run.setRetry({ result: moved });
+          break;
+        }
         const again = await quickRead(run, tabId, "retryQuick");
         if (again) {
           const againPage = assemblePage(again);
@@ -792,11 +842,23 @@ export function createBackground(chromeApi, deps = {}) {
             return { page: againPage };
           }
         }
-        attempt = await measureOnce(run, tabId, "retryMeasure");
+        // 기다리는 동안(load 확인)·짧은 읽기에서 본 차단 신호(중간 문서의 429·403 등)도 보고, 있으면 측정(스크롤)하지 않고 그날 중지.
+        if (seenBlock(run)) {
+          run.setRetry({ result: "blocked" });
+          break;
+        }
+        const second = await measureOnce(run, tabId, "retryMeasure", keyword);
+        if (second.skipped) {
+          run.setRetry({ result: second.skipped });
+          break;
+        }
+        attempt = second;
         run.setRetry({ result: attempt.raw && attempt.raw.extractError !== true ? "measured" : "failed" });
       }
+      run.watchBetween(false);
       return { page: await attemptPage(run, tabId, attempt) };
     } finally {
+      run.watchBetween(false);
       loader.cancel();
     }
   }

@@ -9,8 +9,10 @@ import {
   MANUAL_CHANGED_PARAM_NAME_MAX,
   MANUAL_CLAIM_TTL_SECONDS,
   MANUAL_DIAGNOSTICS_MAX_BYTES,
+  MANUAL_DIAGNOSTICS_NODES_MAX,
   MANUAL_DIAGNOSTICS_SCHEMA,
   MANUAL_DIAGNOSTICS_TEXT_MAX,
+  MANUAL_DIAGNOSTICS_TOP_KEYS,
   MANUAL_EXTENSION_FOLDER,
   MANUAL_EXTENSION_ID,
   MANUAL_EXTENSION_VERSION,
@@ -261,29 +263,33 @@ export function manualRecordStopCode(outcome, outcomeCode, page) {
 // ── 확장 1.0.1 실패 진단 ──────────────────────────────────────────────────
 // 확장이 결과 page.diagnostics 에 싣는 짧은 기록(지금 화면은 page 를 그대로 보내므로 여기로 온다). 본문 맨 위 diagnostics 가
 // 있으면 그것을 쓴다(화면이 따로 싣게 바뀌어도 그대로 받게). 모양·크기를 보고 통과한 것만 새 객체로 돌려주고, 아니면 null(진단만 버림 —
-// 순위 기록은 거절하지 않는다). 받는 모양: 맨 위 칸은 아래 목록만, v = 1, ext = 버전 형식, 값은 null·참거짓·유한한 수(절댓값 10억 이하)·
-// 글자(200 코드 포인트 이하·제어 문자·깨진 글자 없음)·배열(10개 이하)·객체(칸 24개 이하, 칸 이름 영문·숫자·밑줄 32자)로 3단까지,
-// 직렬화(UTF-8) 4KB 이하.
-const DIAGNOSTICS_TOP_KEYS = new Set([
-  "v", "ext", "ok", "code", "ms", "load", "retry", "tries", "doc", "firstDoc", "hidden", "unexpected", "cut",
-]);
+// 순위 기록은 거절하지 않는다). 받는 모양: 맨 위 칸은 MANUAL_DIAGNOSTICS_TOP_KEYS 만, v = 1, ext = 버전 형식, 값은 null·참거짓·
+// 유한한 수(절댓값 10억 이하)·글자(200 코드 포인트 이하·제어 문자(C0·DEL·C1)·서식 문자(양방향 재정렬·폭 없는 글자 등)·줄 구분·깨진 글자 없음)·
+// 배열(10개 이하)·객체(칸 24개 이하, 칸 이름 영문·숫자·밑줄 32자)로 3단까지, 값 모두 합쳐 120개 이하, 직렬화(UTF-8) 4KB 이하.
+// (값 개수 상한은 jsonb 칸 크기 제약 8KB 를 지키려고 둔다 — MANUAL_DIAGNOSTICS_NODES_MAX 설명.)
+const DIAGNOSTICS_TOP_KEYS = new Set(MANUAL_DIAGNOSTICS_TOP_KEYS);
 const DIAGNOSTICS_KEY_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 const DIAGNOSTICS_DEPTH_MAX = 3;
 const DIAGNOSTICS_KEYS_MAX = 24;
 const DIAGNOSTICS_ARRAY_MAX = 10;
 const DIAGNOSTICS_NUMBER_MAX = 1e9;
+// 진단 글자에 두지 않는 글자(= 확장 diagnosticText 가 지우는 것): 제어 문자 전부(Cc = C0·DEL·C1), 서식 문자(Cf), 줄·문단 구분.
+// 다른 칸의 '제어 문자'(C0·DEL, CONTROL_CHAR_PATTERN)보다 넓다 — 진단만의 규칙.
+const DIAGNOSTICS_TEXT_FORBIDDEN = /[\p{Cc}\p{Cf}\u2028\u2029]/u;
 
-function diagnosticsValueOk(value, depth) {
+function diagnosticsValueOk(value, depth, budget) {
+  budget.nodes += 1;
+  if (budget.nodes > MANUAL_DIAGNOSTICS_NODES_MAX) return false;
   if (value === null || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= DIAGNOSTICS_NUMBER_MAX;
   if (typeof value === "string") {
-    return value.isWellFormed() && !CONTROL_CHAR_PATTERN.test(value) && Array.from(value).length <= MANUAL_DIAGNOSTICS_TEXT_MAX;
+    return value.isWellFormed() && !DIAGNOSTICS_TEXT_FORBIDDEN.test(value) && Array.from(value).length <= MANUAL_DIAGNOSTICS_TEXT_MAX;
   }
   if (depth >= DIAGNOSTICS_DEPTH_MAX) return false;
-  if (Array.isArray(value)) return value.length <= DIAGNOSTICS_ARRAY_MAX && value.every((item) => diagnosticsValueOk(item, depth + 1));
+  if (Array.isArray(value)) return value.length <= DIAGNOSTICS_ARRAY_MAX && value.every((item) => diagnosticsValueOk(item, depth + 1, budget));
   if (!plainObject(value) || Object.getPrototypeOf(value) !== Object.prototype) return false;
   const keys = Object.keys(value);
-  return keys.length <= DIAGNOSTICS_KEYS_MAX && keys.every((key) => DIAGNOSTICS_KEY_PATTERN.test(key) && diagnosticsValueOk(value[key], depth + 1));
+  return keys.length <= DIAGNOSTICS_KEYS_MAX && keys.every((key) => DIAGNOSTICS_KEY_PATTERN.test(key) && diagnosticsValueOk(value[key], depth + 1, budget));
 }
 
 export function manualDiagnostics(body) {
@@ -293,7 +299,7 @@ export function manualDiagnostics(body) {
   if (!Object.keys(source).every((key) => DIAGNOSTICS_TOP_KEYS.has(key))) return null;
   if (source.v !== MANUAL_DIAGNOSTICS_SCHEMA) return null;
   if (typeof source.ext !== "string" || !VERSION_PATTERN.test(source.ext)) return null;
-  if (!diagnosticsValueOk(source, 0)) return null;
+  if (!diagnosticsValueOk(source, 0, { nodes: 0 })) return null;
   let text;
   try {
     text = JSON.stringify(source);

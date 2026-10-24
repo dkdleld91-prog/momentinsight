@@ -1377,6 +1377,24 @@ async function saveManualDiagnostics(ctx, claimId, diagnostics) {
   }
 }
 
+// 진단 저장을 기다리는 상한(1.0.1 검토 반영). 순위 기록은 이미 끝난 뒤라 DB 가 멈춰도 응답을 늦추지 않는다: 넘으면 경고 1줄
+// (errorCode "timeout")만 남기고 응답한다. 저장은 뒤에서 끝날 수도 있고, 화면이 다시 보내면(중복 처리) 그때 채워진다.
+// ctx.manualDiagnosticsTimeoutMs 는 시험용(양수일 때만).
+const DIAGNOSTICS_SAVE_TIMEOUT_MS = 2500;
+
+async function saveManualDiagnosticsWithin(ctx, claimId, diagnostics) {
+  const override = ctx?.manualDiagnosticsTimeoutMs;
+  const limit = Number.isFinite(override) && override > 0 ? override : DIAGNOSTICS_SAVE_TIMEOUT_MS;
+  let timer;
+  const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), limit); });
+  try {
+    const saved = await Promise.race([saveManualDiagnostics(ctx, claimId, diagnostics), timeout]);
+    return saved === "timeout" ? noteDiagnosticsFailure({ code: "timeout" }) : saved;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function manualRecordInvalid(request, field, extra = {}) {
   return failure(request, "COUPANG_MANUAL_RECORD_INVALID", { field, ...extra });
 }
@@ -1460,7 +1478,7 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
   if (data.ok !== true) return manualFailure(request, data);
   // 확장 1.0.1 진단: 모양·크기를 통과한 것만, 저장한(또는 이미 저장된) 측정 회차에만 따로 남긴다(실패해도 응답 그대로).
   const diagnostics = measured ? manualDiagnostics(body) : null;
-  if (diagnostics && (data.accepted === true || data.duplicate === true)) await saveManualDiagnostics(ctx, claimId, diagnostics);
+  if (diagnostics && (data.accepted === true || data.duplicate === true)) await saveManualDiagnosticsWithin(ctx, claimId, diagnostics);
   return respond(request, {
     ok: true,
     accepted: data.accepted === true,

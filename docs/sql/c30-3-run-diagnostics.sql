@@ -14,7 +14,8 @@ alter table public.coupang_rank_runs
 alter table public.coupang_rank_runs
   drop constraint if exists coupang_rank_runs_diagnostics_shape;
 
--- 객체 하나, 8KB 이하(서버는 4KB 이하만 보낸다 — 넉넉한 바깥 울타리).
+-- 객체 하나, 8KB 이하. 서버는 직렬화 4KB·값 120개 이하만 보낸다(jsonb 는 작은 수·짧은 칸마다 글자보다 크게 저장되지만
+-- 그 범위의 최악도 약 5.4KB — PGlite 시험). 그래서 이 제약은 넉넉한 바깥 울타리다.
 alter table public.coupang_rank_runs
   add constraint coupang_rank_runs_diagnostics_shape check (
     diagnostics is null

@@ -3,8 +3,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createBackground } from "../background.js";
-import { buildDiagnostics, diagnosticText, diagnosticsBytes } from "../lib/assemble.js";
-import { DIAGNOSTICS_MAX_BYTES, EXTENSION_VERSION, searchUrl } from "../lib/protocol.js";
+import { buildDiagnostics, diagnosticText, diagnosticsBytes, diagnosticsNodes } from "../lib/assemble.js";
+import { DIAGNOSTICS_MAX_BYTES, DIAGNOSTICS_NODES_MAX, EXTENSION_VERSION, searchUrl } from "../lib/protocol.js";
 import { manualDiagnostics } from "../../../src/server/coupang-rank/manual.mjs";
 import { validateManualRecord } from "../../../src/server/coupang-rank/page-result.mjs";
 import { CHROME_UA, CLAIM_ID, FAST_TIMING, checkMessage, makeFakeChrome, makeFakeFetch, rawPage, send, sleep } from "./helpers.mjs";
@@ -343,9 +343,215 @@ test("buildDiagnostics: 4KB 상한(덜 중요한 것부터 덜어 냄·cut)·제
   assert.equal(small.firstDoc.title, "t0");
   assert.equal(small.hidden, true);
   // 성공: 경과·load 횟수·재시도 여부만
-  const ok = buildDiagnostics({ version: "1.0.1", page: { status: "ok", errorCode: null }, ms: { end: 12 }, load: { how: "complete", loading: 1, complete: 1 }, retry: { tried: false }, doc, tries: [{ kind: "ok" }] });
+  const ok = buildDiagnostics({ version: "1.0.1", page: { status: "ok", errorCode: null }, ms: { end: 12 }, load: { how: "complete", loading: 1, complete: 1 }, retry: { tried: false }, doc, tries: [{ kind: "ok" }], seen: { httpStatus: 429, blockedText: false } });
   assert.deepEqual(ok, { v: 1, ext: "1.0.1", ok: true, code: null, ms: { end: 12 }, load: { how: "complete", loading: 1, complete: 1, urls: 0, completeAt: [] }, retry: { tried: false } });
-  // 아무것도 못 덜어 내면 최소 모양
-  const tiny = buildDiagnostics({ version: "1.0.1", page: { status: "error", errorCode: "extract_failed" }, ms: Object.fromEntries(Array.from({ length: 400 }, (_, index) => [`k${index}`, index])) });
-  assert.deepEqual(tiny, { v: 1, ext: "1.0.1", ok: false, code: "extract_failed", cut: true });
+  // 실패면 불러오는 동안·짧은 읽기에서 본 HTTP 상태·차단 문구(seen)를 싣는다(모르는 값은 null)
+  assert.deepEqual(small.seen, undefined, "seen 을 주지 않으면 없음");
+  const seen = buildDiagnostics({ ...input, seen: { httpStatus: 429, blockedText: true } });
+  assert.deepEqual(seen.seen, { http: 429, blocked: true });
+  assert.deepEqual(buildDiagnostics({ ...input, seen: { httpStatus: "x" } }).seen, { http: null, blocked: false });
+  // 경과 이름은 16개까지(확장이 남기는 이름은 14개까지) — 서버 값 개수 상한(120) 안에 머문다
+  const many = buildDiagnostics({ version: "1.0.1", page: { status: "error", errorCode: "extract_failed" }, ms: Object.fromEntries(Array.from({ length: 400 }, (_, index) => [`k${index}`, index])) });
+  assert.equal(Object.keys(many.ms).length, 16);
+  assert.ok(diagnosticsNodes(many) <= DIAGNOSTICS_NODES_MAX);
+  assert.equal(manualDiagnostics({ page: { diagnostics: many } }) !== null, true);
+});
+
+test("1.0.1 검토 반영: 진단 글자는 C1 제어 문자·양방향 재정렬·폭 없는 글자를 지우고, scheme 없는 주소·;경로 매개변수·사용자 정보·data: 도 정리한다", () => {
+  // C1(U+0085 NEL·U+009B CSI) = 공백, 서식 문자(U+202E·U+2066·U+200B·U+FEFF·U+00AD) = 없앰, 줄 구분(U+2028) = 공백
+  assert.equal(diagnosticText("a\u0085b\u009bc\u202ed\u2066e\u200bf\ufeffg\u00adh\u2028i"), "a b cdefgh i");
+  const codePoints = (text) => Array.from(text).map((char) => char.codePointAt(0));
+  for (const point of codePoints(diagnosticText("x\u0080\u009f\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\u2060\u200c\u200d\u061cy"))) {
+    assert.ok(point >= 0x20 && point !== 0x7f && !(point >= 0x80 && point <= 0x9f) && !(point >= 0x200b && point <= 0x200f), point.toString(16));
+  }
+  assert.equal(diagnosticText("see www.coupang.com/np/search?q=SECRETKW&traceId=SECRET2 now"), "see www.coupang.com/np/search now");
+  assert.equal(diagnosticText("www.coupang.com?q=SECRET"), "www.coupang.com");
+  assert.equal(diagnosticText("final /np/search?q=SECRET#x"), "final /np/search");
+  assert.equal(diagnosticText("url https://www.coupang.com/np/search;jsessionid=SECRET3?q=1"), "url https://www.coupang.com/np/search");
+  assert.equal(diagnosticText("https://user:SECRET6@www.coupang.com/a?b=1"), "https://www.coupang.com/a");
+  assert.equal(diagnosticText("img data:text/html;base64,SECRET5=="), "img data:text/html");
+  assert.equal(diagnosticText("rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch%3Fq%3DSECRET8"), "rtnUrl=https%3A%2F%2Fwww.coupang.com%2Fnp%2Fsearch");
+  assert.equal(diagnosticText("주소https://www.coupang.com/np/search?q=SECRET7"), "주소https://www.coupang.com/np/search");
+  assert.equal(diagnosticText('Cannot access contents of url "https://login.coupang.com/login/login.pang?rtnUrl=x&token=SECRET".'), 'Cannot access contents of url "https://login.coupang.com/login/login.pang".');
+  // 주소가 아닌 글은 그대로(물음표·쉼표 포함)
+  assert.equal(diagnosticText("찾으시는 상품이 없나요? 1,000원 TypeError: x is null"), "찾으시는 상품이 없나요? 1,000원 TypeError: x is null");
+  assert.equal(diagnosticText("chrome-extension://abc/lib/measure.js:12:5"), "chrome-extension://abc/lib/measure.js:12:5");
+  // 정리한 글은 서버 진단 검사를 통과한다
+  const diag = buildDiagnostics({ version: "1.0.1", page: { status: "error", errorCode: "extract_failed" }, unexpected: "x\u009b[31m\u202ey\u200b", tries: [{ kind: "rejected", msg: "a\u0085b https://x.y/z?SECRET" }], doc: { title: "t\u2066i", bodyHead: "b\u2028h" } });
+  assert.notEqual(manualDiagnostics({ page: { diagnostics: diag } }), null);
+  assert.equal(JSON.stringify(diag).includes("SECRET"), false);
+});
+
+// ── 1.0.1 검토 반영(2026-10-24): 1번 더 읽기 사이 주소 바뀜·본 차단 신호·120초 상한 ──
+
+// 차단 HTTP 를 보이는 probe: 탭이 다시 불러오는 중이면 429(중간 문서), 다 불러왔으면 200.
+const probe429WhileLoading = ({ tab }) => (tab.status === "loading"
+  ? { readyState: "loading", host: "www.coupang.com", path: "/np/search", httpStatus: 429, blockedText: false }
+  : { readyState: "complete", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false });
+
+test("1번 더 읽기 사이(첫 측정 뒤 기다리는 동안) 주소가 같은 q 의 다른 쪽(page=2)으로 바뀌면 두 번째 측정 없이 user_navigated(바뀐 이름 page)", async () => {
+  let count = 0;
+  const { fake, background } = setup({
+    chrome: {
+      scenario: {
+        measure: ({ tab, chrome: fakeRef }) => {
+          count += 1;
+          if (count > 1) return rawPage();
+          // 측정 중엔 주소 없는 다시 불러오기만, 측정이 끝난 뒤(기다리는 동안) 주소가 &page=2 로 바뀌고 complete
+          tab.status = "loading";
+          fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+          setTimeout(() => {
+            tab.url = `${tab.url}&page=2`;
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading", url: tab.url });
+            setTimeout(() => { tab.status = "complete"; fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "complete" }); }, 10);
+          }, 10);
+          return undefined;
+        },
+      },
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "user_navigated", "1.0.0 과 같은 판정(순위 기록 없음)");
+  assert.deepEqual(reply.page.changedParams, ["page"]);
+  assert.equal(reply.page.organic.length, 0);
+  assert.equal(measures(fake), 1, "바뀐 주소에서는 측정(스크롤)하지 않는다");
+  assert.equal(fake.calls.update.length, 1);
+  assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "complete", result: "address_changed" });
+  assertServerAccepts(reply);
+});
+
+test("1번 더 읽기 직전(짧은 읽기 뒤) 주소가 정렬만 바뀌어도 두 번째 쪽 함수를 넣지 않는다 — 두 번째 측정은 첫 측정 기준을 그대로 쓴다", async () => {
+  let quicks = 0;
+  const { fake, background } = setup({
+    chrome: {
+      scenario: {
+        measure: () => undefined,
+        quick: ({ tab, chrome: fakeRef }) => {
+          quicks += 1;
+          if (quicks === 2) {
+            // 1번 더 읽기 전 짧은 읽기 도중 사람이 정렬을 바꿈(탭은 이미 다 불러온 상태)
+            tab.url = `${tab.url}&sorter=saleCountDesc`;
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading", url: tab.url });
+          }
+          return rawPage({ items: [], stable: false, scrolls: 0, reads: 1 });
+        },
+      },
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "user_navigated");
+  assert.deepEqual(reply.page.changedParams, ["sorter"]);
+  assert.equal(measures(fake), 1);
+  assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "already", result: "address_changed" });
+  assert.equal(fake.calls.update.length, 1);
+});
+
+test("1번 더 읽기 전 기다리는 동안 load 확인이 본 차단 HTTP(429)면 두 번째 측정(스크롤) 없이 그날 중지 — 뒤 문서가 200 이어도", async () => {
+  for (const second of ["ok", "extractError"]) {
+    let count = 0;
+    const { fake, fetchImpl, background } = setup({
+      chrome: {
+        scenario: {
+          measure: ({ tab, chrome: fakeRef }) => {
+            count += 1;
+            if (count === 1) {
+              selfReload(fakeRef, tab, 60);
+              return undefined;
+            }
+            return second === "ok" ? rawPage() : { extractError: true, host: "www.coupang.com", path: "/np/search", query: "", items: [], httpStatus: 200, error: "x" };
+          },
+          probe: probe429WhileLoading,
+        },
+      },
+    });
+    const reply = await send(background, checkMessage());
+    assert.equal(reply.stopSignal, true, second);
+    assert.equal(reply.stopReason, "blocked_http_429", second);
+    assert.equal(reply.page.httpStatus, 429, second);
+    assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_429"], second);
+    assert.equal(measures(fake), 1, `${second}: 두 번째 측정 없음`);
+    assert.equal(fake.calls.update.length, 1, second);
+    assert.ok(fake.storage.blockedDay, second);
+    const diag = reply.page.diagnostics;
+    assert.deepEqual(diag.retry, { tried: true, load: "complete", result: "blocked" }, second);
+    assert.deepEqual(diag.seen, { http: 429, blocked: false }, `${second}: 본 차단 HTTP 가 진단에도 남는다`);
+    assertServerAccepts(reply);
+  }
+});
+
+test("첫 load 중 본 429 + 측정이 쪽 안 예외(extractError, 200): 1번 더 읽기를 '차단'으로 건너뛰면 결과도 그날 중지(진단·결과가 맞음)", async () => {
+  const { fake, fetchImpl, background } = setup({
+    chrome: {
+      scenario: {
+        loadDelayMs: 60,
+        measure: () => ({ extractError: true, host: "www.coupang.com", path: "/np/search", query: "", items: [], httpStatus: 200, error: "x" }),
+        probe: probe429WhileLoading,
+      },
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "extract_failed");
+  assert.equal(reply.page.httpStatus, 429);
+  assert.equal(reply.stopReason, "blocked_http_429");
+  assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_429"]);
+  assert.deepEqual(reply.page.diagnostics.retry, { tried: false, skip: "blocked" });
+  assert.deepEqual(reply.page.diagnostics.tries, [{ kind: "extract_error", msg: "x" }]);
+  assert.equal(measures(fake), 1);
+  assertServerAccepts(reply);
+  // 1.0.0 규칙 그대로: 첫 load 중 429 를 봤어도 측정이 목록을 다 읽었으면(뒤 문서 200) ok·중지 없음
+  const fine = setup({ chrome: { scenario: { loadDelayMs: 60, probe: probe429WhileLoading } } });
+  const okReply = await send(fine.background, checkMessage());
+  assert.equal(okReply.page.status, "ok");
+  assert.equal(okReply.stopSignal, false);
+  assert.deepEqual(fine.fetchImpl.stops(), []);
+});
+
+test("120초 상한이 1번 더 읽기 전 짧은 읽기 중에 걸리면 두 번째 쪽 함수(스크롤)를 넣지 않는다 — browser_hard_cap·창 닫음", async () => {
+  let quicks = 0;
+  const { fake, background } = setup({
+    chrome: {
+      scenario: {
+        measure: () => undefined,
+        quick: () => {
+          quicks += 1;
+          if (quicks === 2) return sleep(150).then(() => null); // 상한(80ms)을 넘겨 끝남(짧은 읽기 상한 200ms 안)
+          return rawPage({ items: [], stable: false, scrolls: 0, reads: 1 });
+        },
+      },
+    },
+    timing: { hardCapMs: 80, quickReadTimeoutMs: 200 },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.errorCode, "browser_hard_cap");
+  assert.equal(measures(fake), 1, "상한 뒤에는 측정 함수를 넣지 않는다");
+  assert.equal(fake.calls.remove.length, 1);
+  assert.equal(fake.windows.size, 0);
+  assert.equal(fake.calls.update.length, 1);
+});
+
+test("1번 더 읽기 사이 같은 주소 다시 불러오기(주소 없는 loading·같은 주소 url 사건)는 바뀜이 아니다 — 두 번째 측정 ok", async () => {
+  let count = 0;
+  const { fake, background } = setup({
+    chrome: {
+      scenario: {
+        measure: ({ tab, chrome: fakeRef }) => {
+          count += 1;
+          if (count > 1) return rawPage();
+          tab.status = "loading";
+          fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+          setTimeout(() => {
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
+            fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "loading", url: tab.url });
+            setTimeout(() => { tab.status = "complete"; fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "complete" }); }, 10);
+          }, 10);
+          return undefined;
+        },
+      },
+    },
+  });
+  const reply = await send(background, checkMessage());
+  assert.equal(reply.page.status, "ok");
+  assert.equal(measures(fake), 2);
+  assert.deepEqual(reply.page.diagnostics.retry, { tried: true, load: "complete", result: "measured" });
+  assert.equal(fake.calls.update.length, 1);
 });

@@ -216,8 +216,15 @@ export const MANUAL_CHANGED_PARAM_NAME_MAX = 40; // 코드 포인트
 // 확장 1.0.1 실패 진단(page.diagnostics 또는 본문 diagnostics): 서버가 모양·크기를 보고 통과한 것만 회차 diagnostics 칸
 // (대표 SQL docs/sql/c30-3-run-diagnostics.sql)에 따로 둔다. 진단이 틀려도 순위 기록은 거절하지 않는다(진단만 버림).
 export const MANUAL_DIAGNOSTICS_SCHEMA = 1; // = 확장 DIAGNOSTICS_SCHEMA
-export const MANUAL_DIAGNOSTICS_MAX_BYTES = 4096; // 직렬화(UTF-8) 상한 = 확장 DIAGNOSTICS_MAX_BYTES (SQL 칸 제약은 8192)
+export const MANUAL_DIAGNOSTICS_MAX_BYTES = 4096; // 직렬화(UTF-8) 상한 = 확장 DIAGNOSTICS_MAX_BYTES
+// 값 개수 상한(= 확장 DIAGNOSTICS_NODES_MAX). jsonb 는 작은 수·짧은 칸마다 글자보다 크게 저장돼(값 하나에 최대 약 16바이트 더)
+// 직렬화 4KB 만으로는 SQL 칸 제약(pg_column_size ≤ 8192)을 넘을 수 있다. 4KB + 값 120개면 최악도 8KB 안(PGlite 시험으로 잰다).
+export const MANUAL_DIAGNOSTICS_NODES_MAX = 120;
 export const MANUAL_DIAGNOSTICS_TEXT_MAX = 200; // 글자 칸 하나의 상한(코드 포인트) = 확장 DIAG_TEXT_MAX
+// 진단 맨 위 칸 이름(= 확장 DIAGNOSTICS_TOP_KEYS). 이 밖의 칸이 있으면 진단을 버린다.
+export const MANUAL_DIAGNOSTICS_TOP_KEYS = Object.freeze([
+  "v", "ext", "ok", "code", "ms", "load", "retry", "tries", "doc", "firstDoc", "hidden", "unexpected", "seen", "cut",
+]);
 // 아래 세 목록은 화면·확장 공용 이름이다. 서버는 outcomeCode·errorCode 의 형식(^[a-z0-9_]{1,60}$)만 검사한다.
 export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
   "page_timeout", "window_closed", "browser_hard_cap", "page_load_failed", "page_unreadable", "extract_failed", "user_navigated",

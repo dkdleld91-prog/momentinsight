@@ -5507,7 +5507,8 @@ test("전체 확인(검토 1): 시작 직전(확인 창 전)에 우리 서버 �
   await settle();
   assert.equal(offline.confirmCalls.length, confirms, "확인 창을 띄우지 않는다");
   assert.equal(offline.server.claimTimes.length, 0);
-  assert.equal(allSummaryOf(offline), "전체 확인을 시작하지 않았습니다: 서버에서 최신 목록을 받지 못했습니다(인터넷 연결 확인). 쿠팡 검색은 하지 않았습니다.");
+  // failGets = 서버 오류(503): 인터넷 연결이 아니라 서버 오류라고 쓴다(2026-10-24 재검사 2차)
+  assert.equal(allSummaryOf(offline), "전체 확인을 시작하지 않았습니다: 서버 오류로 최신 목록을 받지 못했습니다(잠시 뒤 다시 눌러 주세요). 쿠팡 검색은 하지 않았습니다.");
   assert.equal(allOff(offline), false, "다시 누를 수 있다");
 });
 
@@ -5547,7 +5548,7 @@ test("전체 확인(검토 1): 매 건 직전 목록 GET 이 실패하면 옛 �
   screen.server.failGets = true;
   await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS + 1000, 3000);
   assert.equal(screen.server.claimTimes.length, 1);
-  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 서버에서 최신 목록을 받지 못해 멈췄습니다(인터넷 연결 확인). 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 서버 오류로 최신 목록을 받지 못하고 멈췄습니다(잠시 뒤 다시 눌러 주세요). 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
   assert.equal(pendingTicks(screen).length, 0);
 });
 
@@ -5567,8 +5568,13 @@ test("전체 확인(검토 2): '멈추기'를 두 번 누르면(더블클릭·En
   dispatch(allButtonOf(screen), "click");
   await settle();
   assert.equal(screen.confirmCalls.length, confirms, "1초 안의 누름은 받지 않는다");
-  // 1초가 지난 누름은 사람이 다시 누른 것이다 → 목록을 받고 확인 창
+  // 막은 누름마다 다시 센다(2026-10-24 재검사 2차): 끝난 지 1.1초여도 막은 누름 0.2초 뒤면 받지 않는다(누름 유지 · Enter 되풀이)
   screen.clock.now += 200;
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms, "누름이 1초 넘게 끊기지 않았으면 받지 않는다");
+  // 누름이 1초 끊긴 뒤의 누름은 사람이 다시 누른 것이다 → 목록을 받고 확인 창
+  screen.clock.now += 1000;
   screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
   dispatch(allButtonOf(screen), "click");
   await settle();
@@ -5752,4 +5758,268 @@ test("전체 확인 CSS(검토 5·9): 꺼진 버튼은 aria-disabled 로 같은 
   const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px) {"));
   const phoneRule = phone.slice(phone.indexOf("  #mi-admin .mi-coupang-rank-all,\n  #mi-clean .mi-coupang-rank-all {"));
   assert.ok(phoneRule.slice(0, phoneRule.indexOf("}")).includes("contain: none;"), "900px 이하는 contain 을 푼다");
+});
+
+// ── 전체 확인 재검사 2차 결함 고정(2026-10-24, 5건) ──
+
+// 목록 GET 을 잡아 둘 수 있는 서버(holdGets = true 면 GET 이 풀릴 때까지 기다린다).
+function heldGetServer(clock, options = {}) {
+  const world = allServer(clock, options);
+  const inner = world.respond;
+  world.holdGets = false;
+  world.held = [];
+  world.respond = async (url, init) => {
+    if (init.method === "GET" && world.holdGets) await new Promise((resolve) => world.held.push(resolve));
+    return inner(url, init);
+  };
+  world.releaseGets = () => world.held.splice(0).forEach((resolve) => resolve());
+  return world;
+}
+
+// dispatch 와 같고, 이벤트에 칸(repeat·key 등)을 덧붙인다.
+function dispatchWith(target, type, extra) {
+  const path = [];
+  for (let node = target; node; node = node.parentNode) path.push(node);
+  const event = { type, target, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...extra };
+  for (const node of path.slice().reverse()) (node.listeners?.[type] || []).filter((entry) => entry.capture).forEach((entry) => entry.fn(event));
+  for (const node of path) (node.listeners?.[type] || []).filter((entry) => !entry.capture).forEach((entry) => entry.fn(event));
+  return event;
+}
+
+test("전체 확인(재검사 2차 1): 누른 뒤 목록 GET 을 받는 사이(준비 중) 다른 메뉴로 가면 확인 창을 다른 화면 위에 띄우지 않고, 준비 중에는 카드 '지금 확인'도 막는다", async () => {
+  const clock = { now: SERVER_NOW };
+  const world = heldGetServer(clock);
+  const screen = mountAll({ clock, server: world });
+  screen.controller.show();
+  await settle();
+  const confirms = screen.confirmCalls.length;
+  world.holdGets = true;
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(world.held.length, 1, "확인 창 전 목록 GET 이 잡혀 있다");
+  assert.equal(allOff(screen), true);
+  assert.equal(allHintOf(screen), "최신 목록을 받는 중…");
+  const card = manualButtonFor(screen, allId(3));
+  assert.equal(card.disabled, true, "준비 중에도 카드 '지금 확인'은 꺼진다");
+  assert.equal(card.getAttribute("title"), "전체 확인을 시작하려고 최신 목록을 받는 중이라 카드의 '지금 확인'은 잠시 막아 두었습니다");
+  dispatch(card, "click");
+  await settle();
+  assert.equal(world.claimTimes.length, 0, "카드 확인이 끼어들지 않는다");
+  // 다른 메뉴로 간 뒤 GET 이 온다 → 확인 창 없음 · claim 없음 · 왜 시작하지 않았는지 한 줄
+  screen.view.classList.remove("is-active");
+  await settle();
+  clock.now += 1500;
+  world.holdGets = false;
+  world.releaseGets();
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms, "다른 화면 위에 확인 창을 띄우지 않는다");
+  assert.equal(world.claimTimes.length, 0);
+  assert.equal(allSummaryOf(screen), "전체 확인을 시작하지 않았습니다: 최신 목록을 받는 사이 화면을 옮겼습니다. 쿠팡 검색은 하지 않았습니다.");
+  assert.equal(pendingTicks(screen).length, 0);
+  // 돌아오면 다시 누를 수 있고 카드도 다시 켜진다
+  screen.view.classList.add("is-active");
+  screen.controller.show();
+  await settle();
+  assert.equal(allOff(screen), false);
+  assert.equal(manualButtonFor(screen, allId(3)).disabled, false);
+
+  // 지켜보기(MutationObserver): 준비 중에 잠깐 갔다가 GET 이 오기 전에 돌아와도 확인 창을 띄우지 않는다
+  const callbacks = [];
+  class FakeMutationObserver {
+    constructor(callback) { callbacks.push(callback); }
+    observe() {}
+    disconnect() {}
+  }
+  const clock2 = { now: SERVER_NOW };
+  const world2 = heldGetServer(clock2);
+  const quick = mountAll({ clock: clock2, server: world2, MutationObserver: FakeMutationObserver });
+  quick.controller.show();
+  await settle();
+  const quickConfirms = quick.confirmCalls.length;
+  world2.holdGets = true;
+  dispatch(allButtonOf(quick), "click");
+  await settle();
+  quick.view.classList.remove("is-active");
+  callbacks[0]([]);
+  quick.view.classList.add("is-active");
+  callbacks[0]([]);
+  world2.holdGets = false;
+  world2.releaseGets();
+  await settle();
+  assert.equal(quick.confirmCalls.length, quickConfirms);
+  assert.equal(world2.claimTimes.length, 0);
+  assert.equal(allSummaryOf(quick), "전체 확인을 시작하지 않았습니다: 최신 목록을 받는 사이 화면을 옮겼습니다. 쿠팡 검색은 하지 않았습니다.");
+
+  // 옮기지 않았으면 그대로 확인 창(거절하면 카드는 다시 켜진다)
+  const stay = mountAll({ confirm: () => false });
+  stay.controller.show();
+  await settle();
+  dispatch(allButtonOf(stay), "click");
+  await settle();
+  assert.equal(stay.confirmCalls.length, 1);
+  assert.equal(manualButtonFor(stay, allId(3)).disabled, false, "확인 창을 거절하면 카드 '지금 확인'을 다시 켠다");
+  assert.equal(stay.server.claimTimes.length, 0);
+});
+
+test("전체 확인(재검사 2차 2): 다른 탭이 확인해서(그쪽이 횟수 1번을 씀) 건너뛴 키워드 자리는 횟수가 모자라 뺀 키워드로 채우지 않는다 — '끝'으로 끝나고 못 한 키워드는 '횟수 모자람'에 센다", async () => {
+  const screen = mountAll({ used: 28 });
+  await startAll(screen);
+  assert.equal(manualPill(screen), "전체 확인 2 / 2");
+  await advanceAll(screen, 60000, 1000);
+  otherTabChecked(screen, "키워드 C");
+  await advanceAll(screen, ALL_GAP_MS * 2, 1000);
+  assert.deepEqual(claimedIds(screen), [allId(1)], "B 를 채워 claim 하지 않는다");
+  assert.equal(screen.server.used, 30);
+  assert.equal(screen.server.log.filter((entry) => entry.method === "POST").length, 2, "POST 는 A claim·record 두 번뿐(하루 상한 거절 없음)");
+  assert.equal(allSummaryOf(screen), "전체 확인 끝: 1개 키워드 · 상품 2개 기록 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인) · 키워드 2개는 오늘 횟수가 모자라 못 함.");
+  assert.ok(screen.host.querySelector("[data-coupang-rank-all-summary]").classList.contains("is-ok"), "아무 일 없이 끝났으므로 경고 색이 아니다");
+  assert.equal(pendingTicks(screen).length, 0);
+
+  // 일시중지로 건너뛰어도, 그사이 다른 탭이 오늘 남은 횟수를 다 썼으면(서버가 준 최신 값) 채우지 않는다
+  const spent = mountAll({ used: 28 });
+  await startAll(spent);
+  otherTabChecked(spent, "키워드 B");
+  dispatch(spent.host.querySelector(`[data-coupang-rank-action="pause"][data-coupang-rank-id="${allId(3)}"]`), "click");
+  await settle();
+  await advanceAll(spent, ALL_GAP_MS * 2, 1000);
+  assert.deepEqual(claimedIds(spent), [allId(1)]);
+  assert.equal(spent.server.log.filter((entry) => entry.method === "POST" && JSON.parse(entry.body).action === "manual-claim").length, 1, "F 를 채워 하루 상한 거절을 받지 않는다");
+  assert.equal(allSummaryOf(spent), "전체 확인 끝: 1개 키워드 · 상품 2개 기록 · 실패 0 · 건너뜀 1개(일시중지·삭제·이미 확인) · 키워드 1개는 오늘 횟수가 모자라 못 함.");
+});
+
+test("전체 확인(재검사 2차 3): 목록 GET 을 받지 못한 이유를 나눠 쓴다 — 로그인 풀림(401) · 서버 오류(5xx) · 연결 실패, 시작 전과 도중 모두", async () => {
+  const list = internals.manualAllListFailText;
+  assert.equal(list("transport", true), "서버에 연결하지 못해 최신 목록을 받지 못하고 멈췄습니다(인터넷 연결 확인)");
+  assert.equal(list("session", true), "로그인이 풀려 최신 목록을 받지 못하고 멈췄습니다(다시 로그인해 주세요)");
+  assert.equal(list("server", true), "서버 오류로 최신 목록을 받지 못하고 멈췄습니다(잠시 뒤 다시 눌러 주세요)");
+  assert.equal(list("other", true), "최신 목록을 받지 못하고 멈췄습니다(목록 안내 줄 참고)");
+  assert.equal(list("", false), "최신 목록을 받지 못했습니다(목록 안내 줄 참고)");
+  assert.equal(list("constructor", false), "최신 목록을 받지 못했습니다(목록 안내 줄 참고)");
+  assert.equal(list("session", false), "로그인이 풀려 최신 목록을 받지 못했습니다(다시 로그인해 주세요)");
+
+  const withGets = (answer) => {
+    const clock = { now: SERVER_NOW };
+    const world = allServer(clock);
+    const inner = world.respond;
+    world.answer = null;
+    world.respond = async (url, init) => {
+      if (init.method === "GET" && world.answer) return world.answer();
+      return inner(url, init);
+    };
+    world.set = (fn) => { world.answer = fn; };
+    return { clock, world };
+  };
+  // 도중: 매 건 직전 GET 이 401
+  const a = withGets();
+  const mid = mountAll({ clock: a.clock, server: a.world });
+  await startAll(mid);
+  a.world.set(() => response({ ok: false, code: "SESSION_REQUIRED", message: "로그인이 필요합니다." }, 401));
+  await advanceAll(mid, ALL_GAP_MS + ALL_PAD_MS + 2000, 1000);
+  assert.equal(allSummaryOf(mid), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 로그인이 풀려 최신 목록을 받지 못하고 멈췄습니다(다시 로그인해 주세요). 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(mid.host.querySelector("[data-coupang-rank-list-note]").textContent, "로그인이 필요합니다. 다시 로그인해주세요. 화면의 이전 목록을 그대로 둡니다.");
+  assert.equal(a.world.claimTimes.length, 1);
+  // 시작 전: 401
+  const b = withGets();
+  const before = mountAll({ clock: b.clock, server: b.world });
+  before.controller.show();
+  await settle();
+  b.world.set(() => response({ ok: false, code: "SESSION_REQUIRED", message: "로그인이 필요합니다." }, 401));
+  const confirms = before.confirmCalls.length;
+  dispatch(allButtonOf(before), "click");
+  await settle();
+  assert.equal(before.confirmCalls.length, confirms);
+  assert.equal(allSummaryOf(before), "전체 확인을 시작하지 않았습니다: 로그인이 풀려 최신 목록을 받지 못했습니다(다시 로그인해 주세요). 쿠팡 검색은 하지 않았습니다.");
+  // 도중: 연결 실패(두 번 모두 — 1.5초 뒤 한 번 다시 시도)
+  const c = withGets();
+  const offline = mountAll({ clock: c.clock, server: c.world });
+  await startAll(offline);
+  c.world.set(() => { throw new TypeError("Failed to fetch"); });
+  await advanceAll(offline, ALL_GAP_MS + ALL_PAD_MS + 1000, 1000);
+  const retries = offline.timeouts.filter((entry) => entry.ms === 1500 && !entry.cleared && !entry.ran);
+  assert.equal(retries.length, 1, "연결 실패는 1.5초 뒤 한 번 다시 시도한다");
+  retries.forEach((entry) => { entry.ran = true; entry.fn(); });
+  await settle();
+  assert.equal(allSummaryOf(offline), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 서버에 연결하지 못해 최신 목록을 받지 못하고 멈췄습니다(인터넷 연결 확인). 1개 키워드 · 상품 2개 기록 · 실패 0 · 남은 3개 키워드는 하지 않음.");
+  assert.equal(c.world.claimTimes.length, 1);
+});
+
+test("전체 확인(재검사 2차 5): '멈추기' 위에서 Enter 를 누르고 있어도(30ms 마다 누름 · 키 되풀이) 확인 창이 다시 뜨지 않고, 손을 뗀 뒤 다시 누르면 받는다", async () => {
+  const screen = mountAll();
+  await startAll(screen);
+  screen.window.confirm = (message) => { screen.confirmCalls.push(message); return false; };
+  const confirms = screen.confirmCalls.length;
+  const gets = () => screen.server.log.filter((entry) => entry.method === "GET").length;
+  const getsBefore = gets();
+  // 30ms 마다 누름 1.5초(크롬은 버튼 위 Enter 되풀이마다 click 을 보낸다): 첫 누름이 '멈추기', 나머지는 바뀐 '전체 확인' 위
+  for (let ms = 0; ms <= 1500; ms += 30) {
+    dispatch(allButtonOf(screen), "click");
+    await settle();
+    screen.clock.now += 30;
+  }
+  assert.match(allSummaryOf(screen), /^전체 확인 멈춤\(2 \/ 4 '키워드 C'에서\): 멈추기를 눌러 멈췄습니다\./u);
+  assert.equal(screen.confirmCalls.length, confirms, "누르고 있는 동안 확인 창이 다시 뜨지 않는다");
+  assert.equal(gets(), getsBefore, "목록 GET 도 보내지 않는다");
+  // 손을 떼고 1초 뒤 다시 누르면 받는다
+  screen.clock.now += 1000;
+  dispatch(allButtonOf(screen), "click");
+  await settle();
+  assert.equal(screen.confirmCalls.length, confirms + 1);
+
+  // 키 되풀이 첫 간격이 1초보다 긴 경우: 끝난 지 2초 뒤라도 되풀이된 keydown 바로 뒤의 누름은 받지 않는다
+  const slow = mountAll();
+  await startAll(slow);
+  slow.window.confirm = (message) => { slow.confirmCalls.push(message); return false; };
+  const button = allButtonOf(slow);
+  dispatchWith(button, "keydown", { key: "Enter", repeat: false });
+  dispatch(button, "click");
+  await settle();
+  assert.equal(button.textContent, "전체 확인");
+  const slowConfirms = slow.confirmCalls.length;
+  slow.clock.now += 2000;
+  dispatchWith(button, "keydown", { key: "Enter", repeat: true });
+  dispatch(button, "click");
+  await settle();
+  assert.equal(slow.confirmCalls.length, slowConfirms, "되풀이된 Enter 의 누름은 받지 않는다");
+  slow.clock.now += 1200;
+  dispatchWith(button, "keydown", { key: "Enter", repeat: false });
+  dispatch(button, "click");
+  await settle();
+  assert.equal(slow.confirmCalls.length, slowConfirms + 1, "손을 뗐다가 새로 누른 Enter 는 받는다");
+});
+
+test("전체 확인(재검사 2차 4): 작은 글은 단어 단위로만 줄을 바꾸고, '횟수 모자람'은 넓은 화면에서 따로 다음 줄(줄 앞 '·' 없음) · 901~1360px 는 오른쪽 칸을 정한 폭으로 넓힌다", async () => {
+  const rule = (source, selector) => {
+    const at = source.indexOf(selector);
+    assert.ok(at >= 0, selector);
+    return source.slice(at, source.indexOf("}", at));
+  };
+  const hint = rule(cssSource, "#mi-admin .mi-coupang-rank-all-hint,\n#mi-clean .mi-coupang-rank-all-hint {");
+  assert.ok(hint.includes("word-break: keep-all;") && hint.includes("overflow-wrap: break-word;"), hint);
+  assert.ok(!hint.includes("anywhere"), "글자 사이 꺾임(overflow-wrap: anywhere)을 쓰지 않는다");
+  assert.ok(rule(cssSource, "#mi-admin .mi-coupang-rank-all-hint-sep,\n#mi-clean .mi-coupang-rank-all-hint-sep {").includes("display: none;"));
+  assert.ok(rule(cssSource, "#mi-admin .mi-coupang-rank-all-hint-more,\n#mi-clean .mi-coupang-rank-all-hint-more {").includes("display: block;"));
+  for (const name of ["mi-coupang-rank-all-hint-sep", "mi-coupang-rank-all-hint-more"]) {
+    assert.ok(new RegExp(`#mi-admin [^{]*\\.${name}\\b`, "u").test(cssSource), `#mi-admin ${name}`);
+    assert.ok(new RegExp(`#mi-clean [^{]*\\.${name}\\b`, "u").test(cssSource), `#mi-clean ${name}`);
+  }
+  const mid = cssSource.slice(cssSource.indexOf("@media (min-width: 901px) and (max-width: 1360px) {"), cssSource.indexOf("@media (min-width: 901px) and (max-width: 1180px) {"));
+  assert.ok(rule(mid, "  #mi-admin .mi-coupang-rank-all,\n  #mi-clean .mi-coupang-rank-all {").includes("width: 136px;"), "901~1360px 는 정한 폭(글 길이를 따르지 않음)");
+  const phone = cssSource.slice(cssSource.indexOf("@media (max-width: 900px) {"));
+  assert.ok(rule(phone, "  #mi-admin .mi-coupang-rank-all-hint-sep,\n  #mi-admin .mi-coupang-rank-all-hint-more,").includes("display: inline;"), "900px 이하는 ' · '로 이어 쓴다");
+
+  // 화면: 글은 그대로(' · ' 포함), ' · '와 '횟수 모자람'은 따로 둔 칸
+  assert.deepEqual(plain(internals.manualAllHintParts(2, 2, manualPayload())), ["키워드 2개 · 약 6분", "2개는 횟수 모자람"]);
+  const screen = mountAll({ used: 28 });
+  screen.controller.show();
+  await settle();
+  const node = screen.host.querySelector("[data-coupang-rank-all-hint]");
+  assert.equal(node.textContent, "키워드 2개 · 약 6분 · 2개는 횟수 모자람");
+  assert.equal(node.querySelector(".mi-coupang-rank-all-hint-sep").textContent, " · ");
+  assert.equal(node.querySelector(".mi-coupang-rank-all-hint-more").textContent, "2개는 횟수 모자람");
+  const full = mountAll();
+  full.controller.show();
+  await settle();
+  const fullNode = full.host.querySelector("[data-coupang-rank-all-hint]");
+  assert.equal(fullNode.textContent, "키워드 4개 · 약 12분");
+  assert.equal(fullNode.querySelector(".mi-coupang-rank-all-hint-more"), null, "모자람이 없으면 따로 둔 칸도 없다");
 });

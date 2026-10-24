@@ -122,7 +122,7 @@ test("두 번 만들어도 바이트가 같고(zip·version.json), release 는 v
     const c = buildCoupangCheckExtension({ outDir: other, env: { VERCEL_GIT_COMMIT_SHA: "ffffffff00000000000000000000000000000000" } });
     assert.deepEqual(fs.readFileSync(c.zipPath), fs.readFileSync(a.zipPath), "release 가 달라도 zip 은 같다");
     assert.equal(c.release, "fffffff");
-    assert.deepEqual(fs.readdirSync(first).sort(), ["mi-coupang-check-1.0.0.zip", "version.json"]);
+    assert.deepEqual(fs.readdirSync(first).sort(), [`mi-coupang-check-${manifest.version}.zip`, "version.json"]);
   } finally {
     for (const dir of [first, second, other]) fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -184,7 +184,7 @@ test("만드는 쪽 안전장치: 목록 밖 파일·빠진 파일·배포 안 �
       const root = copyExtension(path.join(work, name));
       mutate(root);
       assert.throws(() => build(path.join(work, `${name}-out`), { extensionRoot: root }), pattern, name);
-      assert.equal(fs.existsSync(path.join(work, `${name}-out`, "mi-coupang-check-1.0.0.zip")), false, name);
+      assert.equal(fs.existsSync(path.join(work, `${name}-out`, `mi-coupang-check-${manifest.version}.zip`)), false, name);
     }
     // README·test 는 있어도 되고 zip 에 들어가지 않는다.
     const ok = copyExtension(path.join(work, "ok"));

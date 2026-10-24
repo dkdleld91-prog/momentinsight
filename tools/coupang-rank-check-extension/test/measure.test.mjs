@@ -419,3 +419,51 @@ test("수집기 읽기 함수(EXTRACT_SOURCE)와 같은 DOM 에서 같은 목록
   assert.equal(parseExtractResult(vm.runInContext(EXTRACT_SOURCE, korean.context)).blockedText, false);
   assert.equal((await run(makeDom({ bodyText: BLOCK_BODY, items: [] }))).blockedText, true);
 });
+
+// 1.0.1 진단: 쪽 모양 요약(doc)과 쪽 안 예외 문구(error). 화면을 바꾸지 않고 읽기만 한다.
+test("진단 doc: 열린 방식·readyState·제목 80자·본문 글자 수·앞 160자(제어 문자·연속 공백 정리)·상품 칸·상품 링크·차단 문구·숨김", async () => {
+  const title = `${"가".repeat(90)}\u0001`;
+  const bodyText = `쿠팡!\n\n로그인\t회원가입\u0000${"나".repeat(200)}`;
+  const dom = makeDom({ title, bodyText });
+  dom.context.performance = { getEntriesByType: (type) => (type === "navigation" ? [{ responseStatus: 200, type: "reload" }] : []) };
+  dom.context.document.querySelectorAll = (selector) => {
+    if (selector === 'li[class*="ProductUnit"]') return itemsFromFixture("page-full.json").map(({ href, text }) => ({ innerText: text, querySelector: () => ({ href }) }));
+    if (selector === 'a[href*="/vp/products/"]') return Array.from({ length: 64 }, () => ({}));
+    return [];
+  };
+  dom.forbidden.length = 0; // 테스트가 바꾼 값은 금지 기록에서 뺀다
+  const result = await run(dom);
+  assert.deepEqual(Object.keys(result.doc), ["nav", "ready", "title", "bodyLen", "bodyHead", "units", "links", "blocked", "hidden"]);
+  assert.equal(result.doc.nav, "reload");
+  assert.equal(result.doc.ready, "complete");
+  assert.equal(result.doc.title, "가".repeat(80));
+  assert.equal(result.doc.bodyLen, bodyText.length);
+  assert.equal(result.doc.bodyHead, `쿠팡! 로그인 회원가입 ${"나".repeat(160 - "쿠팡! 로그인 회원가입 ".length)}`);
+  assert.equal(Array.from(result.doc.bodyHead).length, 160);
+  assert.deepEqual([result.doc.units, result.doc.links, result.doc.blocked, result.doc.hidden], [60, 64, false, false]);
+  assert.deepEqual(dom.forbidden, [], "진단 읽기도 화면을 바꾸지 않는다");
+  // 짧은 읽기에도 doc 이 있고, 차단 화면이면 blocked
+  const quick = await run(makeDom({ bodyText: BLOCK_BODY, title: "쿠팡!", items: [] }), { ...ZERO, quick: true });
+  assert.equal(quick.doc.blocked, true);
+  assert.equal(quick.doc.units, 0);
+  assert.equal(quick.doc.nav, null, "navigation 항목에 type 이 없으면 null");
+  const hidden = await run(makeDom({ visibility: "hidden" }));
+  assert.equal(hidden.doc.hidden, true);
+});
+
+test("쪽 안 예외: extractError + 예외 문구(200자)·그 순간 쪽 모양(doc) — 결과는 그대로 돌려준다", async () => {
+  const dom = makeDom({
+    onScroll: (state, count) => {
+      if (count === 2) throw new Error(`boom\n${"x".repeat(300)}`);
+    },
+  });
+  const result = await run(dom);
+  assert.equal(result.extractError, true);
+  assert.equal(result.error, `boom ${"x".repeat(195)}`);
+  assert.equal(Array.from(result.error).length, 200);
+  assert.equal(result.doc.units, 60);
+  assert.equal(result.doc.ready, "complete");
+  assert.equal(result.scrolls, 1);
+  assert.deepEqual(dom.forbidden, []);
+  assert.equal(dom.listeners.size, 0);
+});

@@ -930,3 +930,108 @@ test("자동 경로 무변경: 수동 SQL 뒤에도 수집기 claim → record �
     assert.deepEqual([settings.error_streak, settings.empty_streak, settings.cooldown_until], [0, 0, null]);
   });
 });
+
+// ───────────────────────── 확장 1.0.1 진단 칸(c30-3, 2026-10-24) ─────────────────────────
+// 회차 표에 diagnostics(jsonb) 칸 하나: 다시 실행 안전·기존 행 null·객체만·8KB 이하·되돌리기·확인문. 기록 RPC 는 그대로.
+const DIAG_NAME = "20261024120000_coupang_rank_run_diagnostics.sql";
+const diagSql = fs.readFileSync(path.join(migrationDirectory, DIAG_NAME), "utf8");
+const DIAG_SHA256 = "2ce04d7e89b32c21e112ccd7bfc8b6f72e3e54ffde6e2e75c2c90f45a1ad2823";
+const DIAG_DOCS = path.join(root, "docs", "sql", "c30-3-run-diagnostics.sql");
+const DIAG_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-3-run-diagnostics.rollback.sql"), "utf8");
+const DIAG_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-3-run-diagnostics.verify-applied.sql"), "utf8");
+
+test("c30-3 원문 고정: 해시·docs/sql 사본 바이트 같음·begin … commit 한 묶음·회차 표 칸 하나만(함수·표·다른 표 무접촉)", () => {
+  assert.equal(sha(diagSql), DIAG_SHA256);
+  assert.ok(fs.readFileSync(DIAG_DOCS).equals(fs.readFileSync(path.join(migrationDirectory, DIAG_NAME))),
+    "docs/sql/c30-3-run-diagnostics.sql 이 마이그레이션과 바이트 단위로 다르다");
+  for (const text of [diagSql, DIAG_ROLLBACK]) {
+    const lines = text.split("\n");
+    assert.equal(lines.filter((line) => line === "begin;").length, 1);
+    assert.equal(lines.filter((line) => line === "commit;").length, 1);
+    assert.equal(text.trimEnd().split("\n").at(-1), "commit;");
+    assert.equal(lines.find((line) => line.trim() && !line.startsWith("--")), "begin;");
+    assert.match(text, /set local lock_timeout = '5s';/);
+  }
+  const code = stripSqlComments(diagSql);
+  assert.equal(/create\s+(or\s+replace\s+)?(function|trigger|table|view|index)/i.test(code), false);
+  assert.equal((code.match(/alter table public\.coupang_rank_runs/g) || []).length, 3);
+  assert.equal((code.match(/alter table /g) || []).length, 3, "회차 표만 바꾼다");
+  assert.match(code, /add column if not exists diagnostics jsonb null/);
+  assert.match(code, /drop constraint if exists coupang_rank_runs_diagnostics_shape/);
+  const lockSource = fs.readFileSync(path.join(root, "scripts", "check-protected-rank-features.mjs"), "utf8");
+  const declared = /const RANK_MIGRATION_PATTERN = \/(.+)\/([a-z]*);/.exec(lockSource);
+  const lockPattern = new RegExp(declared[1], declared[2]);
+  for (const text of [diagSql, DIAG_ROLLBACK, DIAG_VERIFY]) {
+    assert.equal(lockPattern.test(text), false);
+    assert.equal(/'[0-9]+\.[0-9]+\.[0-9]+'/.test(text), false);
+    assert.equal(/naver/i.test(text), false);
+  }
+  assert.equal(/\b(insert|update|delete)\b/i.test(stripSqlComments(DIAG_VERIFY)), false, "확인문은 읽기만");
+  const audit = auditMigrationRuntimeLiterals({ migrationDirectory, files: [DIAG_NAME], allowlist: [] });
+  assert.equal(audit.ok, true);
+});
+
+test("c30-3 두 번 실행 오류 0·기존 회차는 null, 기록 RPC 는 그대로 회차를 만들고 진단 칸은 비어 있다(서버가 따로 적음)", async () => {
+  await withDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const before = await h.verified(tracker);
+    assert.equal((await h.record(before.claimId, before.hash, { status: "ok", run: okRun(organicList(12)) })).accepted, true);
+    await db.exec(diagSql);
+    await db.exec(diagSql);
+    const column = await h.one("select data_type, is_nullable from information_schema.columns where table_schema = 'public' and table_name = 'coupang_rank_runs' and column_name = 'diagnostics'");
+    assert.deepEqual(column, { data_type: "jsonb", is_nullable: "YES" });
+    assert.equal(Number((await h.one("select count(*) as n from pg_catalog.pg_constraint where conname = 'coupang_rank_runs_diagnostics_shape'")).n), 1);
+    assert.match((await h.one("select col_description('public.coupang_rank_runs'::regclass, (select attnum from pg_catalog.pg_attribute where attrelid = 'public.coupang_rank_runs'::regclass and attname = 'diagnostics')) as c")).c, /C30 지금 확인 확장/);
+    assert.equal((await h.one("select diagnostics from public.coupang_rank_runs")).diagnostics, null, "기존 회차는 null");
+    await h.clearGap();
+    const after = await h.verified(tracker);
+    const recorded = await h.record(after.claimId, after.hash, { status: "error", run: { ...blockedRun(200), errorCode: "extract_failed" } });
+    assert.deepEqual([recorded.ok, recorded.accepted, recorded.status, recorded.errorCode], [true, true, "error", "extract_failed"]);
+    const runId = (await h.claimRow(after.claimId)).run_id;
+    assert.equal((await h.one("select diagnostics from public.coupang_rank_runs where id = $1", [runId])).diagnostics, null);
+    // 서버가 하는 따로 쓰기(PostgREST update … where id = run_id and source = 'manual' and diagnostics is null)
+    const diagnostics = { v: 1, ext: "1.0.1", ok: false, code: "extract_failed", retry: { tried: true, result: "failed" }, doc: { title: "아이폰 필름 - 쿠팡!" } };
+    await db.query("update public.coupang_rank_runs set diagnostics = $2 where id = $1 and source = 'manual' and diagnostics is null", [runId, JSON.stringify(diagnostics)]);
+    assert.deepEqual((await h.one("select diagnostics from public.coupang_rank_runs where id = $1", [runId])).diagnostics, diagnostics);
+    // 진단이 있는 회차도 다른 칸 갱신(matched_count 등)은 그대로 된다
+    await db.query("update public.coupang_rank_runs set matched_count = 0 where id = $1", [runId]);
+  });
+});
+
+test("c30-3 제약: 객체만·8KB 이하(배열·글자·수 거절, null 허용)", async () => {
+  await withDb(async (db, h) => {
+    await db.exec(diagSql);
+    const tracker = await h.addTracker();
+    const job = await h.verified(tracker);
+    await h.record(job.claimId, job.hash, { status: "ok", run: okRun(organicList(3)) });
+    const runId = (await h.claimRow(job.claimId)).run_id;
+    const set = (value) => db.query("update public.coupang_rank_runs set diagnostics = $2::jsonb where id = $1", [runId, value]);
+    for (const bad of ["[1]", "\"x\"", "1", "true", JSON.stringify({ pad: "a".repeat(9000) })]) {
+      await assert.rejects(set(bad), /coupang_rank_runs_diagnostics_shape|violates check constraint/, bad.slice(0, 20));
+    }
+    await set(JSON.stringify({ v: 1, pad: "가".repeat(1300) })); // 약 4KB: 통과
+    await set(null);
+    assert.equal((await h.one("select diagnostics from public.coupang_rank_runs where id = $1", [runId])).diagnostics, null);
+  });
+});
+
+test("c30-3 확인문 기대값(jsonb | YES | 1 | true | 0) · 되돌리기 두 번 → 칸·제약 없음·기록 그대로 · 다시 적용 성공", async () => {
+  await withDb(async (db, h) => {
+    await db.exec(diagSql);
+    assert.deepEqual(await h.one(DIAG_VERIFY), { column_type: "jsonb", is_nullable: "YES", constraint_count: 1, size_guard: true, diagnosed_runs: 0 });
+    const tracker = await h.addTracker();
+    const job = await h.verified(tracker);
+    await h.record(job.claimId, job.hash, { status: "ok", run: okRun(organicList(5)) });
+    const runId = (await h.claimRow(job.claimId)).run_id;
+    await db.query("update public.coupang_rank_runs set diagnostics = '{\"v\":1}'::jsonb where id = $1", [runId]);
+    assert.equal(Number((await h.one(DIAG_VERIFY)).diagnosed_runs), 1);
+    await db.exec(DIAG_ROLLBACK);
+    await db.exec(DIAG_ROLLBACK);
+    assert.equal(Number((await h.one("select count(*) as n from information_schema.columns where table_schema = 'public' and table_name = 'coupang_rank_runs' and column_name = 'diagnostics'")).n), 0);
+    assert.equal(Number((await h.one("select count(*) as n from pg_catalog.pg_constraint where conname = 'coupang_rank_runs_diagnostics_shape'")).n), 0);
+    assert.equal(Number((await h.one("select count(*) as n from public.coupang_rank_runs")).n), 1, "순위 기록은 남는다");
+    await assert.rejects(h.one(DIAG_VERIFY), /diagnostics/, "되돌린 뒤 확인문은 칸 없음 오류");
+    await db.exec(diagSql);
+    assert.equal((await h.one(DIAG_VERIFY)).column_type, "jsonb");
+  });
+});

@@ -843,29 +843,12 @@
   height: 16px;
 }
 
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-keyword-name,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-keyword-name {
-  font-size: 13.5px;
-  font-weight: var(--mi-weight-black);
-}
-
 #mi-admin .mi-coupang-rank-ext-mark,
 #mi-clean .mi-coupang-rank-ext-mark {
   margin-left: 3px;
   color: var(--mi-muted);
   font-size: var(--mi-font-label);
   font-weight: var(--mi-weight-bold);
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-product-info,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-product-info {
-  color: var(--mi-muted);
-  font-size: 11.5px;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-product-title,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-product-title {
-  font-size: var(--mi-font-body);
 }
 
 #mi-admin .mi-coupang-rank-card.is-paused .mi-rank-track-row-head,
@@ -882,36 +865,23 @@
   box-shadow: 0 0 0 2px var(--mi-navy);
 }
 
-/* 1행 오른쪽: 현재(14px 굵게) · 30일 최고 · 지금 확인(주 버튼) | 일시중지 · 삭제 */
+/* 1행 오른쪽: 현재 · 최고 · 지금 확인(주 버튼) | 일시중지 · 삭제. 글자·알약·버튼은 N30 공용 값(알약·버튼 높이 25px · 9.8px · 700,
+   admin.html .mi-rank-pill · .mi-rank-row-actions .mi-link-button)을 그대로 쓴다(덮어쓰지 않는다, 2026-10-26 N30 맞춤). */
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions {
   gap: 6px;
 }
 
+/* 알약 안 숫자(b)는 키우지도 더 굵게도 하지 않는다(N30 '현재 12위 · 상품'처럼 한 글자 모양). 공용 알약은 inline-flex 라
+   '현재 ' 끝 띄어쓰기가 사라지므로 이름과 숫자 사이는 칸 간격으로 둔다. */
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill {
-  gap: 4px;
-  min-height: 30px;
-  padding: 0 10px;
-  color: var(--mi-muted);
-  font-size: var(--mi-font-label);
-  font-weight: 800;
+  gap: 3px;
 }
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill b,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-rank-pill b {
-  color: var(--mi-navy);
-  font-weight: var(--mi-weight-black);
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-coupang-rank-current b,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-coupang-rank-current b {
-  font-size: 14px;
-}
-
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-coupang-rank-best,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions > .mi-coupang-rank-best {
-  background: var(--mi-panel);
+  font-weight: inherit;
 }
 
 /* 지금 50위 밖이면 '현재'를 빨간 테두리로(판정 알약 '점검 필요'는 그대로 둔다, 대표 결정 2026-10-23) */
@@ -926,21 +896,15 @@
   color: var(--mi-danger);
 }
 
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-link-button,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-link-button {
-  min-height: 30px;
-  padding: 0 10px;
-  font-size: var(--mi-font-body);
-  font-weight: 800;
-}
-
-/* 카드 '지금 확인': 남색 채운 주 버튼(12px · 높이 32px · 최소 104px). 오늘 이미 확인한 카드는 테두리 모양(보조). */
+/* 카드 '지금 확인': 남색 채운 주 버튼. 높이·글자는 1행 N30 버튼과 같고(25px · 9.8px), 초 세기로 글자가 바뀌어도 폭이 흔들리지 않게
+   최소 폭 84px · 같은 폭 숫자. 오늘 이미 확인한 카드는 테두리 모양(보조). */
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-coupang-rank-manual-button,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-coupang-rank-manual-button {
-  min-width: 104px;
-  min-height: 32px;
+  min-width: 84px;
+  min-height: 25px;
   border: 1px solid var(--mi-navy);
-  padding: 0 12px;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
   color: var(--mi-panel);
   background: var(--mi-navy);
   font-family: inherit;
@@ -998,17 +962,13 @@
   padding-left: 8px;
 }
 
-/* 2행 운영줄(알약 11.5px). 버튼('그룹 변경'·'측정 기록')은 네모로 줄 오른쪽 끝에 둔다. */
-#mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-ops-row,
-#mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-ops-row {
-  font-size: 11.5px;
-}
-
+/* 2행 운영줄: 알약 글자는 N30 공용 값(11px) 그대로. '그룹 변경'·'측정 기록'은 N30 '그룹 변경'과 같은 둥근 알약 버튼으로
+   줄 흐름 안에 둔다(오른쪽 끝 네모 버튼 아님, 2026-10-26 N30 맞춤). '오늘 HH:MM 확인'은 N30 판정 알약(정상)과 같은 초록 톤. */
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-ops-row .is-today,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-ops-row .is-today {
-  border-color: var(--mi-green);
+  border-color: var(--mi-green-bg);
   color: var(--mi-green);
-  font-weight: 850;
+  background: var(--mi-green-bg);
 }
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-ops-row .mi-coupang-rank-today.is-warn,
@@ -1049,22 +1009,17 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-left: auto;
 }
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-group-edit,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-group-edit {
-  min-height: 26px;
-  border-radius: 6px;
-  padding: 0 9px;
-  color: var(--mi-navy);
-  font-size: var(--mi-font-label);
-  font-weight: var(--mi-weight-black);
+  font-family: inherit;
   white-space: nowrap;
 }
 
-/* ── 3행 날짜 칸: 값만(작은 글 없음) · 안 잰 날은 회색 칸 '-' · 잰 결과(50위 밖·없음·결과 없음)는 흰 칸 진한 글 · 실패·이동은 주황 ·
-   오늘 칸은 위쪽 남색 줄 · 칸 84px(휴대폰 72px) · 옆으로 더 있을 때만 오른쪽 끝을 흐리게 한다(끝까지 밀면 사라짐) ── */
+/* ── 3행 날짜 칸: N30 칸 모양(108×78 · 날짜 13px · 이름표 '순위' 10px · 값 14px, admin.html .mi-rank-day-card · .mi-rank-day-slots)
+   · 안 잰 날은 회색 칸 '-' · 잰 결과(50위 밖·없음·결과 없음)는 흰 칸 진한 글 · 실패·이동은 주황 · '오늘' 글자·위 줄은 두지 않는다
+   (N30 대표 결정 2026-10-17과 같게) · 옆으로 더 있을 때만 오른쪽 끝을 흐리게 한다(끝까지 밀면 사라짐) ── */
 #mi-admin .mi-coupang-rank-days,
 #mi-clean .mi-coupang-rank-days {
   min-width: 0;
@@ -1102,21 +1057,19 @@
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day {
-  flex: 0 0 84px;
-  min-height: 58px;
+  flex: 0 0 108px;
+  min-height: 78px;
   padding: 0;
 }
 
 #mi-admin .mi-coupang-rank-day-button,
 #mi-clean .mi-coupang-rank-day-button {
-  display: grid;
-  align-content: start;
-  gap: 7px;
+  display: block;
   width: 100%;
   height: 100%;
-  min-height: 58px;
+  min-height: 78px;
   border: 0;
-  padding: 9px 9px 8px;
+  padding: 9px 8px;
   color: var(--mi-navy);
   background: transparent;
   font: inherit;
@@ -1126,26 +1079,43 @@
 
 #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day strong,
 #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day strong {
-  margin: 0;
-  font-size: var(--mi-font-body);
+  margin: 0 0 7px;
+  font-size: 13px;
   font-weight: 800;
+  white-space: nowrap;
+}
+
+/* 이름표('순위') 아래 값: N30 .mi-rank-day-slots span(small + b)과 같은 칸 */
+#mi-admin .mi-coupang-rank-day-slot,
+#mi-clean .mi-coupang-rank-day-slot {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+#mi-admin .mi-coupang-rank-day-slot small,
+#mi-clean .mi-coupang-rank-day-slot small {
+  display: block;
+  overflow: hidden;
+  color: var(--mi-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 #mi-admin .mi-coupang-rank-day-button b,
 #mi-clean .mi-coupang-rank-day-button b {
-  font-size: 15px;
-  font-weight: var(--mi-weight-black);
+  font-size: 14px;
+  font-weight: 800;
   line-height: 1;
   white-space: nowrap;
 }
 
-/* 안 잰 날은 바탕만이 아니라 모양(안쪽 점선)으로도 구분한다(잰 결과 '50위 밖'·'결과 없음'과 헷갈리지 않게) */
+/* 안 잰 날은 회색 칸 · 흐린 '-'(잰 결과 '50위 밖'·'결과 없음'은 흰 칸 진한 글이라 헷갈리지 않는다) */
 #mi-admin .mi-coupang-rank-day.is-none,
 #mi-clean .mi-coupang-rank-day.is-none {
   background: var(--mi-grey-50);
-  outline: 1px dashed var(--mi-line);
-  outline-offset: -5px;
 }
 
 #mi-admin .mi-coupang-rank-day.is-none b,
@@ -1164,20 +1134,10 @@
   color: var(--mi-warn);
 }
 
-#mi-admin .mi-coupang-rank-day.is-today,
-#mi-clean .mi-coupang-rank-day.is-today {
-  box-shadow: inset 0 3px 0 var(--mi-navy);
-}
-
 #mi-admin .mi-coupang-rank-day.is-selected,
 #mi-clean .mi-coupang-rank-day.is-selected {
   background: var(--mi-gold-soft);
   box-shadow: inset 0 -3px 0 var(--mi-blue);
-}
-
-#mi-admin .mi-coupang-rank-day.is-today.is-selected,
-#mi-clean .mi-coupang-rank-day.is-today.is-selected {
-  box-shadow: inset 0 3px 0 var(--mi-navy), inset 0 -3px 0 var(--mi-blue);
 }
 
 /* 키보드 포커스: 날짜 줄(N30 공용 .mi-rank-day-grid)은 넘침을 잘라(overflow-x: auto · overflow-y: hidden) 바깥 테두리가 보이지 않는다
@@ -2244,16 +2204,21 @@
     min-height: 44px;
   }
 
+  /* 1행 버튼(지금 확인 · 일시중지 · 삭제)은 누르는 높이 32px(합의안 2026-10-26: N30 25px 그대로면 휴대폰에서 작다) */
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-link-button,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-link-button {
+    min-height: 32px;
+  }
+
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-card-tools .mi-link-button,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-card-tools .mi-link-button {
     min-width: 44px;
-    min-height: 40px;
   }
 
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-group-edit,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-group-edit {
-    min-height: 40px;
-    margin-block: -7px;
+    min-height: 32px;
+    margin-block: -3px;
   }
 
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-track-primary > .mi-rank-keyword-name,
@@ -2287,7 +2252,7 @@
     font-size: var(--mi-font-body);
   }
 
-  /* 카드: 키워드 / 상품번호 / 상품명 각 한 줄, 그 아래 '지금 확인' 전체 폭(38px), 그 아래 현재 · 30일 최고, 맨 아래 일시중지 · 삭제 */
+  /* 카드: 키워드 / 상품번호 / 상품명 각 한 줄, 그 아래 [현재][최고][지금 확인][일시중지][삭제]가 N30처럼 한 흐름으로 감긴다 */
   #mi-admin .mi-coupang-rank-card .mi-rank-track-row-head,
   #mi-clean .mi-coupang-rank-card .mi-rank-track-row-head {
     grid-template-columns: minmax(0, 1fr);
@@ -2332,32 +2297,19 @@
     padding-left: 0;
   }
 
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-coupang-rank-manual-button,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-row-actions .mi-coupang-rank-manual-button {
-    order: -1;
-    flex: 1 1 100%;
-    min-height: 38px;
-  }
-
+  /* '같은 키워드 N개 함께 기록'은 버튼들 뒤 한 줄 */
   #mi-admin .mi-coupang-rank-same-kw,
   #mi-clean .mi-coupang-rank-same-kw {
-    order: -1;
+    order: 1;
     flex: 1 1 100%;
   }
 
+  /* 일시중지·삭제는 따로 떨어진 줄 없이 같은 흐름(세로 줄도 없음) */
   #mi-admin .mi-coupang-rank-card-tools,
   #mi-clean .mi-coupang-rank-card-tools {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    margin: 8px 0 0;
+    margin-left: 0;
     border-left: 0;
-    border-top: 1px dashed var(--mi-line);
-    padding: 8px 0 0;
-  }
-
-  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day,
-  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-coupang-rank-day {
-    flex-basis: 72px;
+    padding-left: 0;
   }
 
   #mi-admin .mi-coupang-rank-ops-buttons,

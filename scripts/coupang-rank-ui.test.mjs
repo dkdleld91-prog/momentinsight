@@ -37,10 +37,10 @@ const NAV_LINK = '<a href="#mi-admin-coupang-rank-tracking" data-mi-admin-screen
 const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>';
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
 // 캐시 꼬리표: ① 지금 확인(spec-manual §7.9)으로 c30-v2 → c30-v3, 화면 디테일 고도화(대표 승인 2026-10-23)로 c30-v3 → c30-v4,
-// '전체 확인'(대표 승인 2026-10-24)으로 c30-v4 → c30-v5.
+// '전체 확인'(대표 승인 2026-10-24)으로 c30-v4 → c30-v5, N30 디자인 맞춤(대표 요청 2026-10-26)으로 c30-v5 → c30-v6.
 // CSS·JS 를 함께 바꾸므로 두 꼬리표를 같이 올린다(새 JS + 옛 CSS 가 섞이지 않게).
-const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v5" />';
-const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v5"></script>';
+const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v6" />';
+const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v6"></script>';
 const GLUE_START = "      var coupangRankController = null;";
 const GLUE_END = "      var personalCalendarController = null;";
 
@@ -1416,15 +1416,23 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   assert.deepEqual(rowActions.children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "일시중지삭제"]);
   assert.equal(rowActions.children[0].querySelector("b").textContent, "28위");
   assert.ok(rowActions.children[2].classList.contains("mi-coupang-rank-card-tools"));
-  // 날짜 줄: 등록한 날(10-16)부터 오늘(10-17)까지, 오늘 칸은 '오늘 10-17', 칸마다 작은 글 없이 값만. 칸은 버튼이다.
+  // 날짜 줄: 등록한 날(10-16)부터 오늘(10-17)까지. 칸은 N30 모양 [날짜] / [이름표 '순위'] / [값](2026-10-26 N30 맞춤),
+  // '오늘' 글자는 화면에 두지 않고(N30 대표 결정 2026-10-17과 같게) 화면 읽기 이름에만 '(오늘)'을 남긴다. 칸은 버튼이다.
   const dayCells = card.querySelectorAll(".mi-rank-day-card");
   assert.equal(dayCells.length, 2, "등록 전 빈칸을 그리지 않는다");
   assert.ok(dayCells[0].classList.contains("is-sat") && dayCells[0].classList.contains("is-today") && dayCells[0].classList.contains("is-found"));
   assert.ok(!dayCells[1].classList.contains("is-today"));
   assert.equal(dayCells[0].getAttribute("role"), "listitem");
-  assert.equal(dayCells[0].querySelector("strong").textContent, "오늘 10-17");
+  assert.equal(dayCells[0].querySelector("strong").textContent, "10-17(토)");
   assert.equal(dayCells[1].querySelector("strong").textContent, "10-16(금)");
-  assert.equal(dayCells[0].querySelectorAll("small").length, 0, "칸마다 반복되던 작은 글 '순위'는 없다");
+  assert.ok(!dayCells[0].textContent.includes("오늘"), "화면에 '오늘' 글자는 없다");
+  assert.equal(dayCells[0].querySelector("[data-coupang-rank-day]").getAttribute("aria-label"), "10-17(토)(오늘) 28위");
+  assert.equal(dayCells[1].querySelector("[data-coupang-rank-day]").getAttribute("aria-label"), "10-16(금) 31위");
+  for (const cell of dayCells) {
+    const slot = cell.querySelector(".mi-coupang-rank-day-slot");
+    assert.ok(slot, "N30 처럼 이름표·값 칸");
+    assert.deepEqual(slot.children.map((node) => [node.tagName, node.textContent]).slice(0, 1), [["SMALL", "순위"]]);
+  }
   assert.equal(dayCells[0].querySelector("b").textContent, "28위");
   assert.equal(dayCells[1].querySelector("b").textContent, "31위");
   assert.equal(dayCells[0].getAttribute("title"), "11:11 일반 28위 · 광고 8번째 · 하루 1회(실패 0) · 그날 최고 28위");

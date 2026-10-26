@@ -3568,8 +3568,9 @@
       return FIRST_BOARD_TEXT;
     }
 
-    // 날짜 줄: 오늘부터 왼쪽, 등록한 날까지. 칸마다 날짜와 값만(작은 글 없음). 안 잰 날은 회색 칸 '-', 잰 결과(50위 밖·없음·결과 없음)는
-    // 흰 칸 진한 글, 실패·이동은 주황, 오늘 칸은 위쪽 남색 줄. 칸은 버튼이고 누르면(마우스·터치·Enter) 카드 아래 한 줄에 그날 기록이 나온다.
+    // 날짜 줄: 오늘부터 왼쪽, 등록한 날까지. 칸은 N30 과 같은 [날짜 '10-26(월)'] / [이름표 '순위'] / [값] 모양이고 '오늘' 글자는 두지 않는다
+    // (N30 대표 결정 2026-10-17과 같게, 화면 읽기에는 '(오늘)'을 남긴다). 안 잰 날은 회색 칸 '-', 잰 결과(50위 밖·없음·결과 없음)는
+    // 흰 칸 진한 글, 실패·이동은 주황. 칸은 버튼이고 누르면(마우스·터치·Enter) 카드 아래 한 줄에 그날 기록이 나온다.
     // 키보드는 줄마다 탭 정지 하나(roving tabindex) + 화살표·Home·End 로 옮긴다. 펼친 날은 state.dayDetails 에 남아 다시 그려도 유지된다.
     function renderDays(tracker, days30, todayKst) {
       var empty = emptyBoardText(tracker, days30);
@@ -3602,8 +3603,8 @@
             "aria-pressed": d === selected ? "true" : "false",
             "aria-label": dayLabel(d) + (isToday ? "(오늘)" : "") + " " + value
           }, [
-            el("strong", { text: isToday ? "오늘 " + String(d).slice(5) : dayLabel(d) }),
-            el("b", { text: value })
+            el("strong", { text: dayLabel(d) }),
+            el("span", { className: "mi-coupang-rank-day-slot" }, [el("small", { text: "순위" }), el("b", { text: value })])
           ])
         ]));
       });

@@ -2325,7 +2325,20 @@
     grid-column: 2;
   }
 
-  /* 체크칸(+ '선택' 글자) 누르는 자리는 44px */
+  /* 휴대폰은 '선택' 글자를 화면 읽기용으로만 두고 체크칸만 보인다(공용 900px 규칙이 글자를 16px 로 키워 체크칸이 카드 왼쪽 밖으로 밀렸다,
+     2026-10-26 실측). 화면 읽기 이름은 체크칸 aria-label 그대로. */
+  #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select > span,
+  #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* 체크칸 누르는 자리는 44px */
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select {
     min-width: 44px;

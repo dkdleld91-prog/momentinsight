@@ -2865,11 +2865,12 @@
       });
     }
 
-    // ── 3. 목록 패널: 제목·개수 · 지금 확인 상태판 · 필터 줄 · 선택 항목 정리 ──
+    // ── 3. 목록 패널: N30 과 같은 순서(2026-10-26 맞춤) — 제목 · 필터 줄(끝에 개수 알약) · 지금 확인 상태판 · 선택 항목 정리 · 목록 ──
 
     function buildBoard() {
-      shell.filterCount = el("span", { className: "mi-coupang-rank-count", "data-coupang-rank-filter-count": true });
-      shell.boardHead = el("div", { className: "mi-coupang-rank-board-head" }, [el("h3", { text: "상품별 일별 순위" }), shell.filterCount]);
+      // 개수는 N30 처럼 필터 줄 끝 알약('N개 표시 / 전체 M개', 공용 .mi-rank-filter-count)
+      shell.filterCount = el("span", { className: "mi-rank-filter-count mi-coupang-rank-count", "data-coupang-rank-filter-count": true });
+      shell.boardHead = el("div", { className: "mi-coupang-rank-board-head" }, [el("h3", { text: "상품별 일별 순위" })]);
 
       shell.filterBar = el("div", { className: "mi-rank-filterbar mi-coupang-rank-filterbar", "data-coupang-rank-filter": true });
       shell.search = el("input", { className: "mi-input", type: "search", placeholder: "키워드, 상품명, 상품번호 검색", "aria-label": "쿠팡 순위 추적 검색", "data-coupang-rank-filter-search": true });
@@ -2886,6 +2887,7 @@
       shell.filterBar.appendChild(shell.search);
       shell.filterBar.appendChild(shell.groupFilterWrap);
       shell.filterBar.appendChild(shell.statusButtons);
+      shell.filterBar.appendChild(shell.filterCount);
 
       // 선택 항목 정리: [제목 · n개 선택 | 보이는 항목 전체 선택] 아래 한 칸에 '안내 글'과 '동작 줄'을 겹쳐 두고 고르면 바꿔 보인다.
       // 두 내용이 같은 칸을 쓰므로 카드를 체크하는 순간 막대 높이가 바뀌지 않는다(목록이 밀리지 않음, 2026-10-23 재검사).
@@ -2944,9 +2946,9 @@
       buildManualBoard();
       shell.board.appendChild(shell.boardHead);
       shell.board.appendChild(shell.listNote);
+      shell.board.appendChild(shell.filterBar);
       shell.board.appendChild(shell.manualBox);
       shell.board.appendChild(shell.strip);
-      shell.board.appendChild(shell.filterBar);
       shell.board.appendChild(shell.bulk);
       shell.board.appendChild(shell.list);
     }
@@ -3024,8 +3026,8 @@
       if (sep) sep.hidden = !todayKst;
       var shown = visibleTrackers().length;
       shell.filterCount.textContent = cleanupMode()
-        ? "받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개) 중 " + shown + "개 표시"
-        : trackers().length + "개 중 " + shown + "개 표시";
+        ? shown + "개 표시 / 받은 " + trackers().length + "개(전체 " + (isNum(state.payload.totalCount) ? state.payload.totalCount : "?") + "개)"
+        : shown + "개 표시 / 전체 " + trackers().length + "개";
     }
 
     function renderBulkBar() {

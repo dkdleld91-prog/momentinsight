@@ -1331,8 +1331,9 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   assert.equal(screen.host.querySelector("[data-coupang-rank-template]"), null, "광고주 안내 문구 칸은 없다(대표 결정 2026-10-23)");
   assert.ok(!screen.host.textContent.includes("광고주 안내 문구"));
   const board = screen.host.querySelector("[data-coupang-rank-board]");
+  // N30 과 같은 순서(2026-10-26 맞춤): 제목 → 필터 줄 → 지금 확인 상태판 → 선택 항목 정리 → 목록
   assert.deepEqual(board.children.map(hookOf),
-    ["mi-coupang-rank-board-head", "data-coupang-rank-list-note", "data-coupang-rank-manual-box", "data-coupang-rank-strip", "data-coupang-rank-filter", "data-coupang-rank-bulk", "data-coupang-rank-list"]);
+    ["mi-coupang-rank-board-head", "data-coupang-rank-list-note", "data-coupang-rank-filter", "data-coupang-rank-manual-box", "data-coupang-rank-strip", "data-coupang-rank-bulk", "data-coupang-rank-list"]);
   assert.equal(board.children[0].querySelector("h3").textContent, "상품별 일별 순위");
   // ① 지금 확인 상태판은 서버 manual 칸이 없으면 숨고, 자동 수집이 돌면(collector ok) 자동추적 칸이 보인다.
   assert.equal(board.querySelector("[data-coupang-rank-manual-box]").hidden, true);
@@ -1359,8 +1360,13 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
     ["전체 2", "확인 필요 0", "상승 1", "하락 0", "50위 밖 0", "일시중지 0", "오늘 안 함 1"]);
   assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="all"]').getAttribute("aria-pressed"), "true");
   const count = screen.host.querySelector("[data-coupang-rank-filter-count]");
-  assert.equal(count.textContent, "2개 중 2개 표시");
-  assert.ok(board.children[0].contains(count), "개수는 목록 제목 줄에");
+  assert.equal(count.textContent, "2개 표시 / 전체 2개");
+  // 개수는 N30 처럼 필터 줄 맨 끝 알약(공용 .mi-rank-filter-count), 제목 줄에는 제목만
+  const filterBar = screen.host.querySelector("[data-coupang-rank-filter]");
+  assert.equal(filterBar.children[filterBar.children.length - 1], count, "개수는 필터 줄 끝");
+  assert.ok(count.classList.contains("mi-rank-filter-count"));
+  assert.ok(!board.children[0].contains(count));
+  assert.deepEqual(board.children[0].children.map((node) => node.tagName), ["H3"]);
   assert.equal(screen.host.querySelectorAll(".mi-rank-filter-help").length, 0, "도움말 한 줄은 사용 방법으로 옮겼다");
   // 선택 항목 정리: 고르기 전에는 한 줄(안내 + '보이는 항목 전체 선택'), 동작 줄은 접혀 있다. '●'·동작 이름은 C30 만 바뀜.
   const bulk = screen.host.querySelector("[data-coupang-rank-bulk]");
@@ -1986,7 +1992,7 @@ test("50위 밖이 이어지는 카드: 판정 자리 '점검 필요'(빨강) ·
   assert.ok(metric.classList.contains("is-error"));
   dispatch(host.querySelector('[data-coupang-rank-filter-status="attention"]'), "click");
   assert.deepEqual(host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")), ["6c1f0000-0000-4000-8000-000000000003"]);
-  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "2개 중 1개 표시");
+  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "1개 표시 / 전체 2개");
   // 대표 결정 2026-10-23: '점검 필요' 알약은 그대로 두고, '현재'도 빨간 테두리로 보인다.
   assert.ok(card.querySelector(".mi-coupang-rank-current").classList.contains("is-out"));
   assert.equal(host.querySelector('[data-coupang-rank-filter-status="attention"]').textContent, "확인 필요 1");
@@ -2345,7 +2351,7 @@ test("한 범위 추적이 500개를 넘으면(hasMore) 받은 500개를 경고�
   const capacity = host.querySelector("[data-coupang-rank-capacity]");
   assert.equal(capacity.hidden, false);
   assert.match(capacity.textContent, /등록할 수 없습니다/);
-  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "받은 500개(전체 501개) 중 500개 표시");
+  assert.equal(host.querySelector("[data-coupang-rank-filter-count]").textContent, "500개 표시 / 받은 500개(전체 501개)");
   // 일부 목록은 캐시하지 않는다.
   assert.equal(storage.getItem("miCoupangRank:v1:owner:mml93-a01"), null);
   // 막힌 동작은 숨긴 버튼·제출 경로로 들어와도 보내지 않는다.
@@ -3863,7 +3869,7 @@ test("'오늘 확인' 판정은 한 함수(응답 todayKst 기준): 카드 알�
   assert.deepEqual(screen.host.querySelectorAll("[data-coupang-rank-card]").map((node) => node.getAttribute("data-coupang-rank-id")),
     ["6c1f0000-0000-4000-8000-0000000000a3", "6c1f0000-0000-4000-8000-0000000000a5"]);
   assert.equal(screen.host.querySelector('[data-coupang-rank-filter-status="today-none"]').getAttribute("aria-pressed"), "true");
-  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-count]").textContent, "5개 중 2개 표시");
+  assert.equal(screen.host.querySelector("[data-coupang-rank-filter-count]").textContent, "2개 표시 / 전체 5개");
 });
 
 test("'오늘 안 함' 필터에서 누른 카드는 기록 뒤 목록을 다시 받아도 다음 필터 변경 전까지 남고, 그 카드에 '방금 확인'이 보인다", async () => {

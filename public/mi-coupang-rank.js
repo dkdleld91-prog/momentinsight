@@ -3394,7 +3394,7 @@
       return picked && picked < items.length ? "전체 선택 (" + picked + "/" + items.length + ")" : "전체 선택";
     }
 
-    // 그룹 머리: N30 renderRankHistory 와 같은 틀('전체 선택 (n/m)' · '미분류' · 'N개 추적 · 지금 최고 N위').
+    // 그룹 머리: N30 renderRankHistory 와 같은 틀('전체 선택 (n/m)' · '미분류' · 'N개 추적 · 현재 최고 N위').
     // 서버 값과 data 속성은 '기본 그룹' 그대로 두고 보이는 이름만 '미분류'로 쓴다.
     function renderGroup(name, items) {
       var collapsed = state.collapsed.has(name);
@@ -3419,7 +3419,7 @@
           el("span", {}, [
             el("span", { className: "mi-rank-group-title" }, [
               shown,
-              el("span", { className: "mi-rank-group-meta", text: items.length + "개 추적" + (best ? " · 지금 최고 " + best + "위" : "") })
+              el("span", { className: "mi-rank-group-meta", text: items.length + "개 추적" + (best ? " · 현재 최고 " + best + "위" : "") })
             ])
           ]),
           el("span", { className: "mi-rank-group-toggle", text: collapsed ? "펼치기" : "접기" })
@@ -3468,7 +3468,7 @@
     }
 
     // 카드: N30 renderRankTrackerCard 와 같은 3행 뼈대·클래스(admin.html 인라인 CSS 가 그대로 적용된다). C30 만 다른 점(대표 결정 2026-10-23):
-    // 1행 [선택(체크칸)][키워드↗][상품번호 …][상품명] | [현재][30일 최고][지금 확인(주 버튼)] · [일시중지/다시 시작][삭제]
+    // 1행 [선택(체크칸)][키워드↗][상품번호 …][상품명] | [현재][최고][지금 확인(주 버튼)] · [일시중지/다시 시작][삭제]
     // 2행 운영줄: (방금 결과) · (일시중지 · MM-DD부터) · 판정 · (다른 옵션) · 전회 대비(이탈 판정이 있으면 생략) · 7일 평균 · (광고 N번째) ·
     //     오늘 표시 · (자동 수집이 돌 때만 '다음') · [그룹 변경][측정 기록]
     // 3행 날짜 줄(칸을 누르면 그날 기록 한 줄). 늘 같은 '상태 운영중'·'그룹 X'·'광고 -'는 두지 않는다(그룹은 그룹 머리에 있다).
@@ -3485,7 +3485,7 @@
 
       var actions = [
         el("span", { className: "mi-rank-pill mi-coupang-rank-current" + (outOfTop(tracker) ? " is-out" : "") }, ["현재 ", el("b", { text: currentText(tracker) })]),
-        el("span", { className: "mi-rank-pill mi-coupang-rank-best", title: "최근 30일 하루 칸 가운데 가장 높은 순위" }, ["30일 최고 ", el("b", { text: isNum(summary.best30) ? summary.best30 + "위" : "-" })])
+        el("span", { className: "mi-rank-pill mi-coupang-rank-best", title: "최근 30일 하루 칸 가운데 가장 높은 순위" }, ["최고 ", el("b", { text: isNum(summary.best30) ? summary.best30 + "위" : "-" })])
       ];
       if (writable) {
         var tools = [];
@@ -3511,8 +3511,8 @@
         el("div", { className: "mi-rank-track-main" }, [
           el("div", { className: "mi-rank-track-primary" }, [
             el("div", { className: "mi-rank-track-controls" }, [
-              // 글자는 시각적으로만 숨기고 label 은 그대로 둔다(누르는 자리를 줄이지 않는다).
-              el("label", { className: "mi-rank-select" }, [check, el("span", { className: "mi-coupang-rank-sr", text: "선택" })])
+              // N30 처럼 체크칸 옆 '선택' 글자(label 이라 글자까지 누르는 자리)
+              el("label", { className: "mi-rank-select" }, [check, el("span", { text: "선택" })])
             ]),
             keywordNode(tracker),
             el("span", { className: "mi-rank-product-info", title: "상품번호 " + (tracker.productId || "-"), text: "상품번호 " + (tracker.productId || "-") }),

@@ -1379,10 +1379,10 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   assert.deepEqual(bulk.querySelectorAll("button").map((node) => node.textContent),
     ["보이는 항목 전체 선택", "정리 열기 ▴", "그룹으로 옮기기", "그룹 해제", "일시중지", "다시 시작", "선택 이미지 저장", "선택 해제", "선택 삭제"]);
   assert.equal(bulk.querySelector('[data-coupang-rank-action="bulk-sheet-toggle"]').hidden, true);
-  // 그룹 머리(N30 틀: 전체 선택 · 미분류 · N개 추적 · 지금 최고 N위)
+  // 그룹 머리(N30 틀: 전체 선택 · 미분류 · N개 추적 · 현재 최고 N위)
   const groupHeads = screen.host.querySelectorAll("[data-coupang-rank-group]");
   assert.equal(groupHeads[0].getAttribute("data-coupang-rank-group"), "기본 그룹", "data 값은 서버 값 그대로");
-  assert.equal(groupHeads[0].querySelector(".mi-rank-group-head").textContent, "미분류1개 추적 · 지금 최고 28위접기");
+  assert.equal(groupHeads[0].querySelector(".mi-rank-group-head").textContent, "미분류1개 추적 · 현재 최고 28위접기");
   assert.equal(groupHeads[0].querySelector(".mi-rank-group-select").textContent, "전체 선택");
   assert.equal(groupHeads[1].querySelector(".mi-rank-group-head").textContent, "필름1개 추적접기");
   assert.ok(groupHeads[0].querySelector(".mi-rank-group-items").classList.contains("mi-rank-daily-list"));
@@ -1395,7 +1395,7 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   assert.ok(!card.hasAttribute("draggable"), "끌어서 순서 바꾸기는 없다");
   const text = card.textContent;
   for (const expected of ["선택", "아이폰 18프로 사생활 보호 필름", "상품번호 8533720933", "아이쉘 360도 액정보호 풀커버 강화유리 사생활보호 필름, 2개",
-    "현재 28위", "30일 최고 25위", "일시중지", "삭제", "상승 흐름", "전회 대비 3위 상승", "7일 평균 27.5위(50위 안 2일)", "광고 8번째", "오늘 11:11 확인", "그룹 변경", "측정 기록"]) {
+    "현재 28위", "최고 25위", "일시중지", "삭제", "상승 흐름", "전회 대비 3위 상승", "7일 평균 27.5위(50위 안 2일)", "광고 8번째", "오늘 11:11 확인", "그룹 변경", "측정 기록"]) {
     assert.ok(text.includes(expected), expected);
   }
   // 자동 수집이 돌 때는 '다음'이 보인다(지금 확인만 쓸 때는 없음).
@@ -1403,9 +1403,10 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   assert.equal(text.split("8533720933").length - 1, 1, "상품번호는 한 곳에만");
   // 늘 같은 알약(상태 운영중 · 그룹 X · 광고 -)과 긴 '최근' 날짜는 두지 않는다.
   for (const old of ["상태 운영중", "그룹 미분류", "광고 -", "최근 ", "상품정보 · ", "▲3", "추적 중"]) assert.ok(!text.includes(old), old);
-  // '선택' 글자는 화면 읽기용(체크칸 label 은 그대로라 누르는 자리는 줄지 않는다)
+  // '선택' 글자는 N30 처럼 체크칸 옆에 보인다(2026-10-26 N30 맞춤, 화면 읽기 이름은 체크칸 aria-label)
   const selectLabel = card.querySelector(".mi-rank-select");
-  assert.ok(selectLabel.querySelector(".mi-coupang-rank-sr"));
+  assert.ok(!selectLabel.querySelector(".mi-coupang-rank-sr"));
+  assert.equal(selectLabel.textContent, "선택");
   assert.equal(selectLabel.querySelector("input").getAttribute("aria-label"), "아이폰 18프로 사생활 보호 필름 선택");
   const keywordLink = card.querySelector("a");
   assert.ok(keywordLink.classList.contains("mi-rank-keyword-name"));
@@ -1417,9 +1418,9 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   const titleLink = card.querySelector("a.mi-rank-product-title");
   assert.equal(titleLink.getAttribute("href"), "https://www.coupang.com/vp/products/8533720933");
   assert.equal(titleLink.getAttribute("rel"), "noopener noreferrer");
-  // 1행 오른쪽: 현재(굵게) · 30일 최고 | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
+  // 1행 오른쪽: 현재(굵게) · 최고 | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
   const rowActions = card.querySelector(".mi-rank-row-actions");
-  assert.deepEqual(rowActions.children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "일시중지삭제"]);
+  assert.deepEqual(rowActions.children.map((node) => node.textContent), ["현재 28위", "최고 25위", "일시중지삭제"]);
   assert.equal(rowActions.children[0].querySelector("b").textContent, "28위");
   assert.ok(rowActions.children[2].classList.contains("mi-coupang-rank-card-tools"));
   // 날짜 줄: 등록한 날(10-16)부터 오늘(10-17)까지. 칸은 N30 모양 [날짜] / [이름표 '순위'] / [값](2026-10-26 N30 맞춤),
@@ -1451,7 +1452,7 @@ test("목록: 큰 카드(등록 줄·목록 패널)·보조 상자(사용 방법
   const pending = cards[1];
   assert.equal(pending.querySelectorAll(".mi-rank-day-card").length, 0);
   assert.equal(pending.querySelector(".mi-rank-state").textContent, "아직 순위 기록이 없습니다. 다음 자동 수집 때 첫 순위가 기록됩니다.");
-  for (const expected of ["현재 -", "30일 최고 -", "전회 데이터 대기", "7일 평균 -", "아직 확인 전"]) assert.ok(pending.textContent.includes(expected), expected);
+  for (const expected of ["현재 -", "최고 -", "전회 데이터 대기", "7일 평균 -", "아직 확인 전"]) assert.ok(pending.textContent.includes(expected), expected);
   for (const old of ["측정 전", "광고 -", "그룹 필름", "최근 -"]) assert.ok(!pending.textContent.includes(old), old);
   assert.equal(pending.querySelectorAll(".mi-rank-insight-pill").length, 0, "지금 순위가 없으면 판정 알약을 두지 않는다");
   // 자동추적 요약칸(자동 수집이 돌 때만, 지금 확인 상태판 아래)
@@ -1570,7 +1571,7 @@ test("readonly 모드는 쓰기 버튼·등록 폼·총관리자 패널이 없�
   assert.equal(screen.host.querySelector("[data-coupang-rank-limit]").hidden, true);
   assert.equal(screen.host.querySelector("[data-coupang-rank-status]").hidden, true);
   const card = screen.host.querySelector("[data-coupang-rank-card]");
-  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위"]);
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위"]);
   assert.equal(card.querySelectorAll('[data-coupang-rank-action="group-edit"]').length, 0);
   assert.equal(card.querySelectorAll('[data-coupang-rank-action="runs"]').length, 1, "측정 기록은 읽기 전용에서도 본다");
   assert.equal(screen.host.querySelector("[data-coupang-rank-manual-box]").hidden, true, "읽기 전용에는 지금 확인 상태판이 없다");
@@ -1847,7 +1848,7 @@ test("일시중지 카드: '일시중지 · MM-DD부터', 마지막 확인, '다
   assert.ok(ops.textContent.includes("마지막 확인 10-17 11:11"), ops.textContent);
   assert.ok(!ops.textContent.includes("오늘 아직"), "일시중지 카드는 '오늘 아직'으로 재촉하지 않는다");
   assert.ok(card.textContent.includes("다음 -"));
-  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "다시 시작삭제"]);
+  assert.deepEqual(card.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "다시 시작삭제"]);
 });
 
 test("'다음'은 응답 없음·광고주 화면에서 요약칸과 같은 말을 쓴다", () => {
@@ -3073,8 +3074,8 @@ test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지
   screen.controller.show();
   await settle();
   const cards = screen.host.querySelectorAll("[data-coupang-rank-card]");
-  // 1행 오른쪽: 현재 · 30일 최고 · 지금 확인(주 버튼) | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
-  assert.deepEqual(cards[0].querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "지금 확인", "일시중지삭제"]);
+  // 1행 오른쪽: 현재 · 최고 · 지금 확인(주 버튼) | 일시중지 · 삭제(세로 줄 뒤 도구 묶음)
+  assert.deepEqual(cards[0].querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "지금 확인", "일시중지삭제"]);
   const buttonNode = manualButtonFor(screen);
   assert.equal(buttonNode.getAttribute("data-coupang-rank-action"), "manual-check");
   assert.equal(buttonNode.disabled, false);
@@ -3101,7 +3102,7 @@ test("카드 '지금 확인': 총관리자·관리자 화면·활성 추적·지
   paused.controller.show();
   await settle();
   assert.equal(manualButtons(paused).length, 0, "일시중지 추적에는 버튼이 없다");
-  assert.deepEqual(paused.host.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "30일 최고 25위", "다시 시작삭제"]);
+  assert.deepEqual(paused.host.querySelector(".mi-rank-row-actions").children.map((node) => node.textContent), ["현재 28위", "최고 25위", "다시 시작삭제"]);
   // 꺼짐이면 카드 버튼은 숨기지만 상태판은 본문에 남아 '꺼짐'과 '지금 확인 켜기'를 보인다. SQL 전·서버 칸 없음이면 상태판도 숨긴다.
   const cases = [
     ["지금 확인 꺼짐", { manual: manualPayload({ state: "off", enabled: false }) }, false],

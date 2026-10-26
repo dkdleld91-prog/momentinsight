@@ -837,7 +837,7 @@
 }
 
 /* ── 카드(N30 .mi-rank-tracker-card) ── */
-/* 1행 [선택][키워드][상품번호][상품명] 4칸(끌기·검색량 없음). '선택' 글자는 화면 읽기용으로만 두고 체크칸만 보인다.
+/* 1행 [선택][키워드][상품번호][상품명] 4칸(끌기·검색량 없음). 체크칸 옆 '선택' 글자는 N30 처럼 보인다(2026-10-26).
    키워드는 다 들어갈 만큼(모자라면 68px 까지), 상품번호는 줄지 않고, 남는 폭은 상품명이 받는다(줄어드는 몫도 상품명이 먼저, 말줄임·title). */
 #mi-admin .mi-coupang-rank-card .mi-rank-track-primary,
 #mi-clean .mi-coupang-rank-card .mi-rank-track-primary {
@@ -2325,7 +2325,7 @@
     grid-column: 2;
   }
 
-  /* 체크칸은 글자를 숨겨도 누르는 자리를 44px 로 둔다 */
+  /* 체크칸(+ '선택' 글자) 누르는 자리는 44px */
   #mi-admin .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select,
   #mi-clean .mi-coupang-rank-root .mi-coupang-rank-card .mi-rank-select {
     min-width: 44px;

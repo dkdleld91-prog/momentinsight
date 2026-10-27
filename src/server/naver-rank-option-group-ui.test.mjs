@@ -724,7 +724,7 @@ const TRACKER_ID = "0f8a3c1e-1111-4a2b-9c3d-000000000001";
 const SIBLING_ID = "0f8a3c1e-2222-4a2b-9c3d-000000000002";
 const MEMBER_ID = "0f8a3c1e-3333-4a2b-9c3d-000000000003";
 
-function editorEnv({ confirmAnswers = [] } = {}) {
+function editorEnv({ confirmAnswers = [], lookup = null } = {}) {
   const documentRef = { activeElement: null };
   documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
   const html = new FakeElement("html", documentRef);
@@ -759,6 +759,8 @@ function editorEnv({ confirmAnswers = [] } = {}) {
       dispatchEvent(event) { events.push(event); },
       addEventListener(type, handler) { (windowListeners[type] ||= []).push(handler); },
     },
+    // 관리자 initRankTracking 이 채우는 목록 창구(그룹상품 후보, 2026-10-27). 없으면 null.
+    rankTrackerLookupForEditor: lookup,
     verifiedRankTrackerScope: () => scope,
     sameRankTrackerScope: (value) => Boolean(value && value.key === scope.key),
     rankAgencyCode: () => "ishell",
@@ -1067,4 +1069,286 @@ test("U9 편집창: 읽기가 실패하면(원부 추적 409·연결 실패) 입
   await flush();
   assert.match(env.status(), /연결을 확인한 뒤/u);
   assert.equal(env.previewButton().disabled, true);
+});
+
+// ─────────────────────────────────────────────────────────────
+// U10~U12 그룹상품 표시·후보(대표 승인 2026-10-27 A안)
+// ─────────────────────────────────────────────────────────────
+const CAND_A = "99900000011";
+const CAND_B = "99900000012";
+function candidateEntry(productId, extra = {}) {
+  return {
+    productId,
+    title: "아이쉘 아이폰16 프로 저반사 액정보호필름 2매",
+    mallName: "아이쉘",
+    lprice: 9900,
+    link: `https://smartstore.naver.com/main/products/${productId}`,
+    seenCount: 3,
+    keywordCount: 2,
+    latestRank: 41,
+    bestRank: 39,
+    lastSeenAt: kst("2026-10-23", 9),
+    sightings: [
+      { keyword: "아이폰 필름", checkedAt: kst("2026-10-23", 9), rank: 41 },
+      { keyword: "아이폰 17 필름", checkedAt: kst("2026-10-22", 15), rank: 39 },
+    ],
+    warnings: [{ code: "model_differs", text: "기종 다름: 아이폰 16 프로", detail: "추적 상품은 아이폰 17입니다." }],
+    ...extra,
+  };
+}
+
+function groupState(extra = {}) {
+  return baseTracker({
+    optionProductIds: [], optionProductCount: 0, optionEditable: true, groupOptionSuggestionCount: 0,
+    groupMarkReady: true, groupProductMarked: false, groupProduct: false, ...extra,
+  });
+}
+
+const GROUP_FIELDS = ["groupMarkReady", "groupProductMarked", "groupProduct", "groupCandidates"];
+const withoutGroupFields = (tracker) => Object.fromEntries(Object.entries(tracker).filter(([key]) => !GROUP_FIELDS.includes(key)));
+
+for (const [label, source] of PAGES) {
+  test(`${label}: U10 카드 그룹상품 상태 네 가지가 한눈에, 광고주 화면은 예전 그대로`, () => {
+    const states = {
+      off: groupState(),
+      empty: groupState({ groupProductMarked: true, groupProduct: true, groupCandidates: [] }),
+      candidates: groupState({ groupProductMarked: true, groupProduct: true, groupCandidates: [candidateEntry(CAND_A), candidateEntry(CAND_B)] }),
+      inUse: groupState({ optionProductIds: [OPTION_A, OPTION_B], optionProductCount: 2, groupProduct: true, groupCandidates: [candidateEntry(CAND_A)] }),
+    };
+    const html = Object.fromEntries(Object.entries(states).map(([key, tracker]) => [key, renderCard(source, label, tracker)]));
+    if (label === "client.html") {
+      for (const [key, tracker] of Object.entries(states)) {
+        assert.equal(html[key], renderCard(source, label, withoutGroupFields(tracker)), `광고주 화면 ${key} 는 새 칸이 있어도 같다`);
+        assert.doesNotMatch(html[key], /data-rank-group-mark|그룹상품 후보|후보 없음|사용 중/u);
+      }
+      return;
+    }
+    const buttons = (key) => parseHtml(html[key]).querySelector(".mi-rank-ops-row").querySelectorAll("button")
+      .filter((node) => node.classList.includes("mi-rank-option-edit"))
+      .map((node) => [node.textContent, node.getAttribute("aria-pressed"), node.getAttribute("data-rank-group-mark-next"), node.getAttribute("data-rank-option-focus")]);
+    assert.deepEqual(buttons("off"), [["그룹상품으로 표시", "false", "true", null], ["그룹상품 번호 넣기", null, null, null]], "표시 안 함");
+    assert.deepEqual(buttons("empty"), [["✓ 그룹상품 · 후보 없음", "true", "false", null], ["그룹상품 번호 넣기", null, null, null]], "그룹상품·후보 없음");
+    assert.deepEqual(buttons("candidates"), [
+      ["✓ 그룹상품", "true", "false", null],
+      ["그룹상품 후보 2개 · 확인", null, null, "candidates"],
+      ["그룹상품 번호 넣기", null, null, null],
+    ], "후보 n개 확인 필요 — '그룹상품 번호 넣기' 옆");
+    assert.deepEqual(buttons("inUse"), [["그룹상품 후보 1개 · 확인", null, null, "candidates"], ["그룹상품 번호", null, null, null]], "번호가 있으면 표시 버튼 없이 자동 그룹상품");
+    assert.equal(parseHtml(html.inUse).querySelector(".mi-rank-option-pill").textContent, "그룹상품 · 번호 2개 사용 중");
+    const card = parseHtml(html.candidates).querySelector(".mi-rank-tracker-card");
+    const mark = card.querySelector("[data-rank-group-mark]");
+    assert.equal(mark.getAttribute("data-rank-group-mark"), "t-1");
+    assert.ok(mark.classList.includes("is-on"));
+    const open = card.querySelector(".mi-rank-group-candidates");
+    assert.equal(open.getAttribute("data-rank-option-edit"), "t-1", "후보 버튼은 같은 편집창을 연다");
+    assert.equal(open.getAttribute("aria-haspopup"), "dialog");
+    assert.ok(open.classList.includes("is-suggest"), "'가져오기' 권유와 같은 색");
+    for (const node of [mark, open]) assert.ok(node.hasAttribute("data-rank-export-omit"), "공유 이미지에서 빠진다");
+    const shared = shareClone(source, label, html.candidates);
+    assert.equal(shared.querySelector("[data-rank-group-mark]"), null);
+    assert.doesNotMatch(shared.textContent, /그룹상품 후보|✓ 그룹상품/u);
+
+    // 표시 칸이 없으면(대표 SQL 전) 버튼을 숨긴다 = U1 과 같은 카드. 종료 추적·광고주 역할에는 아무것도 없다.
+    assert.equal(renderCard(source, label, groupState({ groupMarkReady: false })), renderCard(source, label, withoutGroupFields(groupState())));
+    for (const [tracker, role] of [[groupState({ status: "completed", groupProductMarked: true, groupCandidates: [candidateEntry(CAND_A)] }), "owner"], [states.candidates, "client"]]) {
+      assert.doesNotMatch(renderCard(source, label, tracker, role), /data-rank-group-mark|그룹상품 후보/u);
+    }
+  });
+}
+
+function candidateEnv(tracker, options = {}) {
+  const env = editorEnv({ lookup: (id) => (id === TRACKER_ID ? tracker : null), ...options });
+  const candButton = env.documentRef.createElement("button");
+  candButton.setAttribute("data-rank-option-edit", TRACKER_ID);
+  candButton.setAttribute("data-rank-option-keyword", "아이폰 17 필름");
+  candButton.setAttribute("data-rank-option-primary", PRIMARY);
+  candButton.setAttribute("data-rank-option-focus", "candidates");
+  env.rankCard.appendChild(candButton);
+  const cardStatus = env.documentRef.createElement("p");
+  cardStatus.setAttribute("data-rank-status", "");
+  env.rankCard.appendChild(cardStatus);
+  return {
+    ...env,
+    candButton,
+    cardStatus,
+    section: () => env.q("[data-rank-cand]"),
+    items: () => env.q("[data-rank-cand]").querySelectorAll("[data-rank-cand-item]"),
+    pick: (index) => {
+      const box = env.q("[data-rank-cand]").querySelectorAll("[data-rank-cand-pick]")[index];
+      box.checked = !box.checked;
+      dispatch(box, "change");
+      return box;
+    },
+    add: () => env.q("[data-rank-cand-add]"),
+    confirm: () => env.q("[data-rank-cand-confirm]"),
+    confirmRun: () => env.q("[data-rank-cand-confirm-run]"),
+    result: () => env.q(".mi-rank-cand-result").textContent,
+  };
+}
+
+const candidateTracker = (extra = {}) => ({
+  id: TRACKER_ID, groupMarkReady: true, groupProductMarked: true, groupProduct: true, optionProductCount: 1,
+  groupCandidates: [candidateEntry(OPTION_A), candidateEntry(CAND_A), candidateEntry(CAND_B, { title: "아이쉘 아이폰17 프로 저반사 액정보호필름", lprice: null, seenCount: 2, keywordCount: 1, latestRank: 50, bestRank: 50, warnings: [] })],
+  ...extra,
+});
+
+test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고른 개수 확인 뒤 기존 저장 경로(미리 보기 → 저장)", async () => {
+  const env = candidateEnv(candidateTracker());
+  env.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(env.candButton);
+  await flush();
+  assert.equal(env.section().hidden, false);
+  assert.equal(env.q("[id=\"mi-rank-cand-title\"]").textContent, "그룹상품 후보 2개 · 확인 필요", "이미 넣은 번호는 후보에서 뺀다");
+  assert.match(env.q(".mi-rank-cand-howto").textContent, /아직 순위에는 쓰지 않았습니다/u, "사용법 한 줄");
+  const [first, second] = env.items();
+  assert.equal(first.getAttribute("data-rank-cand-item"), CAND_A);
+  assert.equal(first.querySelector(".mi-rank-cand-title").textContent, "아이쉘 아이폰16 프로 저반사 액정보호필름 2매");
+  assert.deepEqual(first.querySelector(".mi-rank-cand-facts").querySelectorAll("li").map((node) => [node.textContent, node.className]), [
+    ["스토어 아이쉘", ""],
+    ["가격 9,900원", ""],
+    ["최근 41위 · 최고 39위", ""],
+    ["3번 보임 · 키워드 2개", "is-seen"],
+    ["기종 다름: 아이폰 16 프로", "is-warn"],
+  ]);
+  assert.equal(first.querySelector(".mi-rank-cand-seen").textContent, "나온 곳 · 아이폰 필름 10/23 41위 · 아이폰 17 필름 10/22 39위");
+  const link = first.querySelector(".mi-rank-cand-open");
+  assert.equal(link.getAttribute("href"), `https://smartstore.naver.com/main/products/${CAND_A}`);
+  assert.equal(link.getAttribute("target"), "_blank");
+  assert.equal(link.getAttribute("rel"), "noopener noreferrer");
+  assert.match(second.querySelector(".mi-rank-cand-facts").textContent, /가격 정보 없음.*2번 보임/u);
+  assert.equal(env.documentRef.activeElement, env.section().querySelector("[data-rank-cand-pick]"), "후보 버튼으로 열면 첫 후보에 초점");
+  assert.equal(env.modal().querySelectorAll("button").filter((node) => /모두 고르기|모두 선택|전체 선택/u.test(node.textContent)).length, 0, "모두 고르기 없음");
+
+  assert.equal(env.add().disabled, true, "고르기 전에는 넣기 꺼짐");
+  env.pick(0);
+  assert.equal(env.add().disabled, false);
+  assert.equal(env.add().textContent, "고른 1개 넣기");
+  assert.ok(env.items()[0].classList.contains("is-picked"));
+  env.pick(1);
+  assert.equal(env.add().textContent, "고른 2개 넣기");
+  assert.equal(env.q(".mi-rank-cand-count").textContent, "고른 후보 2개");
+
+  click(env.add());
+  assert.equal(env.confirm().hidden, false, "저장 전 고른 개수 확인");
+  assert.match(env.confirm().textContent, /고른 후보 2개를 그룹상품 번호에 넣을까요\?/u);
+  assert.deepEqual(env.confirm().querySelector(".mi-rank-option-chips").querySelectorAll("li").map((node) => node.textContent), [CAND_A, CAND_B]);
+  assert.match(env.confirm().textContent, /넣은 뒤 그룹상품 번호 3개 · 적용: 이 추적과 같은 대표 상품번호를 쓰는 다른 키워드 추적 1개/u);
+  assert.equal(env.confirmRun().textContent, "2개 넣기");
+  assert.equal(env.documentRef.activeElement, env.confirmRun());
+  assert.ok(env.section().querySelectorAll("[data-rank-cand-pick]").every((box) => box.disabled), "확인 중에는 고르기를 바꿀 수 없다");
+  assert.equal(env.requests.length, 1, "확인 전에는 요청하지 않는다");
+  click(env.q("[data-rank-cand-cancel]"));
+  assert.equal(env.confirm().hidden, true, "취소");
+  assert.equal(env.add().textContent, "고른 2개 넣기", "고른 것은 그대로");
+  click(env.add());
+
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A, CAND_B]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+  env.respond({ ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A, CAND_A, CAND_B], message: "저장" });
+  click(env.confirmRun());
+  await flush();
+  assert.deepEqual(plain(env.requests[1].body), { action: "options", trackerId: TRACKER_ID, mode: "preview", optionInput: `${OPTION_A}\n${CAND_A}\n${CAND_B}`, applyToSameProduct: true });
+  assert.deepEqual(plain(env.requests[2].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "save", optionInput: `${OPTION_A}\n${CAND_A}\n${CAND_B}`, applyToSameProduct: true,
+    expectedTrackerIds: [TRACKER_ID, SIBLING_ID],
+  }, "저장은 기존 옵션 저장 API('다른 키워드에도 적용' 포함)");
+  assert.equal(env.events.length, 1);
+  assert.equal(env.events[0].type, "mi:rank-trackers-changed");
+  const line = "후보 2개를 넣었습니다 · 그룹상품 번호 3개 · 추적 2개에 저장 · 다음 순위 확인부터 적용됩니다.";
+  assert.equal(env.result(), line, "저장 뒤 결과 한 줄");
+  assert.equal(env.cardStatus.textContent, line, "카드 상태 줄에도 남는다(창을 닫아도 보임)");
+  assert.equal(env.q(".mi-rank-cand-actions").hidden, true);
+  assert.equal(env.input().value, `${OPTION_A}\n${CAND_A}\n${CAND_B}`);
+  assert.equal(env.timers.length, 0, "결과를 읽게 저절로 닫지 않는다");
+});
+
+test("U11 후보: 저장 안 한 입력·20개 초과·서버 거절은 막고 쉬운 말로 알린다, 빈 상태 문구, 고른 뒤 닫으면 묻는다", async () => {
+  const env = candidateEnv(candidateTracker(), { confirmAnswers: [false, true] });
+  env.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(env.editButton);
+  await flush();
+  assert.equal(env.documentRef.activeElement, env.input(), "'그룹상품 번호' 버튼으로 열면 입력칸에 초점");
+  env.pick(0);
+  env.input().value = `${OPTION_A}\n99900000099`;
+  dispatch(env.input(), "input");
+  click(env.add());
+  assert.equal(env.confirm().hidden, true);
+  assert.match(env.result(), /저장하지 않은 번호가 있습니다/u);
+  env.input().value = OPTION_A;
+  dispatch(env.input(), "input");
+  click(env.add());
+  assert.equal(env.confirm().hidden, false);
+  env.respond({ ok: false, code: "RANK_OPTION_LIMIT", message: "그룹상품 번호는 최대 20개까지 넣을 수 있습니다." }, 400);
+  click(env.confirmRun());
+  await flush();
+  assert.match(env.result(), /최대 20개.*저장하지 않았습니다/u);
+  assert.equal(env.events.length, 0, "실패하면 목록 다시 읽기 없음");
+  assert.equal(env.confirm().hidden, true);
+  assert.equal(env.add().disabled, false, "다시 시도할 수 있다");
+  // 고른 뒤 닫으면 묻는다(아니요 → 그대로, 예 → 닫힘).
+  dispatch(env.q(".mi-rank-option-card"), "keydown", { key: "Escape" });
+  assert.match(env.confirms.at(-1), /고른 그룹상품 후보를 넣지 않고 닫을까요/u);
+  assert.equal(env.modal().hidden, false);
+  dispatch(env.q(".mi-rank-option-card"), "keydown", { key: "Escape" });
+  assert.equal(env.modal().hidden, true);
+
+  const full = candidateEnv(candidateTracker());
+  const twenty = Array.from({ length: 20 }, (_, index) => String(99900000100 + index));
+  full.respond(optionsPayload({ saved: twenty }));
+  click(full.candButton);
+  await flush();
+  full.pick(0);
+  click(full.add());
+  assert.equal(full.confirm().hidden, true);
+  assert.match(full.result(), /최대 20개입니다\. 지금 20개라 0개까지 더 넣을 수 있습니다/u);
+
+  const empty = candidateEnv(candidateTracker({ groupCandidates: [] }));
+  empty.respond(optionsPayload({ saved: [] }));
+  click(empty.editButton);
+  await flush();
+  assert.equal(empty.q("[id=\"mi-rank-cand-title\"]").textContent, "그룹상품 후보");
+  assert.match(empty.q(".mi-rank-cand-howto").textContent, /아직 후보가 없습니다\. 대표 상품번호가 300개 결과에 없을 때/u);
+  assert.equal(empty.q(".mi-rank-cand-actions").hidden, true);
+
+  const notGroup = candidateEnv(candidateTracker({ groupProductMarked: false, groupProduct: false, optionProductCount: 0, groupCandidates: undefined }));
+  notGroup.respond(optionsPayload({ saved: [] }));
+  click(notGroup.editButton);
+  await flush();
+  assert.match(notGroup.q(".mi-rank-cand-howto").textContent, /그룹상품으로 표시돼 있지 않아 후보를 찾지 않습니다/u);
+
+  const noColumn = candidateEnv(candidateTracker({ groupMarkReady: false, groupProductMarked: false, groupProduct: false, optionProductCount: 0, groupCandidates: undefined }));
+  noColumn.respond(optionsPayload({ saved: [] }));
+  click(noColumn.editButton);
+  await flush();
+  assert.equal(noColumn.section().hidden, true, "표시 칸이 없고 그룹상품이 아니면 후보 칸을 숨긴다");
+});
+
+test("U12 카드 '그룹상품으로 표시': 켜기는 한 번에, 끄기는 확인 뒤, action group-mark, 결과 한 줄·목록 다시 읽기", async () => {
+  const env = candidateEnv(candidateTracker(), { confirmAnswers: [false, true] });
+  const markButton = env.documentRef.createElement("button");
+  markButton.setAttribute("data-rank-group-mark", TRACKER_ID);
+  markButton.setAttribute("data-rank-group-mark-next", "true");
+  env.rankCard.appendChild(markButton);
+  env.respond({ ok: true, marked: true, updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], message: "그룹상품으로 표시했습니다(같은 상품 추적 2개). 다음 순위 확인부터 대표 상품번호가 결과에 없으면 같은 스토어 후보를 찾습니다." });
+  click(markButton);
+  assert.equal(markButton.disabled, true, "요청 중 다시 못 누름");
+  await flush();
+  assert.deepEqual(plain(env.requests[0].body), { action: "group-mark", trackerId: TRACKER_ID, marked: true });
+  assert.equal(env.modal(), null, "편집창은 열지 않는다");
+  assert.match(env.cardStatus.textContent, /^그룹상품으로 표시했습니다\(같은 상품 추적 2개\)/u);
+  assert.equal(env.events.length, 1);
+  assert.deepEqual(plain(env.events[0].detail.trackerIds), [TRACKER_ID, SIBLING_ID]);
+  assert.equal(markButton.disabled, false);
+
+  markButton.setAttribute("data-rank-group-mark-next", "false");
+  click(markButton);
+  await flush();
+  assert.match(env.confirms[0], /그룹상품 표시를 끌까요\?/u);
+  assert.equal(env.requests.length, 1, "아니요 → 요청 없음");
+  env.respond({ ok: false, code: "RANK_GROUP_MARK_NOT_READY", message: "그룹상품 표시 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요." }, 409);
+  click(markButton);
+  await flush();
+  assert.deepEqual(plain(env.requests[1].body), { action: "group-mark", trackerId: TRACKER_ID, marked: false });
+  assert.match(env.cardStatus.textContent, /대표 SQL 실행 뒤/u);
+  assert.ok(env.cardStatus.classList.contains("is-warn"));
+  assert.equal(env.events.length, 1, "실패하면 목록 다시 읽기 없음");
 });

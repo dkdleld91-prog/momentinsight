@@ -1199,7 +1199,8 @@ export function findGroupProductCandidates({ window, tracker, result, historyRow
   try {
     if (result?.matched === true) return [];
     const state = trackerGroupProductState(tracker);
-    if (!state.groupProduct) return [];
+    // 표시 칸을 읽지 못했으면(대표 SQL 전) 옵션 번호가 있어도 후보를 찾지 않는다(명세: 칸 없으면 후보 없음·지금 동작 그대로).
+    if (!state.markReady || !state.groupProduct) return [];
     const trackerKindKey = groupCandidateKindKey(tracker?.product_title);
     if (!compactTitleText(tracker?.product_title)) return [];
     const referenceMallKeys = storeReferenceMallKeys(historyRows, state.primaryProductIds, tracker?.mall_name, {
@@ -1207,6 +1208,23 @@ export function findGroupProductCandidates({ window, tracker, result, historyRow
     });
     if (!referenceMallKeys.size) return [];
     const excludeProductIds = new Set([...state.primaryProductIds, state.primaryProductId, ...state.optionProductIds].filter(Boolean));
+    // 대표·넣은 옵션 번호가 결과 어디에든(광고·다른 스토어로 빠진 카드 포함) 보이면 '결과에 없음'이 아니므로 후보를 찾지 않는다.
+    // 판매자 상품번호 칸과 상품 주소의 /products/<번호> 만 본다(링크 안 다른 숫자·네이버 카드 번호는 보지 않는다).
+    const windowItems = Array.isArray(window?.items) ? window.items : [];
+    const shownIds = new Set();
+    for (const item of windowItems) {
+      const sellerIds = [item?.sellerProductId, item?.channelProductId, item?.originalMallProductId,
+        ...(Array.isArray(item?.sellerProductIds) ? item.sellerProductIds : [])];
+      for (const value of sellerIds) {
+        const id = normalizeText(value);
+        if (id) shownIds.add(id);
+      }
+      const linked = cardSellerProductId(item);
+      if (linked) shownIds.add(linked);
+    }
+    for (const id of excludeProductIds) {
+      if (shownIds.has(String(id))) return [];
+    }
     const referencePrice = primaryPriceFromHistory(historyRows, state.primaryProductIds);
     const checkedCount = Number(window?.checkedCount || 0);
     const seen = new Set();
@@ -1324,7 +1342,8 @@ export function groupCandidateSummaries(rows = [], snapshotsByTrackerId = new Ma
   const groups = new Map();
   for (const row of Array.isArray(rows) ? rows : []) {
     const state = trackerGroupProductState(row);
-    if (!state.groupProduct || !row?.id) continue;
+    // 표시 칸을 읽지 못한 행(대표 SQL 전)은 후보 칸을 싣지 않는다(워커도 이때는 후보를 만들지 않는다).
+    if (!state.markReady || !state.groupProduct || !row?.id) continue;
     if (!groups.has(state.primaryProductId)) groups.set(state.primaryProductId, []);
     groups.get(state.primaryProductId).push({ row, state });
   }

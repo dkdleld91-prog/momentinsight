@@ -157,12 +157,26 @@ test("C2 창 훑기: 그룹상품 추적·번호가 결과에 없을 때만, 최
   for (const extra of [{ group_product_marked: false }, { group_product_marked: undefined }, { group_product_marked: null }]) {
     assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker(extra), result: NOT_FOUND, historyRows: [history()] }), [], JSON.stringify(extra));
   }
-  // 옵션 번호가 있으면 표시 없이도 그룹상품이다(넣은 번호는 후보에서 뺀다).
-  const withOption = findGroupProductCandidates({ window, tracker: tracker({ group_product_marked: false, option_product_ids: [CAND_A] }), result: NOT_FOUND, historyRows: [history()] });
+  // 옵션 번호가 있으면 표시 없이도 그룹상품이다(넣은 번호가 결과에 안 보일 때만 후보를 찾는다).
+  const withOption = findGroupProductCandidates({ window, tracker: tracker({ group_product_marked: false, option_product_ids: [OPTION_SAVED] }), result: NOT_FOUND, historyRows: [history()] });
   assert.ok(withOption.length > 0);
-  assert.ok(withOption.every((entry) => entry.productId !== CAND_A));
+  assert.ok(withOption.every((entry) => entry.productId !== OPTION_SAVED));
+  // 넣은 번호(CAND_A)가 결과에 보이면 순위가 안 잡혔어도 후보를 찾지 않는다.
+  assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker({ group_product_marked: false, option_product_ids: [CAND_A] }), result: NOT_FOUND, historyRows: [history()] }), []);
   // 대표·옵션·원부 어느 쪽으로든 잡혔으면 후보를 찾지 않는다.
   assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker(), result: { matched: true, rank: 12 }, historyRows: [history()] }), []);
+  // 표시 칸을 못 읽었으면(대표 SQL 전) 옵션 번호가 있어도 후보를 찾지 않는다.
+  for (const extra of [{ group_product_marked: undefined }, { group_product_marked: null }]) {
+    assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker({ ...extra, option_product_ids: [OPTION_SAVED] }), result: NOT_FOUND, historyRows: [history()] }), [], JSON.stringify(extra));
+  }
+  // 대표·넣은 옵션 번호가 결과에 보이면(다른 스토어로 빠졌거나 광고 카드여도) 순위가 안 잡혀도 후보를 찾지 않는다.
+  const optionOtherStore = windowWith({ 37: card(37, OPTION_SAVED, { mallName: "다른몰" }), 40: card(40, CAND_A) });
+  assert.deepEqual(findGroupProductCandidates({ window: optionOtherStore, tracker: tracker({ option_product_ids: [OPTION_SAVED] }), result: NOT_FOUND, historyRows: [history()] }), []);
+  const primaryAd = windowWith({ 3: card(3, PRIMARY, { isAd: true, isOrganic: false, organicRank: null }), 40: card(40, CAND_A) });
+  assert.deepEqual(findGroupProductCandidates({ window: primaryAd, tracker: tracker(), result: NOT_FOUND, historyRows: [history()] }), []);
+  // 링크 안 다른 숫자(추적 꼬리표)나 네이버 카드 번호가 대표 번호와 같아도 '보임'으로 치지 않는다(판매자 상품번호만 본다).
+  const utm = windowWith({ 40: card(40, CAND_A, { link: `https://smartstore.naver.com/main/products/${CAND_A}?utm_campaign=${PRIMARY}`, productId: PRIMARY }) });
+  assert.deepEqual(findGroupProductCandidates({ window: utm, tracker: tracker(), result: NOT_FOUND, historyRows: [history()] }).map((entry) => entry.productId), [CAND_A]);
   // 원부 추적·대표 번호를 확인할 수 없는 추적은 그룹상품이 아니다.
   assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker({ product_url: "https://search.shopping.naver.com/catalog/51234567890", product_id: "51234567890" }), result: NOT_FOUND }), []);
   assert.deepEqual(findGroupProductCandidates({ window, tracker: tracker({ product_id: "" }), result: NOT_FOUND }), []);
@@ -251,6 +265,8 @@ test("C4 목록 모으기: 7일 · 두 번 이상 · 같은 대표 상품번호�
   ]);
   const result = groupCandidateSummaries(rows, snapshots, { nowMs: NOW });
   assert.equal(result.has("t-c"), false, "표시 안 한 추적은 후보 칸이 없다");
+  const unread = groupCandidateSummaries([listRow("t-a", { group_product_marked: null, option_product_ids: [OPTION_SAVED] })], snapshots, { nowMs: NOW });
+  assert.equal(unread.has("t-a"), false, "표시 칸을 못 읽은 행(대표 SQL 전)은 옵션이 있어도 후보 칸이 없다");
   const a = result.get("t-a");
   assert.deepEqual(a.map((item) => [item.productId, item.seenCount, item.keywordCount]), [
     [CAND_B, 2, 2], // 다른 키워드 추적 두 곳(최고 33위라 먼저)

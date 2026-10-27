@@ -4932,6 +4932,10 @@
       overflow-wrap: anywhere;
     }
 
+    #mi-admin .mi-rank-cand-confirm-text p.mi-rank-cand-confirm-warn {
+      color: var(--mi-warn);
+    }
+
     #mi-admin .mi-rank-cand-confirm-actions {
       display: flex;
       flex-wrap: wrap;
@@ -29248,7 +29252,9 @@
           box.setAttribute("data-rank-cand-pick", "");
           box.setAttribute("aria-label", "후보 고르기: " + (entry.title || "상품번호 " + id));
           pick.appendChild(box);
-          pick.appendChild(optionNode("span", "", "고르기"));
+          var pickText = optionNode("span", "", "고르기");
+          pickText.setAttribute("data-rank-cand-pick-label", "");
+          pick.appendChild(pickText);
           var body = optionNode("div", "mi-rank-cand-body");
           body.appendChild(optionNode("p", "mi-rank-cand-title", entry.title || "제목 없음"));
           var facts = optionNode("ul", "mi-rank-cand-facts");
@@ -29324,6 +29330,9 @@
           Array.prototype.forEach.call(nodes.candList.querySelectorAll("[data-rank-cand-item]"), function (item) {
             var picked = state.picked.indexOf(item.getAttribute("data-rank-cand-item")) >= 0;
             item.classList.toggle("is-picked", picked);
+            // 고른 카드는 잠겨 회색 체크로 보여도 '고름'·'넣음'으로 상태를 글자로 남긴다.
+            var pickLabel = item.querySelector("[data-rank-cand-pick-label]");
+            if (pickLabel) pickLabel.textContent = picked ? (state.candidateDone ? "넣음" : "고름") : "고르기";
             var box = item.querySelector("input");
             if (!box) return;
             box.checked = picked;
@@ -29396,20 +29405,28 @@
           state.confirming = true;
           var box = nodes.candConfirmText;
           box.textContent = "";
-          box.appendChild(optionNode("strong", "", "고른 후보 " + state.picked.length + "개를 그룹상품 번호에 넣을까요?"));
+          box.appendChild(optionNode("strong", "", "고른 후보 " + state.picked.length + "개를 그룹상품 번호에 넣고 바로 저장할까요?"));
           var chips = optionNode("ul", "mi-rank-option-chips");
           chips.setAttribute("aria-label", "넣을 후보 상품번호");
           state.picked.forEach(function (id) {
             chips.appendChild(optionNode("li", "", id));
           });
           box.appendChild(chips);
+          // 기종 다름 등 경고가 붙은 후보를 골랐으면 한 번 더 알린다(기종은 조건이 아니라 경고 — 같은 그룹 안 다른 기종 옵션일 수 있음).
+          var warned = state.candidates.filter(function (entry) {
+            return state.picked.indexOf(String(entry.productId)) >= 0 && Array.isArray(entry.warnings) && entry.warnings.length > 0;
+          }).length;
+          if (warned) {
+            box.appendChild(optionNode("p", "mi-rank-cand-confirm-warn", "고른 후보 중 " + warned + "개에 경고(기종 다름 등)가 있습니다. " +
+              "상품 페이지에서 같은 그룹상품의 옵션인지 확인했을 때만 넣으세요."));
+          }
           var scope = applyActive()
             ? "이 추적과 같은 대표 상품번호를 쓰는 다른 키워드 추적 " + state.others.length + "개"
             : "이 추적만";
           box.appendChild(optionNode("p", "", "넣은 뒤 그룹상품 번호 " + nextIds.length + "개 · 적용: " + scope +
             (state.others.length ? "(아래 '다른 키워드 추적' 체크로 바꿉니다)" : "") +
             ". 다음 순위 확인부터 순위 후보로 씁니다. 잘못 넣었으면 아래 입력칸에서 번호를 지우고 저장하면 됩니다."));
-          nodes.candConfirmRun.textContent = state.picked.length + "개 넣기";
+          nodes.candConfirmRun.textContent = state.picked.length + "개 넣고 저장";
           setStatus(nodes.candResult, "", "");
           refreshControls();
           if (typeof nodes.candConfirm.scrollIntoView === "function") nodes.candConfirm.scrollIntoView({ block: "nearest" });
@@ -29442,7 +29459,8 @@
             return;
           }
           var picked = state.picked.slice();
-          var input = optionIdList(state.savedIds.concat(picked)).join("\n");
+          var savedBefore = state.savedIds.slice();
+          var input = optionIdList(savedBefore.concat(picked)).join("\n");
           var applyToSameProduct = applyActive();
           var expected = [state.trackerId];
           var serial = ++requestSerial;
@@ -29466,6 +29484,21 @@
               return;
             }
             applyPayloadInfo(preview);
+            // 창을 연 뒤 다른 곳에서 이 추적의 번호가 바뀌었으면(서버 지금 목록 ≠ 읽은 목록) 저장하지 않는다 — 그대로 저장하면
+            // 다른 곳에서 넣은 번호가 말없이 빠지거나 뺀 번호가 되살아난다. 입력칸을 최신 목록으로 맞춰 다시 넣게 한다.
+            var latestIds = preview.tracker && Array.isArray(preview.tracker.optionProductIds)
+              ? optionIdList(preview.tracker.optionProductIds)
+              : savedBefore;
+            if (latestIds.slice().sort().join(",") !== savedBefore.slice().sort().join(",")) {
+              state.busy = false;
+              state.confirming = false;
+              nodes.input.value = state.savedIds.join("\n");
+              setStatus(nodes.candResult, "창을 연 뒤 다른 곳에서 이 추적의 그룹상품 번호가 바뀌어(지금 " + latestIds.length +
+                "개) 저장하지 않았습니다. 아래 입력칸을 최신 번호로 바꿨습니다. 확인한 뒤 다시 넣어주세요.", "is-warn");
+              refreshControls();
+              restoreCandidateFocus();
+              return;
+            }
             var shrinkingNow = applyToSameProduct
               ? candidateShrinkingOthers(optionIdList(preview.parsed && preview.parsed.optionProductIds), preview)
               : [];

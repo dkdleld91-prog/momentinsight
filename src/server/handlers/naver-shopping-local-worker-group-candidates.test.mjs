@@ -438,6 +438,11 @@ test("W5 표시 칸이 없으면(대표 SQL 전) 옵션 칸까지 읽어 수집 
     assert.deepEqual(value.first.state.trackerSelects.map((columns) => columns.includes("group_product_marked")), [true, false]);
     assert.deepEqual(value.second.state.trackerSelects.map((columns) => columns.includes("group_product_marked")), [false], "10분 동안 다시 묻지 않는다");
     assert.equal(lines.filter((line) => line.includes("naver_rank_group_mark_column_missing")).length, 1);
+    // 칸이 없을 때는 옵션이 안 보여도 후보를 만들지 않는다(명세: 칸 없으면 후보 없음 · 스냅샷은 예전 그대로).
+    const noMarkColumn = await withQuietWarnings(() => submit([marked({ option_product_ids: [OPTION_16PRO] })], strictWindow({ 40: candidateCard(40, CAND_A) }), { history: [PRICED_HISTORY()], markColumnMissing: true }));
+    assert.equal(noMarkColumn.value.response.status, 200);
+    assert.equal(noMarkColumn.value.state.commits[0].args.p_snapshot.item.matchBasis, "not_found");
+    assert.equal(Object.hasOwn(noMarkColumn.value.state.commits[0].args.p_snapshot.item, "groupCandidates"), false);
 
     forgetGroupMarkColumnMissing();
     const both = await withQuietWarnings(() => submit([marked()], strictWindow({ 12: card(12, PRIMARY) }), { history: [PRICED_HISTORY()], optionColumnMissing: true }));

@@ -1224,16 +1224,19 @@ test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고
   assert.equal(env.add().disabled, false);
   assert.equal(env.add().textContent, "고른 1개 넣기");
   assert.ok(env.items()[0].classList.contains("is-picked"));
+  assert.deepEqual(env.items().map((node) => node.querySelector("[data-rank-cand-pick-label]").textContent), ["고름", "고르기"], "고른 카드는 글자로도 보인다");
   env.pick(1);
   assert.equal(env.add().textContent, "고른 2개 넣기");
   assert.equal(env.q(".mi-rank-cand-count").textContent, "고른 후보 2개");
 
   click(env.add());
   assert.equal(env.confirm().hidden, false, "저장 전 고른 개수 확인");
-  assert.match(env.confirm().textContent, /고른 후보 2개를 그룹상품 번호에 넣을까요\?/u);
+  assert.match(env.confirm().textContent, /고른 후보 2개를 그룹상품 번호에 넣고 바로 저장할까요\?/u);
+  assert.equal(env.confirm().querySelector(".mi-rank-cand-confirm-warn").textContent,
+    "고른 후보 중 1개에 경고(기종 다름 등)가 있습니다. 상품 페이지에서 같은 그룹상품의 옵션인지 확인했을 때만 넣으세요.", "경고 붙은 후보를 골랐으면 한 번 더 알린다");
   assert.deepEqual(env.confirm().querySelector(".mi-rank-option-chips").querySelectorAll("li").map((node) => node.textContent), [CAND_A, CAND_B]);
   assert.match(env.confirm().textContent, /넣은 뒤 그룹상품 번호 3개 · 적용: 이 추적과 같은 대표 상품번호를 쓰는 다른 키워드 추적 1개/u);
-  assert.equal(env.confirmRun().textContent, "2개 넣기");
+  assert.equal(env.confirmRun().textContent, "2개 넣고 저장");
   assert.equal(env.documentRef.activeElement, env.confirmRun());
   assert.ok(env.section().querySelectorAll("[data-rank-cand-pick]").every((box) => box.disabled), "확인 중에는 고르기를 바꿀 수 없다");
   assert.equal(env.requests.length, 1, "확인 전에는 요청하지 않는다");
@@ -1257,9 +1260,27 @@ test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고
   assert.equal(env.result(), line, "저장 뒤 결과 한 줄");
   assert.equal(env.cardStatus.textContent, line, "카드 상태 줄에도 남는다(창을 닫아도 보임)");
   assert.equal(env.q(".mi-rank-cand-actions").hidden, true);
+  assert.deepEqual(env.items().map((node) => node.querySelector("[data-rank-cand-pick-label]").textContent), ["넣음", "넣음"], "넣은 뒤 카드 글자");
   assert.equal(env.input().value, `${OPTION_A}\n${CAND_A}\n${CAND_B}`);
   assert.equal(env.timers.length, 0, "결과를 읽게 저절로 닫지 않는다");
   assert.equal(env.documentRef.activeElement, env.q(".mi-rank-option-card"), "저장 뒤 초점은 창에 남는다");
+});
+
+test("U11 후보: 창을 연 뒤 다른 곳에서 번호가 바뀌면(미리 보기의 지금 목록 ≠ 읽은 목록) 저장하지 않고 입력칸을 최신으로 맞춘다", async () => {
+  const env = candidateEnv(candidateTracker());
+  env.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(env.candButton);
+  await flush();
+  env.pick(0);
+  click(env.add());
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], parsed: parsedOf([OPTION_A, CAND_A]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+  click(env.confirmRun());
+  await flush();
+  assert.equal(env.requests.length, 2, "읽기·미리 보기만 하고 저장하지 않는다");
+  assert.match(env.result(), /다른 곳에서 이 추적의 그룹상품 번호가 바뀌어\(지금 2개\) 저장하지 않았습니다/u);
+  assert.equal(env.input().value, `${OPTION_A}\n${OPTION_B}`, "입력칸을 최신 번호로");
+  assert.equal(env.confirm().hidden, true);
+  assert.equal(env.add().textContent, "고른 1개 넣기", "고른 것은 그대로 — 다시 넣으면 최신 번호에 합친다");
 });
 
 test("U11 후보: 저장 안 한 입력·20개 초과·서버 거절은 막고 쉬운 말로 알린다, 빈 상태 문구, 고른 뒤 닫으면 묻는다", async () => {

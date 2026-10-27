@@ -175,6 +175,13 @@ export function kstClockOf(value) {
 function refusalMessage(code, manual) {
   if (code === "COUPANG_MANUAL_PAUSED") {
     const at = kstClockOf(manual.pausedUntil);
+    const hour = at ? Number(at.slice(0, 2)) : NaN;
+    const from = Number.isInteger(manual.fromHour) ? manual.fromHour : 9;
+    const to = Number.isInteger(manual.toHour) ? manual.toHour : 19;
+    // 쉼 끝이 확인 시간 밖이면 시간 규칙이 먼저 막는다(다음 날 시작 시각부터).
+    if (at && (hour >= to || hour < from)) {
+      return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나기 전에 오늘 확인 시간(~${String(to).padStart(2, "0")}시)이 끝나 내일 ${String(from).padStart(2, "0")}시부터 다시 됩니다.`;
+    }
     if (at) return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). 오늘 한 번 더 차단되면 그날은 멈춥니다.`;
   }
   if (code === "COUPANG_MANUAL_STOPPED" && Number.isInteger(manual.blocksToday) && manual.blocksToday >= 2) {

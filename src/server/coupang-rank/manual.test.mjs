@@ -324,6 +324,10 @@ test("c30-4 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·re
   assert.deepEqual([paused.code, paused.status, paused.extra.pausedUntil, paused.extra.retryAfterSec], ["COUPANG_MANUAL_PAUSED", 409, "2026-10-27T06:21:00Z", 1800]);
   assert.match(paused.message, /30분 쉬는 중입니다\(15:21에 다시 됩니다\)/u);
   assert.match(paused.message, /한 번 더 차단되면 그날은 멈춥니다/u);
+  // 18:50 첫 차단 → 쉼 끝 19:20 은 확인 시간(~19시) 밖: '19:20에 다시'가 아니라 내일 09시부터
+  const late = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused", fromHour: 9, toHour: 19, serverTime: "2026-10-27T09:50:00Z", pausedUntil: "2026-10-27T10:20:00Z", blocksToday: 1 } });
+  assert.match(late.message, /오늘 확인 시간\(~19시\)이 끝나 내일 09시부터 다시 됩니다\.$/u);
+  assert.doesNotMatch(late.message, /19:20/u);
   // 쉼 끝 시각이 없으면 고정 문구(시각을 지어내지 않는다)
   const bare = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused" } });
   assert.equal(bare.message, MANUAL_MESSAGES.COUPANG_MANUAL_PAUSED);

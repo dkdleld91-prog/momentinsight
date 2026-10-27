@@ -6134,6 +6134,31 @@ test("결과 문구: 차단 + 서버 쉼(paused) → '30분 쉽니다. 12:30에 
   assert.match(internals.manualAllStateStopText("paused", pausedPayload()), /30분 쉬게 되어 멈췄습니다/u);
 });
 
+test("Codex 3차: 쉼 끝난 뒤 늦게 다시 보낸 차단 결과는 '30분 쉽니다'가 아님 · 쉼 끝이 확인 시간 밖이면 '내일 09:00' · SQL 전 설치 안내는 '그날 중지'", () => {
+  const blocked = { outcome: "measured", page: { status: "blocked", httpStatus: 403, errorCode: null } };
+  // 차단 결과가 저장된 뒤 응답·ack 가 사라져 30분 뒤 다시 보냄: 서버는 ready·paused:false·stopped:false
+  const readyInfo = manualPayload({ state: "ready", blocksToday: 1, pauseMinutes: 30, blocksToStop: 2 });
+  const resent = internals.manualRecordText({ payload: { ok: true, duplicate: true, status: "blocked", stopped: false, paused: false, pausedUntil: null, stopCode: "blocked_http_403", manual: readyInfo } }, blocked, "아이폰 필름", readyInfo);
+  assert.deepEqual([resent.paused === true, resent.stopped === true, resent.tone], [false, false, "is-warn"]);
+  assert.match(resent.text, /^확인한 화면이 차단으로 보였습니다\(쿠팡 응답 HTTP 403\)\. 지금은 30분 쉼이 걸려 있지 않습니다\(오늘 한 번 더 차단되면 그날은 멈춥니다\)\./u);
+  assert.doesNotMatch(resent.text, /30분 쉽니다/u);
+  // 18:50 KST 첫 차단 → 쉼 끝 19:20 은 확인 시간(~19시) 밖
+  const lateUntil = iso(Date.parse("2026-10-23T10:20:00.000Z"));
+  const late = pausedPayload({ pausedUntil: lateUntil, blockAt: iso(Date.parse("2026-10-23T09:50:00.000Z")), serverTime: iso(Date.parse("2026-10-23T09:50:00.000Z")) });
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.manualPauseAgain(lateUntil, late))), { clock: "내일 09:00", tomorrow: true });
+  assert.deepEqual(JSON.parse(JSON.stringify(internals.manualPauseAgain(iso(PAUSE_UNTIL), pausedPayload()))), { clock: "12:30", tomorrow: false });
+  assert.equal(internals.manualPauseText(late, ""), "쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다(18:50 · 쿠팡 응답 HTTP 403). 쉼이 끝나기 전에 오늘 확인 시간(~19시)이 끝나 내일 09:00부터 다시 누를 수 있습니다.");
+  const lateNow = Date.parse("2026-10-23T09:51:00.000Z");
+  const lateView = view({ server: late, now: lateNow });
+  assert.equal(internals.manualButtonLabel(lateView, false, late, lateNow), "내일 09:00");
+  const lateBoard = internals.manualBoardModel({ view: lateView, server: late, now: lateNow, trackers: [], todayKst: "2026-10-23" });
+  assert.equal(lateBoard.metrics.next.value, "내일 09:00");
+  const lateRecord = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: false, paused: true, pausedUntil: lateUntil, stopCode: "blocked_http_403", manual: late } }, blocked, "아이폰 필름", late);
+  assert.match(lateRecord.text, /'지금 확인'을 30분 쉽니다\. 쉼이 끝나기 전에 오늘 확인 시간\(~19시\)이 끝나 내일 09:00부터 다시 누를 수 있습니다\.$/u);
+  // 설치 안내: c30-4 SQL 전(쉼 모름)이면 '차단 시 그날 중지'
+  assert.ok(moduleSource.includes('(manualPauseKnown(server) ? "차단 시 30분 쉼(같은 날 두 번째면 그날 중지)" : "차단 시 그날 중지") + "은 서버가 지킵니다."'));
+});
+
 test("확장 사유·업데이트 안내: blocked_pause·blocked_today(1.0.1 안내)·too_soon(분 숫자 없음), 확장이 서버 버전보다 낮으면 덮어쓰기 안내", () => {
   assert.equal(internals.manualCodeText("blocked_pause"), "차단으로 보이는 화면이 있어 확장이 30분 쉬는 중이라 시작하지 않았습니다");
   assert.match(internals.manualCodeText("blocked_today"), /같은 날 두 번째 차단\. 확장이 1\.0\.1 이면 첫 차단에도 그날 멈추니 1\.0\.2 로 덮어써 주세요/u);

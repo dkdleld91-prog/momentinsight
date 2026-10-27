@@ -1115,7 +1115,7 @@ test("c30-3 제약 ↔ 서버 진단 검사: 서버가 받는 꾸민 최악·확
 // 설정 칸 6개 + 요약·차단 알림 함수 2개만 다시 정의. 첫 차단 30분 쉼 → 30분 뒤 허용 → 같은 날 두 번째 그날 중지 → 다음 날(KST) 초기화.
 const PAUSE_NAME = "20261027180000_coupang_rank_manual_pause.sql";
 const pauseSql = fs.readFileSync(path.join(migrationDirectory, PAUSE_NAME), "utf8");
-const PAUSE_SHA256 = "efc7fb58dfb2637a7e6de06896570cff05eeea205e04d846f72b272450689cfa";
+const PAUSE_SHA256 = "0a1e7a4057158e7c67331693ab7f1cd249c6ea0888b61bc973123f897ebb910b";
 const PAUSE_DOCS = path.join(root, "docs", "sql", "c30-4-manual-pause.sql");
 const PAUSE_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.rollback.sql"), "utf8");
 const PAUSE_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.verify-applied.sql"), "utf8");
@@ -1331,6 +1331,54 @@ test("c30-4 확장의 '앞서 차단을 봤다'(확인 없는 요청 · 1.0.1 bl
     const settings = await h.settings();
     assert.deepEqual([settings.manual_block_count, settings.manual_stopped_day], [1, null]);
     assert.ok(Date.parse(settings.manual_paused_until) < Date.now(), "쉼을 다시 걸지 않는다");
+  });
+});
+
+test("c30-4 늦은 보고 한 번 세기(Codex 검수 반영): 확장의 '앞서 본 차단' 알림(확인 없음)이 먼저 세어진 뒤 그보다 먼저 검색한 요청의 차단이 늦게 와도 그대로 1번, 알림 뒤에 검색한 요청의 차단은 2번째", async () => {
+  await withPauseDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    // A: 검색(확인)했지만 직접 알림·결과 보고가 늦어짐
+    const a = await h.verified(tracker);
+    await h.ageVerify(a.claimId, 200);
+    await h.clearGap();
+    // B: 확장이 앞서 본 차단(A)을 알림(시작 못 함) → 서버가 몰라서 첫 차단·30분 쉼
+    const bHash = h.token();
+    const b = await h.claim(tracker, bHash);
+    assert.equal(b.ok, true, JSON.stringify(b));
+    assert.equal((await h.record(b.claimId, bHash, { outcome: "not_started", code: "blocked_pause", stopCode: "extension_reported" })).manual.state, "paused");
+    // 시각 순서: A 검색(지금 − 210초) < B 요청(지금 − 60초) < 뒤의 C 검색(verified 가 확인 시각을 10초 앞당긴다)
+    await db.query("update public.coupang_rank_manual_claims set claimed_at = now() - interval '60 seconds' where id = $1", [b.claimId]);
+    // A 의 늦은 결과 보고: 같은 차단이라 그날 중지가 아니다
+    const late = await h.record(a.claimId, a.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" });
+    assert.deepEqual([late.ok, late.accepted, late.stopped, late.manual.state, late.manual.blocksToday], [true, true, false, "paused", 1]);
+    assert.equal((await h.claimRow(a.claimId)).stop_applied, true);
+    // 쉼 뒤 새 검색 C 의 차단은 두 번째 → 그날 중지
+    await h.endPause();
+    await h.clearGap();
+    const c = await h.verified(tracker);
+    const second = await h.record(c.claimId, c.hash, { status: "blocked", run: blockedRun(429), stopCode: "blocked_http_429" });
+    assert.deepEqual([second.stopped, second.manual.state, second.manual.blocksToday], [true, "stopped", 2]);
+  });
+});
+
+test("c30-4 되돌리기는 보호를 풀지 않는다: 30분 쉬는 중·오늘 센 차단이 있으면 오늘 그날 중지로 바꾼 뒤 칸을 지운다(다시 적용해도 오늘은 stopped)", async () => {
+  await withPauseDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const first = await h.verified(tracker);
+    await h.record(first.claimId, first.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" });
+    assert.equal((await h.summary()).state, "paused");
+    await db.exec(PAUSE_ROLLBACK);
+    await db.exec(PAUSE_ROLLBACK);
+    const after = await h.summary();
+    assert.deepEqual([after.state, after.stoppedCode], ["stopped", "blocked_http_403"]);
+    await db.exec(pauseSql);
+    assert.equal((await h.summary()).state, "stopped", "같은 날 다시 적용해도 오늘은 그날 중지");
+  });
+  // 차단이 없던 날은 되돌려도 그대로 ready
+  await withPauseDb(async (db, h) => {
+    await h.clearGap();
+    await db.exec(PAUSE_ROLLBACK);
+    assert.equal((await h.summary()).state, "ready");
   });
 });
 

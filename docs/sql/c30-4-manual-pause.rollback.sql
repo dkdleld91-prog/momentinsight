@@ -1,6 +1,7 @@
 -- ROLLBACK for supabase/migrations/20261027180000_coupang_rank_manual_pause.sql
 -- (C30 지금 확인 '차단 뒤 30분 쉼' 되돌리기. 대표가 Supabase SQL Editor 에서 되돌릴 때만 실행한다.)
 -- 요약·차단 알림 함수를 c30-2(20261018090000) 원문으로 되돌리고(차단 한 번에 그날 중지), 더한 칸 6개를 지운다.
+-- 지금 30분 쉬는 중이거나 오늘 센 차단이 있으면 칸을 지우기 전에 오늘을 그날 중지로 바꾼다(되돌려도 쿠팡 검색이 바로 열리지 않게).
 -- 서버 코드는 칸이 없어도 견딘다(예전처럼 그날 중지로 동작). 순위 기록(회차·스냅샷)·요청 표는 지우지 않는다.
 -- 검색 사이 간격은 지금 값(240초)을 그대로 둔다(쿠팡 요청을 늘리는 쪽으로 되돌리지 않는다). 기본값만 180 으로 되돌린다.
 -- 3분으로 되돌리려면 대표가 따로: update public.coupang_rank_settings set manual_min_gap_seconds = 180 where id = 1;
@@ -124,6 +125,28 @@ begin
   return jsonb_build_object('ok', true,
     'stopped', coalesce((select x.manual_stopped_day = v_today from public.coupang_rank_settings x where x.id = 1), false),
     'stoppedDay', v_day, 'stopCode', p_code, 'manual', public.coupang_rank_manual_summary(null));
+end;
+$$;
+
+-- 되돌려도 보호를 풀지 않는다: 지금 30분 쉬는 중이거나 오늘 센 차단이 있으면 예전 규칙(차단 한 번 = 그날 중지)대로 오늘 그날 중지로 바꾼다.
+-- (칸이 이미 없으면 — 두 번째 실행 — 건너뛴다.)
+do $$
+begin
+  if exists (select 1 from information_schema.columns
+              where table_schema = 'public' and table_name = 'coupang_rank_settings'
+                and column_name = 'manual_paused_until') then
+    execute $q$
+      update public.coupang_rank_settings
+         set manual_stopped_day = (now() at time zone 'Asia/Seoul')::date,
+             manual_stopped_at = coalesce(manual_block_at, now()),
+             manual_stopped_run_id = null,
+             manual_stopped_code = coalesce(manual_block_code, 'blocked_page')
+       where id = 1
+         and (manual_stopped_day is null or manual_stopped_day < (now() at time zone 'Asia/Seoul')::date)
+         and ((manual_paused_until is not null and manual_paused_until > now())
+              or (manual_block_day = (now() at time zone 'Asia/Seoul')::date and manual_block_count > 0))
+    $q$;
+  end if;
 end;
 $$;
 

@@ -607,14 +607,14 @@ test("T13 성능: 같은 키워드 100추적 × 옵션 20개 × 300개 창 submi
   });
 });
 
-test("T13 성능: 창에 실제로 보이는 다른 카드 번호 20개 × 100추적도 submit 이 몇 초 안에 끝나고 모두 커밋된다", async () => {
+test("T13 성능: 창에 실제로 보이는 다른 카드 번호 50개(상한, 2026-10-27) × 100추적도 submit 이 몇 초 안에 끝나고 모두 커밋된다", async () => {
   // 반박 검토(2026-10-23) 재현: 추적마다 보이는 번호마다 300개 전체 판정을 다시 돌아 옵션 없음 0.2~0.5초가
   // 5.6~6.9초가 됐다(부하 없음). 같은 창·같은 번호 판정 기억 + 창당 정식 판정 상한으로 막는다.
   await withWorkerEnv(async () => {
-    const visible = Array.from({ length: 20 }, (_, index) => String(99900002000 + index));
+    const visible = Array.from({ length: 50 }, (_, index) => String(99900002000 + index));
     const window = strictWindow(Object.fromEntries(visible.map((id, index) => [
-      11 + index * 13,
-      card(11 + index * 13, id, { mallName: `다른몰 ${index}` }),
+      11 + index * 5,
+      card(11 + index * 5, id, { mallName: `다른몰 ${index}` }),
     ])));
     const rows = Array.from({ length: 100 }, (_, index) => tracker({
       id: `123e4567-e89b-42d3-a456-${String(426614175000 + index).padStart(12, "0")}`,
@@ -639,13 +639,13 @@ test("T13 성능: 창에 실제로 보이는 다른 카드 번호 20개 × 100�
     // 다른 스토어 카드라 모두 빠지고 not_found 로 커밋된다(다른 스토어 꼬리 포함).
     const first = grouped.result.state.commits[0].args.p_snapshot;
     assert.equal(first.item.matchBasis, "not_found");
-    assert.equal(first.item.optionGroup.mallMismatchCount, 20);
+    assert.equal(first.item.optionGroup.mallMismatchCount, 50);
     // 반박 검토 전 코드는 옵션 없음의 약 16~20배(이 맥 부하 없음 0.33초 → 5.4초, 반박 검토 측정 부하 중 3초 → 62~86초),
     // 지금은 약 2배(0.33초 → 0.65초)다. 절대 시간 대신 같은 테스트 안의 옵션 없음과 비교한다(부하 중에도 흔들리지 않게).
     const plainMs = Math.max(plainBefore.ms, plainAfter.ms);
     assert.ok(
       grouped.ms < plainMs * 4 + 500,
-      `보이는 번호 20개 × 100추적 ${Math.round(grouped.ms)}ms, 옵션 없음 ${Math.round(plainMs)}ms`,
+      `보이는 번호 50개 × 100추적 ${Math.round(grouped.ms)}ms, 옵션 없음 ${Math.round(plainMs)}ms`,
     );
   });
 });

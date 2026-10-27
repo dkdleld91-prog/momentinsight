@@ -1823,7 +1823,7 @@
     return "";
   }
 
-  // 걸리는 시간(대략): 키워드 수 × 검색 사이 간격(기본 3분).
+  // 걸리는 시간(대략): 키워드 수 × 검색 사이 간격(기본 4분 — 서버 c30-4 전 3분).
   function manualAllMinutes(count, server) {
     return Math.max(1, Math.round((Number(count) || 0) * manualGapMinutes(server)));
   }
@@ -4654,7 +4654,7 @@
       }
       if (action === "collector-enable") {
         if (!confirmAction("수집을 켭니다. 수집기 PC가 켜져 있으면 다음 회차부터 쿠팡 검색을 잽니다.\n" +
-          "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이면 서버가 켜지 않습니다(자동 수집이 아직 지금 확인의 간격·그날 중지를 보지 않으므로, 먼저 '지금 확인 끄기'). 켤까요?")) return;
+          "'지금 확인'이 켜져 있거나 지금 확인이 차단으로 30분 쉬는 중·멈춘 날이면 서버가 켜지 않습니다(자동 수집이 아직 지금 확인의 간격·쉼·그날 중지를 보지 않으므로, 먼저 '지금 확인 끄기'). 켤까요?")) return;
         ownerPost({ action: "collector-enable" }, "수집을 켰습니다.");
         return;
       }
@@ -6192,7 +6192,7 @@
       if (enable) {
         var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
         var agreed = confirmAction("'지금 확인'을 켭니다.\n총관리자 카드에 '지금 확인' 버튼이 보이고, 누를 때만 이 크롬이 새 시크릿 창으로 쿠팡 검색을 한 번 합니다(검색 사이 " +
-          manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text + ", 차단으로 보이는 화면이 나오면 그날 중지).\n내 크롬에 확장을 설치했나요? 켤까요?");
+          manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text + ", 차단으로 보이는 화면이 나오면 " + (manualPauseKnown(server) ? "30분 쉼, 같은 날 두 번째면 그날 중지" : "그날 중지") + ").\n내 크롬에 확장을 설치했나요? 켤까요?");
         if (!agreed) return;
       }
       manual.toggling = true;

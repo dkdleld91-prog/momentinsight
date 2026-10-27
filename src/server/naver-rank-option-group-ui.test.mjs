@@ -1352,3 +1352,72 @@ test("U12 카드 '그룹상품으로 표시': 켜기는 한 번에, 끄기는 �
   assert.ok(env.cardStatus.classList.contains("is-warn"));
   assert.equal(env.events.length, 1, "실패하면 목록 다시 읽기 없음");
 });
+
+test("U11 후보: 함께 적용하면 다른 키워드 추적의 따로 넣은 번호가 빠질 때는 넣지 않는다(읽은 값·서버 미리 보기 두 번 확인), 확인 중에는 아래 입력을 잠근다", async () => {
+  // 읽은 값으로 미리 안다: 다른 추적에 이 추적에 없는 번호(99900000007)가 있다.
+  const env = candidateEnv(candidateTracker());
+  env.respond(optionsPayload({ saved: [OPTION_A], siblings: [sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_A, "99900000007"] })] }));
+  click(env.candButton);
+  await flush();
+  env.pick(0);
+  click(env.add());
+  assert.equal(env.confirm().hidden, true, "확인 칸을 열지 않는다");
+  assert.match(env.result(), /다른 키워드 추적 1개\(아이폰17 케이스\)에 따로 넣어 둔 번호가 있어, 함께 넣으면 그 번호가 빠집니다\. 저장하지 않았습니다/u);
+  assert.equal(env.requests.length, 1, "요청 없음");
+  // 체크를 끄면 이 추적에만 넣는다.
+  env.apply().checked = false;
+  dispatch(env.apply(), "change");
+  click(env.add());
+  assert.equal(env.confirm().hidden, false);
+  assert.match(env.confirm().textContent, /적용: 이 추적만/u);
+  assert.equal(env.input().disabled, true, "확인 중에는 입력칸 잠금");
+  assert.equal(env.apply().disabled, true, "확인 중에는 함께 적용 체크 잠금");
+  assert.equal(env.previewButton().disabled, true);
+  assert.equal(env.saveButton().disabled, true);
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), siblings: [] }), targetTrackerIds: [TRACKER_ID] });
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, CAND_A], message: "저장" });
+  click(env.confirmRun());
+  await flush();
+  assert.equal(plain(env.requests[1].body).applyToSameProduct, false);
+  assert.deepEqual(plain(env.requests[2].body).expectedTrackerIds, [TRACKER_ID]);
+  assert.match(env.result(), /추적 1개에 저장/u);
+
+  // 읽은 값에는 없었지만 서버 미리 보기가 빠지는 추적을 알려 주면 저장하지 않는다.
+  const late = candidateEnv(candidateTracker());
+  late.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(late.candButton);
+  await flush();
+  late.pick(0);
+  click(late.add());
+  late.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), siblings: [sibling({ removedCount: 1, beforeOptionProductIds: ["99900000008"], afterOptionProductIds: [OPTION_A, CAND_A] })] }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+  click(late.confirmRun());
+  await flush();
+  assert.equal(late.requests.length, 2, "미리 보기만 하고 저장하지 않는다");
+  assert.match(late.result(), /함께 넣으면 그 번호가 빠집니다/u);
+  assert.equal(late.events.length, 0);
+
+  // 확인 중 입력이 (스크립트 등으로) 바뀌었으면 저장 직전에 다시 막는다.
+  const dirty = candidateEnv(candidateTracker());
+  dirty.respond(optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  click(dirty.candButton);
+  await flush();
+  dirty.pick(0);
+  click(dirty.add());
+  dirty.input().value = `${OPTION_A}\n99900000099`;
+  click(dirty.confirmRun());
+  await flush();
+  assert.equal(dirty.requests.length, 1);
+  assert.match(dirty.result(), /저장하지 않은 번호가 있습니다/u);
+});
+
+test("U12 표시 끄기 확인 문구: 번호를 넣은 추적은 번호가 있는 동안 계속 그룹상품", async () => {
+  const env = candidateEnv(candidateTracker(), { confirmAnswers: [false] });
+  const markButton = env.documentRef.createElement("button");
+  markButton.setAttribute("data-rank-group-mark", TRACKER_ID);
+  markButton.setAttribute("data-rank-group-mark-next", "false");
+  env.rankCard.appendChild(markButton);
+  click(markButton);
+  await flush();
+  assert.match(env.confirms[0], /그룹상품 번호를 넣은 추적은 번호가 있는 동안 계속 그룹상품입니다/u);
+  assert.equal(env.requests.length, 0);
+});

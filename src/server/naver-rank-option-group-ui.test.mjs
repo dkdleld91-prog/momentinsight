@@ -275,7 +275,8 @@ for (const [label, source] of PAGES) {
     const card = parseHtml(html).querySelector(".mi-rank-tracker-card");
     const pill = card.querySelector(".mi-rank-option-pill");
     assert.ok(pill, "알약이 있다");
-    assert.equal(pill.textContent, "그룹상품 3개");
+    // 관리자 편집 카드는 상태를 한눈에(2026-10-27 A안 '번호 n개 사용 중'), 광고주 화면은 예전 글자 그대로.
+    assert.equal(pill.textContent, label === "client.html" ? "그룹상품 3개" : "그룹상품 · 번호 3개 사용 중");
     assert.ok(pill.hasAttribute("data-rank-export-omit"), "공유 이미지에서 빠진다");
     assert.equal(pill.parent.classList.includes("mi-rank-ops-row"), true, "운영줄에 있다");
     const button = card.querySelector("[data-rank-option-edit]");

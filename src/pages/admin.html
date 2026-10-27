@@ -4693,6 +4693,296 @@
         flex: 1 1 calc(50% - 4px);
       }
     }
+
+    /* 그룹상품 표시·후보(대표 승인 2026-10-27 A안). 표시 버튼은 '그룹상품 번호' 버튼과 같은 알약이고, 켜지면 '그룹상품 n개'
+       알약 색, 후보 버튼은 '가져오기' 권유 색. 확인 창 후보는 카드처럼 한눈에 비교한다. */
+    #mi-admin .mi-rank-option-edit.is-on {
+      border-color: var(--mi-gold);
+      color: var(--mi-navy-2);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-rank-option-edit[aria-busy="true"] {
+      cursor: wait;
+    }
+
+    #mi-admin .mi-rank-cand {
+      display: grid;
+      min-width: 0;
+      gap: 10px;
+      border: 1px solid var(--mi-gold);
+      border-radius: 14px;
+      padding: 12px;
+      background: var(--mi-grey-50);
+    }
+
+    #mi-admin .mi-rank-cand[hidden],
+    #mi-admin .mi-rank-cand-actions[hidden],
+    #mi-admin .mi-rank-cand-confirm[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-rank-cand.is-empty {
+      border-color: var(--mi-line);
+    }
+
+    #mi-admin .mi-rank-cand-head h4 {
+      margin: 0;
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.4;
+    }
+
+    #mi-admin .mi-rank-cand-howto,
+    #mi-admin .mi-rank-cand-seen {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+
+    #mi-admin .mi-rank-cand-list {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    #mi-admin .mi-rank-cand-list:empty {
+      display: none;
+    }
+
+    #mi-admin .mi-rank-cand-item {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr);
+      gap: 8px;
+      min-width: 0;
+      border: 1px solid var(--mi-line);
+      border-radius: 12px;
+      padding: 10px 12px 10px 4px;
+      background: var(--mi-panel);
+      transition: border-color 0.14s ease, box-shadow 0.14s ease;
+    }
+
+    #mi-admin .mi-rank-cand-item.is-picked {
+      border-color: var(--mi-navy);
+      box-shadow: inset 0 0 0 1px var(--mi-navy);
+    }
+
+    #mi-admin .mi-rank-cand-pick {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding-top: 2px;
+      color: var(--mi-navy-2);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-rank-cand-pick input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--mi-navy);
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-rank-cand-pick input:focus-visible {
+      outline: 2px solid var(--mi-blue);
+      outline-offset: 2px;
+    }
+
+    #mi-admin .mi-rank-cand-pick input:disabled {
+      cursor: not-allowed;
+    }
+
+    #mi-admin .mi-rank-cand-body {
+      display: grid;
+      min-width: 0;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-rank-cand-title {
+      display: -webkit-box;
+      margin: 0;
+      overflow: hidden;
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    #mi-admin .mi-rank-cand-facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    #mi-admin .mi-rank-cand-facts li {
+      display: inline-flex;
+      min-height: 22px;
+      max-width: 100%;
+      align-items: center;
+      box-sizing: border-box;
+      border: 1px solid var(--mi-line);
+      border-radius: var(--mi-radius-pill);
+      padding: 1px 8px;
+      color: var(--mi-navy-2);
+      background: var(--mi-grey-50);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.4;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+
+    #mi-admin .mi-rank-cand-facts li.is-seen {
+      border-color: var(--mi-gold);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-rank-cand-facts li.is-warn {
+      border-color: var(--mi-warn);
+      color: var(--mi-warn);
+      background: var(--mi-warn-bg);
+    }
+
+    #mi-admin .mi-rank-cand-foot {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px 12px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mi-admin .mi-rank-cand-open {
+      color: var(--mi-blue);
+      font-size: 12px;
+      font-weight: 800;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    #mi-admin .mi-rank-cand-open:focus-visible {
+      border-radius: 4px;
+      outline: 2px solid var(--mi-blue);
+      outline-offset: 2px;
+    }
+
+    #mi-admin .mi-rank-cand-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-rank-cand-count {
+      flex: 1 1 180px;
+      color: var(--mi-navy);
+      font-size: 12.5px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-rank-cand-confirm {
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--mi-navy);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: var(--mi-panel);
+    }
+
+    #mi-admin .mi-rank-cand-confirm-text {
+      display: grid;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-rank-cand-confirm-text strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 900;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-rank-cand-confirm-text p {
+      margin: 0;
+      color: var(--mi-ink);
+      font-size: 12.5px;
+      font-weight: 700;
+      line-height: 1.55;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+
+    #mi-admin .mi-rank-cand-confirm-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-rank-cand-actions .mi-button,
+    #mi-admin .mi-rank-cand-confirm-actions .mi-button {
+      min-height: 40px;
+    }
+
+    #mi-admin .mi-rank-cand-result {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 12.5px;
+      font-weight: 800;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    #mi-admin .mi-rank-cand-result:empty {
+      display: none;
+    }
+
+    #mi-admin .mi-rank-cand-result.is-ok {
+      border-radius: 10px;
+      padding: 8px 10px;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-admin .mi-rank-cand-result.is-warn {
+      color: var(--mi-warn);
+    }
+
+    @media (max-width: 520px) {
+      #mi-admin .mi-rank-cand {
+        padding: 10px;
+      }
+
+      #mi-admin .mi-rank-cand-item {
+        grid-template-columns: 40px minmax(0, 1fr);
+        padding-right: 10px;
+      }
+
+      #mi-admin .mi-rank-cand-actions .mi-button,
+      #mi-admin .mi-rank-cand-confirm-actions .mi-button {
+        flex: 1 1 calc(50% - 4px);
+      }
+    }
     /* N 30일 그룹상품 끝 */
 
     #mi-admin .mi-rank-ops-row .mi-rank-ops-message {
@@ -26020,6 +26310,11 @@
           return /^[0-9]{5,20}$/.test(id);
         }) : [];
         var mismatch = Number(group.mallMismatchCount || 0) || mismatchIds.length;
+        // 그룹상품 표시·후보(대표 승인 2026-10-27 A안): 서버 groupMarkReady·groupProductMarked·groupProduct·groupCandidates
+        // (관리자 목록 응답에만)를 그대로 쓴다. 편집할 수 있는 관리자 카드에서만 새 표시가 붙는다(광고주 화면은 예전 그대로).
+        var candidates = Array.isArray(safe.groupCandidates) ? safe.groupCandidates.filter(function (entry) {
+          return entry && /^[0-9]{5,20}$/.test(String(entry.productId || ""));
+        }) : [];
         return {
           count: count,
           hit: hit,
@@ -26036,18 +26331,38 @@
           primaryRank: hit && Number(group.primaryProductRank) > 0 ? Number(group.primaryProductRank) : 0,
           primaryCatalog: String(group.primaryRankSource || "") === "related_catalog",
           mallMismatchCount: mismatch > 0 ? mismatch : 0,
-          mallMismatchIds: mismatch > 0 ? mismatchIds : []
+          mallMismatchIds: mismatch > 0 ? mismatchIds : [],
+          markReady: editable && safe.groupMarkReady === true,
+          marked: editable && safe.groupProductMarked === true,
+          candidateCount: editable ? candidates.length : 0
         };
       }
 
       // 운영줄의 '그룹상품 n개' 알약(번호가 있을 때)과 관리자 편집 버튼. 둘 다 공유 이미지에서 빠진다(버튼은 복제에서
       // 지워지고, 알약은 data-rank-export-omit). 같은 그룹의 다른 추적에만 있는 번호가 있으면 버튼이 '가져오기'를 권한다.
+      // 관리자 카드 그룹상품 상태(2026-10-27 A안) 네 가지: 표시 안 함('그룹상품으로 표시') · 그룹상품·후보 없음 ·
+      // 후보 n개 확인 필요('그룹상품 후보 n개 · 확인') · 번호 n개 사용 중. 표시 버튼은 다시 누르면 끈다(번호가 있으면 자동 그룹상품).
       function renderRankOptionOpsPills(tracker, state) {
         var html = "";
         if (state.count > 0) {
           html += '<span data-rank-export-omit class="mi-rank-option-pill" title="' +
             escapeHtml("대표 상품번호와 함께 같은 그룹상품의 다른 옵션 상품번호 " + state.count + "개도 찾습니다") + '">' +
-            escapeHtml("그룹상품 " + state.count + "개") + '</span>';
+            escapeHtml(state.editable ? "그룹상품 · 번호 " + state.count + "개 사용 중" : "그룹상품 " + state.count + "개") + '</span>';
+        } else if (state.markReady) {
+          var markHint = state.marked
+            ? "그룹상품으로 표시돼 있습니다. 대표 상품번호가 결과에 없을 때 같은 스토어의 비슷한 카드를 후보로 찾습니다(순위에는 쓰지 않음). 다시 누르면 표시를 끕니다."
+            : "같은 상품의 다른 옵션이 대표로 바뀔 수 있는 그룹상품이면 눌러 주세요. 대표 상품번호가 결과에 없을 때 같은 스토어 후보를 찾아 보여 줍니다. 같은 상품의 다른 키워드 추적에도 함께 적용됩니다.";
+          var markLabel = state.marked ? (state.candidateCount ? "✓ 그룹상품" : "✓ 그룹상품 · 후보 없음") : "그룹상품으로 표시";
+          html += '<button data-rank-export-omit class="mi-rank-option-edit mi-rank-group-mark' + (state.marked ? " is-on" : "") +
+            '" type="button" aria-pressed="' + (state.marked ? "true" : "false") + '" data-rank-group-mark="' + escapeHtml(tracker.id) +
+            '" data-rank-group-mark-next="' + (state.marked ? "false" : "true") + '" title="' + escapeHtml(markHint) + '">' + escapeHtml(markLabel) + '</button>';
+        }
+        if (state.candidateCount) {
+          html += '<button data-rank-export-omit class="mi-rank-option-edit is-suggest mi-rank-group-candidates" type="button" aria-haspopup="dialog" data-rank-option-edit="' +
+            escapeHtml(tracker.id) + '" data-rank-option-keyword="' + escapeHtml(tracker.keyword) + '" data-rank-option-primary="' +
+            escapeHtml(tracker.productId) + '" data-rank-option-focus="candidates" title="' +
+            escapeHtml("대표 상품번호가 결과에 없을 때 같은 스토어에서 두 번 이상 보인 비슷한 카드입니다. 눌러서 비교하고 맞는 것만 골라 넣으세요(순위에는 아직 쓰지 않음).") +
+            '">' + escapeHtml("그룹상품 후보 " + state.candidateCount + "개 · 확인") + '</button>';
         }
         if (state.editable) {
           var suggest = state.suggestionCount;
@@ -26929,6 +27244,10 @@
         var rankHistory = card.querySelector("[data-rank-history]");
         if (!rankKeyword || !rankRun) return;
         var rankTrackers = [];
+        // N30 그룹상품 후보 확인 창(initRankOptionProductEditor)이 지금 목록의 후보를 읽는 창구(2026-10-27 A안). 읽기만 한다.
+        rankTrackerLookupForEditor = function (trackerId) {
+          return rankTrackers.find(function (item) { return item && item.id === trackerId; }) || null;
+        };
         var rankAutoSyncingDue = false;
         var rankAutoSyncToken = 0;
         var rankAutoSyncLastAt = 0;
@@ -28053,12 +28372,17 @@
         });
       }
 
+      var rankTrackerLookupForEditor = null;
+
       // N 30일 그룹상품 번호 편집창(관리자 전용, 대표 요청 2026-10-23). 카드의 [data-rank-option-edit] 버튼으로 연다.
       // - 붙여 넣은 번호·URL 해석은 서버 미리 보기(POST /api/naver-rank-trackers, action "options", mode "preview")만
       //   믿는다. 화면은 넣은 칸 수만 센다(두 곳 규칙이 갈라지지 않게).
       // - 저장은 미리 보기가 성공했고, 그 뒤 입력·체크가 바뀌지 않았고, 받지 않은 칸이 0 일 때만 켜진다.
       // - 서버는 DB 만 읽고 쓴다(네이버 요청 0). 저장에 성공하면 mi:rank-trackers-changed 로 N 30일 목록만 다시 읽는다.
       // - 창은 카드 다시 그리기에 휩쓸리지 않게 #mi-admin 바로 아래에 둔다. DOM 은 textContent 로만 채운다.
+      // - 그룹상품 후보(대표 승인 2026-10-27 A안): 목록 응답의 groupCandidates 를 카드처럼 보여 비교하게 한다. '모두 고르기'는
+      //   없고, 고른 개수를 확인한 뒤에만 기존 저장(미리 보기 → 저장, '다른 키워드 추적에도 적용' 포함)으로 넣는다. 카드의
+      //   '그룹상품으로 표시' 버튼(action "group-mark")도 여기서 받는다. 후보는 넣기 전까지 순위에 쓰이지 않는다.
       function initRankOptionProductEditor() {
         var rankCard = root.querySelector("[data-rank-card]");
         if (!rankCard) return;
@@ -28186,6 +28510,44 @@
           head.appendChild(close);
 
           var main = optionNode("div", "mi-rank-option-main");
+          var cand = optionNode("section", "mi-rank-cand");
+          cand.hidden = true;
+          cand.setAttribute("data-rank-cand", "");
+          cand.setAttribute("aria-labelledby", "mi-rank-cand-title");
+          var candHead = optionNode("div", "mi-rank-cand-head");
+          var candTitle = optionNode("h4", "", "그룹상품 후보");
+          candTitle.id = "mi-rank-cand-title";
+          candHead.appendChild(candTitle);
+          var candHowto = optionNode("p", "mi-rank-cand-howto", "");
+          var candList = optionNode("ul", "mi-rank-cand-list");
+          candList.setAttribute("aria-label", "그룹상품 후보");
+          var candActions = optionNode("div", "mi-rank-cand-actions");
+          var candCount = optionNode("span", "mi-rank-cand-count", "");
+          candCount.setAttribute("aria-live", "polite");
+          var candAdd = optionButton("mi-button", "고른 후보 넣기", "data-rank-cand-add");
+          candAdd.disabled = true;
+          candActions.appendChild(candCount);
+          candActions.appendChild(candAdd);
+          var candConfirm = optionNode("div", "mi-rank-cand-confirm");
+          candConfirm.hidden = true;
+          candConfirm.setAttribute("data-rank-cand-confirm", "");
+          var candConfirmText = optionNode("div", "mi-rank-cand-confirm-text");
+          var candConfirmActions = optionNode("div", "mi-rank-cand-confirm-actions");
+          var candCancel = optionButton("mi-button is-ghost", "취소", "data-rank-cand-cancel");
+          var candConfirmRun = optionButton("mi-button", "넣기", "data-rank-cand-confirm-run");
+          candConfirmActions.appendChild(candCancel);
+          candConfirmActions.appendChild(candConfirmRun);
+          candConfirm.appendChild(candConfirmText);
+          candConfirm.appendChild(candConfirmActions);
+          var candResult = optionNode("p", "mi-rank-cand-result", "");
+          candResult.setAttribute("role", "status");
+          candResult.setAttribute("aria-live", "polite");
+          cand.appendChild(candHead);
+          cand.appendChild(candHowto);
+          cand.appendChild(candList);
+          cand.appendChild(candActions);
+          cand.appendChild(candConfirm);
+          cand.appendChild(candResult);
           var guide = optionNode("ul", "mi-rank-option-guide");
           guide.id = "mi-rank-option-guide";
           [
@@ -28235,6 +28597,7 @@
           status.setAttribute("role", "status");
           status.setAttribute("aria-live", "polite");
 
+          main.appendChild(cand);
           main.appendChild(guide);
           main.appendChild(field);
           main.appendChild(meta);
@@ -28275,7 +28638,19 @@
             status: status,
             clear: clear,
             previewRun: previewRun,
-            save: save
+            save: save,
+            cand: cand,
+            candTitle: candTitle,
+            candHowto: candHowto,
+            candList: candList,
+            candActions: candActions,
+            candCount: candCount,
+            candAdd: candAdd,
+            candConfirm: candConfirm,
+            candConfirmText: candConfirmText,
+            candCancel: candCancel,
+            candConfirmRun: candConfirmRun,
+            candResult: candResult
           };
 
           modal.addEventListener("click", function (event) {
@@ -28292,7 +28667,7 @@
               return;
             }
             if (event.key !== "Tab") return;
-            var focusable = Array.prototype.slice.call(card.querySelectorAll("button, textarea, input")).filter(function (node) {
+            var focusable = Array.prototype.slice.call(card.querySelectorAll("button, textarea, input, a")).filter(function (node) {
               return !node.disabled && !node.hidden && !node.closest("[hidden]");
             });
             if (!focusable.length) {
@@ -28313,6 +28688,12 @@
           input.addEventListener("input", onDraftChanged);
           apply.addEventListener("change", onDraftChanged);
           importButton.addEventListener("click", importSiblings);
+          candList.addEventListener("change", onCandidatePicked);
+          candAdd.addEventListener("click", askCandidateConfirm);
+          candCancel.addEventListener("click", cancelCandidateConfirm);
+          candConfirmRun.addEventListener("click", function () {
+            runCandidateSave();
+          });
           clear.addEventListener("click", clearAll);
           previewRun.addEventListener("click", function () {
             runPreview("");
@@ -28361,6 +28742,7 @@
           nodes.counter.textContent = "넣은 칸 " + optionTokenCount(nodes.input.value) + "개 · 번호는 최대 " + state.limit + "개";
           nodes.card.setAttribute("aria-busy", state.busy ? "true" : "false");
           nodes.preview.classList.toggle("is-stale", Boolean(state.preview && state.previewKey !== currentKey()));
+          refreshCandidateControls();
         }
 
         function renderHeader() {
@@ -28417,13 +28799,21 @@
             loaded: false,
             blocked: false,
             done: false,
-            closeTimer: 0
+            closeTimer: 0,
+            focusCandidates: button.getAttribute("data-rank-option-focus") === "candidates",
+            candidateSource: candidateSourceFor(trackerId),
+            candidates: [],
+            picked: [],
+            confirming: false,
+            candidateDone: false
           };
           lastOpener = button;
           nodes.input.value = "";
           nodes.apply.checked = true;
           nodes.preview.textContent = "";
+          setStatus(nodes.candResult, "", "");
           renderHeader();
+          renderCandidates();
           setStatus(nodes.status, "지금 저장된 그룹상품 번호를 불러오는 중입니다.", "");
           refreshControls();
           modal.hidden = false;
@@ -28458,6 +28848,7 @@
 
         function requestClose() {
           if (draftDirty() && !window.confirm("입력한 그룹상품 번호를 저장하지 않고 닫을까요?")) return;
+          if (!draftDirty() && candidatesPending() && !window.confirm("고른 그룹상품 후보를 넣지 않고 닫을까요?")) return;
           closeEditor();
         }
 
@@ -28494,8 +28885,15 @@
             setStatus(nodes.status, state.savedIds.length
               ? "지금 저장된 그룹상품 번호 " + state.savedIds.length + "개입니다. 고친 뒤 미리 보기를 눌러주세요."
               : "아직 그룹상품 번호가 없습니다. 옵션 상품번호나 URL 을 붙여 넣고 미리 보기를 눌러주세요.", "");
+            renderCandidates();
             refreshControls();
-            nodes.input.focus();
+            var firstPick = state.focusCandidates ? nodes.candList.querySelector("input") : null;
+            if (firstPick) {
+              if (typeof nodes.cand.scrollIntoView === "function") nodes.cand.scrollIntoView({ block: "start" });
+              firstPick.focus();
+            } else {
+              nodes.input.focus();
+            }
           } catch (error) {
             handleRequestError(serial, error, "그룹상품 번호를 불러오지 못했습니다. 연결을 확인한 뒤 창을 다시 열어주세요.", true);
           }
@@ -28786,7 +29184,324 @@
           }
         }
 
+        // ───── 그룹상품 후보 (대표 승인 2026-10-27 A안) ─────
+        // 후보는 목록 응답(관리자 세션)의 trackers[].groupCandidates 만 쓴다(창을 열 때 추가 요청 0). 이미 넣은 번호·대표
+        // 번호는 서버가 빼고, 화면도 한 번 더 뺀다(다른 창에서 막 저장한 경우).
+        function candidateSourceFor(trackerId) {
+          var tracker = typeof rankTrackerLookupForEditor === "function" ? rankTrackerLookupForEditor(trackerId) : null;
+          if (!tracker) return { known: false, markReady: false, groupProduct: false, list: [] };
+          var list = Array.isArray(tracker.groupCandidates) ? tracker.groupCandidates.filter(function (entry) {
+            return entry && /^[0-9]{5,20}$/.test(String(entry.productId || ""));
+          }) : [];
+          return {
+            known: true,
+            markReady: tracker.groupMarkReady === true,
+            groupProduct: tracker.groupProduct === true || optionCount(tracker.optionProductCount, 0) > 0,
+            list: list
+          };
+        }
+
+        function visibleCandidates() {
+          if (!state) return [];
+          var taken = optionIdList(state.savedIds).concat(state.primary ? [state.primary] : []);
+          return state.candidateSource.list.filter(function (entry) {
+            return taken.indexOf(String(entry.productId)) < 0;
+          });
+        }
+
+        function candidatesPending() {
+          return Boolean(state && !state.candidateDone && state.picked.length);
+        }
+
+        function candidateNumber(value) {
+          var number = Number(value);
+          return Number.isSafeInteger(number) && number > 0 ? number : 0;
+        }
+
+        function candidatePrice(value) {
+          var price = candidateNumber(value);
+          return price ? price.toLocaleString("ko-KR") + "원" : "";
+        }
+
+        function candidateDay(value) {
+          var time = Date.parse(String(value || ""));
+          if (!Number.isFinite(time)) return "";
+          var day = new Date(time + 9 * 60 * 60 * 1000);
+          return (day.getUTCMonth() + 1) + "/" + day.getUTCDate();
+        }
+
+        function candidateLink(entry, id) {
+          var raw = String(entry && entry.link || "");
+          if (/^https:\/\/([a-z0-9-]+\.)*naver\.com\//i.test(raw)) return raw;
+          return "https://smartstore.naver.com/main/products/" + id;
+        }
+
+        function candidateItem(entry) {
+          var id = String(entry.productId);
+          var item = optionNode("li", "mi-rank-cand-item");
+          item.setAttribute("data-rank-cand-item", id);
+          var pick = optionNode("label", "mi-rank-cand-pick");
+          var box = optionNode("input", "");
+          box.type = "checkbox";
+          box.value = id;
+          box.setAttribute("data-rank-cand-pick", "");
+          box.setAttribute("aria-label", "후보 고르기: " + (entry.title || "상품번호 " + id));
+          pick.appendChild(box);
+          pick.appendChild(optionNode("span", "", "고르기"));
+          var body = optionNode("div", "mi-rank-cand-body");
+          body.appendChild(optionNode("p", "mi-rank-cand-title", entry.title || "제목 없음"));
+          var facts = optionNode("ul", "mi-rank-cand-facts");
+          function fact(text, className, detail) {
+            if (!text) return;
+            var chip = optionNode("li", className || "", text);
+            if (detail) chip.setAttribute("title", detail);
+            facts.appendChild(chip);
+          }
+          fact(entry.mallName ? "스토어 " + entry.mallName : "");
+          fact(candidatePrice(entry.lprice) ? "가격 " + candidatePrice(entry.lprice) : "가격 정보 없음");
+          var latest = candidateNumber(entry.latestRank);
+          var best = candidateNumber(entry.bestRank);
+          fact(latest ? "최근 " + latest + "위" + (best && best < latest ? " · 최고 " + best + "위" : "") : "");
+          var keywords = candidateNumber(entry.keywordCount);
+          fact(candidateNumber(entry.seenCount) + "번 보임" + (keywords > 1 ? " · 키워드 " + keywords + "개" : ""), "is-seen");
+          (Array.isArray(entry.warnings) ? entry.warnings : []).forEach(function (warning) {
+            fact(String(warning && warning.text || ""), "is-warn", String(warning && warning.detail || ""));
+          });
+          body.appendChild(facts);
+          var seen = (Array.isArray(entry.sightings) ? entry.sightings : []).map(function (sighting) {
+            var parts = [String(sighting && sighting.keyword || "").trim() || "키워드"];
+            var day = candidateDay(sighting && sighting.checkedAt);
+            var rank = candidateNumber(sighting && sighting.rank);
+            if (day) parts.push(day);
+            if (rank) parts.push(rank + "위");
+            return parts.join(" ");
+          });
+          if (seen.length) body.appendChild(optionNode("p", "mi-rank-cand-seen", "나온 곳 · " + seen.join(" · ")));
+          var foot = optionNode("div", "mi-rank-cand-foot");
+          foot.appendChild(optionNode("span", "", "상품번호 " + id));
+          var open = optionNode("a", "mi-rank-cand-open", "상품 페이지 열기 ↗");
+          open.setAttribute("href", candidateLink(entry, id));
+          open.setAttribute("target", "_blank");
+          open.setAttribute("rel", "noopener noreferrer");
+          open.setAttribute("aria-label", "상품 페이지 열기(새 탭) · 상품번호 " + id);
+          foot.appendChild(open);
+          body.appendChild(foot);
+          item.appendChild(pick);
+          item.appendChild(body);
+          return item;
+        }
+
+        function renderCandidates() {
+          if (!state || !nodes.cand) return;
+          var source = state.candidateSource;
+          var list = visibleCandidates();
+          state.candidates = list;
+          state.picked = state.picked.filter(function (id) {
+            return list.some(function (entry) { return String(entry.productId) === id; });
+          });
+          nodes.candList.textContent = "";
+          nodes.cand.hidden = !(list.length || (source.known && (source.groupProduct || source.markReady)));
+          if (nodes.cand.hidden) return;
+          nodes.cand.classList.toggle("is-empty", !list.length);
+          nodes.candTitle.textContent = list.length ? "그룹상품 후보 " + list.length + "개 · 확인 필요" : "그룹상품 후보";
+          if (list.length) {
+            nodes.candHowto.textContent = "대표 상품번호가 결과에 없을 때 같은 스토어에서 두 번 이상 보인 비슷한 카드입니다. 아직 순위에는 쓰지 않았습니다. 상품 페이지를 열어 같은 그룹상품 옵션인지 보고, 맞는 것만 골라 넣으세요.";
+          } else if (source.groupProduct) {
+            nodes.candHowto.textContent = "아직 후보가 없습니다. 대표 상품번호가 300개 결과에 없을 때 같은 스토어의 비슷한 카드가 최근 7일에 두 번 이상 보이면 여기에 나옵니다.";
+          } else {
+            nodes.candHowto.textContent = "이 추적은 그룹상품으로 표시돼 있지 않아 후보를 찾지 않습니다. 카드의 '그룹상품으로 표시'를 누르거나 아래에 번호를 넣으면 그룹상품이 됩니다.";
+          }
+          list.forEach(function (entry) {
+            nodes.candList.appendChild(candidateItem(entry));
+          });
+        }
+
+        function refreshCandidateControls() {
+          if (!state || !nodes.cand) return;
+          var locked = state.busy || state.done || !state.loaded || state.blocked || state.candidateDone;
+          var count = state.picked.length;
+          Array.prototype.forEach.call(nodes.candList.querySelectorAll("[data-rank-cand-item]"), function (item) {
+            var picked = state.picked.indexOf(item.getAttribute("data-rank-cand-item")) >= 0;
+            item.classList.toggle("is-picked", picked);
+            var box = item.querySelector("input");
+            if (!box) return;
+            box.checked = picked;
+            box.disabled = locked || state.confirming;
+          });
+          nodes.candActions.hidden = !state.candidates.length || state.candidateDone;
+          nodes.candCount.textContent = count
+            ? "고른 후보 " + count + "개"
+            : "맞는 후보를 골라 주세요. 여러 개 고를 수 있습니다.";
+          nodes.candAdd.textContent = count ? "고른 " + count + "개 넣기" : "고른 후보 넣기";
+          nodes.candAdd.disabled = locked || !count || state.confirming;
+          nodes.candConfirm.hidden = !state.confirming;
+          nodes.candConfirmRun.disabled = locked;
+          nodes.candCancel.disabled = state.busy;
+        }
+
+        function onCandidatePicked(event) {
+          var box = event.target && event.target.closest ? event.target.closest("[data-rank-cand-pick]") : null;
+          if (!state || !box || state.confirming) return;
+          var id = String(box.value || "");
+          var picked = state.picked.filter(function (value) { return value !== id; });
+          if (box.checked) picked.push(id);
+          state.picked = state.candidates.map(function (entry) { return String(entry.productId); }).filter(function (value) {
+            return picked.indexOf(value) >= 0;
+          });
+          setStatus(nodes.candResult, "", "");
+          refreshCandidateControls();
+        }
+
+        function askCandidateConfirm() {
+          if (!state || !state.picked.length || state.busy || state.done || state.candidateDone || !state.loaded || state.blocked) return;
+          if (draftDirty()) {
+            setStatus(nodes.candResult, "아래 입력칸에 저장하지 않은 번호가 있습니다. 먼저 저장하거나 원래대로 되돌린 뒤 후보를 넣어주세요.", "is-warn");
+            return;
+          }
+          var nextIds = optionIdList(state.savedIds.concat(state.picked));
+          if (nextIds.length > state.limit) {
+            setStatus(nodes.candResult, "그룹상품 번호는 최대 " + state.limit + "개입니다. 지금 " + state.savedIds.length + "개라 " +
+              Math.max(0, state.limit - state.savedIds.length) + "개까지 더 넣을 수 있습니다.", "is-warn");
+            return;
+          }
+          state.confirming = true;
+          var box = nodes.candConfirmText;
+          box.textContent = "";
+          box.appendChild(optionNode("strong", "", "고른 후보 " + state.picked.length + "개를 그룹상품 번호에 넣을까요?"));
+          var chips = optionNode("ul", "mi-rank-option-chips");
+          chips.setAttribute("aria-label", "넣을 후보 상품번호");
+          state.picked.forEach(function (id) {
+            chips.appendChild(optionNode("li", "", id));
+          });
+          box.appendChild(chips);
+          var scope = applyActive()
+            ? "이 추적과 같은 대표 상품번호를 쓰는 다른 키워드 추적 " + state.others.length + "개"
+            : "이 추적만";
+          box.appendChild(optionNode("p", "", "넣은 뒤 그룹상품 번호 " + nextIds.length + "개 · 적용: " + scope +
+            (state.others.length ? "(아래 '다른 키워드 추적' 체크로 바꿉니다)" : "") +
+            ". 다음 순위 확인부터 순위 후보로 씁니다. 잘못 넣었으면 아래 입력칸에서 번호를 지우고 저장하면 됩니다."));
+          nodes.candConfirmRun.textContent = state.picked.length + "개 넣기";
+          setStatus(nodes.candResult, "", "");
+          refreshCandidateControls();
+          if (typeof nodes.candConfirm.scrollIntoView === "function") nodes.candConfirm.scrollIntoView({ block: "nearest" });
+          nodes.candConfirmRun.focus();
+        }
+
+        function cancelCandidateConfirm() {
+          if (!state || state.busy) return;
+          state.confirming = false;
+          refreshCandidateControls();
+          nodes.candAdd.focus();
+        }
+
+        // 저장은 기존 편집 API 그대로: 미리 보기(서버 해석·함께 바뀌는 추적) → 그 추적 목록으로 저장. 저장한 번호 + 고른
+        // 후보를 한 목록으로 보낸다. 받지 않은 칸이 있거나 개수가 넘으면 저장하지 않는다.
+        async function runCandidateSave() {
+          if (!state || !state.confirming || state.busy || state.done || state.candidateDone || !state.loaded || state.blocked) return;
+          var picked = state.picked.slice();
+          var input = optionIdList(state.savedIds.concat(picked)).join("\n");
+          var applyToSameProduct = applyActive();
+          var expected = [state.trackerId];
+          var serial = ++requestSerial;
+          state.busy = true;
+          setStatus(nodes.candResult, "후보 " + picked.length + "개를 넣는 중입니다.", "");
+          refreshControls();
+          try {
+            var preview = await requestRankOptions({
+              trackerId: state.trackerId,
+              mode: "preview",
+              optionInput: input,
+              applyToSameProduct: applyToSameProduct
+            });
+            if (!isCurrent(serial)) return;
+            if (preview.ok !== true || previewRejected(preview).length) {
+              state.busy = false;
+              state.confirming = false;
+              setStatus(nodes.candResult, (preview.message || "후보 번호를 확인하지 못했습니다.") + " 저장하지 않았습니다.", "is-warn");
+              refreshControls();
+              return;
+            }
+            applyPayloadInfo(preview);
+            if (Array.isArray(preview.targetTrackerIds) && preview.targetTrackerIds.length) {
+              expected = preview.targetTrackerIds.map(function (id) { return String(id); });
+            }
+            var payload = await requestRankOptions({
+              trackerId: state.trackerId,
+              mode: "save",
+              optionInput: input,
+              applyToSameProduct: applyToSameProduct,
+              expectedTrackerIds: expected
+            });
+            if (payload.ok === true) {
+              window.dispatchEvent(new CustomEvent("mi:rank-trackers-changed", {
+                detail: { trackerIds: Array.isArray(payload.updatedTrackerIds) ? payload.updatedTrackerIds : expected }
+              }));
+            }
+            if (!isCurrent(serial)) return;
+            state.busy = false;
+            state.confirming = false;
+            if (payload.ok !== true) {
+              setStatus(nodes.candResult, (payload.message || "저장하지 못했습니다.") + " 다시 골라 넣어주세요.", "is-warn");
+              refreshControls();
+              return;
+            }
+            state.candidateDone = true;
+            state.done = true;
+            state.savedIds = Array.isArray(payload.optionProductIds) ? optionIdList(payload.optionProductIds) : optionIdList(input);
+            nodes.input.value = state.savedIds.join("\n");
+            var line = "후보 " + picked.length + "개를 넣었습니다 · 그룹상품 번호 " + state.savedIds.length + "개 · 추적 " +
+              optionCount(payload.updatedCount, expected.length) + "개에 저장 · 다음 순위 확인부터 적용됩니다.";
+            setStatus(nodes.candResult, line, "is-ok");
+            setStatus(nodes.status, line, "is-ok");
+            setStatus(rankCard.querySelector("[data-rank-status]"), line, "is-ok");
+            refreshControls();
+          } catch (error) {
+            if (error && error.message !== RANK_OPTION_SCOPE_CHANGED) {
+              window.dispatchEvent(new CustomEvent("mi:rank-trackers-changed", { detail: { trackerIds: expected } }));
+            }
+            if (isCurrent(serial)) {
+              state.confirming = false;
+              setStatus(nodes.candResult, "연결을 확인해주세요. 저장됐는지 알 수 없어 목록을 다시 읽습니다. 카드를 확인한 뒤 창을 다시 열어주세요.", "is-warn");
+            }
+            handleRequestError(serial, error, "후보 넣기 연결을 확인해주세요.", false);
+          }
+        }
+
+        // 카드의 '그룹상품으로 표시' 버튼(같은 대표 상품번호의 다른 키워드 추적에도 함께 적용). 끌 때만 한 번 묻는다.
+        async function toggleGroupMark(button) {
+          var trackerId = String(button.getAttribute("data-rank-group-mark") || "").trim();
+          if (!trackerId || button.disabled) return;
+          var next = button.getAttribute("data-rank-group-mark-next") === "true";
+          var statusNode = rankCard.querySelector("[data-rank-status]");
+          if (!next && !window.confirm("그룹상품 표시를 끌까요?\n같은 대표 상품번호를 쓰는 다른 키워드 추적도 함께 꺼지고, 후보 찾기를 멈춥니다. 넣은 번호와 지난 기록은 그대로입니다.")) return;
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+          setStatus(statusNode, next ? "그룹상품으로 표시하는 중입니다." : "그룹상품 표시를 끄는 중입니다.", "");
+          try {
+            var payload = await requestRankOptions({ action: "group-mark", trackerId: trackerId, marked: next });
+            setStatus(statusNode, payload.message || (payload.ok === true ? "저장했습니다." : "저장하지 못했습니다. 다시 눌러주세요."), payload.ok === true ? "is-ok" : "is-warn");
+            if (payload.ok === true) {
+              window.dispatchEvent(new CustomEvent("mi:rank-trackers-changed", {
+                detail: { trackerIds: Array.isArray(payload.updatedTrackerIds) ? payload.updatedTrackerIds : [trackerId] }
+              }));
+            }
+          } catch (error) {
+            setStatus(statusNode, "그룹상품 표시 연결을 확인해주세요. 저장됐는지 알 수 없어 목록을 다시 읽습니다.", "is-warn");
+            window.dispatchEvent(new CustomEvent("mi:rank-trackers-changed", { detail: { trackerIds: [trackerId] } }));
+          } finally {
+            if (button.isConnected) {
+              button.disabled = false;
+              button.removeAttribute("aria-busy");
+            }
+          }
+        }
+
         rankCard.addEventListener("click", function (event) {
+          var markButton = event.target.closest("[data-rank-group-mark]");
+          if (markButton && rankCard.contains(markButton)) {
+            toggleGroupMark(markButton);
+            return;
+          }
           var button = event.target.closest("[data-rank-option-edit]");
           if (!button || !rankCard.contains(button)) return;
           openEditor(button);

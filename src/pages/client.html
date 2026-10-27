@@ -11363,6 +11363,11 @@
           return /^[0-9]{5,20}$/.test(id);
         }) : [];
         var mismatch = Number(group.mallMismatchCount || 0) || mismatchIds.length;
+        // 그룹상품 표시·후보(대표 승인 2026-10-27 A안): 서버 groupMarkReady·groupProductMarked·groupProduct·groupCandidates
+        // (관리자 목록 응답에만)를 그대로 쓴다. 편집할 수 있는 관리자 카드에서만 새 표시가 붙는다(광고주 화면은 예전 그대로).
+        var candidates = Array.isArray(safe.groupCandidates) ? safe.groupCandidates.filter(function (entry) {
+          return entry && /^[0-9]{5,20}$/.test(String(entry.productId || ""));
+        }) : [];
         return {
           count: count,
           hit: hit,
@@ -11379,18 +11384,38 @@
           primaryRank: hit && Number(group.primaryProductRank) > 0 ? Number(group.primaryProductRank) : 0,
           primaryCatalog: String(group.primaryRankSource || "") === "related_catalog",
           mallMismatchCount: mismatch > 0 ? mismatch : 0,
-          mallMismatchIds: mismatch > 0 ? mismatchIds : []
+          mallMismatchIds: mismatch > 0 ? mismatchIds : [],
+          markReady: editable && safe.groupMarkReady === true,
+          marked: editable && safe.groupProductMarked === true,
+          candidateCount: editable ? candidates.length : 0
         };
       }
 
       // 운영줄의 '그룹상품 n개' 알약(번호가 있을 때)과 관리자 편집 버튼. 둘 다 공유 이미지에서 빠진다(버튼은 복제에서
       // 지워지고, 알약은 data-rank-export-omit). 같은 그룹의 다른 추적에만 있는 번호가 있으면 버튼이 '가져오기'를 권한다.
+      // 관리자 카드 그룹상품 상태(2026-10-27 A안) 네 가지: 표시 안 함('그룹상품으로 표시') · 그룹상품·후보 없음 ·
+      // 후보 n개 확인 필요('그룹상품 후보 n개 · 확인') · 번호 n개 사용 중. 표시 버튼은 다시 누르면 끈다(번호가 있으면 자동 그룹상품).
       function renderRankOptionOpsPills(tracker, state) {
         var html = "";
         if (state.count > 0) {
           html += '<span data-rank-export-omit class="mi-rank-option-pill" title="' +
             escapeHtml("대표 상품번호와 함께 같은 그룹상품의 다른 옵션 상품번호 " + state.count + "개도 찾습니다") + '">' +
-            escapeHtml("그룹상품 " + state.count + "개") + '</span>';
+            escapeHtml(state.editable ? "그룹상품 · 번호 " + state.count + "개 사용 중" : "그룹상품 " + state.count + "개") + '</span>';
+        } else if (state.markReady) {
+          var markHint = state.marked
+            ? "그룹상품으로 표시돼 있습니다. 대표 상품번호가 결과에 없을 때 같은 스토어의 비슷한 카드를 후보로 찾습니다(순위에는 쓰지 않음). 다시 누르면 표시를 끕니다."
+            : "같은 상품의 다른 옵션이 대표로 바뀔 수 있는 그룹상품이면 눌러 주세요. 대표 상품번호가 결과에 없을 때 같은 스토어 후보를 찾아 보여 줍니다. 같은 상품의 다른 키워드 추적에도 함께 적용됩니다.";
+          var markLabel = state.marked ? (state.candidateCount ? "✓ 그룹상품" : "✓ 그룹상품 · 후보 없음") : "그룹상품으로 표시";
+          html += '<button data-rank-export-omit class="mi-rank-option-edit mi-rank-group-mark' + (state.marked ? " is-on" : "") +
+            '" type="button" aria-pressed="' + (state.marked ? "true" : "false") + '" data-rank-group-mark="' + escapeHtml(tracker.id) +
+            '" data-rank-group-mark-next="' + (state.marked ? "false" : "true") + '" title="' + escapeHtml(markHint) + '">' + escapeHtml(markLabel) + '</button>';
+        }
+        if (state.candidateCount) {
+          html += '<button data-rank-export-omit class="mi-rank-option-edit is-suggest mi-rank-group-candidates" type="button" aria-haspopup="dialog" data-rank-option-edit="' +
+            escapeHtml(tracker.id) + '" data-rank-option-keyword="' + escapeHtml(tracker.keyword) + '" data-rank-option-primary="' +
+            escapeHtml(tracker.productId) + '" data-rank-option-focus="candidates" title="' +
+            escapeHtml("대표 상품번호가 결과에 없을 때 같은 스토어에서 두 번 이상 보인 비슷한 카드입니다. 눌러서 비교하고 맞는 것만 골라 넣으세요(순위에는 아직 쓰지 않음).") +
+            '">' + escapeHtml("그룹상품 후보 " + state.candidateCount + "개 · 확인") + '</button>';
         }
         if (state.editable) {
           var suggest = state.suggestionCount;

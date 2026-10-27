@@ -1259,6 +1259,7 @@ test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고
   assert.equal(env.q(".mi-rank-cand-actions").hidden, true);
   assert.equal(env.input().value, `${OPTION_A}\n${CAND_A}\n${CAND_B}`);
   assert.equal(env.timers.length, 0, "결과를 읽게 저절로 닫지 않는다");
+  assert.equal(env.documentRef.activeElement, env.q(".mi-rank-option-card"), "저장 뒤 초점은 창에 남는다");
 });
 
 test("U11 후보: 저장 안 한 입력·20개 초과·서버 거절은 막고 쉬운 말로 알린다, 빈 상태 문구, 고른 뒤 닫으면 묻는다", async () => {
@@ -1394,6 +1395,7 @@ test("U11 후보: 함께 적용하면 다른 키워드 추적의 따로 넣은 �
   await flush();
   assert.equal(late.requests.length, 2, "미리 보기만 하고 저장하지 않는다");
   assert.match(late.result(), /함께 넣으면 그 번호가 빠집니다/u);
+  assert.equal(late.documentRef.activeElement, late.add(), "막힌 뒤 초점은 다시 보이는 '고른 후보 넣기'로");
   assert.equal(late.events.length, 0);
 
   // 확인 중 입력이 (스크립트 등으로) 바뀌었으면 저장 직전에 다시 막는다.

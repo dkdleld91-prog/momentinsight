@@ -132,6 +132,7 @@ export const ERROR_HTTP_STATUS = Object.freeze({
   COUPANG_MANUAL_OFF: 403,
   COUPANG_MANUAL_BUDGET: 409,
   COUPANG_MANUAL_STOPPED: 409,
+  COUPANG_MANUAL_PAUSED: 409, // 차단 뒤 30분 쉼(c30-4)
   COUPANG_MANUAL_COOLDOWN: 409,
   COUPANG_MANUAL_HOURS: 409,
   COUPANG_MANUAL_BUSY: 409,
@@ -170,10 +171,10 @@ export const COLLECTOR_ERROR_CODES = Object.freeze([
 // chrome-extension:// 이라 운영 허용 목록(https 만)에 들 수 없다. GET 은 게이트가 출처·CSRF 를 보지 않는다.
 // 서버는 시간 판정에 서버 시계만 쓴다(확장·화면 시계를 받지 않는다).
 export const MANUAL_EXTENSION_ID = "onbmdfamcmbljplkgalameendlmgnjeg"; // manifest key 에서 계산(확장 테스트가 대조)
-export const MANUAL_EXTENSION_VERSION = "1.0.1"; // 내려받기 zip 의 버전(1.0.1 = 실패 진단 + 스스로 새로고침 때 1번 더 읽기)
+export const MANUAL_EXTENSION_VERSION = "1.0.2"; // 내려받기 zip 의 버전(1.0.2 = 차단 뒤 30분 쉼 · 같은 날 두 번째 차단이면 그날 중지)
 // 화면이 '새 버전으로 바꿔 주세요'로 막는 아래 버전. 1.0.0 은 그대로 받는다(진단만 없음 — 서버는 확장 버전을 형식만 본다).
 export const MANUAL_MIN_EXTENSION_VERSION = "1.0.0";
-export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.1.zip";
+export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.2.zip";
 export const MANUAL_EXTENSION_FOLDER = "mi-coupang-check"; // zip 안 폴더 이름(버전 없음 — 업데이트 때 같은 자리에 덮어 풀기)
 export const MANUAL_ALLOWED_ROLES = Object.freeze(["owner"]); // 공개 순서: owner → team → client
 export const MANUAL_CLAIM_TTL_SECONDS = 60; // 요청 뒤 이 안에 확장 확인이 와야 한다(SQL interval '60 seconds')
@@ -181,7 +182,11 @@ export const MANUAL_SEARCH_WINDOW_SECONDS = 150; // 확인 뒤 '검색 중'으�
 export const MANUAL_RECORD_MAX_AGE_MINUTES = 10; // 요청 뒤 이만큼 지나면 결과를 저장하지 않는다(SQL interval '10 minutes')
 export const MANUAL_MIN_MEASURE_SECONDS = 5; // 확인 뒤 이보다 빨리 온 목록 결과는 꾸민 것으로 본다(SQL interval '5 seconds')
 export const MANUAL_CLAIM_KEEP_DAYS = 60; // 요청 표 보관(SQL interval '60 days')
-export const MANUAL_MIN_GAP_SECONDS = 180; // 대표 결정(SQL 기본값·제약 하한)
+export const MANUAL_MIN_GAP_SECONDS = 180; // SQL 제약 하한(c30-2 기본값)
+export const MANUAL_DEFAULT_GAP_SECONDS = 240; // 대표 결정 2026-10-27(c30-4 기본값·지금 행)
+// 차단 뒤 쉼(대표 결정 2026-10-27, c30-4): 그 날 첫 차단 → 30분 쉼(SQL interval '30 minutes'), 같은 날 두 번째 → 그날 중지.
+export const MANUAL_PAUSE_MINUTES = 30;
+export const MANUAL_BLOCKS_PER_DAY_STOP = 2;
 export const MANUAL_MAX_PER_DAY = 30; // 대표 결정(SQL 기본값·제약 상한)
 export const MANUAL_FROM_HOUR = 9; // 대표 결정(KST, SQL 기본값·제약)
 export const MANUAL_TO_HOUR = 19;
@@ -192,20 +197,22 @@ export const MANUAL_STOP_VIEW = "manual-stop";
 export const MANUAL_CLAIM_ID_PARAM = "claimId";
 export const MANUAL_STOP_REASON_PARAM = "reason";
 export const MANUAL_CLAIM_TOKEN_HEADER = "x-mi-coupang-claim-token";
-export const MANUAL_STATES = Object.freeze(["setup_required", "off", "budget", "stopped", "cooldown", "hours", "busy", "daily_cap", "gap", "ready"]);
+export const MANUAL_STATES = Object.freeze(["setup_required", "off", "budget", "stopped", "paused", "cooldown", "hours", "busy", "daily_cap", "gap", "ready"]);
 export const MANUAL_OUTCOMES = Object.freeze(["measured", "not_started", "lost"]);
 export const MANUAL_CLAIM_STATUSES = Object.freeze(["open", "verified", "recorded", "cancelled", "lost", "expired"]);
-// 그날 중지 사유(settings.manual_stopped_code). 화면은 사유별로 다른 문구를 쓴다(원인을 단정하지 않는다).
+// 차단 사유(settings.manual_stopped_code · c30-4 manual_block_code). 화면은 사유별로 다른 문구를 쓴다(원인을 단정하지 않는다).
+// c30-4 뒤: 그 날 첫 차단은 30분 쉼, 두 번째는 그날 중지(SQL coupang_rank_manual_stop 이 센다). SQL 전에는 한 번에 그날 중지.
 // blocked_http_*: 쿠팡 응답 403·429·503 / blocked_text: 차단 문구 / blocked_page: 확장이 차단으로 본 쪽 /
 // login_redirect: 로그인 화면으로 보냄 / page_unreadable: 쿠팡이 검색 밖 쪽으로 보내 읽지 못함(D1) /
-// extension_reported: 확장이 '오늘 차단을 봤다'고만 알림(시작 못 함 blocked_today·report_pending).
+// extension_reported: 확장이 '오늘 차단을 봤다'고만 알림(시작 못 함 blocked_today·blocked_pause·report_pending).
 export const MANUAL_STOP_CODES = Object.freeze([
   "blocked_http_403", "blocked_http_429", "blocked_http_503", "blocked_text", "blocked_page",
   "login_redirect", "page_unreadable", "extension_reported",
 ]);
-// 확장이 '오늘 차단을 봤다'는 뜻으로 시작하지 않은 코드: blocked_today(오늘 차단 본 날), report_pending(차단 결과를 아직
-// 서버에 못 보냄). 서버는 이 둘을 그날 중지(extension_reported)로 받는다.
-export const MANUAL_STOP_NOT_STARTED_CODES = Object.freeze(["blocked_today", "report_pending"]);
+// 확장이 '오늘 차단을 봤다'는 뜻으로 시작하지 않은 코드: blocked_today(그날 중지한 날 — 1.0.1 은 첫 차단, 1.0.2 는 두 번째 차단),
+// blocked_pause(1.0.2: 첫 차단 뒤 30분 쉬는 중), report_pending(차단 결과를 아직 서버에 못 보냄). 서버는 셋 다 차단 알림
+// (extension_reported)으로 받는다(확인 없는 요청이라 서버가 그 날 차단을 아직 모를 때만 첫 차단으로 센다).
+export const MANUAL_STOP_NOT_STARTED_CODES = Object.freeze(["blocked_today", "blocked_pause", "report_pending"]);
 export const MANUAL_UNREADABLE_ERROR_CODE = "page_unreadable";
 export const MANUAL_QUERY_MISMATCH_ERROR_CODE = "query_mismatch";
 export const MANUAL_USER_NAVIGATED_ERROR_CODE = "user_navigated";

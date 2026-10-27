@@ -1659,12 +1659,25 @@
     }
     var detail = MANUAL_STOP_REASON_TEXT[manualSafeCode(payload.stopCode)] || (check.outcome === "measured" ? manualBlockDetail(check.page, payload.errorCode) : "");
     // 같은 날 두 번째 차단(또는 c30-4 SQL 전 서버의 차단 한 번) = 그날 중지. 그 밖의 차단은 30분 쉼(서버 c30-4).
-    var paused = payload.stopped !== true && (payload.paused === true || (payload.status === "blocked" && manualPauseKnown(info)));
+    // 응답 paused 는 '지금 서버가 쉬는 중'이라는 뜻이라, 이 보고 자체가 차단(blocked·차단 사유)일 때만 '쉼을 걸었다'고 쓴다
+    // (쉬는 동안 앞서 보내지 못한 성공 결과를 다시 보낸 경우 등은 그 결과대로).
+    var blockedHere = payload.status === "blocked" || Boolean(manualSafeCode(payload.stopCode));
+    var paused = payload.stopped !== true && blockedHere && (payload.paused === true || manualPauseKnown(info));
     if (paused) {
       var again = kstClock(payload.pausedUntil || (info && info.pausedUntil));
+      var waitText = again ? again + "에 다시 누를 수 있습니다" : "30분 뒤 다시 누를 수 있습니다";
+      if (check.outcome !== "measured") {
+        // 확장이 앞서 본 차단을 알렸다(시작 못 함 — 이번에는 검색 없음).
+        return {
+          text: manualNotStartedText(check) + ". 쿠팡 검색은 하지 않았습니다. '지금 확인'은 30분 쉽니다(" + waitText + ")." + left,
+          tone: "is-warn",
+          stopped: false,
+          paused: true,
+          detail: detail
+        };
+      }
       return {
-        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " '지금 확인'을 30분 쉽니다. " +
-          (again ? again + "에 다시 누를 수 있습니다" : "30분 뒤 다시 누를 수 있습니다") + "(오늘 한 번 더 차단되면 그날은 멈춥니다)." + left,
+        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " '지금 확인'을 30분 쉽니다. " + waitText + "(오늘 한 번 더 차단되면 그날은 멈춥니다)." + left,
         tone: "is-warn",
         stopped: false,
         paused: true,
@@ -1921,7 +1934,7 @@
     var info = result || {};
     var payload = info.payload || {};
     if (info.stopped === true || payload.stopped === true) return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
-    if (info.paused === true || payload.paused === true) return { success: false, reason: MANUAL_ALL_PAUSED_TEXT };
+    if (info.paused === true || (payload.paused === true && payload.status === "blocked")) return { success: false, reason: MANUAL_ALL_PAUSED_TEXT };
     if (payload.status === "blocked") return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
     if (info.final !== true) return { success: false, reason: "결과를 서버에 보내지 못해 멈췄습니다(위 '직전 확인' 참고)" };
     if (info.outcome === "not_started") return { success: false, reason: "확장이 확인을 시작하지 않아 멈췄습니다(위 '직전 확인' 참고)" };

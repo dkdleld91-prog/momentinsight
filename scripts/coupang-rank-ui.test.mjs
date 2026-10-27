@@ -6113,6 +6113,17 @@ test("결과 문구: 차단 + 서버 쉼(paused) → '30분 쉽니다. 12:30에 
   assert.deepEqual([legacyRecord.stopped, legacyRecord.paused === true], [true, false]);
   assert.doesNotMatch(legacyRecord.text, /30분|두 번째/u);
   assert.equal(internals.manualCardNote(pausedRecord, { payload: { ok: true, status: "blocked", paused: true } }, blocked).text, "차단으로 보여 30분 쉼");
+  // 쉬는 동안 앞서 보내지 못한 성공 결과를 다시 보냄(응답 paused = 서버가 지금 쉬는 중): 차단 문구가 아니라 그 결과대로
+  const okPage = { outcome: "measured", page: { status: "ok", httpStatus: 200, errorCode: null } };
+  const resentOk = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "ok", stopped: false, paused: true, pausedUntil: iso(PAUSE_UNTIL), stopCode: null, tracker: { result: "found", rank: 7 }, manual: pausedPayload() } }, okPage, "아이폰 필름", pausedPayload());
+  assert.equal(resentOk.paused === true, false);
+  assert.match(resentOk.text, /^확인 완료: '아이폰 필름' 일반 7위/u);
+  // 확장이 앞서 본 차단을 알림(시작 못 함 blocked_pause, 서버가 몰라서 이번에 30분 쉼): 검색하지 않았다고 쓴다
+  const notStartedPause = internals.manualRecordText({ payload: { ok: true, accepted: false, outcome: "not_started", stopped: false, paused: true, pausedUntil: iso(PAUSE_UNTIL), stopCode: "extension_reported", counted: false, manual: pausedPayload() } },
+    { outcome: "not_started", code: "blocked_pause", retryAfterSec: 1700 }, "아이폰 필름", pausedPayload());
+  assert.equal(notStartedPause.paused, true);
+  assert.match(notStartedPause.text, /^차단으로 보이는 화면이 있어 확장이 30분 쉬는 중이라 시작하지 않았습니다 28분 20초 뒤에 다시 눌러 주세요\. 쿠팡 검색은 하지 않았습니다\. '지금 확인'은 30분 쉽니다\(12:30에 다시 누를 수 있습니다\)\.$/u);
+  assert.equal(internals.manualAllRecordVerdict({ outcome: "measured", final: true, payload: { ok: true, status: "ok", paused: true } }).success, true, "쉬는 중 응답이어도 성공 기록은 성공");
   const refusal = internals.manualClaimRefusalText({ payload: { ok: false, code: "COUPANG_MANUAL_PAUSED", retryAfterSec: 1800, manual: pausedPayload() } }, pausedPayload());
   assert.match(refusal, /^쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다\(12:00 · 쿠팡 응답 HTTP 403\)\. 12:30에 다시 누를 수 있습니다/u);
   assert.match(refusal, / 쿠팡 검색은 하지 않았습니다\.$/u);

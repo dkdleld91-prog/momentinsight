@@ -233,7 +233,7 @@ test("차단이면 다시 읽지 않는다: 첫 측정이 차단 HTTP 를 보였
   assert.equal(measures(blockedAfterReload.fake), 1, "차단 화면에서는 측정(스크롤)하지 않는다");
   assert.deepEqual(second.page.diagnostics.retry, { tried: true, load: "complete", result: "blocked" });
   assert.equal(blockedAfterReload.fake.calls.update.length, 1);
-  assert.ok(blockedAfterReload.fake.storage.blockedDay);
+  assert.ok(blockedAfterReload.fake.storage.blockDay);
 });
 
 test("다시 불러오기가 끝나지 않으면 기존 load 상한(45초 — 시험은 짧게) 뒤 page_timeout, 전체 120초 상한·창 닫힘 규칙은 그대로", async () => {
@@ -471,7 +471,7 @@ test("1번 더 읽기 전 기다리는 동안 load 확인이 본 차단 HTTP(429
     assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_429"], second);
     assert.equal(measures(fake), 1, `${second}: 두 번째 측정 없음`);
     assert.equal(fake.calls.update.length, 1, second);
-    assert.ok(fake.storage.blockedDay, second);
+    assert.ok(fake.storage.blockDay, second);
     const diag = reply.page.diagnostics;
     assert.deepEqual(diag.retry, { tried: true, load: "complete", result: "blocked" }, second);
     assert.deepEqual(diag.seen, { http: 429, blocked: false, last: 200 }, `${second}: 본 차단 HTTP 와 마지막 문서의 HTTP 가 진단에 함께 남는다`);
@@ -612,7 +612,7 @@ test("1.0.1 재검사: 1번 더 읽기를 기다리는 사이 주소가 바뀌�
       assert.equal(reply.stopReason, reason, label);
       assert.equal(reply.page.status, "blocked", label);
       assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), [reason], label);
-      assert.ok(fake.storage.blockedDay, label);
+      assert.ok(fake.storage.blockDay, label);
       assert.equal(measures(fake), 1, `${label}: 바뀐 주소에서는 측정(스크롤)하지 않는다`);
       assert.equal(quickReads(fake), 2, `${label}: 불러온 직후 1번 + 바뀐 쪽 1번`);
       assert.equal(fake.calls.update.length, 1, `${label}: 쿠팡 주소 넣기는 1번뿐`);

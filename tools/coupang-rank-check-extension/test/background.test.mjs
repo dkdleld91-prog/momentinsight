@@ -153,7 +153,7 @@ test("hello: 버전·시크릿 허용·사이트 액세스·다른 시크릿 창
   assert.deepEqual(await send(background, { type: "mi-coupang-hello" }), {
     ok: true,
     type: "hello",
-    version: "1.0.1",
+    version: "1.0.2",
     incognitoAllowed: true,
     hostAccess: true,
     incognitoWindowOpen: false,
@@ -268,7 +268,7 @@ test("서버 확인: 빈 시크릿 창 검사 뒤·쿠팡 주소를 넣기 전�
   assert.equal(init.redirect, "error");
   assert.equal(init.referrerPolicy, "no-referrer");
   assert.equal(init.headers["x-mi-coupang-claim-token"], CLAIM_TOKEN);
-  assert.equal(init.headers["x-mi-coupang-check"], "1.0.1");
+  assert.equal(init.headers["x-mi-coupang-check"], "1.0.2");
   assert.equal(init.body, undefined);
   // 빈 창(쿠팡 요청 0) → 다른 시크릿 창 검사 → 서버 확인 → 그 탭만 쿠팡으로(지난 검토: 확인을 먼저 하면 창을 못 열 때 1번을 헛되이 씀)
   const order = fake.log.filter((name) => ["fetch", "windows.create", "windows.getAll", "tabs.update"].includes(name));
@@ -355,7 +355,7 @@ test("맥 시계가 서버와 몇 시간 어긋나도 확인은 거절되지 않
   const { fake, background } = setup({ now: () => mac, serverTime, chrome: { scenario: { measure: BLOCKED_403 } } });
   const reply = await send(background, checkMessage());
   assert.equal(reply.outcome, "measured");
-  assert.equal(fake.storage.blockedDay, "2026-10-23", "그날 = 서버의 한국 날짜");
+  assert.equal(fake.storage.blockDay, "2026-10-23", "그날 = 서버의 한국 날짜");
   assert.equal(fake.storage.serverOffsetMs, Date.parse(serverTime) - mac);
   assert.equal(fake.storage.pending.serverDay, "2026-10-23");
 });
@@ -417,7 +417,7 @@ test("정상: measured 답 모양·page 칸·창 닫음·보고 대기 저장(�
     "browser", "claimId", "durationMs", "extensionVersion", "keyword", "ok", "outcome", "page", "stopReason", "stopReported", "stopSignal", "windowLeftOpen",
   ].sort());
   assert.equal(reply.claimId, CLAIM_ID);
-  assert.equal(reply.extensionVersion, "1.0.1");
+  assert.equal(reply.extensionVersion, "1.0.2");
   assert.equal(reply.browser, "chrome 141");
   assert.equal(reply.windowLeftOpen, false);
   assert.equal(reply.stopSignal, false);
@@ -439,6 +439,7 @@ test("정상: measured 답 모양·page 칸·창 닫음·보고 대기 저장(�
   assert.equal(fake.storage.pending.claimToken, CLAIM_TOKEN);
   assert.equal(fake.storage.pending.stop, false);
   assert.equal(fake.storage.blockedDay, undefined);
+  assert.equal(fake.storage.blockDay, undefined);
   assert.deepEqual(fetchImpl.stops(), []);
   const measure = fake.calls.executeScript.find((call) => call.func === "miCoupangMeasure" && !call.args[0].quick);
   assert.equal(measure.args[0].scrollCount, 8);
@@ -455,6 +456,7 @@ test("광고만 있고 일반 0개는 차단으로 보지 않는다(중지 알�
   assert.equal(reply.stopSignal, false);
   assert.deepEqual(fetchImpl.stops(), []);
   assert.equal(fake.storage.blockedDay, undefined);
+  assert.equal(fake.storage.blockDay, undefined);
 });
 
 test("차단 신호(403·429·HTTP 200+차단 문구)는 창을 닫은 뒤 서버에 바로 '그날 중지'(manual-stop) — 화면보다 먼저", async () => {
@@ -477,8 +479,11 @@ test("차단 신호(403·429·HTTP 200+차단 문구)는 창을 닫은 뒤 서�
     assert.ok(fake.log.indexOf("windows.remove") < fake.log.indexOf("fetch:stop"), "창을 먼저 닫는다");
     assert.equal(fake.storage.pending.stop, true);
     assert.equal(fake.storage.pending.stopReported, true);
-    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(fake.storage.blockedDay));
-    assert.equal(fake.storage.stopReportedDay, fake.storage.blockedDay);
+    // 1.0.2: 그 날 첫 차단은 30분 쉼(그날 중지 아님)
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(fake.storage.blockDay));
+    assert.deepEqual([fake.storage.blockCount, fake.storage.blockedDay], [1, undefined]);
+    assert.ok(Number.isFinite(fake.storage.pausedUntil));
+    assert.equal(fake.storage.stopReportedDay, fake.storage.blockDay);
   }
 });
 
@@ -551,7 +556,7 @@ test("쪽 함수를 못 넣음: 주소가 검색 쪽이면 page_load_failed(차�
   assert.equal(second.page.finalHost, "");
   assert.equal(second.stopReason, "page_unreadable");
   assert.deepEqual(login.fetchImpl.stops().map((stop) => stop.reason), ["page_unreadable"]);
-  assert.ok(login.fake.storage.blockedDay);
+  assert.ok(login.fake.storage.blockDay);
 });
 
 test("측정 중 사람이 상품을 누름(주소가 쿠팡 다른 쪽) → user_navigated(차단 아님), 쪽 함수가 주소 바뀜을 알리면 user_navigated", async () => {
@@ -621,7 +626,7 @@ test("불러오는 동안 HTTP 403 을 본 뒤 사람이 첫 읽기 전에 창�
   assert.equal(reply.stopReason, "blocked_http_403");
   assert.equal(reply.stopReported, true);
   assert.deepEqual(fetchImpl.stops().map((stop) => stop.reason), ["blocked_http_403"]);
-  assert.ok(fake.storage.blockedDay, "이 크롬의 그날 표시");
+  assert.ok(fake.storage.blockDay, "이 크롬의 차단 기억");
   assert.ok(!fake.log.includes("measure"), "쪽 함수의 첫 읽기 전에 닫힘");
 });
 
@@ -932,7 +937,7 @@ test("관리자 탭이 닫혀 결과를 못 보내도: 확장이 이미 manual-s
   assert.deepEqual(await send(background, { type: "mi-coupang-ack", claimId: CLAIM_ID }), { ok: true, type: "ack", cleared: true });
   assert.equal(fake.storage.pending, undefined);
   const sameDay = await send(background, checkMessage({ claimId: CLAIM_ID_3 }));
-  assert.equal(sameDay.code, "blocked_today");
+  assert.equal(sameDay.code, "blocked_pause", "1.0.2: 첫 차단 뒤 30분은 새 검색 없음");
   assert.equal(fake.calls.create.length, 1);
 });
 
@@ -985,7 +990,7 @@ test("중지 알림이 한두 번 실패해도 같은 실행 안에서 다시 �
   assert.equal(fetchImpl.stops().length, 3);
   assert.equal(fake.storage.pending.stopReported, true);
   assert.equal(fake.storage.pending.reply.stopReported, true);
-  assert.equal(fake.storage.stopReportedDay, fake.storage.blockedDay);
+  assert.equal(fake.storage.stopReportedDay, fake.storage.blockDay);
 });
 
 test("중지 알림이 실행 안에서 모두 실패하면 결과·그날 표시는 먼저 남기고, 다음 hello(관리자 화면을 열 때)가 다시 보낸다", async () => {
@@ -1002,7 +1007,7 @@ test("중지 알림이 실행 안에서 모두 실패하면 결과·그날 표�
   assert.equal(reply.stopReported, false);
   assert.equal(fake.storage.pending.stop, true);
   assert.equal(fake.storage.pending.stopReported, false);
-  assert.ok(fake.storage.blockedDay, "알림이 실패해도 이 크롬의 그날 표시는 남는다");
+  assert.ok(fake.storage.blockDay && fake.storage.pausedUntil, "알림이 실패해도 이 크롬의 차단 기억(30분 쉼)은 남는다");
   serverUp = true;
   const hello = await send(background, { type: "mi-coupang-hello" });
   assert.equal(hello.pending.stop, true);
@@ -1010,7 +1015,7 @@ test("중지 알림이 실행 안에서 모두 실패하면 결과·그날 표�
   assert.equal(fetchImpl.stops().length, 4, "실행 안 3번 + hello 1번");
   assert.equal(fake.storage.pending.stopReported, true);
   assert.equal(fake.storage.pending.reply.stopReported, true);
-  assert.equal(fake.storage.stopReportedDay, fake.storage.blockedDay);
+  assert.equal(fake.storage.stopReportedDay, fake.storage.blockDay);
   // 이미 알렸으면 다음 hello 는 다시 보내지 않는다
   await send(background, { type: "mi-coupang-hello" });
   await sleep(10);
@@ -1048,7 +1053,7 @@ test("그날 표시는 서버 날짜가 바뀌면 풀린다(다음 날 자동, D
   const nextDay = await send(background, checkMessage({ claimId: CLAIM_ID_2 }));
   assert.equal(nextDay.outcome, "measured");
   assert.equal(fetchImpl.views().filter((view) => view === "manual-verify").length, 2);
-  assert.equal(fake.storage.blockedDay, "2026-10-23");
+  assert.equal(fake.storage.blockDay, "2026-10-23");
 });
 
 test("지난 날의 차단 결과·10분 지난 차단 아닌 결과는 다시 주지 않고 지운다", async () => {

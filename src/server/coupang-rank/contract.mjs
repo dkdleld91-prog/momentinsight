@@ -238,7 +238,7 @@ export const MANUAL_EXTENSION_ERROR_CODES = Object.freeze([
 ]);
 export const MANUAL_NOT_STARTED_CODES = Object.freeze([
   "incognito_not_allowed", "incognito_window_open", "host_access_withheld", "busy", "too_soon", "bad_request",
-  "window_create_failed", "window_create_null", "window_closed_early", "verify_refused", "verify_unreachable", "blocked_today", "report_pending", "extension_error",
+  "window_create_failed", "window_create_null", "window_closed_early", "verify_refused", "verify_unreachable", "blocked_today", "blocked_pause", "report_pending", "extension_error",
   "extension_missing", "extension_outdated", "origin_rejected", "browser_unsupported",
 ]);
 export const MANUAL_LOST_CODES = Object.freeze(["extension_no_response", "extension_timeout"]);

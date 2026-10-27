@@ -29,13 +29,13 @@ import {
 } from "./handlers/naver-shopping-rank.mjs";
 import { rankProductUrlRejection } from "./rank-target-url.mjs";
 
-export const OPTION_PRODUCT_IDS_MAX = 20;
+export const OPTION_PRODUCT_IDS_MAX = 50;
 export const OPTION_PRODUCT_ID_MIN_DIGITS = 5;
 export const OPTION_PRODUCT_ID_MAX_DIGITS = 20;
 // 브라우저 주소창에서 복사한 상품 URL 은 ?NaPm=… 추적 꼬리가 붙어 한 줄 200~300자가 흔하다.
 // 옵션 20개를 URL 로 붙여 넣어도 막히지 않게 넉넉히 둔다(칸 수 상한 60 은 그대로).
 export const OPTION_INPUT_MAX_CHARS = 20_000;
-export const OPTION_INPUT_MAX_TOKENS = 60;
+export const OPTION_INPUT_MAX_TOKENS = 120;
 export const OPTION_SAME_PRODUCT_TRACKERS_MAX = 100;
 export const OPTION_COLUMN_MISSING_MEMO_MS = 10 * 60_000;
 const OPTION_TITLE_MAX = 80;

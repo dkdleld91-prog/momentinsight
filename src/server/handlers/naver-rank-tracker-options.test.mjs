@@ -460,21 +460,21 @@ test("A9 칸 없음(대표 SQL 전): 저장은 409 RANK_OPTION_NOT_READY, 목록
   });
 });
 
-test("A3·A11·A13 21개·거절 칸·너무 긴 입력은 400 이고 아무것도 쓰지 않는다", async () => {
+test("A3·A11·A13 51개·거절 칸·너무 긴 입력은 400 이고 아무것도 쓰지 않는다", async () => {
   await withEnv(async () => {
     const { ctx, state } = fakeDatabase(groupTables());
-    const many = Array.from({ length: 21 }, (_, index) => String(99900000300 + index)).join("\n");
+    const many = Array.from({ length: 51 }, (_, index) => String(99900000300 + index)).join("\n");
     const limit = await post(ctx, { mode: "save", optionInput: many });
     assert.equal(limit.response.status, 400);
     assert.equal(limit.body.code, "RANK_OPTION_LIMIT");
-    assert.equal(limit.body.message, "그룹상품 번호는 최대 20개까지 넣을 수 있습니다.");
+    assert.equal(limit.body.message, "그룹상품 번호는 최대 50개까지 넣을 수 있습니다.");
     const rejected = await post(ctx, { mode: "save", optionInput: `${OPTION_16PRO} abc` });
     assert.equal(rejected.response.status, 400);
     assert.equal(rejected.body.code, "RANK_OPTION_INPUT_REJECTED");
     const long = await post(ctx, { mode: "preview", optionInput: "1".repeat(20_001) });
     assert.equal(long.response.status, 400);
     assert.equal(long.body.code, "RANK_OPTION_INPUT_TOO_LONG");
-    const tokens = await post(ctx, { mode: "preview", optionInput: Array.from({ length: 61 }, (_, index) => String(99900000500 + index)).join(" ") });
+    const tokens = await post(ctx, { mode: "preview", optionInput: Array.from({ length: 121 }, (_, index) => String(99900000500 + index)).join(" ") });
     assert.equal(tokens.response.status, 400);
     assert.equal(tokens.body.code, "RANK_OPTION_INPUT_TOO_LONG");
     const badMode = await post(ctx, { mode: "delete-all" });

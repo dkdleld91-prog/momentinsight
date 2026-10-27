@@ -751,3 +751,5 @@ from public.coupang_rank_settings s where s.id = 1;
   2. 코드 되돌리기: 이 기능 커밋 전부(`n30-candidates` 브랜치의 wip 커밋들과 통합 커밋)를 최신 것부터 한 번에 revert. 잠금 JSON·`vercel.json` CSP·`package.json` 시험 목록이 함께 돌아가야 `check:rank-feature-lock`·화면 시험이 통과한다. revert 뒤 `npm run check:release`.
   3. DB 되돌리기(선택, 코드 되돌린 뒤): `docs/sql/n30-group-2-group-product-mark.rollback.sql`(칸만 삭제, 옵션 번호·기록 그대로, 다시 실행 안전). 되돌린 뒤 확인문은 `column "group_product_marked" does not exist` 오류가 정상이다.
 - 순위 잠금(통합 담당): 새 마이그레이션은 `naver_rank_trackers` 를 바꾸므로 `lock-regen.py <트리> naver-rank-group-product-mark=supabase/migrations/20261027090000_naver_rank_group_product_mark.sql`(rankMigration:true). 판정 파일 `src/server/naver-rank-option-group.mjs`(product-option-group-match)·워커·목록 처리기·관리자 `initRankTracking` 해시가 함께 바뀐다.
+
+- 옵션 번호 상한 50(2026-10-27): 대표 SQL `docs/sql/n30-group-3-option-ids-max-50.sql`(바탕화면 준비: `bash ~/.claude/skills/mi-collection-incident/scripts/stage-sql.sh docs/sql/n30-group-3-option-ids-max-50.sql N30-그룹상품-3-옵션50개.txt`) → 확인 `docs/sql/n30-group-3-option-ids-max-50.verify-applied.sql`(has_50 = true) → 배포. 되돌리기는 21개 이상 넣은 추적을 먼저 20개 이하로.

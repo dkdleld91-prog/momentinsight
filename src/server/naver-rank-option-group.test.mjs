@@ -232,7 +232,7 @@ test("붙여 넣기 해석 순서: 자리 수·천 단위 쉼표·목록 URL·�
 
 test("A13 4만 자·61칸은 거절하고, ?NaPm 꼬리가 붙은 상품 URL 20개는 받는다", () => {
   assert.equal(parseOptionProductInput("1".repeat(OPTION_INPUT_MAX_CHARS + 1)).error, "too_long");
-  const tokens = Array.from({ length: 61 }, (_, index) => String(99900000100 + index)).join(" ");
+  const tokens = Array.from({ length: 121 }, (_, index) => String(99900000100 + index)).join(" ");
   assert.equal(parseOptionProductInput(tokens).error, "too_many_tokens");
   const urls = Array.from({ length: 20 }, (_, index) => (
     `https://smartstore.naver.com/ishell/products/${99900000200 + index}?NaPm=ct%3Dlwz0abcd%7Cci%3D${"a".repeat(180)}%7Ctr%3Dslsl`
@@ -244,20 +244,24 @@ test("A13 4만 자·61칸은 거절하고, ?NaPm 꼬리가 붙은 상품 URL 20�
   assert.equal(parsed.overLimit, false);
 });
 
-test("A3 중복을 뺀 뒤 21개면 overLimit(자르지 않음)", () => {
-  const parsed = parseOptionProductInput(Array.from({ length: 21 }, (_, index) => String(99900000300 + index)).join(","));
-  assert.equal(parsed.optionProductIds.length, 21);
+test("A3 중복을 뺀 뒤 51개면 overLimit(자르지 않음) — 상한 50(2026-10-27 대표 요청, 옵션 24개)", () => {
+  assert.equal(OPTION_PRODUCT_IDS_MAX, 50);
+  const fifty = parseOptionProductInput(Array.from({ length: 50 }, (_, index) => String(99900000300 + index)).join(","));
+  assert.equal(fifty.optionProductIds.length, 50);
+  assert.equal(fifty.overLimit, false);
+  const parsed = parseOptionProductInput(Array.from({ length: 51 }, (_, index) => String(99900000300 + index)).join(","));
+  assert.equal(parsed.optionProductIds.length, 51);
   assert.equal(parsed.overLimit, true);
   assert.equal(parsed.limit, OPTION_PRODUCT_IDS_MAX);
 });
 
 // ───────────────────────── 저장값 정리·자격 ─────────────────────────
 
-test("저장값 정리: 숫자 5~20자리만, 순서 유지 중복 제거, 대표 번호 제외, 앞에서 20개", () => {
-  const many = Array.from({ length: 25 }, (_, index) => String(99900000400 + index));
+test("저장값 정리: 숫자 5~20자리만, 순서 유지 중복 제거, 대표 번호 제외, 앞에서 50개", () => {
+  const many = Array.from({ length: 55 }, (_, index) => String(99900000400 + index));
   assert.deepEqual(
     normalizeStoredOptionProductIds([" 99900000001 ", "99900000001", "abc", null, PRIMARY, "1234", ...many], [PRIMARY]),
-    ["99900000001", ...many.slice(0, 19)],
+    ["99900000001", ...many.slice(0, 49)],
   );
   assert.deepEqual(normalizeStoredOptionProductIds("99900000001"), []);
   assert.deepEqual(normalizeStoredOptionProductIds(undefined), []);

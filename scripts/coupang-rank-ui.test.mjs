@@ -38,9 +38,10 @@ const PLACE_LINK = '<a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-
 const SECTION_OPEN = '<section class="mi-view" data-mi-admin-view="coupang-rank-tracking" id="mi-admin-coupang-rank-tracking">';
 // 캐시 꼬리표: ① 지금 확인(spec-manual §7.9)으로 c30-v2 → c30-v3, 화면 디테일 고도화(대표 승인 2026-10-23)로 c30-v3 → c30-v4,
 // '전체 확인'(대표 승인 2026-10-24)으로 c30-v4 → c30-v5, N30 디자인 맞춤(대표 요청 2026-10-26)으로 c30-v5 → c30-v6.
+// 차단 뒤 30분 쉼·간격 4분(대표 승인 2026-10-27)으로 c30-v6 → c30-v7.
 // CSS·JS 를 함께 바꾸므로 두 꼬리표를 같이 올린다(새 JS + 옛 CSS 가 섞이지 않게).
-const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v6" />';
-const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v6"></script>';
+const CSS_LINK = '<link rel="stylesheet" href="/mi-coupang-rank.css?v=c30-v7" />';
+const SCRIPT_TAG = '<script src="/mi-coupang-rank.js?v=c30-v7"></script>';
 const GLUE_START = "      var coupangRankController = null;";
 const GLUE_END = "      var personalCalendarController = null;";
 
@@ -4079,6 +4080,7 @@ test("'수집 켜기'를 서버가 거절할 사유(지금 확인 켜짐·오늘
   for (const [manual, expected] of [
     [manualPayload(), "지금 확인이 켜져 있어 켤 수 없습니다(먼저 위 상태판의 '지금 확인 끄기')."],
     [manualPayload({ state: "off", enabled: false, stoppedDay: "2026-10-17" }), "오늘은 지금 확인이 차단으로 멈춘 날이라 내일 켤 수 있습니다."],
+    [manualPayload({ state: "off", enabled: false, pausedUntil: iso(SERVER_NOW + 30 * 60000) }), "지금 확인이 차단으로 30분 쉬는 중이라 12:30 뒤에 켤 수 있습니다."],
   ]) {
     const screen = mountManual({ manual });
     screen.controller.show();
@@ -4094,7 +4096,8 @@ test("'수집 켜기'를 서버가 거절할 사유(지금 확인 켜짐·오늘
   }
   assert.equal(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "manual_enabled" }), "지금 확인이 켜져 있어 자동 수집을 켜지 않았습니다. 먼저 위 상태판에서 '지금 확인 끄기'를 누르세요.");
   assert.equal(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "manual_stopped_today" }), "오늘은 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. 내일 다시 켜 주세요.");
-  assert.match(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "settings_changed" }), /지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날/u);
+  assert.equal(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "manual_paused" }), "지금 확인이 차단으로 30분 쉬는 중이라 자동 수집을 켜지 않았습니다. 쉼이 끝난 뒤 켜 주세요.");
+  assert.match(internals.errorText({ code: "COUPANG_COLLECTOR_MANUAL_CONFLICT", reason: "settings_changed" }), /지금 확인'이 켜져 있거나 지금 확인이 차단으로 쉬는 중\(30분\)·멈춘 날/u);
 });
 
 test("카드 한 장 동작의 결과는 그 카드에, 실패는 맨 위 상태줄에도. 선택 삭제 결과는 막대가 한 줄로 접혀도 보인다", async () => {
@@ -4842,6 +4845,7 @@ function allServer(clock, options = {}) {
     max: options.max ?? 30,
     lastSearchAt: options.lastSearchAt ?? null,
     stoppedDay: null,
+    pausedUntil: null,
     off: false,
     open: null,
     seq: 0,
@@ -4859,13 +4863,16 @@ function allServer(clock, options = {}) {
     const hour = internals.kstHourAt(clock.now);
     if (world.off) return { ...info, state: "off" };
     if (world.stoppedDay === today()) return { ...info, state: "stopped", stoppedAt: iso(clock.now - 60000), stoppedCode: "blocked_http_403" };
+    if (world.pausedUntil !== null && world.pausedUntil > clock.now) {
+      return { ...info, state: "paused", pausedUntil: iso(world.pausedUntil), blocksToday: 1, blockAt: iso(world.pausedUntil - 1800000), blockCode: "blocked_http_403", pauseMinutes: 30, blocksToStop: 2 };
+    }
     if (hour < 9 || hour >= 19) return { ...info, state: "hours" };
     if (world.open && world.open.busyUntil > clock.now) return { ...info, state: "busy", busyUntil: iso(world.open.busyUntil) };
     if (world.used >= world.max) return { ...info, state: "daily_cap" };
     if (world.lastSearchAt !== null && world.lastSearchAt + ALL_GAP_MS > clock.now) return { ...info, state: "gap", nextAt: iso(world.lastSearchAt + ALL_GAP_MS) };
     return { ...info, state: "ready" };
   };
-  const CODES = { gap: "COUPANG_MANUAL_GAP", busy: "COUPANG_MANUAL_BUSY", daily_cap: "COUPANG_MANUAL_DAILY_CAP", hours: "COUPANG_MANUAL_HOURS", stopped: "COUPANG_MANUAL_STOPPED", off: "COUPANG_MANUAL_OFF" };
+  const CODES = { gap: "COUPANG_MANUAL_GAP", busy: "COUPANG_MANUAL_BUSY", daily_cap: "COUPANG_MANUAL_DAILY_CAP", hours: "COUPANG_MANUAL_HOURS", stopped: "COUPANG_MANUAL_STOPPED", paused: "COUPANG_MANUAL_PAUSED", off: "COUPANG_MANUAL_OFF" };
   world.respond = async (url, init) => {
     world.log.push({ method: init.method, url: String(url), body: init.body ?? null, headers: { ...init.headers }, cache: init.cache, timeoutMs: init.timeoutMs });
     if (init.method === "POST") {
@@ -6058,4 +6065,96 @@ test("C30 CSS(재검사 3차): '지금 확인' 한 줄 글은 글자 중간이 �
   assert.ok(rule.includes("word-break: keep-all;"));
   assert.ok(rule.includes("overflow-wrap: break-word;"));
   assert.doesNotMatch(rule, /overflow-wrap:\s*anywhere/u);
+});
+
+// ── 차단 뒤 30분 쉼 · 간격 4분(대표 승인 2026-10-27, 서버 c30-4 · 확장 1.0.2) ──
+const PAUSE_UNTIL = SERVER_NOW + 30 * 60000; // KST 12:30
+const pausedPayload = (overrides = {}) => manualPayload({
+  state: "paused", pausedUntil: iso(PAUSE_UNTIL), blocksToday: 1, blockAt: iso(SERVER_NOW), blockCode: "blocked_http_403",
+  pauseMinutes: 30, blocksToStop: 2, minGapSeconds: 240, ...overrides,
+});
+
+test("30분 쉼: 투영(쉼 끝 전 paused·남은 시간, 끝나면 ready·간격이면 gap) · 상태 줄 띠 '30분 쉽니다(12:00 · 쿠팡 응답 HTTP 403). 12:30에 다시' · 알약·다음 확인·카드 버튼", () => {
+  const before = internals.manualProjected(pausedPayload(), SERVER_NOW + 60000);
+  assert.deepEqual([before.state, before.remainingMs], ["paused", 29 * 60000]);
+  assert.equal(internals.manualProjected(pausedPayload(), PAUSE_UNTIL + 1000).state, "ready");
+  assert.equal(internals.manualProjected(pausedPayload({ nextAt: iso(PAUSE_UNTIL + 60000) }), PAUSE_UNTIL + 1000).state, "gap");
+  assert.equal(internals.manualProjected(pausedPayload({ pausedUntil: null }), SERVER_NOW).state, "ready", "쉼 끝 시각이 없으면 막지 않는다(서버가 다시 본다)");
+  const paused = view({ server: pausedPayload(), hello: { status: "missing" } });
+  assert.deepEqual([paused.kind, paused.enabled, paused.banner, paused.countdown], ["paused", false, true, true]);
+  assert.equal(paused.text, "쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다(12:00 · 쿠팡 응답 HTTP 403). 12:30에 다시 누를 수 있습니다(오늘 한 번 더 차단되면 그날은 멈추고 내일 09시부터 다시 됩니다).");
+  assert.equal(view({ server: pausedPayload(), now: PAUSE_UNTIL + 1000 }).kind, "ready");
+  const board = internals.manualBoardModel({ view: paused, server: pausedPayload(), now: SERVER_NOW, trackers: [], todayKst: "2026-10-23" });
+  assert.deepEqual([board.pill.text, board.metrics.next.value, board.banner, board.metrics.next.note], ["30분 쉬는 중", "12:30에 다시", true, "검색 사이 4분"]);
+  assert.equal(internals.manualButtonLabel(paused, false, pausedPayload(), SERVER_NOW), "12:30에 다시");
+  assert.equal(internals.manualButtonLabel(paused, false, pausedPayload({ pausedUntil: null }), SERVER_NOW), "30분 쉼");
+  assert.equal(internals.manualAllBlock({ view: paused, keywords: 3, remaining: 10 }), "30분 쉬는 중");
+});
+
+test("두 번째 차단(그날 중지) 문구는 '두 번째로', SQL 전 서버(쉼 모름)의 차단 한 번은 예전 그날 중지 문구 그대로", () => {
+  const second = internals.manualStopText(manualPayload({ state: "stopped", stoppedDay: "2026-10-23", stoppedAt: iso(SERVER_NOW), stoppedCode: "blocked_http_429", blocksToday: 2, pauseMinutes: 30 }), "");
+  assert.equal(second, "오늘 쿠팡 확인 중 차단으로 보이는 화면이 두 번째로 나와 '지금 확인'을 모두 멈췄습니다(12:00 · 쿠팡 응답 HTTP 429). 내일 09시부터 저절로 다시 됩니다.");
+  const legacy = internals.manualStopText(manualPayload({ state: "stopped", stoppedDay: "2026-10-23", stoppedAt: null, stoppedCode: "blocked_http_403" }), "");
+  assert.equal(legacy, "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 모두 멈췄습니다(쿠팡 응답 HTTP 403). 내일 09시부터 저절로 다시 됩니다.");
+  assert.equal(internals.manualPauseKnown(manualPayload()), false);
+  assert.equal(internals.manualPauseKnown(pausedPayload()), true);
+});
+
+test("결과 문구: 차단 + 서버 쉼(paused) → '30분 쉽니다. 12:30에 다시'(stopped 아님) · 두 번째(stopped) → '오늘 두 번째 차단이라' · SQL 전(쉼 모름) 차단 → 예전 그날 중지 · 카드 메모·claim 거절·전체 확인 판정", () => {
+  const blocked = { outcome: "measured", page: { status: "blocked", httpStatus: 403, errorCode: null } };
+  const pausedRecord = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: false, paused: true, pausedUntil: iso(PAUSE_UNTIL), stopCode: "blocked_http_403", manual: pausedPayload() } }, blocked, "아이폰 필름", pausedPayload());
+  assert.deepEqual([pausedRecord.paused, pausedRecord.stopped, pausedRecord.tone], [true, false, "is-warn"]);
+  assert.equal(pausedRecord.text, "확인한 화면이 차단으로 보여(쿠팡 응답 HTTP 403) '지금 확인'을 30분 쉽니다. 12:30에 다시 누를 수 있습니다(오늘 한 번 더 차단되면 그날은 멈춥니다).");
+  const secondInfo = manualPayload({ state: "stopped", blocksToday: 2, pauseMinutes: 30 });
+  const secondRecord = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: true, paused: false, stopCode: "blocked_http_429", manual: secondInfo } }, blocked, "아이폰 필름", secondInfo);
+  assert.equal(secondRecord.stopped, true);
+  assert.match(secondRecord.text, /오늘 두 번째 차단이라 오늘 '지금 확인'을 모두 멈췄습니다\. 내일 09시부터/u);
+  const legacyRecord = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: true, stopCode: "blocked_http_403", manual: manualPayload({ state: "stopped" }) } }, blocked, "아이폰 필름", manualPayload());
+  assert.deepEqual([legacyRecord.stopped, legacyRecord.paused === true], [true, false]);
+  assert.doesNotMatch(legacyRecord.text, /30분|두 번째/u);
+  assert.equal(internals.manualCardNote(pausedRecord, { payload: { ok: true, status: "blocked", paused: true } }, blocked).text, "차단으로 보여 30분 쉼");
+  const refusal = internals.manualClaimRefusalText({ payload: { ok: false, code: "COUPANG_MANUAL_PAUSED", retryAfterSec: 1800, manual: pausedPayload() } }, pausedPayload());
+  assert.match(refusal, /^쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다\(12:00 · 쿠팡 응답 HTTP 403\)\. 12:30에 다시 누를 수 있습니다/u);
+  assert.match(refusal, / 쿠팡 검색은 하지 않았습니다\.$/u);
+  const verdict = internals.manualAllRecordVerdict;
+  assert.match(verdict({ outcome: "measured", final: true, paused: true, payload: { ok: true, status: "blocked", paused: true } }).reason, /30분 쉬게 되어 멈췄습니다\(쉼이 끝난 뒤 '전체 확인'을 다시 누르면 오늘 아직 확인 안 한 상품만 합니다\)$/u);
+  assert.match(verdict({ outcome: "measured", final: true, stopped: true, payload: { ok: true, status: "blocked", stopped: true } }).reason, /오늘 지금 확인이 멈췄습니다$/u);
+  assert.equal(internals.manualAllStateStopText("paused", pausedPayload()), internals.manualAllClaimStopText({ code: "COUPANG_MANUAL_PAUSED" }, pausedPayload()));
+  assert.match(internals.manualAllStateStopText("paused", pausedPayload()), /30분 쉬게 되어 멈췄습니다/u);
+});
+
+test("확장 사유·업데이트 안내: blocked_pause·blocked_today(1.0.1 안내)·too_soon(분 숫자 없음), 확장이 서버 버전보다 낮으면 덮어쓰기 안내", () => {
+  assert.equal(internals.manualCodeText("blocked_pause"), "차단으로 보이는 화면이 있어 확장이 30분 쉬는 중이라 시작하지 않았습니다");
+  assert.match(internals.manualCodeText("blocked_today"), /같은 날 두 번째 차단\. 확장이 1\.0\.1 이면 첫 차단에도 그날 멈추니 1\.0\.2 로 덮어써 주세요/u);
+  assert.doesNotMatch(internals.manualCodeText("too_soon"), /3분/u);
+  assert.equal(internals.manualCodeText("paused"), "'지금 확인'이 차단 뒤 30분 쉬는 중이라 시작하지 않았습니다");
+  const server = manualPayload({ extensionVersion: "1.0.2" });
+  assert.match(internals.manualUpdateHint({ status: "ok", version: "1.0.1" }, server), /^새 확장 v1\.0\.2 이 있습니다\(지금 v1\.0\.1\)\. .*v1\.0\.1 은 차단을 본 날 하루 동안 스스로 멈추고, 1\.0\.2 부터 30분 쉰 뒤 다시 됩니다\.$/u);
+  assert.equal(internals.manualUpdateHint({ status: "ok", version: "1.0.2" }, server), "");
+  assert.equal(internals.manualUpdateHint({ status: "missing" }, server), "");
+  assert.equal(internals.manualUpdateHint({ status: "ok", version: "1.0.1" }, manualPayload()), "", "서버가 버전을 안 주면 말하지 않는다");
+});
+
+test("전체 확인: 차단으로 30분 쉼이 걸리면 그 자리에서 멈추고 이어서 하지 않는다(쉼이 끝나도 저절로 다시 누르지 않음), 띠가 사유를 보이고 요약은 짧게", async () => {
+  const blockedPage = measuredPage({ status: "blocked", httpStatus: 403, blockedText: true, organic: [], itemCount: 0, loginWall: false });
+  const screen = mountAll({
+    check: async (message) => ({ ok: true, reply: measuredReply(message.claimId === allClaimId(2) ? blockedPage : measuredPage()) }),
+    record: (body, world, claim) => {
+      if (claim.id !== allClaimId(2)) return null;
+      world.pausedUntil = world.claimTimes.at(-1).at + 30 * 60000;
+      return { ok: true, accepted: true, duplicate: false, outcome: "measured", status: "blocked", errorCode: "blocked_http_403", matched: 1, counted: true,
+        stopped: false, paused: true, pausedUntil: iso(world.pausedUntil), stopCode: "blocked_http_403" };
+    },
+  });
+  await startAll(screen);
+  await advanceAll(screen, ALL_GAP_MS + ALL_PAD_MS, 3000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(3)]);
+  assert.equal(allSummaryOf(screen), "전체 확인 멈춤(2 / 4 '키워드 C'에서): 30분 쉼(위 안내 참고). 1개 키워드 · 상품 2개 기록 · 실패 1 · 남은 2개 키워드는 하지 않음.");
+  assert.equal(manualBanner(screen).hidden, false, "30분 쉼 띠");
+  assert.match(manualBanner(screen).textContent, /'지금 확인'을 30분 쉽니다/u);
+  assert.equal(manualResult(screen).hidden, true);
+  assert.equal(allOff(screen), true);
+  // 쉼이 끝나도 대기열은 다시 시작하지 않는다(대표가 다시 누른다)
+  await advanceAll(screen, 31 * 60000, 60000);
+  assert.deepEqual(claimedIds(screen), [allId(1), allId(3)]);
 });

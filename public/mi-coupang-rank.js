@@ -257,6 +257,7 @@
     COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(위 '지금 확인' 상태판 → 지금 확인 켜기).",
     COUPANG_MANUAL_BUDGET: "저장 용량 상한으로 멈춰 있습니다(대표 확인 필요).",
     COUPANG_MANUAL_STOPPED: "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 지금 확인을 멈췄습니다. 내일 다시 됩니다.",
+    COUPANG_MANUAL_PAUSED: "쿠팡 확인 중 차단으로 보이는 화면이 나와 지금 확인을 30분 쉬는 중입니다. 쉼이 끝나면 다시 됩니다.",
     COUPANG_MANUAL_COOLDOWN: "쿠팡 차단 감지로 쉬는 중입니다.",
     COUPANG_MANUAL_REVIEW: "대표 확인이 필요한 상태라 지금 확인이 멈춰 있습니다.",
     COUPANG_MANUAL_HOURS: "지금 확인은 정해진 시간에만 됩니다.",
@@ -272,16 +273,17 @@
     COUPANG_MANUAL_CLAIM_NOT_VERIFIED: "확장이 서버 확인을 받지 않은 요청이라 결과를 저장하지 않았습니다.",
     COUPANG_MANUAL_CLAIM_EXPIRED: "확인 요청 기한(10분)이 지나 결과를 저장하지 않았습니다.",
     COUPANG_MANUAL_RECORD_INVALID: "확인 결과 형식이 맞지 않아 저장하지 못했습니다.",
-    // 지금 확인 ↔ 자동 수집이 함께 켜지지 않게(자동 수집이 아직 지금 확인의 간격·그날 중지를 보지 않는다)
+    // 지금 확인 ↔ 자동 수집이 함께 켜지지 않게(자동 수집이 아직 지금 확인의 간격·30분 쉼·그날 중지를 보지 않는다)
     COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다. 먼저 아래 '자동 수집' 칸에서 '수집 끄기'를 누르세요.",
     // 서버 거절 사유(reason)를 모르는 경우의 문구. 사유가 오면 COLLECTOR_CONFLICT_REASON_TEXT 를 쓴다.
-    COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요."
+    COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 지금 확인이 차단으로 쉬는 중(30분)·멈춘 날이라 자동 수집을 켜지 않았습니다. '지금 확인 끄기'를 누르고, 쉬는 중이면 30분 뒤, 그날 중지였다면 다음 날 켜 주세요."
   };
 
   // 자동 수집 켜기 거절 사유(handler manualAutoConflict 의 reason) → 짧은 문구.
   var COLLECTOR_CONFLICT_REASON_TEXT = {
     manual_enabled: "지금 확인이 켜져 있어 자동 수집을 켜지 않았습니다. 먼저 위 상태판에서 '지금 확인 끄기'를 누르세요.",
-    manual_stopped_today: "오늘은 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. 내일 다시 켜 주세요."
+    manual_stopped_today: "오늘은 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다. 내일 다시 켜 주세요.",
+    manual_paused: "지금 확인이 차단으로 30분 쉬는 중이라 자동 수집을 켜지 않았습니다. 쉼이 끝난 뒤 켜 주세요."
   };
 
   // ── 순수 도우미 ───────────────────────────────────────────────
@@ -967,7 +969,7 @@
     host_access_withheld: "확장의 '사이트 액세스'가 막혀 있어 시작하지 않았습니다",
     incognito_window_open: "다른 시크릿 창이 열려 있어 시작하지 않았습니다(모든 시크릿 창을 닫아 주세요)",
     busy: "확장이 다른 확인을 하는 중이라 시작하지 않았습니다",
-    too_soon: "확장이 방금 확인해서 시작하지 않았습니다(검색 사이 3분)",
+    too_soon: "확장이 방금 확인해서 시작하지 않았습니다(같은 크롬에서 연달아 검색하지 않습니다)",
     bad_request: "확장이 요청 형식을 받지 않았습니다(확장 버전을 확인해 주세요)",
     origin_rejected: "확장이 이 화면에서 온 요청을 받지 않았습니다(주소가 insight.momentlabs.co.kr 인지 확인해 주세요)",
     window_create_failed: "시크릿 창을 열지 못했습니다(크롬 설정에서 시크릿 모드가 막혀 있을 수 있습니다)",
@@ -984,8 +986,11 @@
     verify_invalid: "확장이 서버 확인 응답을 알아보지 못해 시작하지 않았습니다(확장 버전을 확인해 주세요)",
     extension_error: "확장 안에서 오류가 나 시작하지 않았습니다(chrome://extensions 에서 확장을 새로고침(↻)해 주세요)",
     browser_unsupported: "지금 확인은 크롬에서만 됩니다",
-    blocked_today: "오늘 차단으로 보이는 화면이 있어 확장이 시작하지 않았습니다",
+    // 1.0.2: 같은 날 두 번째 차단 뒤 그날 중지. 1.0.1 은 첫 차단에도 그날 스스로 멈춘다(1.0.2 로 덮어쓰면 30분 쉼을 따른다).
+    blocked_today: "오늘 차단으로 보이는 화면이 있어 확장이 오늘은 시작하지 않았습니다(같은 날 두 번째 차단. 확장이 1.0.1 이면 첫 차단에도 그날 멈추니 1.0.2 로 덮어써 주세요)",
+    blocked_pause: "차단으로 보이는 화면이 있어 확장이 30분 쉬는 중이라 시작하지 않았습니다",
     stopped: "오늘 '지금 확인'이 멈춰 있어 시작하지 않았습니다",
+    paused: "'지금 확인'이 차단 뒤 30분 쉬는 중이라 시작하지 않았습니다",
     daily_cap: "오늘 확인 횟수를 모두 써서 시작하지 않았습니다",
     hours: "정해진 시간 밖이라 시작하지 않았습니다",
     gap: "검색 사이 간격이 지나지 않아 시작하지 않았습니다",
@@ -1016,7 +1021,7 @@
     unsupported: "쿠팡이 검색 결과가 아닌 쪽으로 보내 순위를 기록하지 못했습니다('이동'으로 기록)"
   };
 
-  // 그날 중지 사유(서버 manual.stoppedCode · 기록 응답 stopCode = contract MANUAL_STOP_CODES) → 짧은 말.
+  // 차단 사유(서버 manual.stoppedCode·blockCode · 기록 응답 stopCode = contract MANUAL_STOP_CODES) → 짧은 말.
   // 모르는 코드면 사유를 쓰지 않는다(원인을 단정하지 않는다).
   var MANUAL_STOP_REASON_TEXT = {
     blocked_http_403: "쿠팡 응답 HTTP 403",
@@ -1099,7 +1104,7 @@
   }
 
   function manualGapMinutes(info) {
-    var seconds = info && isNum(info.minGapSeconds) ? info.minGapSeconds : 180;
+    var seconds = info && isNum(info.minGapSeconds) ? info.minGapSeconds : 240;
     return Math.round(seconds / 6) / 10;
   }
 
@@ -1116,6 +1121,9 @@
     var inHours = hour === null ? true : (hour >= hours.from && hour < hours.to);
     var nextAt = Date.parse(info.nextAt);
     var busyUntil = Date.parse(info.busyUntil);
+    var pausedUntil = Date.parse(info.pausedUntil);
+    // 차단 뒤 30분 쉼(서버 c30-4): 쉼 끝(서버 시각)이 지나면 다음 판정으로 넘어간다.
+    if (stateName === "paused" && (newDay || !isFinite(pausedUntil) || pausedUntil <= now)) stateName = "ready";
     if (stateName === "stopped") {
       if (!newDay && (!info.stoppedDay || String(info.stoppedDay) === today)) stateName = "stopped";
       else stateName = "ready";
@@ -1131,7 +1139,7 @@
       used: newDay ? 0 : (isNum(info.usedToday) ? info.usedToday : 0),
       max: isNum(info.maxPerDay) ? info.maxPerDay : 30,
       hours: hours,
-      remainingMs: stateName === "gap" && isFinite(nextAt) ? nextAt - now : 0
+      remainingMs: stateName === "gap" && isFinite(nextAt) ? nextAt - now : (stateName === "paused" ? pausedUntil - now : 0)
     };
   }
 
@@ -1237,13 +1245,40 @@
     return "";
   }
 
+  // 서버가 30분 쉼을 아는지(c30-4 SQL 뒤 요약에 pauseMinutes 가 온다). 모르면 예전처럼 차단 한 번에 그날 중지 문구를 쓴다.
+  function manualPauseKnown(server) {
+    return Boolean(server) && isNum(server.pauseMinutes);
+  }
+
   function manualStopText(server, detail) {
     var info = server || {};
     var at = kstClock(info.stoppedAt);
     var reason = detail || MANUAL_STOP_REASON_TEXT[manualSafeCode(info.stoppedCode)] || "";
     var extra = [at, reason].filter(Boolean).join(" · ");
-    return "오늘 쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 모두 멈췄습니다" + (extra ? "(" + extra + ")" : "") +
+    var second = isNum(info.blocksToday) && info.blocksToday >= 2;
+    return "오늘 쿠팡 확인 중 차단으로 보이는 화면이 " + (second ? "두 번째로 " : "") + "나와 '지금 확인'을 모두 멈췄습니다" + (extra ? "(" + extra + ")" : "") +
       ". 내일 " + pad2(manualHours(info).from) + "시부터 저절로 다시 됩니다.";
+  }
+
+  // 30분 쉼(그 날 첫 차단) 안내: '30분 쉼(HH:MM 에 다시)'. 시각·사유는 서버가 준 것만 쓴다(없으면 빼고 말한다).
+  function manualPauseText(server, detail) {
+    var info = server || {};
+    var at = kstClock(info.blockAt);
+    var reason = detail || MANUAL_STOP_REASON_TEXT[manualSafeCode(info.blockCode)] || "";
+    var extra = [at, reason].filter(Boolean).join(" · ");
+    var again = kstClock(info.pausedUntil);
+    return "쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다" + (extra ? "(" + extra + ")" : "") + ". " +
+      (again ? again + "에 다시 누를 수 있습니다" : "30분 뒤 다시 누를 수 있습니다") +
+      "(오늘 한 번 더 차단되면 그날은 멈추고 내일 " + pad2(manualHours(info).from) + "시부터 다시 됩니다).";
+  }
+
+  // 확장이 서버가 내려주는 버전보다 낮으면 덮어쓰기 안내(1.0.1 은 차단을 본 날 하루 동안 스스로 멈춘다). 아니면 "".
+  function manualUpdateHint(hello, server) {
+    var latest = server && MANUAL_VERSION_PATTERN.test(String(server.extensionVersion || "")) ? server.extensionVersion : "";
+    if (!latest || !hello || hello.status !== "ok" || !MANUAL_VERSION_PATTERN.test(String(hello.version || ""))) return "";
+    if (compareVersionText(hello.version, latest) >= 0) return "";
+    return "새 확장 v" + latest + " 이 있습니다(지금 v" + hello.version + "). 설치 안내의 '업데이트' 순서대로 덮어써 주세요" +
+      (compareVersionText(hello.version, "1.0.2") < 0 ? " — v" + hello.version + " 은 차단을 본 날 하루 동안 스스로 멈추고, 1.0.2 부터 30분 쉰 뒤 다시 됩니다." : ".");
   }
 
   function manualUsage(info) {
@@ -1323,7 +1358,7 @@
   }
 
   // 반환: { visible, enabled(버튼), text, tone, banner(그날 중지 띠), countdown(1초 초 세기), guide(설치 안내 열기), state, kind }
-  // kind: 상태판 알약을 고르는 갈래(off · setup_required · stopped · run · hello_pending · hello_block · budget · review · cooldown · hours ·
+  // kind: 상태판 알약을 고르는 갈래(off · setup_required · stopped · paused · run · hello_pending · hello_block · budget · review · cooldown · hours ·
   // own_unsent · unsent_maybe · own_lost · own_pending · busy_other · daily_cap · gap · ext_busy · incognito · ready · unknown). 판정 순서는 그대로다.
   function manualView(input) {
     var options = input || {};
@@ -1347,6 +1382,8 @@
     var hours = projected.hours;
     // 그날 중지는 가장 중요한 알림이라 확장 상태보다 먼저 띠로 보인다(확장이 없어도 보여야 한다).
     if (projected.state === "stopped") return make("stopped", false, manualStopText(server, options.stopDetail), "is-warn", { banner: true });
+    // 30분 쉼도 같은 자리의 띠로 보인다(글은 'HH:MM 에 다시'로 고정, 1초마다 다시 보아 시각이 지나면 버튼이 켜진다).
+    if (projected.state === "paused") return make("paused", false, manualPauseText(server, options.stopDetail), "is-warn", { banner: true, countdown: true });
     if (options.run) return make("run", false, manualRunText(options.run), "");
     var hello = options.hello;
     if (!hello || hello.status === "pending") return make("hello_pending", false, "지금 확인: 이 크롬의 확장을 확인하는 중입니다…", "");
@@ -1410,6 +1447,7 @@
   var MANUAL_PILL = {
     off: ["꺼짐", "is-muted"],
     stopped: ["오늘은 멈춤", "is-warn"],
+    paused: ["30분 쉬는 중", "is-warn"],
     run: ["확인 중", "is-wait"],
     hello_pending: ["확장 확인 중", "is-muted"],
     hello_block: ["확장 확인 필요", "is-warn"],
@@ -1467,6 +1505,7 @@
       next = { value: isFinite(busyLeft) && busyLeft > 0 ? "약 " + countdownText(busyLeft) + " 뒤" : "잠시 뒤", tone: "is-wait" };
     } else if (kind === "hours") next = { value: manualNextOpenText(hours, now), tone: "" };
     else if (kind === "daily_cap" || kind === "stopped") next = { value: "내일 " + pad2(hours.from) + ":00", tone: "" };
+    else if (kind === "paused") next = { value: kstClock(server.pausedUntil) ? kstClock(server.pausedUntil) + "에 다시" : "30분 뒤", tone: "is-warn" };
     else if (kind === "off") next = { value: "꺼짐", tone: "" };
     else if (kind === "cooldown") next = { value: server.cooldownUntil && shortAt(server.cooldownUntil) !== "-" ? "~" + shortAt(server.cooldownUntil) : "멈춤", tone: "is-warn" };
     else if (kind === "budget" || kind === "review") next = { value: "멈춤", tone: "is-warn" };
@@ -1516,6 +1555,7 @@
       case "gap": return countdownText(projected.remainingMs) + " 뒤";
       case "daily_cap":
       case "stopped": return "내일 " + pad2(projected.hours.from) + ":00";
+      case "paused": return kstClock(server && server.pausedUntil) ? kstClock(server.pausedUntil) + "에 다시" : "30분 쉼";
       case "hours": return manualNextOpenText(projected.hours, at);
       case "busy_other":
       case "own_lost":
@@ -1544,6 +1584,7 @@
     var check = parsed || { outcome: "lost" };
     var warn = function (text) { return { text: prefix + text, tone: "is-warn" }; };
     if (outcome && outcome.stopped) return warn("차단으로 보여 오늘 멈춤");
+    if (outcome && outcome.paused) return warn("차단으로 보여 30분 쉼");
     if (result.transport || result.httpStatus === 401 || payload.code === "SESSION_REQUIRED" || payload.code === "COUPANG_SESSION_REQUIRED" ||
       (!payload.code && payload.ok !== true && result.httpStatus >= 500)) return warn("결과를 서버에 보내지 못함(위 상태판 참고)");
     if (check.outcome === "not_started") return { text: prefix + "시작하지 않음 · 쿠팡 검색 안 함", tone: "is-warn", notStarted: true };
@@ -1580,6 +1621,7 @@
     if (code === "COUPANG_MANUAL_DAILY_CAP") return "오늘 확인 " + (isNum(info.maxPerDay) ? info.maxPerDay + "번" : "횟수") + "을 모두 썼습니다. 내일 다시 됩니다." + tail;
     if (!code && result && result.httpStatus >= 500) return "서버 처리 중 오류가 나 확인을 시작하지 않았습니다. 잠시 뒤 다시 눌러 주세요." + tail;
     if (code === "COUPANG_MANUAL_STOPPED") return manualStopText(info, "");
+    if (code === "COUPANG_MANUAL_PAUSED") return manualPauseText(info, "") + tail;
     return errorText(payload) + tail;
   }
 
@@ -1600,7 +1642,7 @@
   }
 
   // 결과 문구. recorded = { payload, transport, httpStatus }, parsed = parseCheckReply 결과.
-  // 반환 { text, tone, stopped, detail }
+  // 반환 { text, tone, stopped, paused, detail }
   function manualRecordText(recorded, parsed, keyword, server) {
     var result = recorded || {};
     var payload = result.payload || {};
@@ -1616,9 +1658,23 @@
       return { text: "서버 처리 중 오류가 나 결과를 저장하지 못했습니다. 이 화면을 10분 안에 다시 열면 저절로 다시 보냅니다." + left, tone: "is-warn" };
     }
     var detail = MANUAL_STOP_REASON_TEXT[manualSafeCode(payload.stopCode)] || (check.outcome === "measured" ? manualBlockDetail(check.page, payload.errorCode) : "");
-    if (payload.stopped === true || payload.status === "blocked") {
+    // 같은 날 두 번째 차단(또는 c30-4 SQL 전 서버의 차단 한 번) = 그날 중지. 그 밖의 차단은 30분 쉼(서버 c30-4).
+    var paused = payload.stopped !== true && (payload.paused === true || (payload.status === "blocked" && manualPauseKnown(info)));
+    if (paused) {
+      var again = kstClock(payload.pausedUntil || (info && info.pausedUntil));
       return {
-        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " 오늘 '지금 확인'을 모두 멈췄습니다. 내일 " + pad2(manualHours(info).from) + "시부터 저절로 다시 됩니다." + left,
+        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " '지금 확인'을 30분 쉽니다. " +
+          (again ? again + "에 다시 누를 수 있습니다" : "30분 뒤 다시 누를 수 있습니다") + "(오늘 한 번 더 차단되면 그날은 멈춥니다)." + left,
+        tone: "is-warn",
+        stopped: false,
+        paused: true,
+        detail: detail
+      };
+    }
+    if (payload.stopped === true || payload.status === "blocked") {
+      var second = info && isNum(info.blocksToday) && info.blocksToday >= 2;
+      return {
+        text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + (second ? " 오늘 두 번째 차단이라" : "") + " 오늘 '지금 확인'을 모두 멈췄습니다. 내일 " + pad2(manualHours(info).from) + "시부터 저절로 다시 됩니다." + left,
         tone: "is-warn",
         stopped: true,
         detail: detail
@@ -1684,6 +1740,9 @@
   var MANUAL_ALL_BLOCKED_TEXT = "쿠팡 차단으로 보이는 화면이 나와 오늘 지금 확인이 멈췄습니다";
   // 위 그날 중지 띠(role=alert)가 같은 사유를 이미 보이고 읽을 때 끝 요약에 쓰는 짧은 말(같은 문장을 두 번 보이거나 읽지 않게).
   var MANUAL_ALL_BLOCKED_REF = "그날 중지(위 안내 참고)";
+  // 30분 쉼(그 날 첫 차단)이면 대기열은 멈추고 이어서 하지 않는다(쉼이 끝난 뒤 대표가 다시 누른다 — 오늘 아직 확인 안 한 상품만 다시 고른다).
+  var MANUAL_ALL_PAUSED_TEXT = "쿠팡 차단으로 보이는 화면이 나와 지금 확인이 30분 쉬게 되어 멈췄습니다(쉼이 끝난 뒤 '전체 확인'을 다시 누르면 오늘 아직 확인 안 한 상품만 합니다)";
+  var MANUAL_ALL_PAUSED_REF = "30분 쉼(위 안내 참고)";
   // 대기열이 끝난 직후 같은 자리를 누르면 '전체 확인' 시작으로 받지 않는다('멈추기' 두 번 누름 · Enter 반복이 바로 바뀐 '전체 확인'을
   // 누르는 것을 막는다). 막은 누름마다 다시 센다: 누름이 이 시간 넘게 끊긴 뒤의 누름만 사람이 다시 누른 것으로 받는다
   // (Enter 를 누르고 있으면 30ms 마다 누름이 와서 끝나지 않는다 — 2026-10-24 재검사 2차).
@@ -1748,6 +1807,7 @@
     var kind = options.view && options.view.kind || "";
     if (options.cleanup) return "정리용 화면이라 쓸 수 없음";
     if (kind === "stopped") return "그날 중지";
+    if (kind === "paused") return "30분 쉬는 중";
     if (kind === "daily_cap") return "오늘 횟수 다 씀";
     if (kind === "hours") return "시간 밖";
     if (MANUAL_ALL_BUSY_KINDS[kind] || options.running) return "다른 확인 진행 중";
@@ -1809,7 +1869,7 @@
 
   // 서버 상태(지금 시각으로 옮긴 것) 또는 claim 거절 코드 → 대기열을 멈추는 사유. 기다리면 되는 상태(간격·진행 중·바로 가능)는 "".
   var MANUAL_ALL_CODE_STATE = {
-    COUPANG_MANUAL_STOPPED: "stopped", COUPANG_MANUAL_DAILY_CAP: "daily_cap", COUPANG_MANUAL_HOURS: "hours", COUPANG_MANUAL_BUDGET: "budget",
+    COUPANG_MANUAL_STOPPED: "stopped", COUPANG_MANUAL_PAUSED: "paused", COUPANG_MANUAL_DAILY_CAP: "daily_cap", COUPANG_MANUAL_HOURS: "hours", COUPANG_MANUAL_BUDGET: "budget",
     COUPANG_MANUAL_COOLDOWN: "cooldown", COUPANG_MANUAL_OFF: "off", COUPANG_MANUAL_SETUP_REQUIRED: "setup_required"
   };
   function manualAllStateStopText(stateName, server) {
@@ -1819,6 +1879,7 @@
       case "busy":
         return "";
       case "stopped": return MANUAL_ALL_BLOCKED_TEXT;
+      case "paused": return MANUAL_ALL_PAUSED_TEXT;
       case "daily_cap": return "오늘 확인 횟수를 모두 써서 멈췄습니다";
       case "hours": return "정해진 시간(" + manualHours(server).text + ") 밖이 되어 멈췄습니다";
       case "budget": return "저장 용량 상한으로 지금 확인이 멈춘 상태라 멈췄습니다";
@@ -1859,7 +1920,9 @@
   function manualAllRecordVerdict(result) {
     var info = result || {};
     var payload = info.payload || {};
-    if (info.stopped === true || payload.stopped === true || payload.status === "blocked") return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
+    if (info.stopped === true || payload.stopped === true) return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
+    if (info.paused === true || payload.paused === true) return { success: false, reason: MANUAL_ALL_PAUSED_TEXT };
+    if (payload.status === "blocked") return { success: false, reason: MANUAL_ALL_BLOCKED_TEXT };
     if (info.final !== true) return { success: false, reason: "결과를 서버에 보내지 못해 멈췄습니다(위 '직전 확인' 참고)" };
     if (info.outcome === "not_started") return { success: false, reason: "확장이 확인을 시작하지 않아 멈췄습니다(위 '직전 확인' 참고)" };
     if (info.outcome !== "measured") return { success: false, reason: "확장 응답이 없어 멈췄습니다(위 '직전 확인' 참고)" };
@@ -4085,8 +4148,9 @@
       }
       var items = [];
       if (mode === "manual") {
-        items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(" + manualRule +
-          "). 쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다.");
+        items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(" + manualRule + "). " + (manualPauseKnown(server)
+          ? "쿠팡이 차단으로 보이는 화면을 보내면 30분 쉬고(화면에 'HH:MM에 다시'), 같은 날 두 번째면 그날은 멈추고 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다."
+          : "쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다."));
         items.push("같은 키워드 카드는 한 번 누르면 함께 기록됩니다(하루 횟수도 1번만 씁니다). 그래서 같은 키워드 카드를 따로 누를 필요가 없습니다.");
         items.push("전체 확인: 위 상태판의 '전체 확인'을 누르면 오늘 아직 확인 안 한 상품(일시중지 빼고)을 키워드마다 한 번씩, 검색 사이 " + manualGapMinutes(server) +
           "분을 기다리며 차례로 확인합니다(키워드 수 × 약 " + manualGapMinutes(server) + "분). 진행하는 동안 키워드마다 " + MANUAL_WARN_TEXT +
@@ -4338,6 +4402,11 @@
       }
       var today = todayKstValue();
       if (server && server.stoppedDay && today && String(server.stoppedDay) === today) return "오늘은 지금 확인이 차단으로 멈춘 날이라 내일 켤 수 있습니다.";
+      // 차단 뒤 30분 쉼(서버 c30-4): 쉼 끝(서버 시각)이 지나기 전에는 켜지 않는다.
+      var pausedUntil = server ? Date.parse(server.pausedUntil) : NaN;
+      if (isFinite(pausedUntil) && pausedUntil > manualNow()) {
+        return "지금 확인이 차단으로 30분 쉬는 중이라 " + (kstClock(server.pausedUntil) ? kstClock(server.pausedUntil) + " 뒤에" : "쉼이 끝난 뒤") + " 켤 수 있습니다.";
+      }
       var collectors = data && Array.isArray(data.collectors) ? data.collectors.filter(function (row) { return row && !row.revokedAt; }) : null;
       if (collectorStateName() === "not_connected" || (collectors && !collectors.length)) return "연결된 수집기가 없어 켤 수 없습니다(아래 '연결 코드'부터).";
       return "";
@@ -4865,7 +4934,7 @@
       var serverTime = Date.parse(info.serverTime);
       // 시간 판정은 서버 시각만 쓴다. 내 시계와의 차이는 남은 시간 표시에만 보정한다.
       manual.offsetMs = isFinite(serverTime) ? serverTime - Date.now() : 0;
-      if (info.state !== "stopped") manual.stopDetail = "";
+      if (info.state !== "stopped" && info.state !== "paused") manual.stopDetail = "";
     }
 
     function manualNow() {
@@ -5402,6 +5471,11 @@
         rememberUnsent(claim.claimId);
       }
       var outcome = manualRecordText(recorded, parsed, claim.keyword, manual.server);
+      if (outcome.paused) {
+        manual.stopDetail = outcome.detail || "";
+        // 서버가 30분 쉼을 걸었다고 답했다. 응답의 manual 칸(쉼 끝 시각)으로 띠를 바로 보이고, 목록을 다시 받아 서버 값으로 맞춘다.
+        if (payload.manual && payload.manual.state === "paused") setManualServer(payload.manual);
+      }
       if (outcome.stopped) {
         manual.stopDetail = outcome.detail || "";
         // 서버가 그날 중지를 걸었다고 답했다. 옛 manual 칸이면 띠를 바로 보이고, 목록을 다시 받아 서버 값으로 맞춘다.
@@ -5412,7 +5486,7 @@
       var cardNote = manualCardNote(outcome, recorded, parsed);
       var recordedId = payload.tracker && typeof payload.tracker.trackerId === "string" ? payload.tracker.trackerId : "";
       cardNote.trackerId = recordedId || claim.trackerId || "";
-      finishManualRun((prefix || "") + outcome.text, outcome.tone, true, outcome.stopped === true, cardNote);
+      finishManualRun((prefix || "") + outcome.text, outcome.tone, true, outcome.stopped === true || outcome.paused === true, cardNote);
       return outcome;
     }
 
@@ -5523,7 +5597,7 @@
           return { step: "resend", ok: false };
         }
         var resentOutcome = settleManualRecord(resent, earlier.parsed, earlier.claim, "앞서 끝나지 않은 확인 결과를 먼저 보냈습니다. 새 확인은 다시 눌러 주세요. ");
-        return { step: "resend", ok: true, stopped: resentOutcome.stopped === true };
+        return { step: "resend", ok: true, stopped: resentOutcome.stopped === true, paused: resentOutcome.paused === true };
       }
       // 3. 서버 1회용 확인(간격·하루 상한·시간·그날 중지는 서버가 서버 시각으로 정한다)
       manual.run.phase = "claim";
@@ -5580,7 +5654,7 @@
       // 확장이 답 없이 멈췄으면 한 번 깨워 남은 시크릿 창을 정리하게 한다(캐시 무시).
       if (parsed.outcome === "lost") refreshHello(true).catch(function () {});
       // 전체 확인이 이 결과로 다음 키워드로 갈지·멈출지 정한다(카드 한 번 누름에는 쓰지 않는다).
-      return { step: "record", outcome: parsed.outcome, final: manualRecordFinal(recorded), payload: recorded && recorded.payload || {}, stopped: outcome.stopped === true };
+      return { step: "record", outcome: parsed.outcome, final: manualRecordFinal(recorded), payload: recorded && recorded.payload || {}, stopped: outcome.stopped === true, paused: outcome.paused === true };
     }
 
     function runManualCheck(trackerId) {
@@ -6032,6 +6106,7 @@
         }
       } else if (info.step === "resend") {
         if (info.ok && info.stopped) stop = MANUAL_ALL_BLOCKED_TEXT;
+        else if (info.ok && info.paused) stop = MANUAL_ALL_PAUSED_TEXT;
         else if (info.ok && !queue.resent) queue.resent = true;
         else stop = "앞서 보내지 못한 확인 결과를 먼저 보내지 못해 멈췄습니다(위 '직전 확인' 참고)";
       } else if (info.step === "preflight") {
@@ -6100,8 +6175,9 @@
         shortage: shortage
       };
       var summary = manualAllSummary(input);
-      // 차단(그날 중지)이면 위 띠(role=alert)가 같은 사유를 이미 보이고 읽는다 → 띠가 보이는 동안 요약은 짧은 말로 쓴다.
-      summary.refText = reason === MANUAL_ALL_BLOCKED_TEXT ? manualAllSummary(Object.assign({}, input, { reason: MANUAL_ALL_BLOCKED_REF })).text : "";
+      // 차단(그날 중지·30분 쉼)이면 위 띠(role=alert)가 같은 사유를 이미 보이고 읽는다 → 띠가 보이는 동안 요약은 짧은 말로 쓴다.
+      var refReason = reason === MANUAL_ALL_BLOCKED_TEXT ? MANUAL_ALL_BLOCKED_REF : (reason === MANUAL_ALL_PAUSED_TEXT ? MANUAL_ALL_PAUSED_REF : "");
+      summary.refText = refReason ? manualAllSummary(Object.assign({}, input, { reason: refReason })).text : "";
       manual.allSummary = summary;
       renderAll();
     }
@@ -6197,7 +6273,7 @@
         ? "대표 SQL(지금 확인) 실행 전입니다"
         : (on ? manualExtensionText(hello).replace(/^확장:\s*/, "") : "지금 확인이 꺼져 있어 확장에 묻지 않습니다") + " · 확장 내려받기 · 설치 안내";
       section.replaceChildren();
-      section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다('전체 확인'도 누를 때만, 키워드마다 한 번씩 차례로). 예약·자동 반복은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 그날 중지는 서버가 지킵니다." }));
+      section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다('전체 확인'도 누를 때만, 키워드마다 한 번씩 차례로). 예약·자동 반복은 없습니다. 검색 사이 간격·하루 횟수·시간·차단 시 30분 쉼(같은 날 두 번째면 그날 중지)은 서버가 지킵니다." }));
       var lines = [];
       if (setup) {
         lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 위 상태판에 켜기 버튼이 생깁니다.");
@@ -6206,8 +6282,11 @@
         lines.push((on ? "켜짐" : "꺼짐 — 위 '지금 확인' 상태판에서 켤 수 있습니다") + " · 오늘 " + projected.used + "/" + projected.max + "번 · " +
           projected.hours.text + " · 검색 사이 " + manualGapMinutes(server) + "분");
         if (projected.state === "stopped") lines.push(manualStopText(server, state.manual.stopDetail));
+        if (projected.state === "paused") lines.push(manualPauseText(server, state.manual.stopDetail));
       }
       lines.push(manualExtensionText(hello));
+      var updateHint = setup ? "" : manualUpdateHint(hello, server);
+      if (updateHint) lines.push(updateHint);
       section.appendChild(el("ul", { className: "mi-coupang-rank-owner-lines", "data-coupang-rank-manual-owner-lines": true }, lines.map(function (line) { return el("li", { text: line }); })));
       section.appendChild(el("div", { className: "mi-coupang-rank-owner-actions" }, [button("확장 상태 다시 보기", "manual-hello", {})]));
       section.appendChild(shell.extNote);
@@ -6732,6 +6811,9 @@
       manualCodeText: manualCodeText,
       manualChangedParams: manualChangedParams,
       manualStopText: manualStopText,
+      manualPauseText: manualPauseText,
+      manualPauseKnown: manualPauseKnown,
+      manualUpdateHint: manualUpdateHint,
       manualExtensionText: manualExtensionText,
       manualGuideSteps: manualGuideSteps,
       parseHelloReply: parseHelloReply,

@@ -20,7 +20,10 @@ const privateBaseline = Object.freeze({
   // 3차 값 2014316a30fa71ee220b78f3c5a3dafb2436719a953e4b2b065514623e07fd8c.
   // 5차 수정(규칙 C'·E': 관리자 안내 문구·'다른 스토어로 보여 뺀 번호' 줄에 번호 — 광고주 화면에는 안 보임)으로 또
   // 바뀌었다. 4차 값 ce8c478877e5c80da84422729d4dbcdfd634e877ce8fd935f5339144cd7f79dc.
-  clientInline: ["20c86c95a026a1cd46329d6e3e8c3e8c71cda0d9d1a03d6f3eed3e3fb17a5870"],
+  // 2026-10-27 N30 그룹상품 후보(대표 승인 A안): 두 화면 공통 카드 함수(rankTrackerOptionState·renderRankOptionOpsPills)에
+  // 관리자 전용 상태 알약이 더해져 바뀌었다(광고주 화면 출력은 바이트 동일 — 화면 시험 U10). 5차 값
+  // 20c86c95a026a1cd46329d6e3e8c3e8c71cda0d9d1a03d6f3eed3e3fb17a5870.
+  clientInline: ["8d81d268f49b511aad2604a660ad7ca5447b238b4c27a29b9b50d3ed9d543781"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

@@ -27,8 +27,12 @@ import {
 import {
   evaluateGroupTrackingRank,
   groupTrackingRankMessage,
+  findGroupProductCandidates,
+  groupMarkColumnRecentlyMissing,
+  isGroupMarkColumnMissingError,
   isOptionColumnMissingError,
   optionColumnRecentlyMissing,
+  rememberGroupMarkColumnMissing,
   rememberOptionColumnMissing,
   trackerOptionProductIds,
 } from "../naver-rank-option-group.mjs";
@@ -106,6 +110,9 @@ const WORKER_TRACKER_SELECT = [
 // N30 그룹상품(2026-10-23): 같은 조회에 옵션 번호 칸을 더한다. 칸이 없으면(대표 SQL 전) 위 옛 조회로
 // 한 번 더 읽고 옵션은 빈 목록 = 지금 동작이다.
 const WORKER_TRACKER_OPTION_SELECT = `${WORKER_TRACKER_SELECT}, option_product_ids`;
+// N30 그룹상품 후보(2026-10-27 A안): '그룹상품으로 표시' 칸을 더한다. 칸이 없으면(대표 SQL 전) 위 조회로 한 번 더
+// 읽고 표시 없음 = 지금 동작이다(옵션 번호가 있는 추적만 그룹상품).
+const WORKER_TRACKER_GROUP_SELECT = `${WORKER_TRACKER_OPTION_SELECT}, group_product_marked`;
 
 const WORKER_LOOKUP_SELECT = [
   "id",
@@ -738,8 +745,16 @@ async function loadClaimTrackers(ctx, job) {
     .select(columns)
     .in("id", ids);
   const skipOptions = optionColumnRecentlyMissing();
-  let { data, error } = await query(skipOptions ? WORKER_TRACKER_SELECT : WORKER_TRACKER_OPTION_SELECT);
-  if (error && !skipOptions && isOptionColumnMissingError(error)) {
+  let columns = WORKER_TRACKER_SELECT;
+  if (!skipOptions) columns = groupMarkColumnRecentlyMissing() ? WORKER_TRACKER_OPTION_SELECT : WORKER_TRACKER_GROUP_SELECT;
+  let { data, error } = await query(columns);
+  // 표시 칸 검사를 옵션 칸 검사보다 먼저 한다(두 칸이 모두 없으면 옵션 칸 오류로 다시 한 번 내려간다).
+  if (error && columns === WORKER_TRACKER_GROUP_SELECT && isGroupMarkColumnMissingError(error)) {
+    rememberGroupMarkColumnMissing("local-worker-submit");
+    columns = WORKER_TRACKER_OPTION_SELECT;
+    ({ data, error } = await query(columns));
+  }
+  if (error && columns !== WORKER_TRACKER_SELECT && isOptionColumnMissingError(error)) {
     rememberOptionColumnMissing("local-worker-submit");
     ({ data, error } = await query(WORKER_TRACKER_SELECT));
   }
@@ -880,7 +895,19 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }
       const message = groupTrackingRankMessage(result, representativeTrackingRankMessage(result));
-      const snapshot = buildProductRankSnapshotRecord(tracker, checkedAt, result, message);
+      const recordSnapshot = buildProductRankSnapshotRecord(tracker, checkedAt, result, message);
+      // N30 그룹상품 후보(2026-10-27 A안): 그룹상품 추적의 대표·옵션 번호가 이번 300개에 없을 때만 같은 창에서 같은
+      // 스토어의 비슷한 오가닉 카드를 후보로 남긴다(순위·문장·커밋 인자는 그대로, 네이버 요청 0, 던지지 않음).
+      // 그룹상품이 아니거나 번호가 보인 추적은 훑지도 않고, 후보가 0개면 스냅샷은 예전과 같은 바이트다.
+      const groupCandidates = findGroupProductCandidates({
+        window,
+        tracker,
+        result,
+        historyRows: catalogHistory.get(String(tracker.id).toLowerCase()) || [],
+      });
+      const snapshot = groupCandidates.length
+        ? { ...recordSnapshot, item: { ...recordSnapshot.item, groupCandidates } }
+        : recordSnapshot;
       // 옵션으로 잡힌 행은 추적의 대표 번호·스토어·제목 칸을 옵션 카드 값으로 채우지 않는다
       // (RPC 는 빈 칸만 채운다 — 잘못 넣은 번호의 스토어가 기준으로 굳는 것을 막는다).
       const groupOptionHit = result?.matchBasis === "group_option";

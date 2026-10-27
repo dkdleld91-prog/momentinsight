@@ -5235,6 +5235,10 @@ test("tracker payload keeps its existing fields in order and appends the not-fou
     "currentOptionMallCheck",
     "currentOptionTitleCheck",
     "groupOptionSuggestionCount",
+    // N30 그룹상품 후보(2026-10-27 A안) — 기존 칸 뒤에만 붙인다(후보 목록 groupCandidates 는 관리자 목록 응답에만).
+    "groupMarkReady",
+    "groupProductMarked",
+    "groupProduct",
   ]);
 });
 

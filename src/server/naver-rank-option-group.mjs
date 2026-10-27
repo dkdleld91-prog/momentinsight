@@ -997,3 +997,397 @@ export function groupOptionSnapshotFields(result = {}) {
     optionGroup,
   };
 }
+
+// ───────────────────────── 그룹상품 표시·후보 (대표 승인 2026-10-27 A안) ─────────────────────────
+//
+// 대표가 관리자 카드에서 '그룹상품으로 표시'한 추적(칸 group_product_marked)과 옵션 번호가 1개 이상 있는 추적만
+// '그룹상품'이다. 그룹상품 추적의 대표 상품번호·넣은 옵션 번호가 이번 300개 결과에 없을 때만, 같은 창(네이버 추가
+// 요청 0)에서 같은 스토어의 비슷한 오가닉 카드를 '후보'로 스냅샷 item.groupCandidates 에 남긴다(최대 5개).
+// 후보는 순위에 절대 쓰지 않는다 — 대표가 확인 창에서 골라 기존 '그룹상품 번호' 저장 경로로 넣어야 다음 확인부터 쓴다.
+// 그룹상품이 아닌 추적·번호가 보인 추적은 후보 계산 자체를 하지 않는다(스냅샷·커밋 인자 바이트 동일).
+// 후보 조건(오류 막기): 같은 스토어 · 오가닉(광고·원부 제외) · 종류 단어 묶음 같음 · 가격대 비슷 · (목록에서) 최근 7일
+// 두 번 이상 보임. 기종은 조건이 아니다(같은 그룹 안 옵션이 서로 다른 기종일 수 있다) — 확인 창 경고로만 보인다.
+
+let groupMarkColumnMissingUntilMs = 0;
+
+// 옵션 칸 검사(isOptionColumnMissingError)와 같은 방식: 오류 코드를 먼저 보고 message 만 읽는다.
+export function isGroupMarkColumnMissingError(error) {
+  if (!error || typeof error !== "object") return false;
+  const message = String(error.message || "");
+  if (!/group_product_marked/iu.test(message)) return false;
+  const code = String(error.code ?? "").trim().toUpperCase();
+  if (code) return OPTION_COLUMN_MISSING_CODES.has(code);
+  return /does not exist|schema cache|could not find/iu.test(message);
+}
+
+export function groupMarkColumnRecentlyMissing(nowMs = Date.now()) {
+  return nowMs < groupMarkColumnMissingUntilMs;
+}
+
+export function rememberGroupMarkColumnMissing(source = "", nowMs = Date.now()) {
+  const alreadyKnown = nowMs < groupMarkColumnMissingUntilMs;
+  groupMarkColumnMissingUntilMs = nowMs + OPTION_COLUMN_MISSING_MEMO_MS;
+  if (!alreadyKnown) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "naver_rank_group_mark_column_missing",
+      source: String(source || "").slice(0, 40),
+    }));
+  }
+}
+
+export function forgetGroupMarkColumnMissing() {
+  groupMarkColumnMissingUntilMs = 0;
+}
+
+// 추적 한 행의 그룹상품 상태. 던지지 않는다. markReady:false = 표시 칸을 읽지 못함(대표 SQL 전) — 표시 버튼을 숨긴다.
+export function trackerGroupProductState(tracker = {}) {
+  let eligibility;
+  try {
+    eligibility = trackerOptionEligibility(tracker);
+  } catch {
+    eligibility = { eligible: false, primaryProductIds: [] };
+  }
+  const optionIds = eligibility.eligible
+    ? normalizeStoredOptionProductIds(tracker?.option_product_ids, eligibility.primaryProductIds)
+    : [];
+  const markReady = typeof tracker?.group_product_marked === "boolean";
+  const marked = tracker?.group_product_marked === true;
+  return {
+    eligible: eligibility.eligible === true,
+    primaryProductId: eligibility.eligible ? eligibility.primaryProductId : "",
+    primaryProductIds: Array.isArray(eligibility.primaryProductIds) ? eligibility.primaryProductIds : [],
+    optionProductIds: optionIds,
+    markReady,
+    marked,
+    groupProduct: eligibility.eligible === true && (marked || optionIds.length > 0),
+  };
+}
+
+// 종류 단어 묶음(명세 그대로). 추적 상품 제목과 후보 카드 제목에 있는 묶음이 모두 같아야 후보다.
+export const GROUP_CANDIDATE_KIND_GROUPS = Object.freeze([
+  Object.freeze({ key: "privacy", words: Object.freeze(["사생활보호", "프라이버시"]) }),
+  Object.freeze({ key: "clear", words: Object.freeze(["일반", "투명"]) }),
+  Object.freeze({ key: "camera", words: Object.freeze(["카메라"]) }),
+  Object.freeze({ key: "screen", words: Object.freeze(["액정"]) }),
+  Object.freeze({ key: "tempered", words: Object.freeze(["강화유리"]) }),
+  Object.freeze({ key: "hydrogel", words: Object.freeze(["하이드로겔"]) }),
+  Object.freeze({ key: "case", words: Object.freeze(["케이스"]) }),
+]);
+// 가격대: 추적 상품의 지난 기록 가격의 절반 미만이거나 두 배를 넘으면 뺀다(기록 가격이 없으면 이 조건은 보지 않는다).
+export const GROUP_CANDIDATE_PRICE_MIN_RATIO = 0.5;
+export const GROUP_CANDIDATE_PRICE_MAX_RATIO = 2;
+export const GROUP_CANDIDATES_PER_SNAPSHOT_MAX = 5;
+const GROUP_CANDIDATE_MALL_MAX = 40;
+const GROUP_CANDIDATE_LINK_MAX = 300;
+
+function compactTitleText(value) {
+  return normalizeText(value).toLowerCase().replace(/\s+/gu, "");
+}
+
+export function groupCandidateKindKey(title) {
+  const text = compactTitleText(title);
+  return GROUP_CANDIDATE_KIND_GROUPS
+    .filter((group) => group.words.some((word) => text.includes(word)))
+    .map((group) => group.key)
+    .join("+");
+}
+
+function positivePrice(value) {
+  const price = Number(value);
+  return Number.isSafeInteger(price) && price > 0 ? price : null;
+}
+
+// 추적 상품의 지난 기록 가격: 대표 번호가 정확 상품으로 잡힌 가장 최근 30일 기록(옵션·원부·광고 행 제외)의 lprice.
+export function primaryPriceFromHistory(historyRows = [], primaryProductIds = []) {
+  const primaryIds = new Set((primaryProductIds || []).map(String));
+  let latest = null;
+  let latestTime = -Infinity;
+  for (const row of Array.isArray(historyRows) ? historyRows : []) {
+    const item = row?.item;
+    if (row?.matched !== true || !item || typeof item !== "object") continue;
+    if (item.trackingRankSource !== "exact_product" || item.matchBasis === "group_option") continue;
+    if (item.isAd === true || item.isOrganic === false || isCatalogCardItem(item)) continue;
+    if (item.isExactTarget !== true && !primaryIds.has(normalizeText(item.sellerProductId))) continue;
+    const price = positivePrice(item.lprice);
+    if (!price) continue;
+    const time = Date.parse(String(row.checked_at || ""));
+    const order = Number.isFinite(time) ? time : -Infinity;
+    if (latest === null || order > latestTime) {
+      latest = price;
+      latestTime = order;
+    }
+  }
+  return latest;
+}
+
+function cardSellerProductId(item) {
+  const direct = normalizeText(item?.sellerProductId);
+  if (isOptionProductId(direct)) return direct;
+  const match = String(item?.link || "").match(/\/products\/([0-9]{5,20})(?=[/?#]|$)/u);
+  return match ? match[1] : "";
+}
+
+function safeCandidateLink(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.length > GROUP_CANDIDATE_LINK_MAX) return "";
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== "https:" || !(host === "naver.com" || host.endsWith(".naver.com"))) return "";
+    return url.href;
+  } catch {
+    return "";
+  }
+}
+
+// 카드 한 장의 후보 판정(순수 함수, 시험 표용). 돌려주는 reason: "" = 후보, 그 밖 = 뺀 까닭.
+export function groupCandidateCardCheck({
+  item,
+  checkedCount = 300,
+  excludeProductIds = new Set(),
+  referenceMallKeys = new Set(),
+  trackerProductUrl = "",
+  trackerKindKey = "",
+  referencePrice = null,
+} = {}) {
+  if (!item || typeof item !== "object") return { reason: "not_card" };
+  if (item.isAd === true || item.isOrganic === false || isAdItem(item)) return { reason: "ad" };
+  if (isCatalogCardItem(item)) return { reason: "catalog" };
+  const productId = cardSellerProductId(item);
+  if (!productId) return { reason: "no_product_id" };
+  const excluded = excludeProductIds instanceof Set ? excludeProductIds : new Set(excludeProductIds || []);
+  if (excluded.has(productId)) return { reason: "tracked" };
+  const rank = positiveRank(item.organicRank);
+  if (!rank || rank > Number(checkedCount || 0)) return { reason: "no_rank" };
+  // 같은 스토어: 기준 이름(30일 대표 정확 기록 → 추적 mall_name)과 카드 스토어 이름이 같아야 하고, 추적 상품 주소와
+  // 카드 링크에 같은 종류의 스토어 주소가 둘 다 있으면 그것도 같아야 한다. 기준 이름이 없으면 후보를 만들지 않는다.
+  const references = referenceMallKeys instanceof Set ? referenceMallKeys : new Set(referenceMallKeys || []);
+  const cardKey = mallKey(item.mallName);
+  if (!cardKey || !references.size || !references.has(cardKey)) return { reason: "other_store" };
+  const trackerStore = storeAddress(trackerProductUrl);
+  if (trackerStore) {
+    const cardStore = [item.link, item.sourceLink]
+      .map(storeAddress)
+      .find((store) => store && store.kind === trackerStore.kind);
+    if (cardStore && cardStore.slug !== trackerStore.slug) return { reason: "other_store" };
+  }
+  if (groupCandidateKindKey(item.title) !== String(trackerKindKey || "")) return { reason: "kind" };
+  const price = positivePrice(item.lprice);
+  const reference = positivePrice(referencePrice);
+  if (reference && price
+    && (price < reference * GROUP_CANDIDATE_PRICE_MIN_RATIO || price > reference * GROUP_CANDIDATE_PRICE_MAX_RATIO)) {
+    return { reason: "price" };
+  }
+  const link = safeCandidateLink(item.link);
+  return {
+    reason: "",
+    candidate: {
+      productId,
+      rank,
+      title: truncateTitle(item.title),
+      mallName: normalizeText(item.mallName).slice(0, GROUP_CANDIDATE_MALL_MAX),
+      ...(price ? { lprice: price } : {}),
+      ...(link ? { link } : {}),
+    },
+  };
+}
+
+// 로컬 워커 submit 경로: 최종 결과(result)를 받은 뒤 부른다. 절대 던지지 않는다(오류면 빈 목록 = 후보 없음).
+// 그룹상품이 아니거나 결과가 잡혔으면(대표·옵션·원부 어느 쪽이든) 바로 빈 목록이다 — 창을 훑지도 않는다.
+export function findGroupProductCandidates({ window, tracker, result, historyRows = [] } = {}) {
+  try {
+    if (result?.matched === true) return [];
+    const state = trackerGroupProductState(tracker);
+    if (!state.groupProduct) return [];
+    const trackerKindKey = groupCandidateKindKey(tracker?.product_title);
+    if (!compactTitleText(tracker?.product_title)) return [];
+    const referenceMallKeys = storeReferenceMallKeys(historyRows, state.primaryProductIds, tracker?.mall_name, {
+      representativeResult: result,
+    });
+    if (!referenceMallKeys.size) return [];
+    const excludeProductIds = new Set([...state.primaryProductIds, state.primaryProductId, ...state.optionProductIds].filter(Boolean));
+    const referencePrice = primaryPriceFromHistory(historyRows, state.primaryProductIds);
+    const checkedCount = Number(window?.checkedCount || 0);
+    const seen = new Set();
+    const candidates = [];
+    for (const item of Array.isArray(window?.items) ? window.items : []) {
+      const check = groupCandidateCardCheck({
+        item,
+        checkedCount,
+        excludeProductIds,
+        referenceMallKeys,
+        trackerProductUrl: tracker?.product_url,
+        trackerKindKey,
+        referencePrice,
+      });
+      if (check.reason || seen.has(check.candidate.productId)) continue;
+      seen.add(check.candidate.productId);
+      candidates.push(check.candidate);
+    }
+    return candidates
+      .sort((left, right) => left.rank - right.rank)
+      .slice(0, GROUP_CANDIDATES_PER_SNAPSHOT_MAX);
+  } catch (error) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "naver_rank_group_candidates_failed",
+      errorType: error instanceof Error ? String(error.name || "Error").slice(0, 40) : "",
+    }));
+    return [];
+  }
+}
+
+// ───────── 목록 응답: 최근 7일 후보를 같은 대표 상품번호 그룹상품 추적끼리 모은다(관리자 세션만, 추가 조회 0) ─────────
+
+export const GROUP_CANDIDATE_WINDOW_DAYS = 7;
+export const GROUP_CANDIDATE_MIN_SIGHTINGS = 2;
+export const GROUP_CANDIDATES_PER_TRACKER_MAX = 10;
+const GROUP_CANDIDATE_SIGHTINGS_SHOWN = 4;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function kstDayKey(timeMs) {
+  return new Date(timeMs + KST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+// 기종 이름(경고 전용). 아이폰 숫자 + 프로·프로 맥스·플러스·미니·에어, 갤럭시 S·Z 폴드·Z 플립·A·노트 숫자.
+const MODEL_SUFFIXES = [
+  [/^(?:프로\s*맥스|pro\s*max|promax)/u, " 프로 맥스"],
+  [/^(?:프로|pro)/u, " 프로"],
+  [/^(?:플러스|plus|\+)/u, " 플러스"],
+  [/^(?:미니|mini)/u, " 미니"],
+  [/^(?:에어|air)/u, " 에어"],
+  [/^(?:울트라|ultra)/u, " 울트라"],
+  [/^fe(?![a-z])/u, " FE"],
+];
+
+function modelSuffix(rest) {
+  const tail = String(rest || "").replace(/^\s+/u, "");
+  for (const [pattern, label] of MODEL_SUFFIXES) {
+    if (pattern.test(tail)) return label;
+  }
+  return "";
+}
+
+export function deviceModelLabels(title) {
+  const text = normalizeText(title).toLowerCase()
+    .replace(/iphone/gu, "아이폰")
+    .replace(/galaxy/gu, "갤럭시");
+  const labels = new Set();
+  for (const match of text.matchAll(/아이폰\s*(\d{1,2})(e(?![a-z]))?/gu)) {
+    const rest = text.slice(match.index + match[0].length);
+    labels.add(`아이폰 ${match[1]}${match[2] ? "e" : modelSuffix(rest)}`);
+  }
+  const galaxy = /갤럭시\s*(z\s*폴드|z\s*플립|z\s*fold|z\s*flip|폴드|플립|fold|flip|노트|note|s|a)\s*(\d{1,3})/gu;
+  for (const match of text.matchAll(galaxy)) {
+    const series = match[1].replace(/\s+/gu, "");
+    const name = /폴드|fold/u.test(series) ? "Z 폴드" : (/플립|flip/u.test(series) ? "Z 플립" : (/노트|note/u.test(series) ? "노트" : series.toUpperCase()));
+    const rest = text.slice(match.index + match[0].length);
+    labels.add(`갤럭시 ${name}${match[2]}${modelSuffix(rest)}`);
+  }
+  return [...labels].sort();
+}
+
+function groupCandidateWarnings(trackerTitle, candidateTitle) {
+  const warnings = [];
+  const trackerModels = deviceModelLabels(trackerTitle);
+  const candidateModels = deviceModelLabels(candidateTitle);
+  if (trackerModels.length && candidateModels.length && trackerModels.join("|") !== candidateModels.join("|")) {
+    warnings.push({
+      code: "model_differs",
+      text: `기종 다름: ${candidateModels.join(", ")}`,
+      detail: `추적 상품은 ${trackerModels.join(", ")}입니다. 같은 그룹상품 옵션인지 상품 페이지에서 확인하세요.`,
+    });
+  }
+  if (optionTitleCheck(trackerTitle, candidateTitle) === "low_overlap") {
+    warnings.push({
+      code: "title_low_overlap",
+      text: "제목 많이 다름",
+      detail: "후보 제목이 추적 상품 제목과 많이 다릅니다. 같은 그룹상품 옵션인지 확인하세요.",
+    });
+  }
+  return warnings;
+}
+
+function snapshotCandidateEntries(item) {
+  const list = Array.isArray(item?.groupCandidates) ? item.groupCandidates : [];
+  return list
+    .filter((entry) => entry && typeof entry === "object" && isOptionProductId(entry.productId))
+    .slice(0, GROUP_CANDIDATES_PER_SNAPSHOT_MAX);
+}
+
+// rows: 목록 행(attachTrackerGroups 뒤, option_product_ids·group_product_marked 포함), snapshotsByTrackerId: 이미 읽은
+// 30일 기록(Map). 돌려주는 값: 추적 id → 후보 목록(그룹상품 추적만, 두 번 이상 보인 것만, 대표·넣은 번호 제외).
+export function groupCandidateSummaries(rows = [], snapshotsByTrackerId = new Map(), { nowMs = Date.now() } = {}) {
+  const result = new Map();
+  const cutoff = nowMs - GROUP_CANDIDATE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const groups = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const state = trackerGroupProductState(row);
+    if (!state.groupProduct || !row?.id) continue;
+    if (!groups.has(state.primaryProductId)) groups.set(state.primaryProductId, []);
+    groups.get(state.primaryProductId).push({ row, state });
+  }
+  for (const members of groups.values()) {
+    const byCandidate = new Map();
+    for (const { row } of members) {
+      const snapshots = snapshotsByTrackerId instanceof Map ? (snapshotsByTrackerId.get(row.id) || []) : [];
+      for (const snapshot of snapshots) {
+        const checkedAt = String(snapshot?.checked_at || snapshot?.checkedAt || "");
+        const time = Date.parse(checkedAt);
+        if (!Number.isFinite(time) || time < cutoff || time > nowMs + 60_000) continue;
+        for (const entry of snapshotCandidateEntries(snapshot?.item)) {
+          const productId = String(entry.productId);
+          if (!byCandidate.has(productId)) byCandidate.set(productId, { productId, latest: null, latestTime: -Infinity, sightings: new Map() });
+          const bucket = byCandidate.get(productId);
+          const rank = positiveRank(entry.rank);
+          if (time > bucket.latestTime) {
+            bucket.latestTime = time;
+            bucket.latest = entry;
+          }
+          const key = `${row.id}|${kstDayKey(time)}`;
+          const previous = bucket.sightings.get(key);
+          if (!previous || time > previous.time) {
+            bucket.sightings.set(key, { trackerId: row.id, keyword: normalizeText(row.keyword), checkedAt, time, rank });
+          }
+        }
+      }
+    }
+    for (const { row, state } of members) {
+      const exclude = new Set([...state.primaryProductIds, state.primaryProductId, ...state.optionProductIds]);
+      const list = [];
+      for (const bucket of byCandidate.values()) {
+        if (exclude.has(bucket.productId) || bucket.sightings.size < GROUP_CANDIDATE_MIN_SIGHTINGS) continue;
+        const sightings = [...bucket.sightings.values()].sort((left, right) => right.time - left.time);
+        const ranks = sightings.map((sighting) => sighting.rank).filter(Boolean);
+        const latest = bucket.latest || {};
+        const title = truncateTitle(latest.title);
+        const link = safeCandidateLink(latest.link);
+        const price = positivePrice(latest.lprice);
+        list.push({
+          productId: bucket.productId,
+          title,
+          mallName: normalizeText(latest.mallName).slice(0, GROUP_CANDIDATE_MALL_MAX),
+          lprice: price,
+          link: link || `https://smartstore.naver.com/main/products/${bucket.productId}`,
+          seenCount: bucket.sightings.size,
+          keywordCount: new Set(sightings.map((sighting) => sighting.trackerId)).size,
+          latestRank: sightings[0]?.rank || null,
+          bestRank: ranks.length ? Math.min(...ranks) : null,
+          lastSeenAt: sightings[0]?.checkedAt || null,
+          sightings: sightings.slice(0, GROUP_CANDIDATE_SIGHTINGS_SHOWN).map((sighting) => ({
+            keyword: sighting.keyword,
+            checkedAt: sighting.checkedAt,
+            rank: sighting.rank,
+          })),
+          warnings: groupCandidateWarnings(row.product_title, title),
+        });
+      }
+      list.sort((left, right) => (right.seenCount - left.seenCount)
+        || ((left.bestRank || 999) - (right.bestRank || 999))
+        || left.productId.localeCompare(right.productId));
+      result.set(row.id, list.slice(0, GROUP_CANDIDATES_PER_TRACKER_MAX));
+    }
+  }
+  return result;
+}

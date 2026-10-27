@@ -57,7 +57,7 @@ test("settingsPayload: §5.6 settings 필드 순서·camelCase", () => {
     "windowMode", "minCollectorVersion", "maxStorageMb", "dbSizeStopMb", "cooldownUntil", "cooldownReason",
     "needsOwnerReview", "reviewReason", "budgetBlocked", "budgetReason", "rateChangedAt", "updatedAt",
     "manualEnabled", "manualMinGapSeconds", "manualMaxPerDay", "manualFromHour", "manualToHour",
-    "manualStoppedDay", "manualStoppedAt", "manualStoppedCode",
+    "manualStoppedDay", "manualStoppedAt", "manualStoppedCode", "manualPausedUntil", "manualBlockDay", "manualBlockCount",
   ]);
   assert.equal(payload.maxRunsPerHour, 12);
   assert.equal(payload.windowMode, "offscreen");

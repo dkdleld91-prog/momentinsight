@@ -83,6 +83,10 @@ export function settingsPayload(row) {
     manualStoppedDay: source.manual_stopped_day ?? null,
     manualStoppedAt: source.manual_stopped_at ?? null,
     manualStoppedCode: source.manual_stopped_code ?? null,
+    // 차단 뒤 30분 쉼(c30-4). 칸이 없으면(대표 SQL 전) null·0.
+    manualPausedUntil: source.manual_paused_until ?? null,
+    manualBlockDay: source.manual_block_day ?? null,
+    manualBlockCount: intOf(source.manual_block_count, 0),
   };
 }
 

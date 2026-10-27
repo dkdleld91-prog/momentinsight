@@ -28,8 +28,10 @@ import {
   manualChangedParams,
   manualDiagnostics,
   manualNavigatedFinalPath,
+  manualPauseFields,
   manualPayload,
   manualRecordStopCode,
+  kstClockOf,
   manualRefusal,
   manualStateCode,
   manualTokenHash,
@@ -135,7 +137,8 @@ test("manualPayload: 요약 + 상수(확장 ID·버전·zip·폴더·요청 기�
   const payload = manualPayload(SUMMARY);
   assert.deepEqual(Object.keys(payload), [
     "state", "enabled", "usedToday", "maxPerDay", "minGapSeconds", "fromHour", "toHour", "nextAt", "busyUntil",
-    "lastSearchAt", "stoppedDay", "stoppedAt", "stoppedCode", "cooldownUntil", "serverTime", "claimTtlSeconds",
+    "lastSearchAt", "stoppedDay", "stoppedAt", "stoppedCode", "pausedUntil", "blocksToday", "blockAt", "blockCode", "pauseMinutes",
+    "blocksToStop", "cooldownUntil", "serverTime", "claimTtlSeconds",
     "extensionId", "extensionVersion", "minExtensionVersion", "extensionZipPath", "extensionFolder",
   ]);
   assert.deepEqual(
@@ -313,4 +316,39 @@ test("manualDiagnostics(1.0.1 검토 반영): 진단 글자의 C1 제어 문자�
   };
   assert.notEqual(manualDiagnostics({ diagnostics: nodes(MANUAL_DIAGNOSTICS_NODES_MAX) }), null);
   assert.equal(manualDiagnostics({ diagnostics: nodes(MANUAL_DIAGNOSTICS_NODES_MAX + 1) }), null);
+});
+
+// ── 차단 뒤 30분 쉼(c30-4, 2026-10-27) ──
+test("c30-4 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·retryAfterSec(서버 시계끼리)·'HH:MM에 다시', 두 번째 차단 stopped 는 '두 번째' 문구, SQL 전 요약은 예전 문구", () => {
+  const paused = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused", serverTime: "2026-10-27T05:51:00Z", pausedUntil: "2026-10-27T06:21:00Z", blocksToday: 1 } });
+  assert.deepEqual([paused.code, paused.status, paused.extra.pausedUntil, paused.extra.retryAfterSec], ["COUPANG_MANUAL_PAUSED", 409, "2026-10-27T06:21:00Z", 1800]);
+  assert.match(paused.message, /30분 쉬는 중입니다\(15:21에 다시 됩니다\)/u);
+  assert.match(paused.message, /한 번 더 차단되면 그날은 멈춥니다/u);
+  // 쉼 끝 시각이 없으면 고정 문구(시각을 지어내지 않는다)
+  const bare = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused" } });
+  assert.equal(bare.message, MANUAL_MESSAGES.COUPANG_MANUAL_PAUSED);
+  assert.equal(bare.extra.retryAfterSec, undefined);
+  const second = manualRefusal({ ok: false, state: "stopped", manual: { ...SUMMARY, state: "stopped", blocksToday: 2 } });
+  assert.match(second.message, /두 번째라 오늘은 지금 확인을 멈췄습니다\. 내일 09시부터/u);
+  const legacy = manualRefusal({ ok: false, state: "stopped", manual: { ...SUMMARY, state: "stopped" } });
+  assert.equal(legacy.message, MANUAL_MESSAGES.COUPANG_MANUAL_STOPPED, "SQL 전(blocksToday 없음)은 예전 문구");
+  assert.equal(manualStateCode("paused"), "COUPANG_MANUAL_PAUSED");
+  assert.ok(MANUAL_STATES.includes("paused"));
+});
+
+test("c30-4 manualPayload 쉼 칸·manualPauseFields·kstClockOf·확장 '쉬는 중'(blocked_pause) 시작 못 함 = 차단 알림", () => {
+  const payload = manualPayload({ ...SUMMARY, state: "paused", pausedUntil: "2026-10-27T06:21:00Z", blocksToday: 1, blockAt: "2026-10-27T05:51:00Z", blockCode: "blocked_http_403", pauseMinutes: 30, blocksToStop: 2 });
+  assert.deepEqual([payload.pausedUntil, payload.blocksToday, payload.blockCode, payload.pauseMinutes, payload.blocksToStop], ["2026-10-27T06:21:00Z", 1, "blocked_http_403", 30, 2]);
+  const legacy = manualPayload(SUMMARY);
+  assert.deepEqual([legacy.pausedUntil, legacy.blocksToday, legacy.pauseMinutes], [null, null, null], "SQL 전 요약");
+  assert.deepEqual(manualPauseFields(payload), { paused: true, pausedUntil: "2026-10-27T06:21:00Z" });
+  assert.deepEqual(manualPauseFields(legacy), { paused: false, pausedUntil: null });
+  assert.deepEqual(manualPauseFields({ state: "setup_required" }), { paused: false, pausedUntil: null });
+  assert.equal(kstClockOf("2026-10-27T06:21:00Z"), "15:21");
+  assert.equal(kstClockOf("2026-10-27T15:05:00+00:00"), "00:05");
+  assert.equal(kstClockOf("x"), "");
+  for (const code of ["blocked_today", "blocked_pause", "report_pending"]) {
+    assert.equal(manualRecordStopCode("not_started", code, null), "extension_reported", code);
+  }
+  assert.equal(manualRecordStopCode("not_started", "too_soon", null), null);
 });

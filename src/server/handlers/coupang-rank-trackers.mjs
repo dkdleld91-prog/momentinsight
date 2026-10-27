@@ -48,6 +48,7 @@ import {
   isManualToken,
   manualDiagnostics,
   manualNavigatedFinalPath,
+  manualPauseFields,
   manualPayload,
   manualRecordStopCode,
   manualRefusal,
@@ -159,7 +160,7 @@ const MESSAGES = Object.freeze({
   COUPANG_RAISE_NOT_ALLOWED: "지금은 속도를 올릴 수 없습니다.",
   COUPANG_COLLECTOR_LIMIT: "활성 연결 코드는 최대 3개입니다. 쓰지 않는 코드를 먼저 폐기해 주세요.",
   COUPANG_NO_COLLECTOR: "연결된 수집기가 없습니다. 연결 코드를 먼저 만들어 주세요.",
-  COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 오늘 지금 확인이 차단으로 멈춘 날이라 자동 수집을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). '지금 확인 끄기'를 누르고, 그날 중지였다면 다음 날 켜 주세요.",
+  COUPANG_COLLECTOR_MANUAL_CONFLICT: "'지금 확인'이 켜져 있거나 지금 확인이 차단으로 쉬는 중(30분)·멈춘 날이라 자동 수집을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·쉼·그날 중지를 보지 않습니다). '지금 확인 끄기'를 누르고, 쉬는 중이면 30분 뒤, 그날 중지였다면 다음 날 켜 주세요.",
   COUPANG_MANUAL_COLLECTOR_CONFLICT: "자동 수집이 켜져 있어 '지금 확인'을 켜지 않았습니다(자동 수집은 아직 지금 확인의 간격·그날 중지를 보지 않습니다). 먼저 수집기 관리에서 '수집 끄기'를 눌러 주세요.",
   BODY_TOO_LARGE: "요청 본문이 너무 큽니다.",
   METHOD_NOT_ALLOWED: "허용되지 않은 요청 방식입니다.",
@@ -506,7 +507,8 @@ async function manualVerifyView(request, ctx, settings, access, url, trace) {
 }
 
 // GET ?view=manual-stop&reason=…: 확장이 차단 신호(403·429·503·차단 문구·검색 밖으로 보냄)를 본 순간 결과 보고와
-// 따로 알린다(관리자 탭이 닫혀도 그날 중지가 걸리게). 그날 중지만 걸고 순위는 저장하지 않는다(더 엄격하게만 바뀐다).
+// 따로 알린다(관리자 탭이 닫혀도 쉼·그날 중지가 걸리게). 그 날 첫 차단은 30분 쉼, 두 번째는 그날 중지(SQL 이 센다, c30-4 전에는
+// 한 번에 그날 중지). 순위는 저장하지 않는다(더 엄격하게만 바뀐다). 응답 paused·pausedUntil 은 SQL 요약의 쉼 끝 시각.
 async function manualStopView(request, ctx, settings, access, url, trace) {
   if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   const credentials = manualClaimCredentials(request, url);
@@ -523,12 +525,15 @@ async function manualStopView(request, ctx, settings, access, url, trace) {
   }, "manual_stop");
   if (!data) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   if (data.ok !== true) return manualFailure(request, data);
+  const manual = manualPayload(data.manual);
   return respond(request, {
     ok: true,
     stopped: data.stopped === true,
+    ...manualPauseFields(manual),
+    blocksToday: finiteNumberOrNull(data.blocksToday),
     stoppedDay: data.stoppedDay ?? null,
     stopCode: data.stopCode ?? reason,
-    manual: manualPayload(data.manual),
+    manual,
   });
 }
 
@@ -1132,26 +1137,47 @@ async function settingsUpdateAction(request, ctx, settings, body, now, trace) {
   return respond(request, { ok: true, settings: settingsPayload(saved), replanned });
 }
 
-// ① 지금 확인 ↔ 자동 수집: 자동 claim(C 원문 coupang_rank_claim)은 아직 수동 간격(manual_last_search_at)·수동 그날 중지
-// (manual_stopped_day)를 보지 않는다(자동 재개 묶음에서 SQL 로 양방향 관문을 넣을 때까지). 그 전까지 같은 회선에서 둘이 함께
-// 돌지 않게 자동 수집 켜기를 거절한다: 지금 확인이 켜져 있거나, 오늘(KST) 지금 확인이 차단으로 멈춘 날. 끄기는 언제나 된다.
+// ① 지금 확인 ↔ 자동 수집: 자동 claim(C 원문 coupang_rank_claim)은 아직 수동 간격(manual_last_search_at)·수동 쉼·그날 중지
+// (manual_paused_until·manual_stopped_day)를 보지 않는다(자동 재개 묶음에서 SQL 로 양방향 관문을 넣을 때까지). 그 전까지 같은 회선에서
+// 둘이 함께 돌지 않게 자동 수집 켜기를 거절한다: 지금 확인이 켜져 있거나, 오늘(KST) 지금 확인이 차단으로 멈춘 날이거나,
+// 차단 뒤 30분 쉬는 중(c30-4 칸이 있을 때만). 끄기는 언제나 된다.
+const MANUAL_PAUSE_COLUMN = "manual_paused_until";
+
+function manualPausedAt(settings, now) {
+  if (!plainObject(settings) || !Object.hasOwn(settings, MANUAL_PAUSE_COLUMN)) return false;
+  const until = Date.parse(String(settings[MANUAL_PAUSE_COLUMN] || ""));
+  return Number.isFinite(until) && until > now.getTime();
+}
+
 function manualAutoConflict(settings, now) {
   if (!hasManualColumns(settings)) return null;
   if (settings.manual_enabled === true) return "manual_enabled";
   const stoppedDay = typeof settings.manual_stopped_day === "string" ? settings.manual_stopped_day.slice(0, 10) : "";
   if (stoppedDay && stoppedDay === kstDayOf(now)) return "manual_stopped_today";
+  if (manualPausedAt(settings, now)) return "manual_paused";
   return null;
 }
 
-// 수집 켜기의 조건부 쓰기: '지금 확인 꺼짐' 이고 (그날 중지 기록 없음 또는 그날 중지가 오늘 아님)일 때만.
-// '또는' 을 두 번의 조건부 갱신으로 나눈다(각 갱신이 쓰는 순간 조건 전체를 다시 보므로 어느 쪽이 통과해도 안전하다).
-async function enableCollectorIfNoManual(ctx, now, stage) {
+// 수집 켜기의 조건부 쓰기: '지금 확인 꺼짐' 이고 (그날 중지 기록 없음 또는 그날 중지가 오늘 아님)
+// 이고 (c30-4 칸이 있으면) (쉼 기록 없음 또는 쉼이 끝남)일 때만. '또는' 을 조건부 갱신 여러 번으로 나눈다
+// (각 갱신이 쓰는 순간 조건 전체를 다시 보므로 어느 쪽이 통과해도 안전하다).
+async function enableCollectorIfNoManual(ctx, now, stage, withPause) {
   const today = kstDayOf(now);
-  const noStop = await updateSettingsRowWhere(ctx, { enabled: true }, stage,
-    (query) => query.eq("manual_enabled", false).is("manual_stopped_day", null));
-  if (noStop) return noStop;
-  return updateSettingsRowWhere(ctx, { enabled: true }, stage,
-    (query) => query.eq("manual_enabled", false).neq("manual_stopped_day", today));
+  const stopGuards = [
+    (query) => query.is("manual_stopped_day", null),
+    (query) => query.neq("manual_stopped_day", today),
+  ];
+  const pauseGuards = withPause
+    ? [(query) => query.is(MANUAL_PAUSE_COLUMN, null), (query) => query.lte(MANUAL_PAUSE_COLUMN, now.toISOString())]
+    : [(query) => query];
+  for (const stopGuard of stopGuards) {
+    for (const pauseGuard of pauseGuards) {
+      const saved = await updateSettingsRowWhere(ctx, { enabled: true }, stage,
+        (query) => pauseGuard(stopGuard(query.eq("manual_enabled", false))));
+      if (saved) return saved;
+    }
+  }
+  return null;
 }
 
 async function collectorEnableAction(request, ctx, settings, enable, now, trace) {
@@ -1164,7 +1190,7 @@ async function collectorEnableAction(request, ctx, settings, enable, now, trace)
   trace.stage = enable ? "enable" : "disable";
   // 수동 칸이 있으면(대표 SQL 뒤) 위에서 읽은 뒤 '지금 확인 켜기'·그날 중지가 먼저 저장됐을 수 있어 조건부로 쓴다(갱신 0행 = 409).
   if (enable && hasManualColumns(settings)) {
-    const saved = await enableCollectorIfNoManual(ctx, now, trace.stage);
+    const saved = await enableCollectorIfNoManual(ctx, now, trace.stage, Object.hasOwn(settings, MANUAL_PAUSE_COLUMN));
     if (saved) return respond(request, { ok: true, settings: settingsPayload(saved) });
     const reloaded = await reloadSettingsAfterRace(ctx, trace.stage);
     return failure(request, "COUPANG_COLLECTOR_MANUAL_CONFLICT", { reason: manualAutoConflict(reloaded, now) || "settings_changed" });
@@ -1401,7 +1427,7 @@ function manualRecordInvalid(request, field, extra = {}) {
 
 // POST manual-record: 화면이 확장의 답을 그대로 보낸다. 판정은 서버가 한다(page-result 규칙 + M1 + M2).
 // 저장은 SQL 이 하고, 확장 확인을 받지 않은 요청의 측정 결과는 받지 않는다(꾸민 결과 막기).
-// 차단 신호는 모양이 틀린 본문이어도, 요청이 끝났거나 늦었어도 그날 중지를 건다(더 엄격하게만 바뀐다).
+// 차단 신호는 모양이 틀린 본문이어도, 요청이 끝났거나 늦었어도 차단으로 알린다(30분 쉼·그날 중지 — 더 엄격하게만 바뀐다).
 async function manualRecordAction(request, ctx, settings, access, body, trace) {
   if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   if (!isUuid(body.claimId)) return manualRecordInvalid(request, "claimId");
@@ -1429,9 +1455,10 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
         p_run_id: null,
       }, "manual_stop");
       if (!stopped) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
+      const stoppedManual = stopped.ok === true ? manualPayload(stopped.manual) : null;
       return manualRecordInvalid(request, checked.field, {
         stopped: stopped.ok === true && stopped.stopped === true,
-        ...(stopped.ok === true ? { stopCode, manual: manualPayload(stopped.manual) } : {}),
+        ...(stoppedManual ? { ...manualPauseFields(stoppedManual), stopCode, manual: stoppedManual } : {}),
       });
     }
   }
@@ -1479,6 +1506,7 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
   // 확장 1.0.1 진단: 모양·크기를 통과한 것만, 저장한(또는 이미 저장된) 측정 회차에만 따로 남긴다(실패해도 응답 그대로).
   const diagnostics = measured ? manualDiagnostics(body) : null;
   if (diagnostics && (data.accepted === true || data.duplicate === true)) await saveManualDiagnosticsWithin(ctx, claimId, diagnostics);
+  const manual = manualPayload(data.manual);
   return respond(request, {
     ok: true,
     accepted: data.accepted === true,
@@ -1489,10 +1517,12 @@ async function manualRecordAction(request, ctx, settings, access, body, trace) {
     matched: finiteNumberOrNull(data.matched) ?? 0,
     counted: data.counted === true,
     stopped: data.stopped === true,
+    // 차단 뒤 30분 쉼(c30-4): SQL 요약에 쉼 끝 시각이 있으면 쉬는 중. SQL 전에는 늘 false(차단이면 stopped).
+    ...manualPauseFields(manual),
     stopCode: data.stopCode ?? null,
     late: data.late === true,
     tracker: plainObject(data.tracker) ? data.tracker : null,
-    manual: manualPayload(data.manual),
+    manual,
   });
 }
 

@@ -1956,7 +1956,7 @@ test("manual-record: 요청 없음 404·표 없음 409, RPC 거절 코드 → HT
   assert.deepEqual([(await post(missingFn, ownerHeaders(), manualRecordBody())).status], [409]);
   const ok = await post(manualState(), ownerHeaders(), manualRecordBody({}, { httpStatus: 403, status: "blocked", organic: [], ads: [], itemCount: 0 }));
   assert.deepEqual(Object.keys(ok.body), [
-    "ok", "accepted", "duplicate", "outcome", "status", "errorCode", "matched", "counted", "stopped", "stopCode", "late", "tracker", "manual",
+    "ok", "accepted", "duplicate", "outcome", "status", "errorCode", "matched", "counted", "stopped", "paused", "pausedUntil", "stopCode", "late", "tracker", "manual",
   ]);
   assert.deepEqual([ok.body.accepted, ok.body.status, ok.body.stopped, ok.body.stopCode, ok.body.manual.state], [true, "blocked", true, "blocked_http_403", "stopped"]);
   assert.equal(ok.body.tracker.rank, 12);
@@ -2418,4 +2418,68 @@ test("manual-record 진단(1.0.1 검토 반영): 회차 갱신이 끝나지 않�
     makeRequest("POST", { headers: ownerHeaders(), body: manualRecordBody({}, { diagnostics: diagnosticsSample() }) }), quickCtx, { now: NOW });
   assert.equal(saved.status, 200);
   assert.deepEqual(quick.tables.coupang_rank_runs[0].diagnostics, diagnosticsSample());
+});
+
+// ── 차단 뒤 30분 쉼(c30-4, 2026-10-27) ──
+const PAUSED_UNTIL = "2026-10-17T03:30:00.000Z"; // NOW + 30분(KST 12:30)
+
+test("c30-4 manual-claim: 30분 쉼 → 409 COUPANG_MANUAL_PAUSED·pausedUntil·retryAfterSec 1800·'12:30에 다시'", async () => {
+  const state = manualState();
+  state.rpc.coupang_rank_manual_claim = () => ({ data: { ok: false, state: "paused", manual: manualSummary({ state: "paused", pausedUntil: PAUSED_UNTIL, blocksToday: 1, blockCode: "blocked_http_403", pauseMinutes: 30, blocksToStop: 2 }) }, error: null });
+  const result = await post(state, ownerHeaders(), { action: "manual-claim", trackerId: uuid(1) });
+  assert.deepEqual([result.status, result.body.code, result.body.state, result.body.pausedUntil, result.body.retryAfterSec], [409, "COUPANG_MANUAL_PAUSED", "paused", PAUSED_UNTIL, 1800]);
+  assert.match(result.body.message, /30분 쉬는 중입니다\(12:30에 다시 됩니다\)/u);
+  assert.deepEqual([result.body.manual.state, result.body.manual.pausedUntil, result.body.manual.blocksToday], ["paused", PAUSED_UNTIL, 1]);
+});
+
+test("c30-4 GET ?view=manual-stop: 첫 차단 응답 paused·pausedUntil·blocksToday(stopped false), SQL 전 모양은 paused false·blocksToday null", async () => {
+  const state = manualState();
+  state.rpc.coupang_rank_manual_stop = (args) => ({
+    data: { ok: true, stopped: false, paused: true, pausedUntil: PAUSED_UNTIL, blocksToday: 1, stoppedDay: "2026-10-17", stopCode: args.p_code,
+      manual: manualSummary({ state: "paused", pausedUntil: PAUSED_UNTIL, blocksToday: 1 }) },
+    error: null,
+  });
+  const first = await manualGet(state, ownerHeaders(), "manual-stop", { reason: "blocked_http_403" });
+  assert.deepEqual([first.status, first.body.stopped, first.body.paused, first.body.pausedUntil, first.body.blocksToday, first.body.manual.state],
+    [200, false, true, PAUSED_UNTIL, 1, "paused"]);
+  const legacy = await manualGet(manualState(), ownerHeaders(), "manual-stop", { reason: "blocked_http_403" });
+  assert.deepEqual([legacy.body.stopped, legacy.body.paused, legacy.body.pausedUntil, legacy.body.blocksToday], [true, false, null, null]);
+});
+
+test("c30-4 manual-record: 차단 결과 → stopped false + paused·pausedUntil(SQL 요약 그대로), 모양이 틀린 차단 본문도 paused 를 싣는다", async () => {
+  const state = manualState();
+  state.rpc.coupang_rank_manual_record = (args) => ({
+    data: { ok: true, accepted: true, duplicate: false, status: args.p_status, errorCode: null, matched: 1, counted: true, stopped: false,
+      stopCode: args.p_stop_code, late: false, tracker: null, manual: manualSummary({ state: "paused", pausedUntil: PAUSED_UNTIL, blocksToday: 1 }) },
+    error: null,
+  });
+  const blocked = await post(state, ownerHeaders(), manualRecordBody({}, { status: "blocked", httpStatus: 403, organic: [], ads: [], itemCount: 0 }));
+  assert.deepEqual([blocked.status, blocked.body.status, blocked.body.stopped, blocked.body.paused, blocked.body.pausedUntil, blocked.body.stopCode],
+    [200, "blocked", false, true, PAUSED_UNTIL, "blocked_http_403"]);
+  state.rpc.coupang_rank_manual_stop = (args) => ({
+    data: { ok: true, stopped: false, stopCode: args.p_code, manual: manualSummary({ state: "paused", pausedUntil: PAUSED_UNTIL }) }, error: null,
+  });
+  const malformed = await post(state, ownerHeaders(), manualRecordBody({ durationMs: "x" }, { httpStatus: 429 }));
+  assert.deepEqual([malformed.status, malformed.body.code, malformed.body.stopped, malformed.body.paused, malformed.body.pausedUntil],
+    [400, "COUPANG_MANUAL_RECORD_INVALID", false, true, PAUSED_UNTIL]);
+  // SQL 전(요약에 쉼 없음): 예전처럼 stopped 만
+  const legacy = await post(manualState(), ownerHeaders(), manualRecordBody({}, { status: "blocked", httpStatus: 403, organic: [], ads: [], itemCount: 0 }));
+  assert.deepEqual([legacy.body.stopped, legacy.body.paused, legacy.body.pausedUntil], [true, false, null]);
+});
+
+test("c30-4 지금 확인 ↔ 자동 수집: 지금 확인이 30분 쉬는 중이면 '수집 켜기' 409 manual_paused, 쉼이 끝났으면 켜진다, 쉼 칸 없는 설정은 예전 그대로", async () => {
+  const collector = { id: uuid(511), revoked_at: null, token_sha256: "d".repeat(64) };
+  const paused = manualState({ settings: { manual_enabled: false, manual_paused_until: PAUSED_UNTIL, manual_block_day: "2026-10-17", manual_block_count: 1 } });
+  paused.tables.coupang_rank_collectors.push({ ...collector });
+  const refused = await post(paused, ownerHeaders(), { action: "collector-enable" });
+  assert.deepEqual([refused.status, refused.body.code, refused.body.reason], [409, "COUPANG_COLLECTOR_MANUAL_CONFLICT", "manual_paused"]);
+  assert.match(refused.body.message, /30분/u);
+  assert.equal(paused.tables.coupang_rank_settings[0].enabled, false);
+  const ended = manualState({ settings: { manual_enabled: false, manual_paused_until: "2026-10-17T02:59:59.000Z", manual_block_day: "2026-10-17", manual_block_count: 1 } });
+  ended.tables.coupang_rank_collectors.push({ ...collector });
+  const enabled = await post(ended, ownerHeaders(), { action: "collector-enable" });
+  assert.deepEqual([enabled.status, enabled.body.settings.enabled, enabled.body.settings.manualBlockCount], [200, true, 1]);
+  const never = manualState({ settings: { manual_enabled: false, manual_paused_until: null } });
+  never.tables.coupang_rank_collectors.push({ ...collector });
+  assert.equal((await post(never, ownerHeaders(), { action: "collector-enable" })).status, 200);
 });

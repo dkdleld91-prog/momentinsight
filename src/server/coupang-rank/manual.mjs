@@ -45,6 +45,7 @@ export const MANUAL_STATE_CODES = Object.freeze({
   off: "COUPANG_MANUAL_OFF",
   budget: "COUPANG_MANUAL_BUDGET",
   stopped: "COUPANG_MANUAL_STOPPED",
+  paused: "COUPANG_MANUAL_PAUSED",
   cooldown: "COUPANG_MANUAL_COOLDOWN",
   hours: "COUPANG_MANUAL_HOURS",
   busy: "COUPANG_MANUAL_BUSY",
@@ -58,6 +59,7 @@ export const MANUAL_MESSAGES = Object.freeze({
   COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(총관리자 패널에서 켤 수 있습니다).",
   COUPANG_MANUAL_BUDGET: "저장 용량 상한에 닿아 지금 확인을 멈췄습니다.",
   COUPANG_MANUAL_STOPPED: "오늘 쿠팡 확인 중 차단으로 보이는 응답이 있어 오늘은 지금 확인을 멈췄습니다. 내일 다시 됩니다.",
+  COUPANG_MANUAL_PAUSED: "쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나면 다시 됩니다(오늘 한 번 더 차단되면 그날은 멈춥니다).",
   COUPANG_MANUAL_COOLDOWN: "자동 수집에서 쿠팡 차단 신호가 있어 쉬는 중입니다. 쉬기가 끝나면 다시 됩니다.",
   COUPANG_MANUAL_HOURS: "지금 확인은 정해진 시간에만 됩니다.",
   COUPANG_MANUAL_BUSY: "다른 확인이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.",
@@ -135,6 +137,13 @@ export function manualPayload(summary) {
     stoppedDay: textOrNull(source.stoppedDay),
     stoppedAt: textOrNull(source.stoppedAt),
     stoppedCode: textOrNull(source.stoppedCode),
+    // 차단 뒤 30분 쉼(c30-4). SQL 전 요약에는 없어 null(쉼 없음 = 예전처럼 차단 한 번에 그날 중지).
+    pausedUntil: textOrNull(source.pausedUntil),
+    blocksToday: finiteOrNull(source.blocksToday),
+    blockAt: textOrNull(source.blockAt),
+    blockCode: textOrNull(source.blockCode),
+    pauseMinutes: finiteOrNull(source.pauseMinutes),
+    blocksToStop: finiteOrNull(source.blocksToStop),
     cooldownUntil: textOrNull(source.cooldownUntil),
     serverTime: textOrNull(source.serverTime),
     claimTtlSeconds: MANUAL_CLAIM_TTL_SECONDS,
@@ -154,7 +163,24 @@ function secondsUntil(target, serverTime) {
   return Math.max(1, Math.ceil((until - now) / 1000));
 }
 
+// 서버 시각(ISO) → 한국 시각 'HH:MM'. 읽지 못하면 "".
+export function kstClockOf(value) {
+  const ms = Date.parse(String(value || ""));
+  if (!Number.isFinite(ms)) return "";
+  const day = 24 * 60 * 60 * 1000;
+  const minutes = Math.floor((((ms + 9 * 60 * 60 * 1000) % day) + day) % day / 60000);
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
 function refusalMessage(code, manual) {
+  if (code === "COUPANG_MANUAL_PAUSED") {
+    const at = kstClockOf(manual.pausedUntil);
+    if (at) return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). 오늘 한 번 더 차단되면 그날은 멈춥니다.`;
+  }
+  if (code === "COUPANG_MANUAL_STOPPED" && Number.isInteger(manual.blocksToday) && manual.blocksToday >= 2) {
+    const from = Number.isInteger(manual.fromHour) ? String(manual.fromHour).padStart(2, "0") : "09";
+    return `오늘 쿠팡 확인 중 차단으로 보이는 응답이 두 번째라 오늘은 지금 확인을 멈췄습니다. 내일 ${from}시부터 다시 됩니다.`;
+  }
   if (code === "COUPANG_MANUAL_HOURS" && Number.isInteger(manual.fromHour) && Number.isInteger(manual.toHour)) {
     return `지금 확인은 ${manual.fromHour}~${manual.toHour}시(한국 시각)에만 됩니다.`;
   }
@@ -168,7 +194,7 @@ function refusalMessage(code, manual) {
 }
 
 // SQL 이 { ok:false, state, manual } 또는 { ok:false, code, ... } 로 거절했을 때 화면 응답 모양.
-// 반환: { code, status, message(모르는 코드면 null — 핸들러 문구표로 채움), extra(manual·retryAfterSec·nextAt·stopped·field)}
+// 반환: { code, status, message(모르는 코드면 null — 핸들러 문구표로 채움), extra(manual·retryAfterSec·nextAt·pausedUntil·stopped·field)}
 export function manualRefusal(data) {
   const source = plainObject(data) ? data : {};
   const manual = plainObject(source.manual) ? manualPayload(source.manual) : null;
@@ -188,6 +214,10 @@ export function manualRefusal(data) {
     if (code === "COUPANG_MANUAL_BUSY" && manual.busyUntil) {
       extra.retryAfterSec = secondsUntil(manual.busyUntil, manual.serverTime);
     }
+    if (code === "COUPANG_MANUAL_PAUSED" && manual.pausedUntil) {
+      extra.pausedUntil = manual.pausedUntil;
+      extra.retryAfterSec = secondsUntil(manual.pausedUntil, manual.serverTime);
+    }
   }
   const status = ERROR_HTTP_STATUS[code];
   return {
@@ -197,6 +227,12 @@ export function manualRefusal(data) {
     message: refusalMessage(code, manual || {}) || null,
     extra,
   };
+}
+
+// 차단 알림·결과 응답의 쉼 칸: SQL 요약(manualPayload 결과)에 쉼 끝 시각이 있으면 쉬는 중(서버 시계로 SQL 이 판정한 값).
+export function manualPauseFields(manual) {
+  const pausedUntil = plainObject(manual) && typeof manual.pausedUntil === "string" && manual.pausedUntil ? manual.pausedUntil : null;
+  return { paused: pausedUntil !== null, pausedUntil };
 }
 
 // 서버 최종 판정(M2): 목록을 읽은 판정인데 쪽의 검색어가 요청 키워드와 다르면(창에서 다른 검색을 했거나 쿠팡이
@@ -253,7 +289,7 @@ export function manualNavigatedFinalPath(page, errorCode) {
   return bare.length <= FINAL_PATH_MAX ? bare : path;
 }
 
-// 결과 보고의 그날 중지 사유. 측정 결과면 쪽의 차단 신호, '시작 못 함'이면 확장이 오늘 차단을 봤다는 코드.
+// 결과 보고의 차단 사유(30분 쉼·그날 중지는 SQL 이 센다). 측정 결과면 쪽의 차단 신호, '시작 못 함'이면 확장이 오늘 차단을 봤다는 코드.
 export function manualRecordStopCode(outcome, outcomeCode, page) {
   if (outcome === "measured") return manualStopSignal(page);
   if (outcome === "not_started" && MANUAL_STOP_NOT_STARTED_CODES.includes(outcomeCode)) return STOP_EXTENSION_REPORTED;

@@ -1115,7 +1115,7 @@ test("c30-3 제약 ↔ 서버 진단 검사: 서버가 받는 꾸민 최악·확
 // 설정 칸 6개 + 요약·차단 알림 함수 2개만 다시 정의. 첫 차단 30분 쉼 → 30분 뒤 허용 → 같은 날 두 번째 그날 중지 → 다음 날(KST) 초기화.
 const PAUSE_NAME = "20261027180000_coupang_rank_manual_pause.sql";
 const pauseSql = fs.readFileSync(path.join(migrationDirectory, PAUSE_NAME), "utf8");
-const PAUSE_SHA256 = "0a1e7a4057158e7c67331693ab7f1cd249c6ea0888b61bc973123f897ebb910b";
+const PAUSE_SHA256 = "dec14a88c6801a246d6307c47d1ecc2bfeae061e6bed7b3169c6ba6e1bc86079";
 const PAUSE_DOCS = path.join(root, "docs", "sql", "c30-4-manual-pause.sql");
 const PAUSE_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.rollback.sql"), "utf8");
 const PAUSE_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.verify-applied.sql"), "utf8");
@@ -1358,6 +1358,27 @@ test("c30-4 늦은 보고 한 번 세기(Codex 검수 반영): 확장의 '앞서
     const c = await h.verified(tracker);
     const second = await h.record(c.claimId, c.hash, { status: "blocked", run: blockedRun(429), stopCode: "blocked_http_429" });
     assert.deepEqual([second.stopped, second.manual.state, second.manual.blocksToday], [true, "stopped", 2]);
+  });
+});
+
+test("c30-4 늦은 보고 묶기는 한 번뿐(Codex 재검수 반영): 알림 전에 검색한 A·C 의 차단이 모두 늦게 오면 A 는 알림과 같은 차단, C 는 두 번째 → 그날 중지", async () => {
+  await withPauseDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const a = await h.verified(tracker);
+    await h.ageVerify(a.claimId, 250);
+    await h.clearGap();
+    const c = await h.verified(tracker);
+    await h.ageVerify(c.claimId, 200);
+    await h.clearGap();
+    const bHash = h.token();
+    const b = await h.claim(tracker, bHash);
+    assert.equal(b.ok, true, JSON.stringify(b));
+    await h.record(b.claimId, bHash, { outcome: "not_started", code: "blocked_pause", stopCode: "extension_reported" });
+    const lateA = await h.record(a.claimId, a.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" });
+    assert.deepEqual([lateA.stopped, lateA.manual.blocksToday], [false, 1]);
+    assert.equal((await h.settings()).manual_block_claim_id, a.claimId, "묶은 검색이 그 차단의 요청");
+    const lateC = await h.record(c.claimId, c.hash, { status: "blocked", run: blockedRun(429), stopCode: "blocked_http_429" });
+    assert.deepEqual([lateC.stopped, lateC.manual.state, lateC.manual.blocksToday], [true, "stopped", 2]);
   });
 });
 

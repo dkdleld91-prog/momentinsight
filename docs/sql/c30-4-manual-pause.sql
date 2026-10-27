@@ -118,6 +118,7 @@ $$;
 -- 첫 차단(그 날 1번째)이 오늘이면 30분 쉼(지금부터, 이미 더 긴 쉼이면 그대로), 2번째면 그날 중지(이미 같은 날 멈췄으면 처음 사유를 남긴다).
 -- 확인 없는 요청의 알림(확장이 앞서 본 차단을 알림)은 그 날 센 차단이 없을 때만 첫 차단으로 센다(같은 차단을 두 번 세지 않게).
 -- 거꾸로, 그 알림이 먼저 세어진 뒤 그 알림 요청보다 먼저 검색한 요청의 차단 보고가 늦게 오면 같은 차단으로 보고 다시 세지 않는다.
+-- 그렇게 묶는 것은 한 번뿐이다(묶은 검색이 그 차단의 요청이 된다 — 알림 전의 다른 검색이 또 늦게 오면 두 번째 차단으로 센다).
 -- 지난 날(이미 더 나중 날의 차단을 센 뒤 온 늦은 보고)은 세지 않는다. 잠금 순서: 설정 행 → 확인 표.
 -- record 가 부르고, 확장이 결과 보고 전에 직접 알릴 때(GET view=manual-stop)와 모양이 틀린 결과에 차단 신호가 보일 때도 쓴다.
 create or replace function public.coupang_rank_manual_stop(
@@ -169,7 +170,10 @@ begin
       select * into p from public.coupang_rank_manual_claims where id = s.manual_block_claim_id;
       v_same := found and p.verified_at is null and c.verified_at <= p.claimed_at;
     end if;
-    if not v_same and (c.verified_at is not null or v_count = 0) then
+    if v_same then
+      -- 확장이 알린 차단 = 이 검색. 그 차단의 요청을 이 검색으로 바꿔 둔다(다음 늦은 보고는 묶지 않는다).
+      update public.coupang_rank_settings set manual_block_claim_id = c.id where id = 1;
+    elsif c.verified_at is not null or v_count = 0 then
       v_count := v_count + 1;
       update public.coupang_rank_settings
          set manual_block_day = v_day, manual_block_count = least(v_count, 100), manual_block_at = v_now,

@@ -9,7 +9,7 @@
 //   → 5) 확인을 받은 뒤에만 창을 앞으로 가져오고(windows.update focused) 그 탭만 서버가 준 검색어의 쿠팡 검색 1쪽으로
 //   → 6) 읽기(1.0.1: 결과 없이 끝나면 탭이 그대로 같은 검색 1쪽일 때만 load 를 다시 기다려 1번 더 읽음 — 새 검색 없음) → 7) 창 닫기(항상)
 //   → 8) 차단 신호면 서버에 바로 차단 알림(GET manual-stop, 실패하면 같은 실행 안에서 0·3·10초에 다시)
-//      1.0.2: 확장 안에도 같은 규칙으로 기억한다 — 그 날 첫 차단은 30분 쉼(pausedUntil), 같은 날 두 번째는 그날 중지(blockedDay).
+//      1.0.3: 확장 안에도 같은 규칙으로 기억한다 — 차단될 때마다 30분 쉼(pausedUntil). 그날 중지는 없다(대표 결정 2026-10-28).
 //   → 9) 결과를 storage.local 에 남기고 화면에 답
 //      (화면이 manual-record 로 서버에 보낸 뒤 ack 할 때까지. 탭이 닫혀도 다음 hello 가 다시 준다).
 // 사람이 첫 읽기 전에 창을 닫아도 차단 신호를 잃지 않게, 불러오는 동안(load 확인)·불러온 직후(짧은 읽기 1번)에 본
@@ -17,7 +17,7 @@
 // 창을 연 뒤에는 상품을 누르지 않고 입력하지 않는다. 스크롤은 수집기와 같은 범위만 한다.
 // 1.0.1: 어느 길로 끝나든 결과 page.diagnostics 에 짧은 진단(단계별 경과·load 횟수·쪽 함수 결과 종류·쪽 모양 요약·재시도)을 싣는다.
 import {
-  ACTIVE_STALE_MS, BLOCKED_HTTP_STATUSES, BLOCKS_PER_DAY_STOP, CLOSE_TIMEOUT_MS, COUPANG_ORIGIN_PATTERN, DIAG_COMPLETE_TIMES_MAX, EXTENSION_REPORTED_STOP, EXTENSION_VERSION,
+  ACTIVE_STALE_MS, BLOCKED_HTTP_STATUSES, CLOSE_TIMEOUT_MS, COUPANG_ORIGIN_PATTERN, DIAG_COMPLETE_TIMES_MAX, EXTENSION_REPORTED_STOP, EXTENSION_VERSION,
   EXTRA_SCROLL_COUNT, HARD_CAP_MS, KEEPALIVE_MS, LOAD_TIMEOUT_MS, LOCAL_MIN_GAP_MS, MEASURE_RETRY_MAX, PAUSE_MS, PROBE_INTERVAL_MS, QUICK_READ_TIMEOUT_MS,
   READ_GAP_MS, RESULT_RESEND_MS, SCROLL_COUNT, SCROLL_GAP_MS, SCROLL_PIXELS, SEARCH_HOST, SEARCH_PATH, SERVER_ORIGIN_PATTERN,
   SERVER_TIMEOUT_MS, SETTLE_MS, STOP_RETRY_DELAYS_MS, UNREADABLE_ERROR_CODE, USER_NAVIGATED_ERROR_CODE, WINDOW_HEIGHT, WINDOW_WIDTH,
@@ -254,18 +254,35 @@ export function createBackground(chromeApi, deps = {}) {
     };
   }
 
-  // 차단 하나를 확장 안에 기억할 값(1.0.2, 서버 c30-4 와 같은 규칙). 그 날(서버 시각 KST) 몇 번째 차단인지 세어
-  // 첫 번째면 30분 쉼(끝 시각은 서버 시각 추정 기준 ms), 두 번째부터는 그날 중지(blockedDay, 1.0.1 과 같은 칸)로 둔다.
+  // 차단 하나를 확장 안에 기억할 값(1.0.3, 서버 c30-5 와 같은 규칙): 몇 번째든 지금부터 30분 쉼(끝 시각은 서버 시각 추정 기준 ms).
+  // 그 날(서버 시각 KST) 몇 번째 차단인지(blockCount)는 기록용으로만 센다.
   async function blockMarks(serverDay) {
     const serverNow = await serverNowEstimate();
     const day = serverDay || kstDayOf(serverNow);
     const store = await load(["blockDay", "blockCount"]);
     const before = store.blockDay === day && Number.isInteger(store.blockCount) && store.blockCount > 0 ? store.blockCount : 0;
-    const count = Math.min(before + 1, 100);
-    const marks = { blockDay: day, blockCount: count };
-    if (count >= BLOCKS_PER_DAY_STOP) marks.blockedDay = day;
-    else marks.pausedUntil = serverNow + t.pauseMs;
-    return marks;
+    return { blockDay: day, blockCount: Math.min(before + 1, 100), pausedUntil: serverNow + t.pauseMs };
+  }
+
+  // 1.0.1·1.0.2 가 남긴 '그날 중지' 기억(blockedDay)을 1.0.3 규칙(30분 쉼)으로 한 번 바꾼다(대표 결정 2026-10-28).
+  // 오늘 것이면 그 차단을 본 검색 — 마지막 검색 시각(lastCheckAt, 그날 중지 뒤에는 새 검색이 없다) — 부터 30분 쉼,
+  // 그 시각이 없거나 맥 시계로 미래면 지금부터 30분. 남아 있던 쉼(1.0.2 첫 차단)이 더 늦으면 그대로.
+  // 지난 날 것은 그냥 지운다. 바꾼 뒤 blockedDay 는 지워져 다시 바꾸지 않는다(다음 검색 시각으로 쉼이 다시 생기지 않게).
+  async function convertLegacyBlockedDay(store, serverNow, today) {
+    if (typeof store.blockedDay !== "string") return store;
+    const next = { ...store };
+    delete next.blockedDay;
+    if (store.blockedDay === today) {
+      const last = Number(store.lastCheckAt);
+      const localNow = now();
+      const fromLast = Number.isFinite(last) && last <= localNow ? last + (serverNow - localNow) + t.pauseMs : NaN;
+      const legacyEnd = Number.isFinite(fromLast) ? fromLast : serverNow + t.pauseMs;
+      const kept = Number(store.pausedUntil);
+      next.pausedUntil = Number.isFinite(kept) && kept > legacyEnd && kept - serverNow <= t.pauseMs ? kept : legacyEnd;
+      await save({ pausedUntil: next.pausedUntil });
+    }
+    await drop(["blockedDay"]);
+    return next;
   }
 
   async function sendStop(claimId, claimToken, reason, serverDay) {
@@ -377,17 +394,12 @@ export function createBackground(chromeApi, deps = {}) {
       }
       return notStarted("report_pending", claimId, { stopReported: pending.stopReported === true, pending: publicPending(pending) });
     }
-    // 그날 중지한 날이면(같은 날 두 번째 차단 — 1.0.1 이 남긴 표시는 첫 차단이어도 그날 중지 그대로) 새 검색은 없다.
-    // 첫 차단 뒤 30분 쉬는 중이어도 새 검색은 없다(쉼 끝까지 남은 초를 답한다). 서버에 알린 기록이 없으면 이번 요청 토큰으로 알린다.
+    // 차단 뒤 30분 쉬는 중이면(몇 번째 차단이든, 1.0.3) 새 검색은 없다(쉼 끝까지 남은 초를 답한다). 그날 중지는 없다 —
+    // 1.0.1·1.0.2 가 남긴 그날 중지 기억은 먼저 30분 쉼으로 바꾼다. 서버에 알린 기록이 없으면 이번 요청 토큰으로 알린다.
     // 쉼 끝이 지금(서버 시각 추정)보다 30분 넘게 뒤면 맥 시계가 바뀐 것이라 확장 쉼은 보지 않는다(관문은 서버가 다시 본다).
-    const store = await load(["blockedDay", "pausedUntil", "stopReportedDay", "lastCheckAt"]);
     const serverNow = await serverNowEstimate();
     const today = kstDayOf(serverNow);
-    if (typeof store.blockedDay === "string" && store.blockedDay === today) {
-      let reported = store.stopReportedDay === today;
-      if (!reported) reported = await sendStop(claimId, claimToken, EXTENSION_REPORTED_STOP, today);
-      return notStarted("blocked_today", claimId, { stopReported: reported });
-    }
+    const store = await convertLegacyBlockedDay(await load(["blockedDay", "pausedUntil", "stopReportedDay", "lastCheckAt"]), serverNow, today);
     const pauseLeft = Number(store.pausedUntil) - serverNow;
     if (Number.isFinite(pauseLeft) && pauseLeft > 0 && pauseLeft <= t.pauseMs) {
       let reported = store.stopReportedDay === today;

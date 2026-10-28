@@ -161,8 +161,8 @@ test("서버 수동 계약: 요청 이름(view·claimId·reason·토큰 머리�
   assert.equal(contract.MANUAL_STOP_REASON_PARAM, STOP_REASON_PARAM);
   assert.equal(contract.MANUAL_CLAIM_TOKEN_HEADER, CLAIM_TOKEN_HEADER);
   assert.deepEqual([...contract.MANUAL_STOP_CODES], [...STOP_REASONS]);
-  for (const code of ["blocked_today", "report_pending"]) {
-    assert.ok(contract.MANUAL_STOP_NOT_STARTED_CODES.includes(code), `확장 ${code}(오늘 차단을 봄) 보고 = 서버 그날 중지`);
+  for (const code of ["blocked_today", "blocked_pause", "report_pending"]) {
+    assert.ok(contract.MANUAL_STOP_NOT_STARTED_CODES.includes(code), `확장 ${code}(오늘 차단을 봄 — blocked_today 는 1.0.1·1.0.2) 보고 = 서버 차단 알림`);
   }
   assert.equal(contract.MANUAL_EXTENSION_FOLDER, ZIP_FOLDER);
 });

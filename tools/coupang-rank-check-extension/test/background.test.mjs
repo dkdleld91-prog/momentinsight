@@ -153,7 +153,7 @@ test("hello: 버전·시크릿 허용·사이트 액세스·다른 시크릿 창
   assert.deepEqual(await send(background, { type: "mi-coupang-hello" }), {
     ok: true,
     type: "hello",
-    version: "1.0.2",
+    version: "1.0.3",
     incognitoAllowed: true,
     hostAccess: true,
     incognitoWindowOpen: false,
@@ -268,7 +268,7 @@ test("서버 확인: 빈 시크릿 창 검사 뒤·쿠팡 주소를 넣기 전�
   assert.equal(init.redirect, "error");
   assert.equal(init.referrerPolicy, "no-referrer");
   assert.equal(init.headers["x-mi-coupang-claim-token"], CLAIM_TOKEN);
-  assert.equal(init.headers["x-mi-coupang-check"], "1.0.2");
+  assert.equal(init.headers["x-mi-coupang-check"], "1.0.3");
   assert.equal(init.body, undefined);
   // 빈 창(쿠팡 요청 0) → 다른 시크릿 창 검사 → 서버 확인 → 그 탭만 쿠팡으로(지난 검토: 확인을 먼저 하면 창을 못 열 때 1번을 헛되이 씀)
   const order = fake.log.filter((name) => ["fetch", "windows.create", "windows.getAll", "tabs.update"].includes(name));
@@ -417,7 +417,7 @@ test("정상: measured 답 모양·page 칸·창 닫음·보고 대기 저장(�
     "browser", "claimId", "durationMs", "extensionVersion", "keyword", "ok", "outcome", "page", "stopReason", "stopReported", "stopSignal", "windowLeftOpen",
   ].sort());
   assert.equal(reply.claimId, CLAIM_ID);
-  assert.equal(reply.extensionVersion, "1.0.2");
+  assert.equal(reply.extensionVersion, "1.0.3");
   assert.equal(reply.browser, "chrome 141");
   assert.equal(reply.windowLeftOpen, false);
   assert.equal(reply.stopSignal, false);
@@ -479,7 +479,7 @@ test("차단 신호(403·429·HTTP 200+차단 문구)는 창을 닫은 뒤 서�
     assert.ok(fake.log.indexOf("windows.remove") < fake.log.indexOf("fetch:stop"), "창을 먼저 닫는다");
     assert.equal(fake.storage.pending.stop, true);
     assert.equal(fake.storage.pending.stopReported, true);
-    // 1.0.2: 그 날 첫 차단은 30분 쉼(그날 중지 아님)
+    // 1.0.3: 차단은 30분 쉼(그날 중지 없음)
     assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(fake.storage.blockDay));
     assert.deepEqual([fake.storage.blockCount, fake.storage.blockedDay], [1, undefined]);
     assert.ok(Number.isFinite(fake.storage.pausedUntil));
@@ -937,7 +937,7 @@ test("관리자 탭이 닫혀 결과를 못 보내도: 확장이 이미 manual-s
   assert.deepEqual(await send(background, { type: "mi-coupang-ack", claimId: CLAIM_ID }), { ok: true, type: "ack", cleared: true });
   assert.equal(fake.storage.pending, undefined);
   const sameDay = await send(background, checkMessage({ claimId: CLAIM_ID_3 }));
-  assert.equal(sameDay.code, "blocked_pause", "1.0.2: 첫 차단 뒤 30분은 새 검색 없음");
+  assert.equal(sameDay.code, "blocked_pause", "1.0.3: 차단 뒤 30분은 새 검색 없음");
   assert.equal(fake.calls.create.length, 1);
 });
 
@@ -1022,23 +1022,23 @@ test("중지 알림이 실행 안에서 모두 실패하면 결과·그날 표�
   assert.equal(fetchImpl.stops().length, 4);
 });
 
-test("남은 결과를 지운 뒤에도 그날 표시가 있고 서버에 알린 기록이 없으면, 이번 요청 토큰으로 extension_reported 를 알린다", async () => {
+test("남은 결과를 지운 뒤에도 차단 기억(1.0.1·1.0.2 그날 표시 → 1.0.3 은 30분 쉼)이 있고 서버에 알린 기록이 없으면, 이번 요청 토큰으로 extension_reported 를 알린다", async () => {
   const clock = Date.parse("2026-10-23T03:00:00.000Z");
   const fake = makeFakeChrome({ storage: { serverOffsetMs: 0, blockedDay: "2026-10-23" } });
   const fetchImpl = makeFakeFetch(null, fake.log);
   const background = createBackground(fake.chrome, { fetch: fetchImpl, now: () => clock, timing: FAST_TIMING, measure: ZERO_MEASURE });
   const reply = await send(background, checkMessage({ claimId: CLAIM_ID_2 }));
-  assert.equal(reply.code, "blocked_today");
+  assert.equal(reply.code, "blocked_pause");
   assert.equal(reply.stopReported, true);
   assert.deepEqual(fetchImpl.stops(), [{ claimId: CLAIM_ID_2, reason: "extension_reported", token: CLAIM_TOKEN }]);
   assert.equal(fake.storage.stopReportedDay, "2026-10-23");
   const again = await send(background, checkMessage({ claimId: CLAIM_ID_3 }));
-  assert.equal(again.code, "blocked_today");
+  assert.equal(again.code, "blocked_pause");
   assert.equal(fetchImpl.stops().length, 1);
   assert.equal(fake.calls.create.length, 0);
 });
 
-test("그날 표시는 서버 날짜가 바뀌면 풀린다(다음 날 자동, D2 해제 버튼 없음)", async () => {
+test("차단 기억은 다음 날(서버 날짜)에도 남지 않는다(다음 날 자동, D2 해제 버튼 없음)", async () => {
   const clock = clockFrom(Date.parse("2026-10-23T05:00:00.000Z"));
   const measure = { value: BLOCKED_403 };
   const { fake, fetchImpl, background } = setup({

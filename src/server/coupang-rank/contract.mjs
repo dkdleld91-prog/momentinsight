@@ -171,10 +171,10 @@ export const COLLECTOR_ERROR_CODES = Object.freeze([
 // chrome-extension:// 이라 운영 허용 목록(https 만)에 들 수 없다. GET 은 게이트가 출처·CSRF 를 보지 않는다.
 // 서버는 시간 판정에 서버 시계만 쓴다(확장·화면 시계를 받지 않는다).
 export const MANUAL_EXTENSION_ID = "onbmdfamcmbljplkgalameendlmgnjeg"; // manifest key 에서 계산(확장 테스트가 대조)
-export const MANUAL_EXTENSION_VERSION = "1.0.2"; // 내려받기 zip 의 버전(1.0.2 = 차단 뒤 30분 쉼 · 같은 날 두 번째 차단이면 그날 중지)
+export const MANUAL_EXTENSION_VERSION = "1.0.3"; // 내려받기 zip 의 버전(1.0.3 = 차단될 때마다 30분 쉼, 대표 결정 2026-10-28)
 // 화면이 '새 버전으로 바꿔 주세요'로 막는 아래 버전. 1.0.0 은 그대로 받는다(진단만 없음 — 서버는 확장 버전을 형식만 본다).
 export const MANUAL_MIN_EXTENSION_VERSION = "1.0.0";
-export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.2.zip";
+export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.3.zip";
 export const MANUAL_EXTENSION_FOLDER = "mi-coupang-check"; // zip 안 폴더 이름(버전 없음 — 업데이트 때 같은 자리에 덮어 풀기)
 export const MANUAL_ALLOWED_ROLES = Object.freeze(["owner"]); // 공개 순서: owner → team → client
 export const MANUAL_CLAIM_TTL_SECONDS = 60; // 요청 뒤 이 안에 확장 확인이 와야 한다(SQL interval '60 seconds')
@@ -210,8 +210,9 @@ export const MANUAL_STOP_CODES = Object.freeze([
   "blocked_http_403", "blocked_http_429", "blocked_http_503", "blocked_text", "blocked_page",
   "login_redirect", "page_unreadable", "extension_reported",
 ]);
-// 확장이 '오늘 차단을 봤다'는 뜻으로 시작하지 않은 코드: blocked_today(그날 중지한 날 — 1.0.1 은 첫 차단, 1.0.2 는 두 번째 차단),
-// blocked_pause(1.0.2: 첫 차단 뒤 30분 쉬는 중), report_pending(차단 결과를 아직 서버에 못 보냄). 서버는 셋 다 차단 알림
+// 확장이 '오늘 차단을 봤다'는 뜻으로 시작하지 않은 코드: blocked_today(1.0.1·1.0.2 가 그날 스스로 멈춘 날 — 1.0.1 은 첫 차단,
+// 1.0.2 는 두 번째 차단. 1.0.3 은 내지 않는다), blocked_pause(1.0.2: 첫 차단 뒤 · 1.0.3: 차단될 때마다 30분 쉬는 중),
+// report_pending(차단 결과를 아직 서버에 못 보냄). 서버는 셋 다 차단 알림
 // (extension_reported)으로 받는다(확인 없는 요청이라 서버가 그 날 차단을 아직 모를 때만 첫 차단으로 센다).
 export const MANUAL_STOP_NOT_STARTED_CODES = Object.freeze(["blocked_today", "blocked_pause", "report_pending"]);
 export const MANUAL_UNREADABLE_ERROR_CODE = "page_unreadable";

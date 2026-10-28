@@ -507,8 +507,8 @@ async function manualVerifyView(request, ctx, settings, access, url, trace) {
 }
 
 // GET ?view=manual-stop&reason=…: 확장이 차단 신호(403·429·503·차단 문구·검색 밖으로 보냄)를 본 순간 결과 보고와
-// 따로 알린다(관리자 탭이 닫혀도 쉼·그날 중지가 걸리게). 그 날 첫 차단은 30분 쉼, 두 번째는 그날 중지(SQL 이 센다, c30-4 전에는
-// 한 번에 그날 중지). 순위는 저장하지 않는다(더 엄격하게만 바뀐다). 응답 paused·pausedUntil 은 SQL 요약의 쉼 끝 시각.
+// 따로 알린다(관리자 탭이 닫혀도 쉼이 걸리게). 차단될 때마다 30분 쉼(SQL c30-5 가 센다. c30-4 는 같은 날 두 번째면 그날 중지,
+// 그 전에는 한 번에 그날 중지). 순위는 저장하지 않는다(더 엄격하게만 바뀐다). 응답 paused·pausedUntil 은 SQL 요약의 쉼 끝 시각.
 async function manualStopView(request, ctx, settings, access, url, trace) {
   if (!hasManualColumns(settings)) return failure(request, "COUPANG_MANUAL_SETUP_REQUIRED");
   const credentials = manualClaimCredentials(request, url);

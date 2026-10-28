@@ -138,7 +138,7 @@ test("manualPayload: 요약 + 상수(확장 ID·버전·zip·폴더·요청 기�
   assert.deepEqual(Object.keys(payload), [
     "state", "enabled", "usedToday", "maxPerDay", "minGapSeconds", "fromHour", "toHour", "nextAt", "busyUntil",
     "lastSearchAt", "stoppedDay", "stoppedAt", "stoppedCode", "pausedUntil", "blocksToday", "blockAt", "blockCode", "pauseMinutes",
-    "blocksToStop", "cooldownUntil", "serverTime", "claimTtlSeconds",
+    "cooldownUntil", "serverTime", "claimTtlSeconds",
     "extensionId", "extensionVersion", "minExtensionVersion", "extensionZipPath", "extensionFolder",
   ]);
   assert.deepEqual(
@@ -319,11 +319,14 @@ test("manualDiagnostics(1.0.1 검토 반영): 진단 글자의 C1 제어 문자�
 });
 
 // ── 차단 뒤 30분 쉼(c30-4, 2026-10-27) ──
-test("c30-4 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·retryAfterSec(서버 시계끼리)·'HH:MM에 다시', 두 번째 차단 stopped 는 '두 번째' 문구, SQL 전 요약은 예전 문구", () => {
+test("c30-5 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·retryAfterSec(서버 시계끼리)·'HH:MM에 다시'·'차단될 때마다 30분', stopped 는 몇 번째든 예전 문구(두 번째 규칙 없음)", () => {
   const paused = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused", serverTime: "2026-10-27T05:51:00Z", pausedUntil: "2026-10-27T06:21:00Z", blocksToday: 1 } });
   assert.deepEqual([paused.code, paused.status, paused.extra.pausedUntil, paused.extra.retryAfterSec], ["COUPANG_MANUAL_PAUSED", 409, "2026-10-27T06:21:00Z", 1800]);
   assert.match(paused.message, /30분 쉬는 중입니다\(15:21에 다시 됩니다\)/u);
-  assert.match(paused.message, /한 번 더 차단되면 그날은 멈춥니다/u);
+  assert.match(paused.message, /차단될 때마다 30분씩 쉽니다\.$/u);
+  assert.doesNotMatch(paused.message, /한 번 더|두 번째|그날/u);
+  const third = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused", serverTime: "2026-10-27T05:51:00Z", pausedUntil: "2026-10-27T06:21:00Z", blocksToday: 3 } });
+  assert.equal(third.message, paused.message, "몇 번째 차단이든 같은 30분 쉼 문구");
   // 18:50 첫 차단 → 쉼 끝 19:20 은 확인 시간(~19시) 밖: '19:20에 다시'가 아니라 내일 09시부터
   const late = manualRefusal({ ok: false, state: "paused", manual: { ...SUMMARY, state: "paused", fromHour: 9, toHour: 19, serverTime: "2026-10-27T09:50:00Z", pausedUntil: "2026-10-27T10:20:00Z", blocksToday: 1 } });
   assert.match(late.message, /오늘 확인 시간\(~19시\)이 끝나 내일 09시부터 다시 됩니다\.$/u);
@@ -333,7 +336,7 @@ test("c30-4 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·re
   assert.equal(bare.message, MANUAL_MESSAGES.COUPANG_MANUAL_PAUSED);
   assert.equal(bare.extra.retryAfterSec, undefined);
   const second = manualRefusal({ ok: false, state: "stopped", manual: { ...SUMMARY, state: "stopped", blocksToday: 2 } });
-  assert.match(second.message, /두 번째라 오늘은 지금 확인을 멈췄습니다\. 내일 09시부터/u);
+  assert.equal(second.message, MANUAL_MESSAGES.COUPANG_MANUAL_STOPPED, "c30-5 전 서버가 건 그날 중지도 같은 문구('두 번째' 말 없음)");
   const legacy = manualRefusal({ ok: false, state: "stopped", manual: { ...SUMMARY, state: "stopped" } });
   assert.equal(legacy.message, MANUAL_MESSAGES.COUPANG_MANUAL_STOPPED, "SQL 전(blocksToday 없음)은 예전 문구");
   assert.equal(manualStateCode("paused"), "COUPANG_MANUAL_PAUSED");
@@ -342,7 +345,8 @@ test("c30-4 manualRefusal: paused → 409 COUPANG_MANUAL_PAUSED·pausedUntil·re
 
 test("c30-4 manualPayload 쉼 칸·manualPauseFields·kstClockOf·확장 '쉬는 중'(blocked_pause) 시작 못 함 = 차단 알림", () => {
   const payload = manualPayload({ ...SUMMARY, state: "paused", pausedUntil: "2026-10-27T06:21:00Z", blocksToday: 1, blockAt: "2026-10-27T05:51:00Z", blockCode: "blocked_http_403", pauseMinutes: 30, blocksToStop: 2 });
-  assert.deepEqual([payload.pausedUntil, payload.blocksToday, payload.blockCode, payload.pauseMinutes, payload.blocksToStop], ["2026-10-27T06:21:00Z", 1, "blocked_http_403", 30, 2]);
+  assert.deepEqual([payload.pausedUntil, payload.blocksToday, payload.blockCode, payload.pauseMinutes], ["2026-10-27T06:21:00Z", 1, "blocked_http_403", 30]);
+  assert.equal(Object.hasOwn(payload, "blocksToStop"), false, "c30-4 SQL 이 보내는 '두 번째 그날 중지' 칸은 화면에 넘기지 않는다(c30-5)");
   const legacy = manualPayload(SUMMARY);
   assert.deepEqual([legacy.pausedUntil, legacy.blocksToday, legacy.pauseMinutes], [null, null, null], "SQL 전 요약");
   assert.deepEqual(manualPauseFields(payload), { paused: true, pausedUntil: "2026-10-27T06:21:00Z" });

@@ -59,7 +59,7 @@ export const MANUAL_MESSAGES = Object.freeze({
   COUPANG_MANUAL_OFF: "지금 확인이 꺼져 있습니다(총관리자 패널에서 켤 수 있습니다).",
   COUPANG_MANUAL_BUDGET: "저장 용량 상한에 닿아 지금 확인을 멈췄습니다.",
   COUPANG_MANUAL_STOPPED: "오늘 쿠팡 확인 중 차단으로 보이는 응답이 있어 오늘은 지금 확인을 멈췄습니다. 내일 다시 됩니다.",
-  COUPANG_MANUAL_PAUSED: "쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나면 다시 됩니다(오늘 한 번 더 차단되면 그날은 멈춥니다).",
+  COUPANG_MANUAL_PAUSED: "쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나면 다시 됩니다(차단될 때마다 30분씩 쉽니다).",
   COUPANG_MANUAL_COOLDOWN: "자동 수집에서 쿠팡 차단 신호가 있어 쉬는 중입니다. 쉬기가 끝나면 다시 됩니다.",
   COUPANG_MANUAL_HOURS: "지금 확인은 정해진 시간에만 됩니다.",
   COUPANG_MANUAL_BUSY: "다른 확인이 진행 중입니다. 끝난 뒤 다시 눌러 주세요.",
@@ -137,13 +137,13 @@ export function manualPayload(summary) {
     stoppedDay: textOrNull(source.stoppedDay),
     stoppedAt: textOrNull(source.stoppedAt),
     stoppedCode: textOrNull(source.stoppedCode),
-    // 차단 뒤 30분 쉼(c30-4). SQL 전 요약에는 없어 null(쉼 없음 = 예전처럼 차단 한 번에 그날 중지).
+    // 차단 뒤 30분 쉼(c30-4 칸, c30-5 뒤 차단될 때마다). c30-4 SQL 전 요약에는 없어 null(쉼 없음 = 예전처럼 차단 한 번에 그날 중지).
+    // blocksToday 는 기록·화면 표시용(보호 판정은 SQL 이 쉼 끝 시각으로만 한다).
     pausedUntil: textOrNull(source.pausedUntil),
     blocksToday: finiteOrNull(source.blocksToday),
     blockAt: textOrNull(source.blockAt),
     blockCode: textOrNull(source.blockCode),
     pauseMinutes: finiteOrNull(source.pauseMinutes),
-    blocksToStop: finiteOrNull(source.blocksToStop),
     cooldownUntil: textOrNull(source.cooldownUntil),
     serverTime: textOrNull(source.serverTime),
     claimTtlSeconds: MANUAL_CLAIM_TTL_SECONDS,
@@ -182,11 +182,7 @@ function refusalMessage(code, manual) {
     if (at && (hour >= to || hour < from)) {
       return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나기 전에 오늘 확인 시간(~${String(to).padStart(2, "0")}시)이 끝나 내일 ${String(from).padStart(2, "0")}시부터 다시 됩니다.`;
     }
-    if (at) return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). 오늘 한 번 더 차단되면 그날은 멈춥니다.`;
-  }
-  if (code === "COUPANG_MANUAL_STOPPED" && Number.isInteger(manual.blocksToday) && manual.blocksToday >= 2) {
-    const from = Number.isInteger(manual.fromHour) ? String(manual.fromHour).padStart(2, "0") : "09";
-    return `오늘 쿠팡 확인 중 차단으로 보이는 응답이 두 번째라 오늘은 지금 확인을 멈췄습니다. 내일 ${from}시부터 다시 됩니다.`;
+    if (at) return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). 차단될 때마다 30분씩 쉽니다.`;
   }
   if (code === "COUPANG_MANUAL_HOURS" && Number.isInteger(manual.fromHour) && Number.isInteger(manual.toHour)) {
     return `지금 확인은 ${manual.fromHour}~${manual.toHour}시(한국 시각)에만 됩니다.`;

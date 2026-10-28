@@ -6162,9 +6162,19 @@ test("Codex 3차: 쉼 끝난 뒤 늦게 다시 보낸 차단 결과는 '30분 �
   const lateRecord = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: false, paused: true, pausedUntil: lateUntil, stopCode: "blocked_http_403", manual: late } }, blocked, "아이폰 필름", late);
   assert.match(lateRecord.text, /'지금 확인'을 30분 쉽니다\. 쉼이 끝나기 전에 오늘 확인 시간\(~19시\)이 끝나 내일 09:00부터 다시 누를 수 있습니다\.$/u);
   // 설치 안내: c30-4 SQL 전(쉼 모름)이면 '차단 시 그날 중지'
-  assert.ok(moduleSource.includes('(manualPauseKnown(server) ? "차단될 때마다 30분 쉼" : "차단 시 그날 중지") + "은 서버가 지킵니다."'));
-  // 화면 어디에도 '두 번째면 그날 중지'·'한 번 더 차단되면' 안내가 남지 않는다(대표 결정 2026-10-28)
-  assert.doesNotMatch(moduleSource, /두 번째면 그날|한 번 더 차단되면|두 번째로 나와|두 번째 차단이라/u);
+  assert.ok(moduleSource.includes('(manualPauseKnown(server) ? (manualStopsOnSecond(server) ? "차단 시 30분 쉼(서버 설정 SQL 적용 전이라 같은 날 두 번째면 그날 중지)" : "차단될 때마다 30분 쉼") : "차단 시 그날 중지") + "은 서버가 지킵니다."'));
+  // '두 번째면 그날 중지'·'한 번 더 차단되면' 안내는 서버가 아직 c30-4(요약에 blocksToStop)일 때만, 'SQL 적용 전'이라는 말과 함께(대표 결정 2026-10-28)
+  assert.doesNotMatch(moduleSource, /두 번째로 나와|두 번째 차단이라/u);
+  const ruleStrings = [...moduleSource.matchAll(/"[^"\n]*(?:두 번째면 그날|한 번 더 차단되면)[^"\n]*"/gu)].map((hit) => hit[0]);
+  assert.ok(ruleStrings.length >= 2);
+  for (const text of ruleStrings) assert.match(text, /SQL 적용 전/u, text);
+  // c30-4 서버(blocksToStop 2): 쉼 띠·결과 문구가 그날 중지 규칙을 사실대로 말한다
+  const c304 = pausedPayload({ blocksToStop: 2 });
+  assert.equal(internals.manualStopsOnSecond(c304), true);
+  assert.equal(internals.manualStopsOnSecond(pausedPayload()), false);
+  assert.match(internals.manualPauseText(c304, ""), /12:30에 다시 누를 수 있습니다\(서버 설정 SQL 적용 전이라 오늘 한 번 더 차단되면 그날은 멈춥니다\)\.$/u);
+  const c304Record = internals.manualRecordText({ payload: { ok: true, accepted: true, status: "blocked", stopped: false, paused: true, pausedUntil: iso(PAUSE_UNTIL), stopCode: "blocked_http_403", manual: c304 } }, blocked, "아이폰 필름", c304);
+  assert.match(c304Record.text, /\(서버 설정 SQL 적용 전이라 오늘 한 번 더 차단되면 그날은 멈춥니다\)\.$/u);
 });
 
 test("확장 사유·업데이트 안내: blocked_pause·blocked_today(옛 확장 안내)·too_soon(분 숫자 없음), 확장이 서버 버전보다 낮으면 덮어쓰기 안내(1.0.1·1.0.2 → 1.0.3)", () => {

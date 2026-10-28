@@ -144,6 +144,8 @@ export function manualPayload(summary) {
     blockAt: textOrNull(source.blockAt),
     blockCode: textOrNull(source.blockCode),
     pauseMinutes: finiteOrNull(source.pauseMinutes),
+    // c30-4 요약만 보낸다(같은 날 두 번째 차단 → 그날 중지). c30-5 뒤에는 null(차단될 때마다 30분 쉼) — 화면이 규칙 문구를 고른다.
+    blocksToStop: finiteOrNull(source.blocksToStop),
     cooldownUntil: textOrNull(source.cooldownUntil),
     serverTime: textOrNull(source.serverTime),
     claimTtlSeconds: MANUAL_CLAIM_TTL_SECONDS,
@@ -182,7 +184,12 @@ function refusalMessage(code, manual) {
     if (at && (hour >= to || hour < from)) {
       return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다. 쉼이 끝나기 전에 오늘 확인 시간(~${String(to).padStart(2, "0")}시)이 끝나 내일 ${String(from).padStart(2, "0")}시부터 다시 됩니다.`;
     }
-    if (at) return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). 차단될 때마다 30분씩 쉽니다.`;
+    if (at) {
+      const rule = Number.isInteger(manual.blocksToStop)
+        ? "서버 설정 SQL 적용 전이라 오늘 한 번 더 차단되면 그날은 멈춥니다."
+        : "차단될 때마다 30분씩 쉽니다.";
+      return `쿠팡 확인 중 차단으로 보이는 응답이 있어 30분 쉬는 중입니다(${at}에 다시 됩니다). ${rule}`;
+    }
   }
   if (code === "COUPANG_MANUAL_HOURS" && Number.isInteger(manual.fromHour) && Number.isInteger(manual.toHour)) {
     return `지금 확인은 ${manual.fromHour}~${manual.toHour}시(한국 시각)에만 됩니다.`;

@@ -1250,6 +1250,19 @@
     return Boolean(server) && isNum(server.pauseMinutes);
   }
 
+  // 서버가 아직 c30-4 규칙(같은 날 두 번째 차단 → 그날 중지)인지: c30-4 요약만 blocksToStop 을 보낸다(c30-5 는 안 보냄 — 차단될 때마다 30분 쉼).
+  // 대표 SQL c30-5 전이거나 되돌린 뒤에만 참. 그때는 사실대로 '두 번째면 그날 중지'를 말한다(대표 결정 2026-10-28 뒤의 기본 문구는 '차단될 때마다 30분 쉼').
+  function manualStopsOnSecond(server) {
+    return manualPauseKnown(server) && isNum(server.blocksToStop);
+  }
+
+  // 30분 쉼 안내 끝 괄호: c30-5 '(차단될 때마다 30분씩 쉽니다)', c30-4 서버면 그날 중지 규칙을 사실대로.
+  function manualPauseRuleTail(info) {
+    return manualStopsOnSecond(info)
+      ? "(서버 설정 SQL 적용 전이라 오늘 한 번 더 차단되면 그날은 멈춥니다)"
+      : "(차단될 때마다 30분씩 쉽니다)";
+  }
+
   function manualStopText(server, detail) {
     var info = server || {};
     var at = kstClock(info.stoppedAt);
@@ -1293,7 +1306,7 @@
     var again = manualPauseAgain(info.pausedUntil, info);
     return "쿠팡 확인 중 차단으로 보이는 화면이 나와 '지금 확인'을 30분 쉽니다" + (extra ? "(" + extra + ")" : "") + ". " +
       manualPauseWaitText(info.pausedUntil, info) +
-      (again.tomorrow ? "." : "(차단될 때마다 30분씩 쉽니다).");
+      (again.tomorrow ? "." : manualPauseRuleTail(info) + ".");
   }
 
   // 확장이 서버가 내려주는 버전보다 낮으면 덮어쓰기 안내(1.0.1·1.0.2 는 차단 뒤 그날 하루 스스로 멈출 수 있다). 아니면 "".
@@ -1704,7 +1717,7 @@
       }
       return {
         text: "확인한 화면이 차단으로 보여" + (detail ? "(" + detail + ")" : "") + " '지금 확인'을 30분 쉽니다. " + waitText +
-          (manualPauseAgain(payload.pausedUntil || (info && info.pausedUntil), info).tomorrow ? "." : "(차단될 때마다 30분씩 쉽니다).") + left,
+          (manualPauseAgain(payload.pausedUntil || (info && info.pausedUntil), info).tomorrow ? "." : manualPauseRuleTail(info) + ".") + left,
         tone: "is-warn",
         stopped: false,
         paused: true,
@@ -4196,7 +4209,8 @@
       var items = [];
       if (mode === "manual") {
         items.push("기록: 카드의 '지금 확인'을 누를 때만 잽니다(" + manualRule + "). " + (manualPauseKnown(server)
-          ? "쿠팡이 차단으로 보이는 화면을 보내면 그때마다 30분 쉬고(화면에 'HH:MM에 다시'), 그 시각이 지나면 다시 됩니다."
+          ? "쿠팡이 차단으로 보이는 화면을 보내면 그때마다 30분 쉬고(화면에 'HH:MM에 다시'), 그 시각이 지나면 다시 됩니다." +
+            (manualStopsOnSecond(server) ? " 다만 서버 설정 SQL 적용 전이라 지금은 같은 날 두 번째 차단이면 그날은 멈추고 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다." : "")
           : "쿠팡이 차단으로 보이는 화면을 보내면 그날은 멈추고, 다음 날 " + pad2(manualHours(server).from) + "시부터 다시 됩니다."));
         items.push("같은 키워드 카드는 한 번 누르면 함께 기록됩니다(하루 횟수도 1번만 씁니다). 그래서 같은 키워드 카드를 따로 누를 필요가 없습니다.");
         items.push("전체 확인: 위 상태판의 '전체 확인'을 누르면 오늘 아직 확인 안 한 상품(일시중지 빼고)을 키워드마다 한 번씩, 검색 사이 " + manualGapMinutes(server) +
@@ -6239,7 +6253,7 @@
       if (enable) {
         var max = isNum(server.maxPerDay) ? server.maxPerDay : 30;
         var agreed = confirmAction("'지금 확인'을 켭니다.\n총관리자 카드에 '지금 확인' 버튼이 보이고, 누를 때만 이 크롬이 새 시크릿 창으로 쿠팡 검색을 한 번 합니다(검색 사이 " +
-          manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text + ", 차단으로 보이는 화면이 나오면 " + (manualPauseKnown(server) ? "그때마다 30분 쉼" : "그날 중지") + ").\n내 크롬에 확장을 설치했나요? 켤까요?");
+          manualGapMinutes(server) + "분 · 하루 " + max + "번 · " + manualHours(server).text + ", 차단으로 보이는 화면이 나오면 " + (manualPauseKnown(server) ? (manualStopsOnSecond(server) ? "30분 쉼, 서버 설정 SQL 적용 전이라 같은 날 두 번째면 그날 중지" : "그때마다 30분 쉼") : "그날 중지") + ").\n내 크롬에 확장을 설치했나요? 켤까요?");
         if (!agreed) return;
       }
       manual.toggling = true;
@@ -6321,7 +6335,7 @@
         : (on ? manualExtensionText(hello).replace(/^확장:\s*/, "") : "지금 확인이 꺼져 있어 확장에 묻지 않습니다") + " · 확장 내려받기 · 설치 안내";
       section.replaceChildren();
       section.appendChild(el("p", { className: "mi-coupang-rank-muted", text: "누를 때만 이 크롬의 전용 확장이 새 시크릿 창으로 쿠팡 검색 1쪽을 한 번 열어 목록을 읽고 닫습니다('전체 확인'도 누를 때만, 키워드마다 한 번씩 차례로). 예약·자동 반복은 없습니다. 검색 사이 간격·하루 횟수·시간·" +
-        (manualPauseKnown(server) ? "차단될 때마다 30분 쉼" : "차단 시 그날 중지") + "은 서버가 지킵니다." }));
+        (manualPauseKnown(server) ? (manualStopsOnSecond(server) ? "차단 시 30분 쉼(서버 설정 SQL 적용 전이라 같은 날 두 번째면 그날 중지)" : "차단될 때마다 30분 쉼") : "차단 시 그날 중지") + "은 서버가 지킵니다." }));
       var lines = [];
       if (setup) {
         lines.push("대표 SQL(지금 확인) 실행 전입니다. SQL 을 실행하면 위 상태판에 켜기 버튼이 생깁니다.");
@@ -6862,6 +6876,7 @@
       manualPauseText: manualPauseText,
       manualPauseAgain: manualPauseAgain,
       manualPauseKnown: manualPauseKnown,
+      manualStopsOnSecond: manualStopsOnSecond,
       manualUpdateHint: manualUpdateHint,
       manualExtensionText: manualExtensionText,
       manualGuideSteps: manualGuideSteps,

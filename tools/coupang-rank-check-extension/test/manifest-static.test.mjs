@@ -17,9 +17,11 @@ function stripComments(source) {
 
 test("manifest: 키 목록과 값이 정확하다(MV3·spanning·권한 2개·호스트 2개·관리자 화면만 연결)", () => {
   assert.deepEqual(Object.keys(manifest).sort(), [
-    "background", "description", "externally_connectable", "host_permissions", "incognito", "key", "manifest_version",
+    "background", "description", "externally_connectable", "host_permissions", "icons", "incognito", "key", "manifest_version",
     "minimum_chrome_version", "name", "permissions", "short_name", "version",
   ].sort());
+  // 아이콘(1.0.4, 대표 고른 B안 2026-10-28): 파일 4개만, 동작·권한과 무관
+  assert.deepEqual(manifest.icons, { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" });
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.version, EXTENSION_VERSION);
   assert.equal(manifest.minimum_chrome_version, "110");
@@ -44,7 +46,7 @@ test("manifest: 넣지 않는 권한·키(알람·탭·요청 가로채기·쿠�
   for (const key of [
     "content_scripts", "web_accessible_resources", "action", "browser_action", "page_action", "optional_permissions",
     "optional_host_permissions", "commands", "declarative_net_request", "chrome_url_overrides", "devtools_page",
-    "options_page", "options_ui", "side_panel", "oauth2", "sandbox", "update_url", "content_security_policy", "icons",
+    "options_page", "options_ui", "side_panel", "oauth2", "sandbox", "update_url", "content_security_policy",
   ]) {
     assert.ok(!Object.hasOwn(manifest, key), key);
   }
@@ -61,7 +63,7 @@ test("manifest key: RSA 2048 공개키(SPKI)이고, 계산한 확장 ID 가 고�
   assert.equal(id, EXPECTED_ID);
 });
 
-test("폴더: 배포 5개 + README + test 만, 비밀키·바이너리 없음", () => {
+test("폴더: 배포 파일(글자 5개 + 아이콘 PNG 4개, 1.0.4) + README + test 만, 비밀키·다른 바이너리 없음", () => {
   const names = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -74,7 +76,14 @@ test("폴더: 배포 5개 + README + test 만, 비밀키·바이너리 없음", 
   walk(EXTENSION_ROOT);
   const outside = names.filter((name) => !SHIPPED_FILES.includes(name) && name !== "README.md" && !/^test\/[a-z0-9-]+(?:\.test)?\.mjs$/.test(name));
   assert.deepEqual(outside, []);
+  const ICONS = ["icons/icon-16.png", "icons/icon-32.png", "icons/icon-48.png", "icons/icon-128.png"];
   for (const name of names) {
+    if (ICONS.includes(name)) {
+      const data = fs.readFileSync(path.join(EXTENSION_ROOT, name));
+      assert.deepEqual([...data.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], `${name} PNG 서명`);
+      assert.ok(data.length <= 64 * 1024, `${name} 64KB 이하`);
+      continue;
+    }
     assert.ok(!/\.(pem|key|crx|zip|p12|pfx|png|jpg|ico)$/i.test(name), name);
     const text = fs.readFileSync(path.join(EXTENSION_ROOT, name), "utf8");
     assert.ok(!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text), `${name} 에 비밀키`);

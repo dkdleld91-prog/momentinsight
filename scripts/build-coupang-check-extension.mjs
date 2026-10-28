@@ -21,6 +21,10 @@ export const ZIP_MAX_BYTES = 1024 * 1024;
 // zip 에 넣는 파일(이 순서 그대로). 확장 폴더의 README.md·test/ 는 넣지 않는다.
 export const SHIPPED_FILES = Object.freeze([
   "background.js",
+  "icons/icon-16.png",
+  "icons/icon-32.png",
+  "icons/icon-48.png",
+  "icons/icon-128.png",
   "lib/assemble.js",
   "lib/measure.js",
   "lib/protocol.js",
@@ -185,6 +189,16 @@ export function buildCoupangCheckExtension({
   for (const rel of SHIPPED_FILES) {
     const absolute = path.join(extensionRoot, rel);
     const data = readRegular(absolute);
+    // 아이콘(1.0.4)은 PNG 만 받는다: 확장자 .png · PNG 서명 8바이트 · 64KB 이하. 글자 검사(UTF-8·BOM·비밀키)는 글자 파일에만.
+    if (rel.endsWith(".png")) {
+      const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      if (!rel.startsWith("icons/") || data.length > 64 * 1024 || Buffer.compare(data.subarray(0, 8), PNG_SIGNATURE) !== 0) {
+        throw new Error(`coupang check extension: invalid icon: ${rel}`);
+      }
+      entries.push({ name: `${ZIP_FOLDER}/${rel}`, data });
+      files.push({ path: rel, sha256: createHash("sha256").update(data).digest("hex"), bytes: data.length });
+      continue;
+    }
     const text = data.toString("utf8");
     if (text.charCodeAt(0) === 0xfeff) throw new Error(`coupang check extension: BOM not allowed: ${rel}`);
     if (!text.isWellFormed() || Buffer.compare(Buffer.from(text, "utf8"), data) !== 0) throw new Error(`coupang check extension: invalid UTF-8: ${rel}`);

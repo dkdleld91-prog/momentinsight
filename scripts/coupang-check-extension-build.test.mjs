@@ -81,7 +81,7 @@ test("CRC32 표준값", () => {
   assert.equal(crc32(Buffer.alloc(0)), 0);
 });
 
-test("zip: 항목 5개(고정 순서·고정 폴더 mi-coupang-check/)·무압축·1980-01-01·UTF-8 표시·추가 필드 없음·원문 바이트 그대로", () => {
+test("zip: 항목 9개(고정 순서·고정 폴더 mi-coupang-check/)·무압축·1980-01-01·UTF-8 표시·추가 필드 없음·원문 바이트 그대로", () => {
   const outDir = tempDir("mi-coupang-check-build-");
   try {
     const result = build(outDir);
@@ -189,7 +189,7 @@ test("만드는 쪽 안전장치: 목록 밖 파일·빠진 파일·배포 안 �
     // README·test 는 있어도 되고 zip 에 들어가지 않는다.
     const ok = copyExtension(path.join(work, "ok"));
     const result = build(path.join(work, "ok-out"), { extensionRoot: ok });
-    assert.equal(readZip(fs.readFileSync(result.zipPath)).length, 5);
+    assert.equal(readZip(fs.readFileSync(result.zipPath)).length, SHIPPED_FILES.length);
   } finally {
     fs.rmSync(work, { recursive: true, force: true });
   }

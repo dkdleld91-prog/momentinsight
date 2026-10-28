@@ -2,7 +2,7 @@
 // 이 파일은 크롬 서비스 워커와 Node 테스트가 함께 읽는다(ESM). 크롬 API 는 쓰지 않는다.
 // 서버 요청은 이 파일의 serverGet 한 곳뿐이다(정적 테스트). 쿠팡에는 fetch 하지 않는다(창을 열어 읽기만).
 
-export const EXTENSION_VERSION = "1.0.3"; // manifest.json version 과 같아야 한다(테스트)
+export const EXTENSION_VERSION = "1.0.4"; // manifest.json version 과 같아야 한다(테스트)
 
 // ── 보내는 쪽(관리자 화면)과 서버 ──
 export const PAGE_ORIGIN = "https://insight.momentlabs.co.kr";

@@ -38,7 +38,7 @@ async function checkAndAck(ctx, claimId) {
 test("상수: 30분 = 서버 MANUAL_PAUSE_MINUTES, 두 번째 규칙 상수 없음, 시작 못 함 코드 blocked_pause", () => {
   assert.equal(PAUSE_MS, 30 * 60 * 1000);
   assert.equal(Object.hasOwn(protocol, "BLOCKS_PER_DAY_STOP"), false, "1.0.3: 같은 날 두 번째 그날 중지 규칙 없음");
-  assert.equal(protocol.EXTENSION_VERSION, "1.0.3");
+  assert.equal(protocol.EXTENSION_VERSION, "1.0.4");
   assert.ok(NOT_STARTED_CODES.includes("blocked_pause"));
   assert.equal(FAST_TIMING.pauseMs, undefined, "시험도 진짜 30분을 쓴다(시계만 옮긴다)");
 });

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const EXTENSION_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const REPO_ROOT = path.resolve(EXTENSION_ROOT, "..", "..");
-export const SHIPPED_FILES = ["background.js", "lib/assemble.js", "lib/measure.js", "lib/protocol.js", "manifest.json"];
+export const SHIPPED_FILES = ["background.js", "icons/icon-16.png", "icons/icon-32.png", "icons/icon-48.png", "icons/icon-128.png", "lib/assemble.js", "lib/measure.js", "lib/protocol.js", "manifest.json"];
 
 export function readExtension(rel) {
   return fs.readFileSync(path.join(EXTENSION_ROOT, rel), "utf8");

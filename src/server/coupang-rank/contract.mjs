@@ -171,10 +171,10 @@ export const COLLECTOR_ERROR_CODES = Object.freeze([
 // chrome-extension:// 이라 운영 허용 목록(https 만)에 들 수 없다. GET 은 게이트가 출처·CSRF 를 보지 않는다.
 // 서버는 시간 판정에 서버 시계만 쓴다(확장·화면 시계를 받지 않는다).
 export const MANUAL_EXTENSION_ID = "onbmdfamcmbljplkgalameendlmgnjeg"; // manifest key 에서 계산(확장 테스트가 대조)
-export const MANUAL_EXTENSION_VERSION = "1.0.3"; // 내려받기 zip 의 버전(1.0.3 = 차단될 때마다 30분 쉼, 대표 결정 2026-10-28)
+export const MANUAL_EXTENSION_VERSION = "1.0.4"; // 내려받기 zip 의 버전(1.0.3 = 차단될 때마다 30분 쉼, 대표 결정 2026-10-28 · 1.0.4 = 아이콘만 추가, 동작 같음)
 // 화면이 '새 버전으로 바꿔 주세요'로 막는 아래 버전. 1.0.0 은 그대로 받는다(진단만 없음 — 서버는 확장 버전을 형식만 본다).
 export const MANUAL_MIN_EXTENSION_VERSION = "1.0.0";
-export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.3.zip";
+export const MANUAL_EXTENSION_ZIP_PATH = "/coupang-check/mi-coupang-check-1.0.4.zip";
 export const MANUAL_EXTENSION_FOLDER = "mi-coupang-check"; // zip 안 폴더 이름(버전 없음 — 업데이트 때 같은 자리에 덮어 풀기)
 export const MANUAL_ALLOWED_ROLES = Object.freeze(["owner"]); // 공개 순서: owner → team → client
 export const MANUAL_CLAIM_TTL_SECONDS = 60; // 요청 뒤 이 안에 확장 확인이 와야 한다(SQL interval '60 seconds')

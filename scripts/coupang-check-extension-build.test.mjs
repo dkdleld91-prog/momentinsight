@@ -167,6 +167,20 @@ test("만드는 쪽 안전장치: 목록 밖 파일·빠진 파일·배포 안 �
       ["import", (root) => {
         fs.appendFileSync(path.join(root, "lib", "protocol.js"), "\nexport { y } from \"./helper.js\";\n");
       }, /imports lib\/helper\.js/],
+      // 아이콘 PNG(1.0.4, Codex 검수 반영): 뒤에 비밀키를 붙인 PNG · 서명뿐인 파일 · 크기 다른 그림 · 64KB 초과는 만들지 않는다
+      ["icon-appended-key", (root) => {
+        fs.appendFileSync(path.join(root, "icons", "icon-16.png"), "\n-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n");
+      }, /invalid icon icons\/icon-16\.png: trailing data/],
+      ["icon-signature-only", (root) => {
+        fs.writeFileSync(path.join(root, "icons", "icon-32.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      }, /invalid icon icons\/icon-32\.png: size/],
+      ["icon-wrong-dimensions", (root) => {
+        fs.copyFileSync(path.join(root, "icons", "icon-16.png"), path.join(root, "icons", "icon-48.png"));
+      }, /invalid icon icons\/icon-48\.png: dimensions/],
+      ["icon-too-big", (root) => {
+        const png = fs.readFileSync(path.join(root, "icons", "icon-128.png"));
+        fs.writeFileSync(path.join(root, "icons", "icon-128.png"), Buffer.concat([png.subarray(0, 33), Buffer.alloc(70 * 1024), png.subarray(png.length - 12)]));
+      }, /invalid icon icons\/icon-128\.png: size/],
       ["key", (root) => {
         const data = JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8"));
         delete data.key;

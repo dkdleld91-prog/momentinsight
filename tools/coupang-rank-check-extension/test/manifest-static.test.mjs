@@ -82,6 +82,12 @@ test("폴더: 배포 파일(글자 5개 + 아이콘 PNG 4개, 1.0.4) + README + 
       const data = fs.readFileSync(path.join(EXTENSION_ROOT, name));
       assert.deepEqual([...data.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], `${name} PNG 서명`);
       assert.ok(data.length <= 64 * 1024, `${name} 64KB 이하`);
+      const size = Number(/icon-(\d+)\.png$/.exec(name)[1]);
+      assert.equal(data.toString("latin1", 12, 16), "IHDR", `${name} IHDR`);
+      assert.equal(data.readUInt32BE(16), size, `${name} 가로`);
+      assert.equal(data.readUInt32BE(20), size, `${name} 세로`);
+      assert.equal(data.toString("latin1", data.length - 8, data.length - 4), "IEND", `${name} 끝(뒤에 붙인 글자 없음)`);
+      assert.ok(!/PRIVATE KEY/.test(data.toString("latin1")), `${name} 에 비밀키`);
       continue;
     }
     assert.ok(!/\.(pem|key|crx|zip|p12|pfx|png|jpg|ico)$/i.test(name), name);

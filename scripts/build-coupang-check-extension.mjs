@@ -41,6 +41,23 @@ const EXTERNAL_ATTR_FILE_0644 = (0o100644 << 16) >>> 0;
 
 const repoRootDefault = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_IEND = Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
+export const ICON_MAX_BYTES = 64 * 1024;
+
+export function checkIconPng(rel, data) {
+  const match = /^icons\/icon-(16|32|48|128)\.png$/.exec(rel);
+  const fail = (why) => { throw new Error(`coupang check extension: invalid icon ${rel}: ${why}`); };
+  if (!match) fail("name");
+  if (!Buffer.isBuffer(data) || data.length < 8 + 25 + 12 || data.length > ICON_MAX_BYTES) fail("size");
+  if (Buffer.compare(data.subarray(0, 8), PNG_SIGNATURE) !== 0) fail("signature");
+  if (data.readUInt32BE(8) !== 13 || data.toString("latin1", 12, 16) !== "IHDR") fail("ihdr");
+  const want = Number(match[1]);
+  if (data.readUInt32BE(16) !== want || data.readUInt32BE(20) !== want) fail("dimensions");
+  if (Buffer.compare(data.subarray(data.length - 12), PNG_IEND) !== 0) fail("trailing data");
+  if (/PRIVATE KEY/.test(data.toString("latin1"))) fail("private key material");
+}
+
 export function zipFileName(version) {
   return `mi-coupang-check-${version}.zip`;
 }
@@ -189,12 +206,10 @@ export function buildCoupangCheckExtension({
   for (const rel of SHIPPED_FILES) {
     const absolute = path.join(extensionRoot, rel);
     const data = readRegular(absolute);
-    // 아이콘(1.0.4)은 PNG 만 받는다: 확장자 .png · PNG 서명 8바이트 · 64KB 이하. 글자 검사(UTF-8·BOM·비밀키)는 글자 파일에만.
+    // 아이콘(1.0.4)은 PNG 만 받는다(checkIconPng): icons/icon-<크기>.png · 서명 · 첫 덩어리 IHDR 의 가로=세로=크기 ·
+    // 끝 12바이트가 IEND(뒤에 붙인 글자 없음) · 64KB 이하 · 바이트 어디에도 비밀키 표시 없음. 글자 검사(UTF-8·BOM)는 글자 파일에만.
     if (rel.endsWith(".png")) {
-      const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-      if (!rel.startsWith("icons/") || data.length > 64 * 1024 || Buffer.compare(data.subarray(0, 8), PNG_SIGNATURE) !== 0) {
-        throw new Error(`coupang check extension: invalid icon: ${rel}`);
-      }
+      checkIconPng(rel, data);
       entries.push({ name: `${ZIP_FOLDER}/${rel}`, data });
       files.push({ path: rel, sha256: createHash("sha256").update(data).digest("hex"), bytes: data.length });
       continue;

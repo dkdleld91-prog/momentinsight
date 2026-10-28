@@ -184,9 +184,9 @@ export const MANUAL_MIN_MEASURE_SECONDS = 5; // 확인 뒤 이보다 빨리 온 
 export const MANUAL_CLAIM_KEEP_DAYS = 60; // 요청 표 보관(SQL interval '60 days')
 export const MANUAL_MIN_GAP_SECONDS = 180; // SQL 제약 하한(c30-2 기본값)
 export const MANUAL_DEFAULT_GAP_SECONDS = 240; // 대표 결정 2026-10-27(c30-4 기본값·지금 행)
-// 차단 뒤 쉼(대표 결정 2026-10-27, c30-4): 그 날 첫 차단 → 30분 쉼(SQL interval '30 minutes'), 같은 날 두 번째 → 그날 중지.
+// 차단 뒤 쉼(대표 결정 2026-10-28, c30-5): 차단될 때마다 30분 쉼(SQL interval '30 minutes'), 차단 때문에 그날 중지는 없다.
+// (c30-4 는 같은 날 두 번째 차단이면 그날 중지였다 — c30-5 SQL 전 서버.)
 export const MANUAL_PAUSE_MINUTES = 30;
-export const MANUAL_BLOCKS_PER_DAY_STOP = 2;
 export const MANUAL_MAX_PER_DAY = 30; // 대표 결정(SQL 기본값·제약 상한)
 export const MANUAL_FROM_HOUR = 9; // 대표 결정(KST, SQL 기본값·제약)
 export const MANUAL_TO_HOUR = 19;
@@ -201,7 +201,8 @@ export const MANUAL_STATES = Object.freeze(["setup_required", "off", "budget", "
 export const MANUAL_OUTCOMES = Object.freeze(["measured", "not_started", "lost"]);
 export const MANUAL_CLAIM_STATUSES = Object.freeze(["open", "verified", "recorded", "cancelled", "lost", "expired"]);
 // 차단 사유(settings.manual_stopped_code · c30-4 manual_block_code). 화면은 사유별로 다른 문구를 쓴다(원인을 단정하지 않는다).
-// c30-4 뒤: 그 날 첫 차단은 30분 쉼, 두 번째는 그날 중지(SQL coupang_rank_manual_stop 이 센다). SQL 전에는 한 번에 그날 중지.
+// c30-5 뒤: 차단될 때마다 30분 쉼(SQL coupang_rank_manual_stop 이 센다 — 센 수는 기록용). c30-4 SQL 뒤·c30-5 전: 첫 차단 30분 쉼,
+// 같은 날 두 번째 그날 중지. c30-4 SQL 전: 한 번에 그날 중지.
 // blocked_http_*: 쿠팡 응답 403·429·503 / blocked_text: 차단 문구 / blocked_page: 확장이 차단으로 본 쪽 /
 // login_redirect: 로그인 화면으로 보냄 / page_unreadable: 쿠팡이 검색 밖 쪽으로 보내 읽지 못함(D1) /
 // extension_reported: 확장이 '오늘 차단을 봤다'고만 알림(시작 못 함 blocked_today·blocked_pause·report_pending).

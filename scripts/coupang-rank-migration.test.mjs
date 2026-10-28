@@ -319,10 +319,11 @@ test("migration-runtime-literal-audit: 이 파일의 함수 18개는 최종 선�
     "public.coupang_rank_manual_summary",
     "public.coupang_rank_manual_verify",
   ]);
-  // 차단 뒤 30분 쉼(c30-4, 2026-10-27)이 요약·차단 알림 2개를 다시 선언한다. 나머지 3개는 ① 지금 확인 SQL 이 최종 선언.
+  // 차단 뒤 30분 쉼(c30-4, 2026-10-27)·차단될 때마다 30분 쉼(c30-5, 2026-10-28)이 요약·차단 알림 2개를 다시 선언한다(최종 = c30-5).
+  // 나머지 3개는 ① 지금 확인 SQL 이 최종 선언.
   const PAUSE_REDEFINED = new Set(["public.coupang_rank_manual_summary", "public.coupang_rank_manual_stop"]);
   assert.ok(others.every((entry) => entry.file === (PAUSE_REDEFINED.has(entry.function)
-    ? "20261027180000_coupang_rank_manual_pause.sql"
+    ? "20261028090000_coupang_rank_manual_pause_every_block.sql"
     : "20261018090000_coupang_rank_manual_check.sql")), "지금 확인 함수의 최종 선언 파일");
   assert.equal(auditMigrationRuntimeLiterals({ migrationDirectory }).ok, true);
 });

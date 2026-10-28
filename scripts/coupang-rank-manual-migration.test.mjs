@@ -18,7 +18,6 @@ import {
   MANUAL_CLAIM_TTL_SECONDS,
   MANUAL_FROM_HOUR,
   MANUAL_MAX_PER_DAY,
-  MANUAL_BLOCKS_PER_DAY_STOP,
   MANUAL_DEFAULT_GAP_SECONDS,
   MANUAL_MIN_GAP_SECONDS,
   MANUAL_MIN_MEASURE_SECONDS,
@@ -1119,6 +1118,8 @@ const PAUSE_SHA256 = "dec14a88c6801a246d6307c47d1ecc2bfeae061e6bed7b3169c6ba6e1b
 const PAUSE_DOCS = path.join(root, "docs", "sql", "c30-4-manual-pause.sql");
 const PAUSE_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.rollback.sql"), "utf8");
 const PAUSE_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-4-manual-pause.verify-applied.sql"), "utf8");
+// c30-4 원문의 '같은 날 두 번째 → 그날 중지'(c30-5 에서 없앰 — contract 에는 더 없다).
+const C30_4_BLOCKS_TO_STOP = 2;
 const PAUSE_COLUMNS = ["manual_paused_until", "manual_block_day", "manual_block_count", "manual_block_at", "manual_block_code", "manual_block_claim_id"];
 
 function pauseFunctionBody(name) {
@@ -1187,12 +1188,12 @@ test("c30-4 원문 고정: 해시·docs/sql 사본 바이트 같음·begin … c
   }
 });
 
-test("c30-4 상수가 contract.mjs 와 같다(30분·두 번째·240초·상태 이름·새 거절 코드 4xx)", () => {
+test("c30-4 상수가 contract.mjs 와 같다(30분·c30-4 원문의 두 번째·240초·상태 이름·새 거절 코드 4xx)", () => {
   const summaryBody = pauseFunctionBody("coupang_rank_manual_summary");
   const stopBody = pauseFunctionBody("coupang_rank_manual_stop");
   assert.ok(stopBody.includes(`interval '${MANUAL_PAUSE_MINUTES} minutes'`));
-  assert.ok(stopBody.includes(`v_count < ${MANUAL_BLOCKS_PER_DAY_STOP}`) && stopBody.includes(`v_count >= ${MANUAL_BLOCKS_PER_DAY_STOP}`));
-  assert.ok(summaryBody.includes(`'pauseMinutes', ${MANUAL_PAUSE_MINUTES}`) && summaryBody.includes(`'blocksToStop', ${MANUAL_BLOCKS_PER_DAY_STOP}`));
+  assert.ok(stopBody.includes(`v_count < ${C30_4_BLOCKS_TO_STOP}`) && stopBody.includes(`v_count >= ${C30_4_BLOCKS_TO_STOP}`));
+  assert.ok(summaryBody.includes(`'pauseMinutes', ${MANUAL_PAUSE_MINUTES}`) && summaryBody.includes(`'blocksToStop', ${C30_4_BLOCKS_TO_STOP}`));
   assert.ok(summaryBody.includes(`interval '${MANUAL_SEARCH_WINDOW_SECONDS} seconds'`));
   assert.ok(pauseSql.includes(`alter column manual_min_gap_seconds set default ${MANUAL_DEFAULT_GAP_SECONDS}`));
   assert.ok(pauseSql.includes(`set manual_min_gap_seconds = ${MANUAL_DEFAULT_GAP_SECONDS} where id = 1 and manual_min_gap_seconds = ${MANUAL_MIN_GAP_SECONDS}`));
@@ -1468,6 +1469,351 @@ test("c30-4 확인문 기대값(6 | 240 | 240 | true | true | 5 | NULL) · 되�
     assert.equal((await h.record(blocked.claimId, blocked.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" })).stopped, true);
     await db.exec(pauseSql);
     assert.equal((await db.query(PAUSE_VERIFY)).rows[0].summary_paused, true);
+  } finally {
+    await db.close();
+  }
+});
+
+// ───────────────────────── 차단될 때마다 30분 쉼(c30-5, 대표 결정 2026-10-28) ─────────────────────────
+// c30-4 위에 함수 2개(요약·차단 알림)만 다시 정의 + 오늘 그날 중지를 30분 쉼으로 바꾸는 갱신 1개. 칸은 더하지 않는다.
+const EVERY_NAME = "20261028090000_coupang_rank_manual_pause_every_block.sql";
+const everySql = fs.readFileSync(path.join(migrationDirectory, EVERY_NAME), "utf8");
+const EVERY_SHA256 = "590ac6ade345cb1469add7b3ab816239afca911ea7def38cdecfd91b63737cef";
+const EVERY_DOCS = path.join(root, "docs", "sql", "c30-5-manual-pause-every-block.sql");
+const EVERY_ROLLBACK = fs.readFileSync(path.join(root, "docs", "sql", "c30-5-manual-pause-every-block.rollback.sql"), "utf8");
+const EVERY_VERIFY = fs.readFileSync(path.join(root, "docs", "sql", "c30-5-manual-pause-every-block.verify-applied.sql"), "utf8");
+
+function everyFunctionBody(name) {
+  const start = everySql.indexOf(`create or replace function public.${name}(`);
+  assert.ok(start >= 0, `${name} 선언이 없다`);
+  const open = everySql.indexOf("$$", start);
+  return everySql.slice(open + 2, everySql.indexOf("$$", open + 2));
+}
+
+async function freshPause() {
+  const db = await fresh();
+  await db.exec(diagSql);
+  await db.exec(pauseSql);
+  return db;
+}
+
+async function withEveryDb(fn) {
+  await awayFromKstMidnight();
+  const db = await freshPause();
+  try {
+    await db.exec(everySql);
+    await db.exec(OPEN_SQL);
+    const h = helpers(db);
+    h.endPause = async () => db.exec("update public.coupang_rank_settings set manual_paused_until = now() - interval '1 second' where id = 1");
+    return await fn(db, h);
+  } finally {
+    await db.close();
+  }
+}
+
+// 쉼 끝이 서버 시각 + 30분(±1분)인지.
+function assertThirtyMinutes(summary) {
+  const seconds = (Date.parse(summary.pausedUntil) - Date.parse(summary.serverTime)) / 1000;
+  assert.ok(seconds > 29 * 60 && seconds <= 30 * 60, `쉼 ${seconds}초`);
+}
+
+test("c30-5 원문 고정: 해시·docs/sql 사본 바이트 같음·begin … commit·금지 문자열 0개·리터럴 감사·함수 2개만(security definer·search_path '')·칸·표 무변경·되돌리기 = c30-4 원문", () => {
+  assert.equal(sha(everySql), EVERY_SHA256);
+  assert.ok(fs.readFileSync(EVERY_DOCS).equals(fs.readFileSync(path.join(migrationDirectory, EVERY_NAME))),
+    "docs/sql/c30-5-manual-pause-every-block.sql 이 마이그레이션과 바이트 단위로 다르다");
+  for (const text of [everySql, EVERY_ROLLBACK]) {
+    const lines = text.split("\n");
+    assert.equal(lines.filter((line) => line === "begin;").length, 1);
+    assert.equal(lines.filter((line) => line === "commit;").length, 1);
+    assert.equal(text.trimEnd().split("\n").at(-1), "commit;");
+    assert.equal(lines.find((line) => line.trim() && !line.startsWith("--")), "begin;");
+    assert.match(text, /set local lock_timeout = '5s';/);
+  }
+  const lockSource = fs.readFileSync(path.join(root, "scripts", "check-protected-rank-features.mjs"), "utf8");
+  const declared = /const RANK_MIGRATION_PATTERN = \/(.+)\/([a-z]*);/.exec(lockSource);
+  const lockPattern = new RegExp(declared[1], declared[2]);
+  for (const text of [everySql, EVERY_ROLLBACK, EVERY_VERIFY]) {
+    assert.equal(lockPattern.test(text), false);
+    assert.equal(/'[0-9]+\.[0-9]+\.[0-9]+'/.test(text), false);
+    assert.equal(/[0-9a-f]{64}/i.test(text), false);
+    assert.equal(/naver/i.test(text), false);
+  }
+  assert.equal(/\b(insert|update|delete)\b/i.test(stripSqlComments(EVERY_VERIFY)), false, "확인문은 읽기만");
+  const audit = auditMigrationRuntimeLiterals({ migrationDirectory, files: [EVERY_NAME], allowlist: [] });
+  assert.equal(audit.ok, true);
+  assert.deepEqual(audit.violations, []);
+  const headers = [...everySql.matchAll(/create or replace function public\.([a-z_]+)\(([\s\S]*?)\nas \$\$/g)];
+  assert.deepEqual(headers.map((hit) => hit[1]), ["coupang_rank_manual_summary", "coupang_rank_manual_stop"]);
+  for (const [, name, header] of headers) {
+    assert.match(header, /\nsecurity definer\n/, `${name}: security definer`);
+    assert.match(header, /\nset search_path = ''$/, `${name}: set search_path = ''`);
+  }
+  const code = stripSqlComments(everySql);
+  assert.equal(/create\s+(table|view|index|trigger)|alter\s+table|drop\s/i.test(code), false, "칸·표는 바꾸지 않는다");
+  // 함수 밖 쓰기는 오늘 그날 중지 → 30분 쉼 갱신 하나뿐(설정 행 id = 1, 오늘만)
+  const outside = code.replace(/as \$\$[\s\S]*?\$\$;/g, "");
+  assert.equal((outside.match(/\bupdate\b/gi) || []).length, 1);
+  assert.match(outside, /update public\.coupang_rank_settings\s+set manual_paused_until = greatest\(manual_paused_until, coalesce\(manual_stopped_at, now\(\)\) \+ interval '30 minutes'\),\s+manual_stopped_day = null\s+where id = 1\s+and manual_stopped_day = \(now\(\) at time zone 'Asia\/Seoul'\)::date;/);
+  // 되돌리기는 c30-4 원문 함수 그대로(바이트 같음), 칸은 지우지 않는다
+  for (const name of ["coupang_rank_manual_summary", "coupang_rank_manual_stop"]) {
+    const start = EVERY_ROLLBACK.indexOf(`create or replace function public.${name}(`);
+    const open = EVERY_ROLLBACK.indexOf("$$", start);
+    assert.equal(EVERY_ROLLBACK.slice(open + 2, EVERY_ROLLBACK.indexOf("$$", open + 2)), pauseFunctionBody(name), `${name} 되돌리기 = c30-4 원문`);
+  }
+  assert.equal(/alter\s+table|drop\s|\bupdate\b/i.test(stripSqlComments(EVERY_ROLLBACK).replace(/as \$\$[\s\S]*?\$\$;/g, "")), false, "되돌리기는 함수만");
+});
+
+test("c30-5 상수가 contract.mjs 와 같다(30분·그날 중지 규칙 없음·상태 이름 그대로)", () => {
+  const summaryBody = everyFunctionBody("coupang_rank_manual_summary");
+  const stopBody = everyFunctionBody("coupang_rank_manual_stop");
+  assert.ok(stopBody.includes(`interval '${MANUAL_PAUSE_MINUTES} minutes'`));
+  assert.ok(everySql.includes(`interval '${MANUAL_PAUSE_MINUTES} minutes'),\n       manual_stopped_day = null`));
+  assert.ok(summaryBody.includes(`'pauseMinutes', ${MANUAL_PAUSE_MINUTES}`));
+  assert.equal(summaryBody.includes("blocksToStop"), false, "두 번째 차단 그날 중지 규칙은 없다");
+  assert.equal(/set manual_stopped_day|manual_stopped_day\s*=\s*v_day/.test(stopBody), false, "차단 알림은 그날 중지를 걸지 않는다");
+  assert.equal(/v_count\s*(<|>=)\s*[0-9]|v_count\s*>\s*[1-9]/.test(stopBody), false, "몇 번째인지로 갈라지지 않는다");
+  assert.ok(summaryBody.includes(`interval '${MANUAL_SEARCH_WINDOW_SECONDS} seconds'`));
+  const states = [...summaryBody.matchAll(/then '([a-z_]+)'/g)].map((hit) => hit[1]);
+  assert.deepEqual(sorted([...states, "ready", "setup_required"]), sorted(MANUAL_STATES));
+  for (const code of new Set([...everySql.matchAll(/'(COUPANG_[A-Z_]+)'/g)].map((hit) => hit[1]))) {
+    const status = ERROR_HTTP_STATUS[code];
+    assert.ok(Number.isInteger(status) && status >= 400 && status < 500, `${code} → ${status}`);
+  }
+});
+
+test("c30-5 다시 실행 안전(세 번 오류 0·카탈로그 그대로)·칸·간격 값 그대로·권한 service_role 전용·c30-4 없이 실행하면 오류로 멈춤", async () => {
+  const db = await freshPause();
+  try {
+    const columnsBefore = (await db.query(CATALOG_SQL)).rows[0].columns;
+    await db.exec(everySql);
+    const first = (await db.query(CATALOG_SQL)).rows[0];
+    assert.equal(first.columns, columnsBefore, "칸은 c30-4 그대로");
+    await db.exec(everySql);
+    await db.exec(everySql);
+    assert.deepEqual((await db.query(CATALOG_SQL)).rows[0], first);
+    assert.equal((await db.query("select manual_min_gap_seconds from public.coupang_rank_settings")).rows[0].manual_min_gap_seconds, 240);
+    for (const sig of ["coupang_rank_manual_summary(uuid)", "coupang_rank_manual_stop(uuid,text,text,text,uuid)"]) {
+      const grants = (await db.query(`select has_function_privilege('anon', 'public.${sig}', 'execute') as anon,
+        has_function_privilege('authenticated', 'public.${sig}', 'execute') as auth,
+        has_function_privilege('service_role', 'public.${sig}', 'execute') as service`)).rows[0];
+      assert.deepEqual(grants, { anon: false, auth: false, service: true }, sig);
+    }
+  } finally {
+    await db.close();
+  }
+  const bare = await fresh();
+  try {
+    await bare.exec(diagSql);
+    const before = (await bare.query(CATALOG_SQL)).rows[0];
+    await assert.rejects(bare.exec(everySql), /manual_paused_until/);
+    await bare.exec("rollback");
+    assert.deepEqual((await bare.query(CATALOG_SQL)).rows[0], before, "c30-4 전이면 아무것도 바꾸지 않는다");
+  } finally {
+    await bare.close();
+  }
+});
+
+test("c30-5 차단될 때마다 30분 쉼: 첫·두 번째·세 번째 차단 모두 쉼(그날 중지 없음, blocksToday 1·2·3), 쉬는 동안 claim·verify 거절, 30분 뒤 허용", async () => {
+  await withEveryDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const codes = ["blocked_http_403", "blocked_http_429", "page_unreadable"];
+    for (const [index, stopCode] of codes.entries()) {
+      const searched = await h.verified(tracker);
+      const run = stopCode === "page_unreadable" ? { ...blockedRun(200), errorCode: "page_unreadable", finalHost: "" } : blockedRun(Number(stopCode.slice(-3)));
+      const blocked = await h.record(searched.claimId, searched.hash, { status: "blocked", run, stopCode });
+      assert.deepEqual([blocked.ok, blocked.accepted, blocked.stopped, blocked.manual.state, blocked.manual.blocksToday], [true, true, false, "paused", index + 1], stopCode);
+      const summary = await h.summary();
+      assert.deepEqual([summary.state, summary.blocksToday, summary.blockCode, summary.pauseMinutes, summary.stoppedDay], ["paused", index + 1, stopCode, 30, null]);
+      assert.equal(Object.hasOwn(summary, "blocksToStop"), false);
+      assertThirtyMinutes(summary);
+      const settings = await h.settings();
+      assert.deepEqual([settings.manual_stopped_day, settings.manual_stopped_code, settings.manual_block_count, settings.manual_block_claim_id],
+        [null, null, index + 1, searched.claimId]);
+      // 쉬는 동안: 새 요청 거절, 앞서 받은 요청의 확인도 거절하고 닫는다
+      await h.clearGap();
+      const refused = await h.claim(tracker, h.token());
+      assert.deepEqual([refused.ok, refused.state, refused.manual.pausedUntil], [false, "paused", summary.pausedUntil]);
+      if (index === 1) {
+        await h.endPause();
+        const hash = h.token();
+        const open = await h.claim(tracker, hash);
+        assert.equal(open.ok, true);
+        await db.exec("update public.coupang_rank_settings set manual_paused_until = now() + interval '10 minutes' where id = 1");
+        const verifyRefused = await h.verify(open.claimId, hash);
+        assert.deepEqual([verifyRefused.ok, verifyRefused.state], [false, "paused"]);
+        assert.equal((await h.claimRow(open.claimId)).status, "cancelled");
+      }
+      // 30분 뒤(서버 시계): 다시 가능
+      await h.endPause();
+      await h.clearGap();
+      const ready = await h.summary();
+      assert.deepEqual([ready.state, ready.pausedUntil, ready.blocksToday], ["ready", null, index + 1]);
+    }
+    // 차단 뒤에도 성공은 그대로 저장되고 센 차단 수는 기록으로 남는다
+    const ok = await h.verified(tracker);
+    const saved = await h.record(ok.claimId, ok.hash, { status: "ok", run: okRun(organicList(4)) });
+    assert.deepEqual([saved.accepted, saved.stopped, saved.manual.blocksToday], [true, false, 3]);
+    assert.equal((await h.settings()).cooldown_until, null, "수동 차단은 자동 쉬기를 건드리지 않는다");
+  });
+});
+
+test("c30-5 같은 요청의 차단은 한 번만 센다(직접 알림 → 결과 보고 → 다시 = 쉼 1번, 늘리지 않음) · 확장의 '앞서 본 차단'(1.0.1 blocked_today·1.0.2/1.0.3 blocked_pause·report_pending)은 서버가 모를 때만 센다", async () => {
+  await withEveryDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const direct = await h.verified(tracker);
+    const alert = await h.stop(direct.claimId, direct.hash, "blocked_http_403");
+    assert.deepEqual([alert.ok, alert.stopped, alert.paused, alert.blocksToday, alert.manual.state], [true, false, true, 1, "paused"]);
+    const pausedUntil = (await h.settings()).manual_paused_until;
+    const followed = await h.record(direct.claimId, direct.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" });
+    assert.deepEqual([followed.accepted, followed.stopped], [true, false]);
+    assert.equal((await h.stop(direct.claimId, direct.hash, "blocked_text")).blocksToday, 1);
+    let settings = await h.settings();
+    assert.deepEqual([settings.manual_block_count, settings.manual_block_code, settings.manual_stopped_day, settings.manual_stopped_run_id], [1, "blocked_http_403", null, null]);
+    assert.equal(String(settings.manual_paused_until), String(pausedUntil), "다시 알려도 쉼을 늘리지 않는다");
+    // 쉼 뒤 1.0.1·1.0.2 확장이 남은 기억으로 '앞서 본 차단'을 알려도(새 검색 아님) 다시 쉬지 않는다
+    await h.endPause();
+    await h.clearGap();
+    for (const code of ["blocked_today", "blocked_pause", "report_pending"]) {
+      const hash = h.token();
+      const claimed = await h.claim(tracker, hash);
+      assert.equal(claimed.ok, true, code);
+      const result = await h.record(claimed.claimId, hash, { outcome: "not_started", code, stopCode: "extension_reported" });
+      assert.deepEqual([result.stopped, result.paused ?? false, result.manual.state], [false, false, "ready"], code);
+    }
+    settings = await h.settings();
+    assert.deepEqual([settings.manual_block_count, settings.manual_stopped_day], [1, null]);
+  });
+  await withEveryDb(async (db, h) => {
+    // 서버가 그 날 차단을 모름(직접 알림·결과 보고가 모두 닿지 않음) → 확장 알림을 첫 차단으로 30분 쉼
+    const tracker = await h.addTracker();
+    const hash = h.token();
+    const claimed = await h.claim(tracker, hash);
+    const reported = await h.record(claimed.claimId, hash, { outcome: "not_started", code: "blocked_today", stopCode: "extension_reported" });
+    assert.deepEqual([reported.ok, reported.counted, reported.stopped, reported.manual.state], [true, false, false, "paused"]);
+    assertThirtyMinutes(await h.summary());
+  });
+});
+
+test("c30-5 늦은 보고: 확장 알림(확인 없음)이 먼저 세어진 뒤 그보다 먼저 검색한 A 는 같은 차단(쉼 그대로), 알림 전의 다른 검색 C 는 다음 차단 → 다시 30분 쉼(그날 중지 아님)", async () => {
+  await withEveryDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    const a = await h.verified(tracker);
+    await h.ageVerify(a.claimId, 250);
+    await h.clearGap();
+    const c = await h.verified(tracker);
+    await h.ageVerify(c.claimId, 200);
+    await h.clearGap();
+    const bHash = h.token();
+    const b = await h.claim(tracker, bHash);
+    assert.equal(b.ok, true, JSON.stringify(b));
+    await h.record(b.claimId, bHash, { outcome: "not_started", code: "blocked_pause", stopCode: "extension_reported" });
+    const firstUntil = String((await h.settings()).manual_paused_until);
+    const lateA = await h.record(a.claimId, a.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" });
+    assert.deepEqual([lateA.stopped, lateA.manual.state, lateA.manual.blocksToday], [false, "paused", 1]);
+    assert.equal(String((await h.settings()).manual_paused_until), firstUntil, "같은 차단은 쉼을 늘리지 않는다");
+    assert.equal((await h.settings()).manual_block_claim_id, a.claimId);
+    const lateC = await h.record(c.claimId, c.hash, { status: "blocked", run: blockedRun(429), stopCode: "blocked_http_429" });
+    assert.deepEqual([lateC.stopped, lateC.manual.state, lateC.manual.blocksToday], [false, "paused", 2]);
+    assert.equal((await h.settings()).manual_stopped_day, null);
+  });
+});
+
+test("c30-5 적용할 때 오늘 그날 중지(c30-4 두 번째 차단)는 중지 시각부터 30분 쉼으로 바뀐다 · 30분 지났으면 바로 ready · 지난 날 중지·기록 칸은 그대로", async () => {
+  await awayFromKstMidnight();
+  const db = await freshPause();
+  try {
+    await db.exec(OPEN_SQL);
+    const h = helpers(db);
+    const tracker = await h.addTracker();
+    for (const [index, status] of [403, 429].entries()) {
+      if (index) {
+        await db.exec("update public.coupang_rank_settings set manual_paused_until = now() - interval '1 second' where id = 1");
+        await h.clearGap();
+      }
+      const searched = await h.verified(tracker);
+      await h.record(searched.claimId, searched.hash, { status: "blocked", run: blockedRun(status), stopCode: `blocked_http_${status}` });
+    }
+    assert.equal((await h.summary()).state, "stopped", "c30-4: 같은 날 두 번째 = 그날 중지");
+    const stoppedRow = await h.settings();
+    await db.exec(everySql);
+    const after = await h.summary();
+    assert.deepEqual([after.state, after.stoppedDay, after.blocksToday, after.stoppedCode], ["paused", null, 2, "blocked_http_429"]);
+    const row = await h.settings();
+    assert.equal(new Date(row.manual_paused_until).getTime(), new Date(stoppedRow.manual_stopped_at).getTime() + 30 * 60_000, "중지 시각 + 30분");
+    assert.deepEqual([String(row.manual_stopped_at), row.manual_stopped_code, row.manual_stopped_run_id],
+      [String(stoppedRow.manual_stopped_at), stoppedRow.manual_stopped_code, stoppedRow.manual_stopped_run_id], "기록 칸은 그대로");
+    await db.exec(everySql);
+    assert.equal(String((await h.settings()).manual_paused_until), String(row.manual_paused_until), "다시 실행해도 쉼을 늘리지 않는다");
+    // 중지가 40분 전이었다면 바로 다시 된다
+    await db.exec(`update public.coupang_rank_settings set manual_stopped_day = (now() at time zone 'Asia/Seoul')::date,
+      manual_stopped_at = now() - interval '40 minutes', manual_paused_until = now() - interval '70 minutes' where id = 1`);
+    await db.exec(everySql);
+    await h.clearGap();
+    const ready = await h.summary();
+    assert.deepEqual([ready.state, ready.pausedUntil, ready.stoppedDay], ["ready", null, null]);
+    // 지난 날 중지는 건드리지 않는다
+    await db.exec("update public.coupang_rank_settings set manual_stopped_day = (now() at time zone 'Asia/Seoul')::date - 1, manual_paused_until = null where id = 1");
+    await db.exec(everySql);
+    const old = await h.settings();
+    assert.equal(old.manual_paused_until, null);
+    assert.ok(old.manual_stopped_day, "어제 중지 기록은 그대로");
+  } finally {
+    await db.close();
+  }
+});
+
+test("c30-5 다음 날(KST) 초기화: 어제 센 차단 3번이어도 오늘은 ready·blocksToday 0, 오늘 첫 차단은 30분 쉼 · 지난 날 늦은 보고는 세지 않음", async () => {
+  await withEveryDb(async (db, h) => {
+    const tracker = await h.addTracker();
+    await db.exec(`update public.coupang_rank_settings set manual_block_day = (now() at time zone 'Asia/Seoul')::date - 1, manual_block_count = 3,
+      manual_paused_until = now() - interval '20 hours' where id = 1`);
+    await h.clearGap();
+    const fresh = await h.summary();
+    assert.deepEqual([fresh.state, fresh.blocksToday, fresh.blockCode, fresh.pausedUntil], ["ready", 0, null, null]);
+    const today = await h.verified(tracker);
+    const blocked = await h.record(today.claimId, today.hash, { status: "blocked", run: blockedRun(503), stopCode: "blocked_http_503" });
+    assert.deepEqual([blocked.stopped, blocked.manual.state, blocked.manual.blocksToday], [false, "paused", 1]);
+    await h.endPause();
+    await h.clearGap();
+    const late = await h.verified(tracker);
+    await db.query("update public.coupang_rank_manual_claims set verified_at = verified_at - interval '1 day', claimed_at = claimed_at - interval '1 day' where id = $1", [late.claimId]);
+    const lateStop = await h.stop(late.claimId, late.hash, "blocked_http_403");
+    assert.deepEqual([lateStop.ok, lateStop.stopped, lateStop.paused, lateStop.blocksToday], [true, false, false, 1]);
+    await h.clearGap();
+    assert.equal((await h.summary()).state, "ready");
+  });
+});
+
+test("c30-5 확인문 기대값(true | true | 5 | false | 0 | NULL) · 되돌리기 두 번 → c30-4 직후 카탈로그·확인문 every_block false · c30-4 동작(두 번째 차단 그날 중지) · 다시 적용하면 오늘 중지를 30분 쉼으로", async () => {
+  const before = await freshPause();
+  const baseline = (await before.query(CATALOG_SQL)).rows[0];
+  await before.close();
+  await awayFromKstMidnight();
+  const db = await freshPause();
+  try {
+    await db.exec(everySql);
+    const row = (await db.query(EVERY_VERIFY)).rows[0];
+    assert.deepEqual([row.every_block, row.summary_no_stop_rule, Number(row.fn_count), row.stopped_today, Number(row.blocks_today), row.paused_until_now],
+      [true, true, 5, false, 0, null]);
+    await db.exec(EVERY_ROLLBACK);
+    await db.exec(EVERY_ROLLBACK);
+    assert.deepEqual((await db.query(CATALOG_SQL)).rows[0], baseline);
+    const rolled = (await db.query(EVERY_VERIFY)).rows[0];
+    assert.deepEqual([rolled.every_block, rolled.summary_no_stop_rule], [false, false]);
+    await db.exec(OPEN_SQL);
+    const h = helpers(db);
+    const tracker = await h.addTracker();
+    const first = await h.verified(tracker);
+    assert.equal((await h.record(first.claimId, first.hash, { status: "blocked", run: blockedRun(403), stopCode: "blocked_http_403" })).manual.state, "paused");
+    await db.exec("update public.coupang_rank_settings set manual_paused_until = now() - interval '1 second' where id = 1");
+    await h.clearGap();
+    const second = await h.verified(tracker);
+    assert.equal((await h.record(second.claimId, second.hash, { status: "blocked", run: blockedRun(429), stopCode: "blocked_http_429" })).stopped, true);
+    assert.equal((await db.query(EVERY_VERIFY)).rows[0].stopped_today, true);
+    await db.exec(everySql);
+    const again = (await db.query(EVERY_VERIFY)).rows[0];
+    assert.deepEqual([again.every_block, again.stopped_today, Number(again.blocks_today)], [true, false, 2]);
+    assert.ok(again.paused_until_now, "방금 중지 → 30분 쉼");
   } finally {
     await db.close();
   }

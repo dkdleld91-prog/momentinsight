@@ -3,6 +3,8 @@
 이 문서는 `tools/coupang-rank-check-extension/README.md`(대표용 안내)와 **같은 순서·같은 문장**입니다(1~8장, 테스트로 대조).
 9장부터는 개발·운영 담당용 메모입니다. 서버·SQL·화면 쪽 운영 절차는 `docs/RUNBOOK.md` 의 C 30일 '① 지금 확인' 절을 봅니다.
 
+> **2026-10-28 바뀐 점(대표 결정 "두번실패하면 내일로가는데 그냥 계속 30분씩만 텀 돌면 괜찮습니다"):** 차단될 때마다 **30분 쉼**입니다. 같은 날 두 번째 차단이어도 그날 전체를 멈추지 않습니다(아래 10-27 의 '두 번째면 그날 중지'는 없어졌습니다). 확장은 1.0.3 으로 올라갔습니다(6장 업데이트 — 옛 확장이 남긴 '오늘 멈춤' 기억도 그 차단 때부터 30분 쉼으로 바뀝니다). 서버 쪽은 대표 SQL `docs/sql/c30-5-manual-pause-every-block.sql` 뒤에 적용됩니다.
+>
 > **2026-10-27 바뀐 점(대표 승인 "네 추천대로 진행해주세요"):** 차단으로 보이는 화면이 나와도 하루 종일 멈추지 않습니다. 그 날 첫 차단은 **30분 쉼**(화면에 'HH:MM에 다시'), **같은 날 두 번째 차단이면 그날 중지**(다음 날 09시). 검색 사이 간격은 3분 → **4분**입니다('전체 확인'도 같음, 키워드 수 × 약 4분). 확장은 1.0.2 로 올라갔습니다(확장 안 기억도 같은 규칙, 6장 업데이트). 서버 쪽은 대표 SQL `docs/sql/c30-4-manual-pause.sql` 뒤에 적용됩니다(그 전에는 예전처럼 차단 한 번에 그날 중지).
 >
 > **2026-10-24 바뀐 점(대표 승인):** 관리자 화면 상태판에 '전체 확인'이 생겼습니다(오늘 아직 확인 안 한 상품만, 같은 키워드는 한 번, 검색 사이 3분, 키워드 수 × 약 3분). 확장은 키워드마다 '지금 확인' 한 번과 똑같이 움직입니다. 같은 날 확장이 1.0.1 로 올라갔습니다(실패 원인 기록 · 쪽이 스스로 다시 불러오면 1번 더 읽기, 6장 업데이트 참고).
@@ -190,7 +192,7 @@
 
 ## 9. 배포 확인(개발 담당)
 
-- `npm run build:vercel` 이 `node scripts/build-coupang-check-extension.mjs` 로 `dist/coupang-check/mi-coupang-check-<버전>.zip`(지금 1.0.2) 과
+- `npm run build:vercel` 이 `node scripts/build-coupang-check-extension.mjs` 로 `dist/coupang-check/mi-coupang-check-<버전>.zip`(지금 1.0.3) 과
   `dist/coupang-check/version.json` 을 만든다(수집기 묶음 다음, 공개 빌드 검사 앞). zip 은 무압축·고정 순서·1980-01-01 시각이라
   같은 원문이면 바이트가 같다. 안 폴더는 버전 없는 `mi-coupang-check/`, 파일은 `background.js`·`lib/assemble.js`·`lib/measure.js`·
   `lib/protocol.js`·`manifest.json` 5개뿐이다(README·test 는 넣지 않음). 테스트: `scripts/coupang-check-extension-build.test.mjs`.
@@ -214,6 +216,11 @@
   `paused`·`pausedUntil`·`blocksToday`, 결과 응답 `paused`·`pausedUntil`. 간격은 기본값·지금 행 180 → 240(다른 값이면 그대로, 제약 180~3600 그대로).
   SQL 전에는 서버·화면·확장 모두 예전 동작(차단 한 번에 그날 중지)이다. 쉬는 중·오늘 센 차단 보기(읽기 전용):
   `select manual_paused_until, manual_block_day, manual_block_count, manual_block_code, manual_stopped_day from public.coupang_rank_settings;`
+- 1.0.3 차단될 때마다 30분 쉼(대표 결정 2026-10-28): 대표 SQL `docs/sql/c30-5-manual-pause-every-block.sql`(= `supabase/migrations/20261028090000_coupang_rank_manual_pause_every_block.sql`,
+  바이트 같음, 다시 실행 안전, c30-4 뒤에만) → 확인문 `docs/sql/c30-5-manual-pause-every-block.verify-applied.sql`(기대 `true | true | 5 | false | 오늘 센 차단 수 | 쉬는 중이면 끝 시각`).
+  칸은 더하지 않고 요약·차단 알림 함수 2개만 바꾼다(차단 알림은 몇 번째든 30분 쉼, 그날 중지 없음 · 요약은 `blocksToStop` 을 빼고 보낸다) +
+  적용할 때 오늘 그날 중지가 있으면 중지 시각부터 30분 쉼으로 바꾼다(중지 시각·사유·회차 id 는 남김). 확장 1.0.3 은 `blocked_today` 를 내지 않고,
+  1.0.1·1.0.2 가 남긴 오늘 `blockedDay` 를 그 차단 검색 시각(`lastCheckAt`)부터 30분 쉼으로 한 번 바꾼다. SQL 전(c30-4 만)이면 서버는 c30-4 대로다.
 
 ## 10. 자동 수집을 다시 켤 때 함께 볼 것
 
@@ -238,6 +245,7 @@
 2. 코드 되돌림 → 배포(C30 기존 화면·API 는 그대로 동작).
 3. 대표 승인 뒤 `docs/sql/c30-2-manual-check.rollback.sql`(기록된 순위는 남는다).
    1.0.1 진단 칸만 되돌릴 때는 `docs/sql/c30-3-run-diagnostics.rollback.sql`(쌓인 진단만 사라지고 순위 기록은 남는다. 서버는 칸이 없어도 그대로 동작).
-   30분 쉼만 되돌릴 때는 `docs/sql/c30-4-manual-pause.rollback.sql`(차단 한 번에 그날 중지로 돌아간다. 쉬는 중이거나 오늘 센 차단이 있으면 오늘을 그날 중지로
+   '차단될 때마다 30분 쉼'만 되돌릴 때는 `docs/sql/c30-5-manual-pause-every-block.rollback.sql`(함수 2개를 c30-4 원문으로 — 같은 날 두 번째 차단 그날 중지로 돌아간다.
+   칸·쉼은 그대로). 30분 쉼 전체를 되돌릴 때는 c30-5 → c30-4 되돌리기 순서로, `docs/sql/c30-4-manual-pause.rollback.sql`(차단 한 번에 그날 중지로 돌아간다. 쉬는 중이거나 오늘 센 차단이 있으면 오늘을 그날 중지로
    바꾼 뒤 칸을 지운다. 간격은 240초 그대로 — 3분으로 되돌리려면
-   파일 머리의 한 줄을 따로 실행). c30-2 전체를 되돌릴 때는 c30-4 → c30-3 → c30-2 되돌리기 순서로 한다.
+   파일 머리의 한 줄을 따로 실행). c30-2 전체를 되돌릴 때는 c30-5 → c30-4 → c30-3 → c30-2 되돌리기 순서로 한다.

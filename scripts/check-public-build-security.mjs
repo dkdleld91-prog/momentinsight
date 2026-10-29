@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { GUIDE_PAGES } from "./public-guide-pages.mjs";
 
 const root = process.cwd();
 const requestedOutput = process.argv[2] || "dist";
@@ -164,7 +165,7 @@ try {
   process.exit(1);
 }
 
-for (const required of ["index.html", "home.html", "admin.html", "client.html", "privacy.html", "robots.txt", "sitemap.xml"]) {
+for (const required of ["index.html", "home.html", "admin.html", "client.html", "privacy.html", "robots.txt", "sitemap.xml", ...GUIDE_PAGES.map((page) => `guide/${page.slug}.html`)]) {
   if (!files.some((filePath) => relative(filePath) === required)) {
     failures.push(`${required}: required public artifact is missing`);
   }

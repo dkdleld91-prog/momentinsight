@@ -1,11 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { GUIDE_PAGES, SITE_URL, sitemapXml } from "./public-guide-pages.mjs";
 
 const root = process.cwd();
 const sourceDir = path.join(root, "src/pages");
 const publicDir = path.join(root, "public");
 const outputDir = path.join(root, "dist");
-const siteUrl = "https://insight.momentlabs.co.kr";
+const siteUrl = SITE_URL;
 
 const pages = {
   home: "home.html",
@@ -79,25 +80,19 @@ for (const [alias, fileName] of Object.entries(pages)) {
 
 await fs.copyFile(await findPage(pages.home), path.join(outputDir, "index.html"));
 
+// 공개 사용 안내 페이지: dist/guide/<slug>.html → cleanUrls 로 /guide/<slug> (2026-10-29)
+await fs.mkdir(path.join(outputDir, "guide"), { recursive: true });
+for (const page of GUIDE_PAGES) {
+  await fs.copyFile(await findPage(page.source), path.join(outputDir, "guide", `${page.slug}.html`));
+}
+
 await fs.writeFile(
   path.join(outputDir, "robots.txt"),
   ["User-agent: *", "Allow: /", `Sitemap: ${siteUrl}/sitemap.xml`, ""].join("\n"),
   "utf8"
 );
 
-await fs.writeFile(
-  path.join(outputDir, "sitemap.xml"),
-  [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    `  <url><loc>${siteUrl}/</loc></url>`,
-    `  <url><loc>${siteUrl}/news</loc><changefreq>hourly</changefreq></url>`,
-    `  <url><loc>${siteUrl}/privacy</loc></url>`,
-    "</urlset>",
-    "",
-  ].join("\n"),
-  "utf8"
-);
+await fs.writeFile(path.join(outputDir, "sitemap.xml"), sitemapXml(siteUrl), "utf8");
 
 console.log(JSON.stringify({
   ok: true,
@@ -107,5 +102,6 @@ console.log(JSON.stringify({
     "/home.html": "home.html",
     "/admin.html": "admin.html",
     "/client.html": "client.html",
+    ...Object.fromEntries(GUIDE_PAGES.map((page) => [`/guide/${page.slug}`, `guide/${page.slug}.html`])),
   },
 }, null, 2));

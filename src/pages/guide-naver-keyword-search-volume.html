@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#061a3a" />
+<title>네이버 키워드 검색량 조회 · 월 검색수·시즌·연령 확인 | 모먼트 인사이트</title>
+<meta name="description" content="네이버 검색광고 키워드도구·데이터랩·쇼핑인사이트 공식 데이터로 키워드의 월 검색수, 12개월 추이, 검색이 몰리는 달과 요일, 연령·성별, 광고 입찰가를 한 화면에서 봅니다. 구글로 가입하면 하루 5회 무료." />
+<meta name="robots" content="index, follow" />
+<meta name="author" content="모먼트 인사이트" />
+<link rel="canonical" href="https://insight.momentlabs.co.kr/guide/naver-keyword-search-volume" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="모먼트 인사이트" />
+<meta property="og:locale" content="ko_KR" />
+<meta property="og:title" content="네이버 키워드 검색량 조회 | 모먼트 인사이트" />
+<meta property="og:description" content="네이버 공식 데이터로 월 검색수·12개월 추이·시즌·연령·광고 입찰가를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
+<meta property="og:url" content="https://insight.momentlabs.co.kr/guide/naver-keyword-search-volume" />
+<meta property="og:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="모먼트 인사이트 — 시장 뉴스 · 키워드 조사 · 30일 순위 추적" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
+<meta name="twitter:title" content="네이버 키워드 검색량 조회 | 모먼트 인사이트" />
+<meta name="twitter:description" content="네이버 공식 데이터로 월 검색수·12개월 추이·시즌·연령·광고 입찰가를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
+<link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
+<link rel="stylesheet" href="/mi-guide.css?v=guide-v1-20261029" />
+</head>
+<body>
+
+<!-- 공개 사용 안내 ②(2026-10-29 대표 승인 목업): 로그인 없이 읽는 설명 페이지. 네이버 요청과 API 호출이 없다.
+     문장은 저장소 화면·코드·문서로 확인한 것만 쓴다. -->
+<section id="mi-guide" class="mi-guide-wrap" data-mi-guide="naver-keyword-search-volume">
+  <header class="mi-topbar">
+    <div class="mi-shell mi-topbar-inner">
+      <a class="mi-brand" href="/" aria-label="모먼트인사이트 홈">
+        <span class="mi-mark">MI</span>
+        <span>Moment Insight</span>
+      </a>
+      <div class="mi-actions">
+        <a class="mi-button secondary" href="/client">로그인</a>
+        <a class="mi-button primary" href="/client?signup=1">무료 체험 가입</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="mi-hero" aria-labelledby="mi-guide-title">
+      <div class="mi-shell mi-hero-grid">
+        <div>
+        <ol class="mi-crumbs" aria-label="현재 위치" itemscope itemtype="https://schema.org/BreadcrumbList">
+          <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+            <a itemprop="item" href="/"><span itemprop="name">홈</span></a>
+            <meta itemprop="position" content="1" />
+          </li>
+          <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+            <span itemprop="name">키워드 검색량 조회 안내</span>
+            <meta itemprop="position" content="2" />
+          </li>
+        </ol>
+        <span class="mi-kicker">사용 안내 · 네이버 키워드 조회</span>
+        <h1 id="mi-guide-title"><span class="mi-nb">네이버 키워드 검색량,</span> <span class="mi-nb">공식 데이터로 한 번에</span></h1>
+        <p class="mi-lead">
+          이 키워드를 한 달에 얼마나 찾는지, 언제 몰리는지, 누가 찾는지, 광고를 걸면 얼마인지.
+          네이버 검색광고·데이터랩·쇼핑인사이트의 공식 데이터를 모아 한 화면에서 보여 줍니다.
+        </p>
+        <div class="mi-inline-actions">
+          <a class="mi-button primary" href="/client?signup=1">무료 체험 가입 · 구글로 시작</a>
+          <a class="mi-button secondary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의 · 카카오 채널</a>
+        </div>
+        <p class="mi-hero-note">구글 계정으로 가입하면 키워드 조회를 하루 5회 무료로 쓸 수 있습니다.</p>
+        </div>
+        <aside class="mi-glance" aria-label="키워드 조회 핵심 사실">
+          <span class="mi-glance-head">한눈에 보기</span>
+          <div class="mi-glance-row"><strong>공식</strong><span>네이버 검색광고 · 데이터랩 · 쇼핑인사이트 데이터</span></div>
+          <div class="mi-glance-row"><strong>최대 5개</strong><span>쉼표로 나눠 같은 기준으로 비교</span></div>
+          <div class="mi-glance-row"><strong>하루 5회</strong><span>구글로 가입하면 무료</span></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-guide-what" aria-labelledby="mi-guide-what-title">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">무엇을 확인할 수 있나요</span>
+          <h2 id="mi-guide-what-title">얼마나 · 언제 · 누가 검색하는지, 광고비까지</h2>
+          <p>키워드를 입력하면 아래 내용을 한 화면에서 차례로 보여 줍니다.</p>
+        </div>
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <span class="mi-fact-tag">월 검색수</span>
+            <h3>한 달에 얼마나 검색하나</h3>
+            <p>검색광고 키워드도구 기준으로 최근 30일 PC·모바일 검색수를 합쳐 보여 줍니다.</p>
+          </article>
+          <article class="mi-card">
+            <span class="mi-fact-tag">12개월 추이</span>
+            <h3>검색량이 늘고 있나, 줄고 있나</h3>
+            <p>데이터랩 검색 지수를 실제 검색량으로 환산해 월별 추이를 그리고, 1년·3년 보기와 전년 대비를 보여 줍니다.</p>
+          </article>
+          <article class="mi-card">
+            <span class="mi-fact-tag">시즌 · 요일</span>
+            <h3>언제 검색이 몰리나</h3>
+            <p>데이터랩의 월별·요일별 검색 비율(2016년부터 누적)로 가장 많이 찾는 달과 요일을 봅니다. 긴 기간 자료를 받지 못하면 최근 12개월 기준으로 보여 줍니다.</p>
+          </article>
+          <article class="mi-card">
+            <span class="mi-fact-tag">연령 · 성별 · 기기</span>
+            <h3>누가 검색하나</h3>
+            <p>연령·성별·기기별 쇼핑 클릭 비중(데이터랩 쇼핑인사이트)을 봅니다. 자료가 부족한 키워드는 일부 항목이 비거나 다른 기준으로 대신 표시될 수 있습니다.</p>
+          </article>
+          <article class="mi-card">
+            <span class="mi-fact-tag">광고 비용</span>
+            <h3>광고를 건다면 얼마인가</h3>
+            <p>1위 노출 입찰가(모바일·클릭당), 한 달 예상 비용, 광고 노출 깊이를 검색광고 추정치로 보여 줍니다.</p>
+          </article>
+          <article class="mi-card">
+            <span class="mi-fact-tag">비교 · 연관 · 콘텐츠</span>
+            <h3>다른 키워드와 나란히</h3>
+            <p>쉼표로 최대 5개를 같은 기준으로 비교하고, 연관 키워드와 블로그·카페·지식iN 글 수도 함께 확인합니다.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section is-white" id="mi-guide-how" aria-labelledby="mi-guide-how-title">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">쓰는 법 3단계</span>
+          <h2 id="mi-guide-how-title">가입하고, 입력하고, 요약부터 봅니다</h2>
+        </div>
+        <ol class="mi-grid-3 mi-steps">
+          <li class="mi-card">
+            <span class="mi-card-number">1</span>
+            <h3>구글로 무료 체험 가입</h3>
+            <p>구글 계정 하나면 됩니다. 가입하면 키워드 조회를 하루 5회 바로 쓸 수 있습니다.</p>
+          </li>
+          <li class="mi-card">
+            <span class="mi-card-number">2</span>
+            <h3>키워드 입력 후 조회</h3>
+            <p>키워드 하나를 넣거나, 쉼표로 나눠 최대 5개까지 넣고 조회를 누릅니다.</p>
+          </li>
+          <li class="mi-card">
+            <span class="mi-card-number">3</span>
+            <h3>핵심 4줄부터 확인 · 저장</h3>
+            <p>언제·누가·얼마·대안을 요약한 핵심 4줄을 먼저 보고, 필요한 블록으로 내려갑니다. 조사 노트·이미지·CSV로 저장할 수 있습니다.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-guide-screen" aria-labelledby="mi-guide-screen-title">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">실제 화면</span>
+          <h2 id="mi-guide-screen-title">키워드 조회 화면</h2>
+          <p>아래는 가짜 데이터로 그린 예시 화면입니다. 숫자와 키워드는 설명용이며 실제 조회 결과가 아닙니다.</p>
+        </div>
+        <figure class="mi-shot">
+          <div class="mi-shot-bar"><span class="mi-shot-label">예시 화면</span><span>가짜 데이터 · 실제 조회 결과 아님</span></div>
+          <picture>
+            <source media="(max-width: 640px)" srcset="/guide/img/keyword-search-volume-example-mobile.webp" width="708" height="2018" />
+            <img src="/guide/img/keyword-search-volume-example.webp" width="1470" height="1842" loading="lazy" decoding="async" alt="예시 화면: 키워드의 핵심 4줄 요약, 월 검색수와 클릭 지표, 12개월 검색량 추이 차트가 보이는 키워드 조회 화면" />
+          </picture>
+          <figcaption>예시 화면 · 핵심 4줄 요약 아래로 월 검색수·광고 지표, 12개월 검색량 추이가 이어집니다.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="mi-section is-white" id="mi-guide-plan" aria-labelledby="mi-guide-plan-title">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">무료 범위 · 도입 조건</span>
+          <h2 id="mi-guide-plan-title">키워드 조회는 가입하면 바로, 하루 5회 무료</h2>
+          <p>구글 계정으로 가입하면 키워드 조회를 하루 5회 무료로 쓸 수 있습니다. 30일 순위 추적과 전체 기능은 도입 후 열립니다.</p>
+        </div>
+        <div class="mi-grid-2">
+          <article class="mi-card mi-plan">
+            <h3>무료 체험 <span class="mi-badge">구글로 가입</span></h3>
+            <ul>
+              <li>키워드 조회 하루 5회</li>
+              <li>30일 순위 추적 화면을 예시 데이터로 미리 보기</li>
+              <li>카드 등록 화면이나 약관 동의 화면 없음</li>
+            </ul>
+            <div class="mi-inline-actions">
+              <a class="mi-button primary" href="/client?signup=1">무료 체험 가입</a>
+            </div>
+          </article>
+          <article class="mi-card mi-plan is-paid">
+            <h3>도입 후 <span class="mi-badge">광고주 전용</span></h3>
+            <ul>
+              <li>키워드 조회를 횟수 제한 없이</li>
+              <li>30일 순위 추적과 내 키워드 뉴스</li>
+              <li>카카오 채널로 판매 채널과 추적할 키워드 수를 알려 주시면 됩니다</li>
+            </ul>
+            <div class="mi-inline-actions">
+              <a class="mi-button" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-guide-faq" aria-labelledby="mi-guide-faq-title">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">자주 묻는 질문</span>
+          <h2 id="mi-guide-faq-title">키워드 조회, 이런 점을 많이 물어보십니다</h2>
+        </div>
+        <div class="mi-faq" itemscope itemtype="https://schema.org/FAQPage">
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">검색량 데이터는 어디서 가져오나요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">네이버 공식 데이터입니다. 월 검색수·클릭·입찰가는 네이버 검색광고(키워드도구·입찰가 추정), 검색 추이와 월별·요일별 비율은 네이버 데이터랩 검색어 트렌드, 연령·성별·기기별 쇼핑 클릭 비중은 데이터랩 쇼핑인사이트, 블로그·카페·지식iN 글 수는 네이버 검색 API에서 가져옵니다.</p>
+            </div>
+          </details>
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">월 검색수는 어떤 기간 기준인가요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">검색광고 키워드도구의 최근 30일 검색수이며, PC와 모바일을 합친 값입니다. 월별 추이는 데이터랩 검색 지수를 이 검색수에 맞춰 환산한 추정치라 실제 검색 건수와 다를 수 있습니다.</p>
+            </div>
+          </details>
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">무료로 몇 번 쓸 수 있나요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">구글 계정으로 가입하면 하루 5회 무료입니다. 도입하면 횟수 제한 없이 쓸 수 있습니다.</p>
+            </div>
+          </details>
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">여러 키워드를 한 번에 비교할 수 있나요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">네. 쉼표로 나눠 최대 5개까지 넣으면 같은 기준으로 나란히 비교합니다.</p>
+            </div>
+          </details>
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">입찰가와 한 달 예상 비용은 실제 광고비와 같나요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">네이버 검색광고가 내는 추정치입니다(모바일·클릭당·1위 노출 기준). 실제 광고비는 입찰 경쟁과 운영 방식에 따라 달라질 수 있습니다.</p>
+            </div>
+          </details>
+          <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
+            <summary itemprop="name">가입하지 않고도 써 볼 수 있나요?</summary>
+            <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
+              <p itemprop="text">연관 키워드 조회는 로그인 없이 쓸 수 있습니다(IP별 1분 5회, 1시간 30회). 월 검색수 추이·시즌·연령까지 보는 키워드 조회는 구글로 가입하면 하루 5회 무료입니다. <a href="/related-keywords.html">로그인 없이 연관 키워드 조회 →</a></p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section is-white" id="mi-guide-related" aria-label="함께 보면 좋은 안내">
+      <div class="mi-shell">
+        <a class="mi-next" href="/guide/naver-shopping-rank-tracking">
+          <span><small>함께 보면 좋은 안내</small><strong>스마트스토어 키워드 순위 30일 추적 — 광고 뺀 상위 300개에서</strong></span>
+          <b>안내 보기 →</b>
+        </a>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-guide-start">
+      <div class="mi-shell">
+        <div class="mi-cta">
+          <div>
+            <span class="mi-kicker">시작</span>
+            <h2>키워드 조회는 가입하면 바로.</h2>
+            <p>구글 계정으로 가입하면 키워드 조회를 하루 5회 무료로 쓸 수 있습니다. 30일 순위 추적과 전체 기능은 도입 후 열립니다. 문의는 카카오 채널로 받습니다.</p>
+          </div>
+          <div class="mi-inline-actions">
+            <a class="mi-button primary" href="/client?signup=1">무료 체험 가입</a>
+            <a class="mi-button" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>
+            <a class="mi-button" href="mailto:mml93@naver.com">이메일 문의</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mi-footer">
+    <div class="mi-shell mi-footer-inner">
+      <div class="mi-footer-brand">
+        <strong>Moment Insight</strong>
+        <span>네이버 셀러의 시장 뉴스 · 키워드 조사 · 30일 순위 추적 · 순위 수집 하루 2~3회 자동</span>
+      </div>
+      <nav class="mi-footer-links" aria-label="하단 바로가기">
+        <a href="/">홈</a>
+        <a href="/news">셀러 뉴스</a>
+        <a href="/guide/naver-shopping-rank-tracking">순위 추적 안내</a>
+        <a href="/guide/naver-keyword-search-volume" aria-current="page">키워드 조회 안내</a>
+        <a href="/client?signup=1">무료 체험 가입</a>
+        <a href="/client">로그인</a>
+        <a href="/privacy">개인정보처리방침</a>
+        <a href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 문의</a>
+      </nav>
+    </div>
+  </footer>
+  <a class="mi-kakao-floating" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer" aria-label="모먼트인사이트 카카오톡 채널 문의">
+    <i class="mi-kakao-icon" aria-hidden="true"></i>
+    <span><b>채널 문의</b>카카오톡 상담</span>
+  </a>
+</section>
+  <!-- 방문 통계(GA4): 공개 페이지에만. 로그인 안쪽에는 넣지 않는다. -->
+  <script src="/mi-analytics.js?v=site-v2-20260907" defer></script>
+</body>
+</html>

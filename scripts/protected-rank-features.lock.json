@@ -354,7 +354,7 @@
     {
       "id": "product-option-group-match",
       "file": "src/server/naver-rank-option-group.mjs",
-      "sha256": "98fb258ed92cb7b48a91f3061d6fb4aaab161ea4225262f9f587145abcece842"
+      "sha256": "84a574d7512e5db6a1151f7d11ca5ec1b95a0b8fd207dad004f9253fe08a453d"
     },
     {
       "id": "shopping-worker-wake-server",

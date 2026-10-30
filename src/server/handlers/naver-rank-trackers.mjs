@@ -42,6 +42,7 @@ import {
   siblingOptionSuggestions,
   trackerGroupProductState,
   trackerOptionEligibility,
+  withoutAdminGroupTails,
 } from "../naver-rank-option-group.mjs";
 import {
   buildRankTarget,
@@ -636,7 +637,8 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null, extras
   const hasTrustedSnapshot = recentSnapshots.length > 0;
   const checkCount = nonNegativeCount(row.check_count);
   const foundCount = nonNegativeCount(row.found_count);
-  return {
+  // 관리자 전용 꼬리 2종은 광고주 응답 lastMessage 에서 뺀다(2026-10-30, DB 문장은 그대로·키 순서 그대로).
+  return optionTraceLastMessage({
     id: row.id,
     keyword: row.keyword,
     groupName: normalizeRankGroupName(row.group_name),
@@ -701,7 +703,7 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null, extras
     groupProductMarked: groupState.marked,
     groupProduct: groupState.groupProduct,
     ...(Array.isArray(extras?.groupCandidates) ? { groupCandidates: extras.groupCandidates } : {}),
-  };
+  }, extras?.optionSkipVisible === true);
 }
 
 function nonNegativeCount(value) {
@@ -781,6 +783,16 @@ function optionSkipPayloadItem(item, visible = false) {
   return { ...item, optionGroup };
 }
 
+function optionTraceMessage(message, visible = false) {
+  return visible ? message : withoutAdminGroupTails(message);
+}
+
+function optionTraceLastMessage(payload, visible = false) {
+  if (visible) return payload;
+  const lastMessage = withoutAdminGroupTails(payload.lastMessage);
+  return lastMessage === payload.lastMessage ? payload : { ...payload, lastMessage };
+}
+
 function optionSkipExtras(request, access) {
   return { optionSkipVisible: !optionEditForbidden(request, access) };
 }
@@ -801,7 +813,7 @@ function snapshotPayload(row, trackerProductId = "", options = {}) {
     checkedCount: row.checked_count,
     total: row.total,
     item: options.compactItem === true ? compactSnapshotItem(item) : item,
-    message: row.message,
+    message: optionTraceMessage(row.message, options.optionSkipVisible === true),
     source: row.source,
     createdAt: row.created_at,
   };
@@ -2463,7 +2475,7 @@ async function checkOne(request, ctx, body, access = {}) {
   });
 }
 
-async function stopTracker(request, ctx, body) {
+async function stopTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const trackerId = normalizeText(body.trackerId || body.id);
   if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
@@ -2483,7 +2495,7 @@ async function stopTracker(request, ctx, body) {
 
   if (error) throw error;
   const tracker = await attachTrackerGroup(ctx, data);
-  return json(request, { ok: true, tracker: trackerPayload(tracker), message: "추적을 중지했습니다." });
+  return json(request, { ok: true, tracker: trackerPayload(tracker, [], null, optionSkipExtras(request, access)), message: "추적을 중지했습니다." });
 }
 
 async function deleteTracker(request, ctx, body) {
@@ -2503,7 +2515,7 @@ async function deleteTracker(request, ctx, body) {
   return json(request, { ok: true, deletedId: trackerId, message: "추적 항목을 삭제했습니다." });
 }
 
-async function updateTrackerGroup(request, ctx, body) {
+async function updateTrackerGroup(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const trackerId = normalizeText(body.trackerId || body.id);
   const groupName = normalizeRankGroupName(body.groupName || body.group_name || body.group);
@@ -2531,7 +2543,7 @@ async function updateTrackerGroup(request, ctx, body) {
   return json(request, {
     ok: true,
     message: "추적 항목 그룹을 변경했습니다.",
-    tracker: trackerPayload(tracker),
+    tracker: trackerPayload(tracker, [], null, optionSkipExtras(request, access)),
   });
 }
 
@@ -3483,9 +3495,9 @@ async function handlePost(request, ctx) {
   if (action === "check") return checkOne(request, ctx, body, access);
   if (action === "queue-refresh-all") return queueRefreshAllTrackers(request, ctx, access);
   if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
-  if (action === "stop") return stopTracker(request, ctx, body);
+  if (action === "stop") return stopTracker(request, ctx, body, access);
   if (action === "delete") return deleteTracker(request, ctx, body);
-  if (action === "group") return updateTrackerGroup(request, ctx, body);
+  if (action === "group") return updateTrackerGroup(request, ctx, body, access);
   if (action === "move") return moveTracker(request, ctx, body);
   if (action === "reorder") return reorderTrackers(request, ctx, body);
   if (action === "options") return handleTrackerOptions(request, ctx, body, access);

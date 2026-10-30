@@ -29,7 +29,9 @@ const privateBaseline = Object.freeze({
   // 2026-10-30 창에 보였지만 순위에 못 쓴 번호(추가): 공통 카드 함수에 관리자 전용 '보였지만 순위에 못 쓴 번호' 줄과
   // 광고주 화면 '메시지' 꼬리 빼기가 더해져 바뀌었다(광고주 화면 줄 없음 — naver-rank-option-group-ui 시험). 7차 값
   // 2effa756deba7a3a54587416182c61a2cfafea98b7f51181770710c052395b4a.
-  clientInline: ["67474e1c915a7e209e499e72104e0d55728ad07023c78417561f9f74de3daf31"],
+  // 같은 날 Codex 지적 반영: 옵션이 이긴 측정에도 그 줄을 보인다. 8차 값
+  // 67474e1c915a7e209e499e72104e0d55728ad07023c78417561f9f74de3daf31.
+  clientInline: ["c3112987960130e638cb1ee69773b00f965ffec1b6aef2d5804b407a4fed163c"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

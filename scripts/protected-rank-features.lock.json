@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "20c575c1e06a4c1faf8f858e7285d14a096d3743013bbe1e95eede97ab2c3d54"
+      "sha256": "17812a64bb077563d92ea7e0946f4a02f7f4104065b80c00b5be317e99e949b0"
     },
     {
       "id": "product-organic-rank-server",
@@ -354,7 +354,7 @@
     {
       "id": "product-option-group-match",
       "file": "src/server/naver-rank-option-group.mjs",
-      "sha256": "000a41fbcb28df2dd070f45d97338e54fd4f1e7c60041654f1d8a2d9d7dc22bb"
+      "sha256": "d1354c0ca60d12dfa930adce8382c94b1311ad1269d6d34c29d3e659b96a15d8"
     },
     {
       "id": "shopping-worker-wake-server",

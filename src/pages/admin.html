@@ -26314,8 +26314,8 @@
           return /^[0-9]{5,20}$/.test(id);
         }) : [];
         var mismatch = Number(group.mallMismatchCount || 0) || mismatchIds.length;
-        // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 대표가 이긴 측정·둘 다 없음 측정에만(관리자 응답에만 실린다).
-        var droppedBasis = basis === "primary" || basis === "not_found";
+        // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 정식 판정 측정(대표가 이김·둘 다 없음·옵션이 이김)에만(관리자 응답에만 실린다).
+        var droppedBasis = basis === "primary" || basis === "not_found" || basis === "group_option";
         var dropped = droppedBasis && Array.isArray(group.droppedVisible) ? group.droppedVisible.filter(function (entry) {
           return entry && /^[0-9]{5,20}$/.test(String(entry.productId || ""));
         }).map(function (entry) {

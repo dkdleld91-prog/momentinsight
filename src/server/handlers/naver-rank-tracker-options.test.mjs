@@ -831,3 +831,70 @@ test("창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 관리자
     }
   });
 });
+
+test("광고주 응답 문장(2026-10-30): lastMessage·snapshots[].message 에서 관리자 전용 꼬리 2종을 서버가 빼고, 관리자·운영팀은 그대로", async () => {
+  const now = Date.now();
+  const iso = (hoursAgo) => new Date(now - hoursAgo * 60 * 60 * 1000).toISOString();
+  const ishellOption = "11463197547";
+  const notFoundMain = "대표 상품번호와 그룹상품 옵션 2개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다.";
+  const droppedTail = " 옵션 2개 중 1개는 결과에 보였지만 같은 상품으로 확인되지 않아 순위에 쓰지 않았습니다.";
+  const hitMain = `그룹상품 옵션(상품번호 ${OPTION_16PRO})이 오가닉 37위로 잡혀 30일 대표 순위로 기록했습니다. 대표 상품번호는 이번 결과에 없습니다.`;
+  const unverifiedTail = " 스토어를 확인하지 못해 확인 없이 기록했습니다.";
+  const dropped = { droppedVisibleCount: 1, droppedVisible: [{ productId: ishellOption, reason: "not_exact" }] };
+  const hitItem = {
+    trackingRankSource: "exact_product", title: "옵션", isOrganic: true, isAd: false,
+    matchBasis: "group_option", matchedOptionProductId: OPTION_16PRO,
+    optionGroup: { checkedOptionCount: 2, mallCheck: "unverified", ...dropped },
+  };
+  const notFoundItem = { trackingRankSource: "not_found", isOrganic: true, isAd: false, matchBasis: "not_found", optionGroup: { checkedOptionCount: 2, ...dropped } };
+  const snapshots = [
+    { id: "s2", tracker_id: SELF_ID, checked_at: iso(1), rank: 37, matched: true, checked_count: 300, item: hitItem, message: hitMain + unverifiedTail },
+    { id: "s1", tracker_id: SELF_ID, checked_at: iso(10), rank: null, matched: false, checked_count: 300, item: notFoundItem, message: notFoundMain + droppedTail },
+  ];
+  const row = () => trackerRow({ option_product_ids: [OPTION_16PRO, ishellOption], last_message: hitMain + unverifiedTail });
+  const admin = trackerPayload(row(), snapshots, null, { optionSkipVisible: true });
+  assert.equal(admin.lastMessage, hitMain + unverifiedTail);
+  assert.deepEqual(admin.snapshots.map((entry) => entry.message), [hitMain + unverifiedTail, notFoundMain + droppedTail]);
+  assert.deepEqual(admin.snapshots[0].item.optionGroup, hitItem.optionGroup, "옵션이 이긴 측정의 빠진 번호도 관리자에게");
+  const advertiser = trackerPayload(row(), snapshots);
+  assert.equal(advertiser.lastMessage, hitMain);
+  assert.deepEqual(advertiser.snapshots.map((entry) => entry.message), [hitMain, notFoundMain]);
+  assert.deepEqual(advertiser.snapshots[0].item.optionGroup, { checkedOptionCount: 2, mallCheck: "unverified" }, "광고주 item 은 변경 전과 같다");
+  assert.equal(advertiser.currentMatchBasis, "group_option");
+  assert.equal(snapshots[0].message, hitMain + unverifiedTail, "저장된 문장은 건드리지 않는다");
+  // 꼬리 없는 문장은 그대로(같은 글자).
+  const plain = trackerPayload(trackerRow({ last_message: "네이버쇼핑 오가닉 12위" }), []);
+  assert.equal(plain.lastMessage, "네이버쇼핑 오가닉 12위");
+
+  await withEnv(async () => {
+    const rows = (agency) => [trackerRow({ ...(agency ? { agency_code: agency } : {}), option_product_ids: [OPTION_16PRO, ishellOption], last_message: notFoundMain + droppedTail })];
+    const ownerTables = groupTables();
+    ownerTables.naver_rank_snapshots = [{ ...snapshots[1], item: structuredClone(notFoundItem) }];
+    const advertiserTables = { naver_rank_trackers: rows(ADVERTISER), naver_rank_snapshots: [{ ...snapshots[1], item: structuredClone(notFoundItem) }] };
+    const clients = [{ id: "client-1", status: "active", disconnected_at: null }];
+    const advertiserScope = { agencyCode: ADVERTISER, accessCode: ADVERTISER };
+    const quiet = console.warn;
+    console.warn = () => {};
+    try {
+      for (const [label, tables, options, expected] of [
+        ["owner", ownerTables, {}, notFoundMain + droppedTail],
+        ["team", advertiserTables, { role: "team", ...advertiserScope }, notFoundMain + droppedTail],
+        ["client", advertiserTables, { role: "client", ...advertiserScope }, notFoundMain],
+        ["no-session access code", advertiserTables, { role: null, ...advertiserScope }, notFoundMain],
+      ]) {
+        const { ctx } = fakeDatabase(structuredClone(tables), { clients });
+        // eslint-disable-next-line no-await-in-loop
+        const response = await handleRankTrackersRequest(request("GET", null, options), ctx);
+        // eslint-disable-next-line no-await-in-loop
+        const body = await response.json();
+        assert.equal(response.status, 200, label);
+        const self = body.trackers.find((entry) => entry.id === SELF_ID);
+        assert.equal(self.snapshots[0].message, expected, label);
+        assert.equal(self.lastMessage, expected, label);
+        assert.equal(JSON.stringify(body).includes("결과에 보였지만"), expected.includes("결과에 보였지만"), label);
+      }
+    } finally {
+      console.warn = quiet;
+    }
+  });
+});

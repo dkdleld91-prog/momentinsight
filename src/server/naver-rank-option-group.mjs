@@ -61,7 +61,7 @@ const OPTION_GROUP_SNAPSHOT_KEYS = [
   "mallMismatchProductIds",
   "primaryProductRank",
   "primaryRankSource",
-  // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 대표가 이긴 결과·둘 다 없음 결과에 있을 때만. 목록은 번호·이유
+  // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 대표가 이긴·둘 다 없음·옵션이 이긴 결과에 있을 때만. 목록은 번호·이유
   // (OPTION_DROPPED_VISIBLE_REASONS) 최대 OPTION_DROPPED_VISIBLE_MAX 개, 개수는 전체.
   "droppedVisibleCount",
   "droppedVisible",
@@ -1001,6 +1001,8 @@ export async function evaluateGroupTrackingRank({
         titleCheck: optionTitleCheck(tracker?.product_title, bestItem?.title),
         ...(cardRanks.length > 1 ? { cardCount: cardRanks.length } : {}),
         ...mismatchFields,
+        // 옵션이 이겨도 창에 보였지만 순위에 못 쓴 번호를 남긴다(2026-10-30, 문장은 그대로).
+        ...droppedFields,
         ...(primaryFound ? {
           primaryProductRank: primaryRank,
           primaryRankSource: representativeResult.trackingRankSource === "related_catalog" ? "related_catalog" : "exact_product",
@@ -1038,6 +1040,7 @@ function idListText(ids = []) {
 // 스냅샷 optionGroup.mallMismatchProductIds 로만 남아 관리자 줄에 보인다(규칙 E').
 // 이 꼬리는 관리자용이라 광고주 화면 '메시지' 칸은 이 꼬리를 뺀 문장을 보인다(client.html renderRankTrackerCard,
 // 2차 수정 #10 원칙). 꼬리 글자를 바꾸면 두 화면의 같은 글자도 함께 바꾼다(화면 테스트가 대조한다).
+// 2026-10-30: 광고주(client 세션·세션 없는 접속 코드) API 응답 문장에서도 서버가 뺀다(withoutAdminGroupTails).
 export const GROUP_OPTION_UNVERIFIED_TAIL = " 스토어를 확인하지 못해 확인 없이 기록했습니다.";
 
 // 창에 보였지만 순위에 못 쓴 번호가 있는 'not_found' 문장(2026-10-30 추가): '모두 … 찾지 못했습니다'는 사실과 달라
@@ -1045,6 +1048,13 @@ export const GROUP_OPTION_UNVERIFIED_TAIL = " 스토어를 확인하지 못해 �
 // 뺀 문장을 보인다 — 두 화면 renderRankTrackerCard 가 이 패턴과 같은 글자로 뺀다(화면 테스트가 대조한다).
 // 이유가 모두 not_exact 로 확인된 때만 '같은 상품으로 확인되지 않아', 그 밖(rejected 섞임·목록 상한 넘음)은 일반 문구.
 export const GROUP_OPTION_DROPPED_TAIL_PATTERN = / 옵션 [0-9]+개 중 [0-9]+개는 결과에 보였지만 (?:같은 상품으로 확인되지 않아|순위 확인을 통과하지 못해) 순위에 쓰지 않았습니다\./g;
+
+// 광고주 응답 문장에서 관리자 전용 꼬리 2종(GROUP_OPTION_UNVERIFIED_TAIL·GROUP_OPTION_DROPPED_TAIL_PATTERN)을 뺀다
+// (2026-10-30). 화면이 빼는 것과 같은 글자다. 꼬리가 없는 문장·문자열 아닌 값은 그대로 돌려준다(바이트 동일).
+export function withoutAdminGroupTails(message) {
+  if (typeof message !== "string") return message;
+  return message.split(GROUP_OPTION_UNVERIFIED_TAIL).join("").replace(GROUP_OPTION_DROPPED_TAIL_PATTERN, "");
+}
 
 function groupOptionDroppedTail(group = {}) {
   const count = Number.isSafeInteger(group.droppedVisibleCount) && group.droppedVisibleCount > 0 ? group.droppedVisibleCount : 0;

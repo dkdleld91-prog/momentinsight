@@ -1529,11 +1529,21 @@ for (const [label, source] of PAGES) {
       const note = parseHtml(renderCard(source, label, many)).querySelector("[data-rank-option-hit]").querySelector(".is-warn");
       assert.equal(note.textContent, `보였지만 순위에 못 쓴 번호 12개 · ${ids.slice(0, 3).join(", ")} 외 9개`);
       assert.match(note.getAttribute("title"), new RegExp(`${ids[1]}\\(순위 확인 통과 못함\\), ${ids[2]}\\(기타\\)`, "u"));
-      // 옵션으로 잡힌 측정에는 이 키가 섞여 와도 보이지 않는다(서버는 대표가 이긴·둘 다 없음 측정에만 남긴다).
-      const hit = optionHitTracker();
-      const hitDropped = optionHitTracker();
-      hitDropped.snapshots[0].item.optionGroup = { ...hitDropped.snapshots[0].item.optionGroup, droppedVisibleCount: 1, droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }] };
-      assert.equal(renderCard(source, label, hitDropped), renderCard(source, label, hit));
+    }
+    // 옵션이 이긴 측정에도 서버가 남긴다(2026-10-30): 관리자는 '잡힌 옵션' 줄 끝에 같은 한 줄, 광고주 화면은 키 없는 측정과 같은 HTML.
+    const hit = optionHitTracker();
+    const hitDropped = optionHitTracker();
+    hitDropped.snapshots[0].item.optionGroup = { ...hitDropped.snapshots[0].item.optionGroup, droppedVisibleCount: 1, droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }] };
+    for (const role of ["owner", "client"]) {
+      const html = renderCard(source, label, hitDropped, role);
+      if (label === "admin.html" && role === "owner") {
+        const line = parseHtml(html).querySelector("[data-rank-option-hit]");
+        assert.equal(line.querySelector(".mi-rank-option-hit-label").textContent, "잡힌 옵션");
+        const notes = line.querySelectorAll(".is-warn").map((node) => node.textContent);
+        assert.equal(notes[notes.length - 1], `보였지만 순위에 못 쓴 번호 1개 · ${ISHELL_OPTION}`);
+      } else {
+        assert.equal(html, renderCard(source, label, hit, role), `${role}: 키가 있어도 없어도 같은 HTML`);
+      }
     }
   });
 }

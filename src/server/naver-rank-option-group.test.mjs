@@ -17,6 +17,7 @@ import {
   OPTION_LOOKUPS_PER_WINDOW_MAX,
   OPTION_PRODUCT_IDS_MAX,
   OPTION_SKIP_REASONS,
+  withoutAdminGroupTails,
   optionColumnRecentlyMissing,
   optionStoreCheck,
   optionTitleCheck,
@@ -1623,4 +1624,44 @@ test("창에 보였지만 못 쓴 번호 스냅샷 키: 번호·이유 두 칸�
   assert.deepEqual(groupOptionSnapshotFields({
     optionGroup: { checkedOptionCount: 3, skipped: "evaluation_error", droppedVisibleCount: 1, droppedVisible: [entries[0]] },
   }), { optionGroup: { checkedOptionCount: 3, skipped: "evaluation_error" } });
+});
+
+test("옵션이 이긴 결과에도 창에 보였지만 못 쓴 번호가 남고, 순위·문장·커밋 인자는 그 번호를 넣지 않은 같은 판정과 같다", async () => {
+  // 같은 창: 50위 옵션(정확 상품)이 이기고, 204위 아이쉘 번호는 정확 상품 아님으로 빠진다. 비교 대상은 같은 창에서
+  // 아이쉘 번호를 넣지 않은 추적(넣은 번호 목록·옵션 개수 말고는 같아야 한다).
+  const window = ishellWindow({ 50: card(50, OPTION_16PRO) });
+  const finder = async (win, options) => (options.targetProductId === ISHELL_OPTION ? notExactFinder(win, options) : findShoppingRankFromWindow(win, options));
+  const row = ishellTracker();
+  const plainRow = tracker({ option_product_ids: [OPTION_16PRO, OPTION_15] });
+  const withDropped = await evaluate(window, { tracker: row, findRankFromWindow: finder });
+  const without = await evaluate(window, { tracker: plainRow, findRankFromWindow: finder });
+  assert.equal(withDropped.result.matchBasis, "group_option");
+  assert.equal(withDropped.result.rank, 50);
+  const { droppedVisibleCount, droppedVisible, ...restGroup } = withDropped.result.optionGroup;
+  assert.equal(droppedVisibleCount, 1);
+  assert.deepEqual(droppedVisible, [{ productId: ISHELL_OPTION, reason: "not_exact" }]);
+  assert.deepEqual(
+    { ...withDropped.result, targetProductIds: without.result.targetProductIds, optionGroup: { ...restGroup, checkedOptionCount: 2 } },
+    without.result,
+    "넣은 번호 목록·옵션 개수·두 키 말고는 같은 결과",
+  );
+  const message = groupTrackingRankMessage(withDropped.result, "대표 문장");
+  assert.equal(message, groupTrackingRankMessage(without.result, "대표 문장"), "문장은 그대로");
+  const { item: itemWith, ...recordWith } = buildProductRankSnapshotRecord(row, CHECKED_AT, withDropped.result, message);
+  const { item: itemWithout, ...recordWithout } = buildProductRankSnapshotRecord(plainRow, CHECKED_AT, without.result, message);
+  assert.deepEqual(recordWith, recordWithout, "커밋 행(item 밖)은 같다");
+  assert.deepEqual(itemWith.optionGroup, { ...itemWithout.optionGroup, checkedOptionCount: 3, droppedVisibleCount: 1, droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }] });
+  assert.equal(itemWith.matchedOptionProductId, OPTION_16PRO);
+  // 빠진 번호 없는 옵션 판정은 예전 글자 그대로(dropped 키 없음).
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(without.result)).includes("dropped"), false);
+});
+
+test("withoutAdminGroupTails: 관리자 전용 꼬리 2종만 빼고, 꼬리 없는 문장·문자열 아닌 값은 그대로", () => {
+  const dropped = "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다.";
+  assert.equal(withoutAdminGroupTails(`${dropped} 옵션 3개 중 1개는 결과에 보였지만 같은 상품으로 확인되지 않아 순위에 쓰지 않았습니다. 다른 스토어로 보여 뺀 옵션: 99900000002.`),
+    `${dropped} 다른 스토어로 보여 뺀 옵션: 99900000002.`);
+  const hit = `그룹상품 옵션(상품번호 ${OPTION_16PRO})이 오가닉 37위로 잡혀 30일 대표 순위로 기록했습니다. 대표 상품번호는 이번 결과에 없습니다.`;
+  assert.equal(withoutAdminGroupTails(hit + GROUP_OPTION_UNVERIFIED_TAIL), hit);
+  assert.equal(withoutAdminGroupTails(`${dropped} 옵션 12개 중 12개는 결과에 보였지만 순위 확인을 통과하지 못해 순위에 쓰지 않았습니다.`), dropped);
+  for (const value of ["네이버쇼핑 오가닉 12위", "", null, undefined, 3]) assert.equal(withoutAdminGroupTails(value), value);
 });

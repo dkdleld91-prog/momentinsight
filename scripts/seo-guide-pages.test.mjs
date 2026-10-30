@@ -148,6 +148,7 @@ test("순위 페이지는 '순위 확인'이 아니라 '순위 추적·30일 변
     assert.doesNotMatch(text, /순위 확인/u, text);
   }
   assert.ok(title.startsWith("네이버 쇼핑 순위 추적") && title.includes("30일 순위 변동 기록"), title);
+  for (const text of heads.slice(1)) assert.ok(/추적/u.test(text) && /30일/u.test(text) && /변동/u.test(text), `추적·30일·변동: ${text}`);
   assert.match(meta(html, "property", "og:title"), /^네이버 쇼핑 순위 추적 · 30일 변동 기록/u);
   assert.match((html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/u) || [])[1].replace(/<[^>]+>/gu, ""), /순위 추적.*30일 변동/u);
   assert.equal(rankPage.slug, "naver-shopping-rank-tracking");
@@ -155,7 +156,7 @@ test("순위 페이지는 '순위 확인'이 아니라 '순위 추적·30일 변
 
 test("두 페이지 모두 첫 화면 바로 아래에 '이럴 때 씁니다' 3가지와 가짜 데이터 예시 숫자 1개", () => {
   const expected = {
-    "naver-shopping-rank-tracking": ["광고비를 쓰기 전에", "바꾼 뒤 효과 확인", "광고주에게 기록으로 보고", "23위 → 9위"],
+    "naver-shopping-rank-tracking": ["광고비를 쓰기 전에", "바꾼 뒤 순위로 효과 확인", "광고주에게 기록으로 보고", "23위 → 9위"],
     "naver-keyword-search-volume": ["상품 등록 전에 키워드 고르기", "시즌 전에 광고 준비", "광고비 예산 잡기", "5월 최다 → 4월 준비"],
   };
   for (const page of pages) {

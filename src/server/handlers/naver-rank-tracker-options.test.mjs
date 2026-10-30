@@ -684,7 +684,7 @@ test("목록 GET: 퍼센트 인코딩이 깨진 옛 URL 행이 섞여도 500 이
   });
 });
 
-test("옵션 판정 건너뜀(2026-10-30): 화면 응답은 이유 코드만 싣고 오류 이름·문구는 싣지 않는다, 표시 없는 행은 그대로", () => {
+test("옵션 판정 건너뜀(2026-10-30): 관리자 응답은 이유 코드만, 광고주 응답은 변경 전 item 그대로, 오류 이름·문구는 어디에도 없다", async () => {
   const now = Date.now();
   const iso = (hoursAgo) => new Date(now - hoursAgo * 60 * 60 * 1000).toISOString();
   const skippedItem = {
@@ -698,12 +698,56 @@ test("옵션 판정 건너뜀(2026-10-30): 화면 응답은 이유 코드만 싣
     { id: "s2", tracker_id: SELF_ID, checked_at: iso(1), rank: null, matched: false, checked_count: 300, item: skippedItem, message: "대표" },
     { id: "s1", tracker_id: SELF_ID, checked_at: iso(10), rank: 12, matched: true, checked_count: 300, item: plainItem, message: "대표" },
   ];
-  const payload = trackerPayload(trackerRow({ option_product_ids: [OPTION_16PRO] }), snapshots);
-  assert.deepEqual(payload.snapshots[0].item.optionGroup, { checkedOptionCount: 3, skipped: "evaluation_error" });
-  assert.equal(JSON.stringify(payload).includes("x is not a function"), false);
-  assert.equal(JSON.stringify(payload).includes("TypeError"), false);
+  const row = () => trackerRow({ option_product_ids: [OPTION_16PRO] });
+  const admin = trackerPayload(row(), snapshots, null, { optionSkipVisible: true });
+  assert.deepEqual(admin.snapshots[0].item.optionGroup, { checkedOptionCount: 3, skipped: "evaluation_error" });
+  assert.equal(admin.currentMatchBasis, "");
+  // 기본값(권한 표시 없음)은 광고주와 같다: 건너뜀 표시 optionGroup 을 통째로 뺀다.
+  const advertiser = trackerPayload(row(), snapshots);
+  assert.deepEqual(advertiser.snapshots[0].item, { trackingRankSource: "not_found", isOrganic: true, isAd: false });
+  for (const payload of [admin, advertiser]) {
+    assert.equal(JSON.stringify(payload).includes("x is not a function"), false);
+    assert.equal(JSON.stringify(payload).includes("TypeError"), false);
+  }
   assert.equal(skippedItem.optionGroup.errorName, "TypeError", "저장된 행은 건드리지 않는다");
-  assert.equal(payload.currentMatchBasis, "");
-  const plain = trackerPayload(trackerRow({ option_product_ids: [OPTION_16PRO] }), [snapshots[1]]);
+  const plain = trackerPayload(row(), [snapshots[1]], null, { optionSkipVisible: true });
   assert.equal("optionGroup" in plain.snapshots[0].item, false);
+  // 정식 판정(matchBasis 있음) 행은 광고주 응답에서도 예전 그대로다.
+  const optionItem = { trackingRankSource: "exact_product", title: "옵션", isOrganic: true, isAd: false, matchBasis: "group_option", matchedOptionProductId: OPTION_16PRO, optionGroup: { checkedOptionCount: 1 } };
+  const matched = trackerPayload(row(), [{ ...snapshots[0], rank: 5, matched: true, item: optionItem }]);
+  assert.deepEqual(matched.snapshots[0].item.optionGroup, { checkedOptionCount: 1 });
+
+  await withEnv(async () => {
+    const ownerTables = groupTables();
+    ownerTables.naver_rank_snapshots = [{ ...snapshots[0], item: structuredClone(skippedItem) }];
+    const advertiserTables = {
+      naver_rank_trackers: [trackerRow({ agency_code: ADVERTISER, option_product_ids: [OPTION_16PRO] })],
+      naver_rank_snapshots: [{ ...snapshots[0], item: structuredClone(skippedItem) }],
+    };
+    const clients = [{ id: "client-1", status: "active", disconnected_at: null }];
+    const advertiserScope = { agencyCode: ADVERTISER, accessCode: ADVERTISER };
+    const quiet = console.warn;
+    console.warn = () => {};
+    try {
+      for (const [label, tables, options, expected] of [
+        ["owner", ownerTables, {}, { checkedOptionCount: 3, skipped: "evaluation_error" }],
+        ["team", advertiserTables, { role: "team", ...advertiserScope }, { checkedOptionCount: 3, skipped: "evaluation_error" }],
+        ["client", advertiserTables, { role: "client", ...advertiserScope }, undefined],
+        ["no-session access code", advertiserTables, { role: null, ...advertiserScope }, undefined],
+      ]) {
+        const { ctx } = fakeDatabase(structuredClone(tables), { clients });
+        // eslint-disable-next-line no-await-in-loop
+        const response = await handleRankTrackersRequest(request("GET", null, options), ctx);
+        // eslint-disable-next-line no-await-in-loop
+        const body = await response.json();
+        assert.equal(response.status, 200, label);
+        const self = body.trackers.find((entry) => entry.id === SELF_ID);
+        assert.ok(self?.snapshots?.length, label);
+        assert.deepEqual(self.snapshots[0].item.optionGroup, expected, label);
+        assert.equal(JSON.stringify(body).includes("x is not a function"), false, label);
+      }
+    } finally {
+      console.warn = quiet;
+    }
+  });
 });

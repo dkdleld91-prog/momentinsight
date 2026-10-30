@@ -670,7 +670,10 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null, extras
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    snapshots: recentSnapshots.map((snapshot, index) => snapshotPayload(snapshot, row.product_id, { compactItem: index > 0 })),
+    snapshots: recentSnapshots.map((snapshot, index) => snapshotPayload(snapshot, row.product_id, {
+      compactItem: index > 0,
+      optionSkipVisible: extras?.optionSkipVisible === true,
+    })),
     neverFound: checkCount >= 3 && foundCount === 0,
     foundRate: checkCount > 0 ? Math.round((foundCount / checkCount) * 100) / 100 : null,
     lastFoundAt: lastFoundAtFromSnapshots(snapshots),
@@ -748,18 +751,30 @@ function withoutGroupCandidates(item) {
   return rest;
 }
 
-// 옵션 판정 건너뜀(2026-10-30)의 오류 이름·문구(item.optionGroup.errorName·errorMessage)는 DB 진단용이라 화면 응답에
-// 싣지 않는다(광고주 응답 포함). 이유 코드(skipped)·옵션 개수만 간다. 그 키가 없는 행은 같은 객체 그대로다.
-function withoutOptionErrorDetail(item) {
+// 옵션 판정 건너뜀(2026-10-30) 표시는 관리자 진단용이다. 오류 이름·문구(item.optionGroup.errorName·errorMessage)는 어느
+// 화면 응답에도 싣지 않고, 이유 코드(skipped)·옵션 개수는 옵션 편집 권한과 같은 경계(관리자·운영팀 세션)에만 싣는다.
+// 광고주 응답에서는 건너뜀 표시 optionGroup 을 통째로 빼 변경 전과 같은 item 이다. 그 키가 없는 행은 같은 객체 그대로다.
+function optionSkipPayloadItem(item, visible = false) {
   const group = item && typeof item === "object" && !Array.isArray(item) ? item.optionGroup : null;
-  if (!group || typeof group !== "object" || Array.isArray(group)
-    || (!Object.hasOwn(group, "errorName") && !Object.hasOwn(group, "errorMessage"))) return item;
+  if (!group || typeof group !== "object" || Array.isArray(group)) return item;
+  if (!visible && !item.matchBasis && Object.hasOwn(group, "skipped")) {
+    const { optionGroup, ...rest } = item;
+    return rest;
+  }
+  if (!Object.hasOwn(group, "errorName") && !Object.hasOwn(group, "errorMessage")) return item;
   const { errorName, errorMessage, ...optionGroup } = group;
   return { ...item, optionGroup };
 }
 
+function optionSkipExtras(request, access) {
+  return { optionSkipVisible: !optionEditForbidden(request, access) };
+}
+
 function snapshotPayload(row, trackerProductId = "", options = {}) {
-  const item = withoutOptionErrorDetail(withoutGroupCandidates(displayProductRankItem(row.item, trackerProductId)));
+  const item = optionSkipPayloadItem(
+    withoutGroupCandidates(displayProductRankItem(row.item, trackerProductId)),
+    options.optionSkipVisible === true,
+  );
   return {
     id: row.id,
     trackerId: row.tracker_id,
@@ -1484,6 +1499,7 @@ async function listTrackers(request, ctx) {
       keywordVolumes.get(normalizeKeywordCompare(row.keyword)),
       {
         groupOptionSuggestionCount: groupOptionSuggestions.get(row.id) || 0,
+        ...optionSkipExtras(request, access),
         // 그룹상품 추적에만 싣는다(그 밖 추적은 예전 응답 그대로).
         ...(groupCandidates?.has(row.id) ? { groupCandidates: groupCandidates.get(row.id) } : {}),
       },
@@ -2131,7 +2147,12 @@ async function createTracker(request, ctx, body, access = {}) {
     return json(request, {
       ok: true,
       message: "이미 추적 중인 상품입니다. 최근 30일 기록을 이어서 표시합니다.",
-      tracker: trackerPayload(existingTracker, snapshots.get(existingTracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(existingTracker.keyword))),
+      tracker: trackerPayload(
+        existingTracker,
+        snapshots.get(existingTracker.id) || [],
+        keywordVolumes.get(normalizeKeywordCompare(existingTracker.keyword)),
+        optionSkipExtras(request, access),
+      ),
     });
   }
 
@@ -2188,6 +2209,7 @@ async function createTracker(request, ctx, body, access = {}) {
         reactivatedTracker,
         snapshots.get(reactivatedTracker.id) || [],
         keywordVolumes.get(normalizeKeywordCompare(reactivatedTracker.keyword)),
+        optionSkipExtras(request, access),
       ),
     });
   }
@@ -2279,6 +2301,7 @@ async function createTracker(request, ctx, body, access = {}) {
         queuedTracker,
         snapshots.get(queuedTracker.id) || [],
         keywordVolumes.get(normalizeKeywordCompare(queuedTracker.keyword)),
+        optionSkipExtras(request, access),
       ),
     }, 201);
   }
@@ -2297,7 +2320,12 @@ async function createTracker(request, ctx, body, access = {}) {
     queuedForLocalWorker: checked.queuedForLocalWorker === true,
     remoteWakeRequested,
     message: checked.message,
-    tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(
+      checkedTracker,
+      snapshots.get(checked.tracker.id) || [],
+      keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword)),
+      optionSkipExtras(request, access),
+    ),
   }, 201);
 }
 
@@ -2329,7 +2357,7 @@ async function claimTrackerForManualCheck(ctx, tracker, agencyCode) {
   return data ? { tracker: data, leaseStartedAt } : null;
 }
 
-async function checkOne(request, ctx, body) {
+async function checkOne(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const trackerId = normalizeText(body.trackerId || body.id);
   if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
@@ -2377,6 +2405,7 @@ async function checkOne(request, ctx, body) {
         tracker,
         snapshots.get(tracker.id) || [],
         keywordVolumes.get(normalizeKeywordCompare(tracker.keyword)),
+        optionSkipExtras(request, access),
       ),
     });
   }
@@ -2410,7 +2439,12 @@ async function checkOne(request, ctx, body) {
       remoteWakeRequested,
     } : {}),
     message: checked.message,
-    tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(
+      checkedTracker,
+      snapshots.get(checked.tracker.id) || [],
+      keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword)),
+      optionSkipExtras(request, access),
+    ),
   });
 }
 
@@ -3431,7 +3465,7 @@ async function handlePost(request, ctx) {
   }
 
   if (action === "create") return createTracker(request, ctx, body, access);
-  if (action === "check") return checkOne(request, ctx, body);
+  if (action === "check") return checkOne(request, ctx, body, access);
   if (action === "queue-refresh-all") return queueRefreshAllTrackers(request, ctx, access);
   if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
   if (action === "stop") return stopTracker(request, ctx, body);

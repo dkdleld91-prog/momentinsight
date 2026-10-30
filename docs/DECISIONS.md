@@ -5,6 +5,7 @@
 - 왜: 아이쉘(12356459438) 추적 2개는 10-28 이후 스냅샷에 옵션 판정 흔적이 없어, 옵션 번호가 창에 보였는데 판정이 건너뛰었는지(fail-soft) 아예 없었는지 가릴 수 없었다.
 - 무엇: 옵션 번호가 1개 이상인데 `evaluateGroupTrackingRank` 가 대표 결과를 그대로 돌려주는 길(창당 판정 상한 `lookup_budget_exhausted`·예외 `evaluation_error`·최종 검사 실패 `final_result_rejected`·판정 함수 없음 `selector_missing`)에 스냅샷 `item.optionGroup = { checkedOptionCount, skipped, errorName?, errorMessage? }` 만 더한다(matchBasis 없음, 오류 문구 80자·주소의 ?·# 뒤·이메일·전화번호 모양 지움). 순위·matched·문장·커밋 인자는 그대로. 서버 경고 1줄(`naver_rank_option_evaluation_failed`)의 이유 코드도 같다(예외는 `exception` → `evaluation_error`, 상한은 창마다 1줄 그대로).
 - 표시: 관리자 카드 '그룹상품 확인' 줄에 '옵션 판정 건너뜀 · 이유(쉬운 말)' 한 줄. 광고주 화면 출력은 그대로(시험으로 고정). 옵션 없는 추적·정상 판정 결과와 스냅샷은 바이트 동일.
+- API: 오류 이름·문구는 어느 화면 응답에도 싣지 않는다. 이유 코드·옵션 개수는 옵션 편집 권한과 같은 경계(총관리자·운영팀 세션)의 목록·등록·지금 확인 응답에만 싣고, 광고주·세션 없는 접속 코드 응답은 건너뜀 표시 `optionGroup` 을 통째로 빼 변경 전 item 과 같다(`naver-rank-tracker-options.test.mjs`). DB 행은 그대로.
 - 표시하지 않는 길(일부러): 옵션 칸을 읽지 못한 submit(칸 없음 기억 — 옵션 유무를 모름), 원부·대표 번호 무효 추적(설계상 옵션 무시, T4), 창에 보였지만 정식 판정에서 빠진 번호(정상 판정의 일부 — 대표가 이기면 대표 결과 그대로, 대표가 없으면 not_found).
 - 네이버 요청량·런타임 지문 1.1.34 무변경. 검증: `src/server/naver-rank-option-group.test.mjs`(아이쉘 장면 3종·바이트 동일·스냅샷 허용 키), `src/server/handlers/naver-shopping-local-worker-group-option.test.mjs`(서명된 submit 에서 상한 건너뜀), `src/server/naver-rank-option-group-ui.test.mjs`(관리자 한 줄·광고주 출력 동일).
 

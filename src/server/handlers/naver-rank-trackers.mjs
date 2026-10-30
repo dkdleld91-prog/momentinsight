@@ -623,7 +623,11 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null, extras
     rawRecentSnapshots[0]
     && !trustedProductRankSnapshot(rawRecentSnapshots[0], row.product_id)
   );
-  const latestTrackingItem = displayProductRankItem(recentSnapshots[0]?.item, row.product_id) || {};
+  // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가)만 있는 대표 결과 행은 광고주 응답에서 matchBasis 도 예전처럼 비운다.
+  const latestTrackingItem = optionSkipPayloadItem(
+    displayProductRankItem(recentSnapshots[0]?.item, row.product_id),
+    extras?.optionSkipVisible === true,
+  ) || {};
   const latestOptionGroup = latestTrackingItem.optionGroup && typeof latestTrackingItem.optionGroup === "object"
     ? latestTrackingItem.optionGroup
     : {};
@@ -754,12 +758,23 @@ function withoutGroupCandidates(item) {
 // 옵션 판정 건너뜀(2026-10-30) 표시는 관리자 진단용이다. 오류 이름·문구(item.optionGroup.errorName·errorMessage)는 어느
 // 화면 응답에도 싣지 않고, 이유 코드(skipped)·옵션 개수는 옵션 편집 권한과 같은 경계(관리자·운영팀 세션)에만 싣는다.
 // 광고주 응답에서는 건너뜀 표시 optionGroup 을 통째로 빼 변경 전과 같은 item 이다. 그 키가 없는 행은 같은 객체 그대로다.
+// 창에 보였지만 순위에 못 쓴 번호(optionGroup.droppedVisibleCount·droppedVisible, 2026-10-30 추가)도 같은 경계다. 광고주
+// 응답에서는 두 키를 빼고, 대표가 이긴 행에 남는 것이 옵션 개수뿐이면(변경 전에는 대표 결과 그대로였던 행) matchBasis·
+// optionGroup 을 통째로 빼 변경 전과 같은 item 이다.
 function optionSkipPayloadItem(item, visible = false) {
   const group = item && typeof item === "object" && !Array.isArray(item) ? item.optionGroup : null;
   if (!group || typeof group !== "object" || Array.isArray(group)) return item;
   if (!visible && !item.matchBasis && Object.hasOwn(group, "skipped")) {
     const { optionGroup, ...rest } = item;
     return rest;
+  }
+  if (!visible && (Object.hasOwn(group, "droppedVisibleCount") || Object.hasOwn(group, "droppedVisible"))) {
+    const { droppedVisibleCount, droppedVisible, ...optionGroup } = group;
+    if (item.matchBasis === "primary" && Object.keys(optionGroup).every((key) => key === "checkedOptionCount")) {
+      const { matchBasis, optionGroup: dropped, ...rest } = item;
+      return rest;
+    }
+    return { ...item, optionGroup };
   }
   if (!Object.hasOwn(group, "errorName") && !Object.hasOwn(group, "errorMessage")) return item;
   const { errorName, errorMessage, ...optionGroup } = group;

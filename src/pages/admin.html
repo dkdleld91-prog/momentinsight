@@ -26314,6 +26314,14 @@
           return /^[0-9]{5,20}$/.test(id);
         }) : [];
         var mismatch = Number(group.mallMismatchCount || 0) || mismatchIds.length;
+        // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 대표가 이긴 측정·둘 다 없음 측정에만(관리자 응답에만 실린다).
+        var droppedBasis = basis === "primary" || basis === "not_found";
+        var dropped = droppedBasis && Array.isArray(group.droppedVisible) ? group.droppedVisible.filter(function (entry) {
+          return entry && /^[0-9]{5,20}$/.test(String(entry.productId || ""));
+        }).map(function (entry) {
+          return { id: String(entry.productId), reason: String(entry.reason || "") };
+        }) : [];
+        var droppedCount = droppedBasis ? (Number(group.droppedVisibleCount || 0) || dropped.length) : 0;
         // 그룹상품 표시·후보(대표 승인 2026-10-27 A안): 서버 groupMarkReady·groupProductMarked·groupProduct·groupCandidates
         // (관리자 목록 응답에만)를 그대로 쓴다. 편집할 수 있는 관리자 카드에서만 새 표시가 붙는다(광고주 화면은 예전 그대로).
         var candidates = Array.isArray(safe.groupCandidates) ? safe.groupCandidates.filter(function (entry) {
@@ -26340,7 +26348,9 @@
           marked: editable && safe.groupProductMarked === true,
           candidateCount: editable ? candidates.length : 0,
           // 옵션 판정 건너뜀(대표 승인 2026-10-30): 서버가 대표 결과 그대로 기록하며 남긴 이유 코드(matchBasis 없는 측정에만).
-          skipped: basis ? "" : String(group.skipped || "")
+          skipped: basis ? "" : String(group.skipped || ""),
+          droppedVisibleCount: droppedCount > 0 ? droppedCount : 0,
+          droppedVisible: droppedCount > 0 ? dropped : []
         };
       }
 
@@ -26421,6 +26431,17 @@
               title: "스토어가 추적과 달라 순위에 넣지 않은 번호입니다" + (state.mallMismatchIds.length ? ": " + state.mallMismatchIds.join(", ") : "") + ". 대표 순위로 기록한 날은 메시지에 넣지 않고 이 줄에만 남깁니다. 같은 스토어 그룹상품 번호가 맞는지 확인해주세요."
             });
           }
+          if (state.droppedVisibleCount) {
+            var droppedShownIds = state.droppedVisible.slice(0, 3).map(function (entry) { return entry.id; });
+            var droppedRest = state.droppedVisibleCount - droppedShownIds.length;
+            var droppedReasons = { not_exact: "같은 상품으로 확인 안 됨", rejected: "순위 확인 통과 못함" };
+            notes.push({
+              text: "보였지만 순위에 못 쓴 번호 " + state.droppedVisibleCount + "개" + (droppedShownIds.length ? " · " + droppedShownIds.join(", ") + (droppedRest > 0 ? " 외 " + droppedRest + "개" : "") : ""),
+              title: "이번 결과에 보였지만 순위에 쓰지 않은 번호입니다" + (state.droppedVisible.length ? ": " + state.droppedVisible.map(function (entry) {
+                return entry.id + "(" + (Object.prototype.hasOwnProperty.call(droppedReasons, entry.reason) ? droppedReasons[entry.reason] : "기타") + ")";
+              }).join(", ") : "") + ". 순위에는 쓰지 않고 이 줄에만 남깁니다. 같은 그룹상품 번호가 맞는지 확인해주세요."
+            });
+          }
           if (state.skipped) {
             var skipReasons = {
               lookup_budget_exhausted: ["같은 키워드에 확인할 번호가 너무 많음", "같은 키워드의 여러 추적에 넣은 번호 중 이번 결과에 보인 번호가 한 번에 확인할 수 있는 수를 넘었습니다. 같은 키워드 추적들에 넣은 번호를 점검해주세요."],
@@ -26466,6 +26487,8 @@
         // 그룹상품 기록 문장의 관리자용 꼬리(서버 GROUP_OPTION_UNVERIFIED_TAIL)는 관리자 세션 화면에서만 보인다. 광고주
         // 화면 '메시지'에는 꼬리를 뺀 문장을 보인다(2차 수정 #10 원칙, 관리자 카드 줄에는 '스토어 확인 없이 기록').
         if (!optionState.admin && typeof lastMessage === "string") lastMessage = lastMessage.split(" 스토어를 확인하지 못해 확인 없이 기록했습니다.").join("");
+        // 창에 보였지만 순위에 못 쓴 번호 꼬리(서버 GROUP_OPTION_DROPPED_TAIL_PATTERN, 2026-10-30 추가)도 관리자 세션 화면에서만 보인다.
+        if (!optionState.admin && typeof lastMessage === "string") lastMessage = lastMessage.replace(/ 옵션 [0-9]+개 중 [0-9]+개는 결과에 보였지만 (?:같은 상품으로 확인되지 않아|순위 확인을 통과하지 못해) 순위에 쓰지 않았습니다\./g, "");
         // 그룹상품(명세 §9.2-2): 최신 순위가 옵션 번호로 잡혔으면 화면 알약은 '현재 37위 · 옵션'. ' · 옵션' 은
         // data-rank-export-omit 라 공유 이미지에는 '현재 37위' 만 남는다(대표 결정 D5).
         var currentOption = optionState.hit && Boolean(tracker.currentRank);

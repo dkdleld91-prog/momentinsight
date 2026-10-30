@@ -26,7 +26,10 @@ const privateBaseline = Object.freeze({
   // 2026-10-30 옵션 판정 건너뜀 이유(대표 승인): 공통 카드 함수(rankTrackerOptionState·renderRankOptionHitLine)에 관리자 전용
   // '옵션 판정 건너뜀' 줄이 더해져 바뀌었다(광고주 화면 출력은 바이트 동일 — naver-rank-option-group-ui 시험). 6차 값
   // 8d81d268f49b511aad2604a660ad7ca5447b238b4c27a29b9b50d3ed9d543781.
-  clientInline: ["2effa756deba7a3a54587416182c61a2cfafea98b7f51181770710c052395b4a"],
+  // 2026-10-30 창에 보였지만 순위에 못 쓴 번호(추가): 공통 카드 함수에 관리자 전용 '보였지만 순위에 못 쓴 번호' 줄과
+  // 광고주 화면 '메시지' 꼬리 빼기가 더해져 바뀌었다(광고주 화면 줄 없음 — naver-rank-option-group-ui 시험). 7차 값
+  // 2effa756deba7a3a54587416182c61a2cfafea98b7f51181770710c052395b4a.
+  clientInline: ["67474e1c915a7e209e499e72104e0d55728ad07023c78417561f9f74de3daf31"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

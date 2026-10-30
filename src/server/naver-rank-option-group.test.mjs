@@ -4,12 +4,15 @@ import test from "node:test";
 import {
   evaluateGroupTrackingRank,
   forgetOptionColumnMissing,
+  GROUP_OPTION_DROPPED_TAIL_PATTERN,
   GROUP_OPTION_UNVERIFIED_TAIL,
   groupOptionSnapshotFields,
   groupOptionSuggestionCounts,
   groupTrackingRankMessage,
   isOptionColumnMissingError,
   normalizeStoredOptionProductIds,
+  OPTION_DROPPED_VISIBLE_MAX,
+  OPTION_DROPPED_VISIBLE_REASONS,
   OPTION_INPUT_MAX_CHARS,
   OPTION_LOOKUPS_PER_WINDOW_MAX,
   OPTION_PRODUCT_IDS_MAX,
@@ -1487,4 +1490,137 @@ test("건너뜀 스냅샷 키는 허용 목록·알려진 이유·옵션 1개 �
     matchBasis: "not_found",
     optionGroup: { checkedOptionCount: 2, skipped: "evaluation_error", errorName: "Error" },
   }), { matchBasis: "not_found", optionGroup: { checkedOptionCount: 2 } });
+});
+
+// ───────────────────────── 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가) ─────────────────────────
+// 아이쉘 4추적(not_found)이 '번호가 창에 보였는데 정식 판정에서 빠진' 경우인지 가리려고 남기는 흔적이다. 실제로 왜
+// 빠졌는지는 모른다(그래서 기록한다) — 시험은 정확 상품 아님(not_exact)을 도우미로, 순위 확인 불통과(rejected)를
+// acceptResult 로 만든다.
+const notExactFinder = async (window, options) => {
+  const lookup = await findShoppingRankFromWindow(window, options);
+  return {
+    ...lookup,
+    exactItem: null,
+    productExposureItems: (lookup.productExposureItems || []).map((item) => ({ ...item, isExactTarget: false })),
+  };
+};
+const CHECKED_AT = "2026-10-30T03:00:00.000Z";
+
+// 대표 결과와 다른 것은 matchBasis·optionGroup(·문장 재료 optionMallMismatchProductIds)뿐이다. 커밋 행도 item 의 두 키와
+// 문장 말고는 대표 결과로 만든 행과 같다.
+function assertRankUntouched({ result, representativeResult }, row, basis) {
+  const { matchBasis, optionGroup, optionMallMismatchProductIds, ...rest } = result;
+  assert.deepEqual(rest, representativeResult, "순위·matched·rank 는 대표 결과 그대로");
+  assert.equal(matchBasis, basis);
+  const before = buildProductRankSnapshotRecord(row, CHECKED_AT, representativeResult, "문장");
+  const after = buildProductRankSnapshotRecord(row, CHECKED_AT, result, "문장");
+  const { item: beforeItem, ...beforeRow } = before;
+  const { item: afterItem, ...afterRow } = after;
+  assert.deepEqual(afterRow, beforeRow, "커밋 인자(item 밖)는 같다");
+  const { matchBasis: _basis, optionGroup: _group, ...afterItemRest } = afterItem;
+  assert.deepEqual(afterItemRest, beforeItem, "item 도 두 키 말고는 같다");
+  return optionGroup;
+}
+
+test("아이쉘 장면: 옵션 번호가 204위에 보이지만 정확 상품이 아니면 not_found 문장이 사실대로, droppedVisible 이 남는다", async () => {
+  const row = ishellTracker();
+  const window = ishellWindow();
+  const run = await evaluate(window, { tracker: row, findRankFromWindow: notExactFinder });
+  const optionGroup = assertRankUntouched(run, row, "not_found");
+  assert.equal(run.result.matched, false);
+  assert.equal(run.result.rank, run.representativeResult.rank);
+  assert.deepEqual(optionGroup, {
+    checkedOptionCount: 3,
+    droppedVisibleCount: 1,
+    droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }],
+  });
+  const message = groupTrackingRankMessage(run.result, representativeTrackingRankMessage(run.result));
+  assert.equal(message, "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다."
+    + " 옵션 3개 중 1개는 결과에 보였지만 같은 상품으로 확인되지 않아 순위에 쓰지 않았습니다.");
+  // 광고주 화면은 관리자용 꼬리를 뺀 문장(두 화면이 같은 패턴으로 뺀다) — 남는 문장도 사실이다.
+  assert.equal(message.replace(GROUP_OPTION_DROPPED_TAIL_PATTERN, ""),
+    "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다.");
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(run.result)),
+    `{"matchBasis":"not_found","optionGroup":{"checkedOptionCount":3,"droppedVisibleCount":1,"droppedVisible":[{"productId":"${ISHELL_OPTION}","reason":"not_exact"}]}}`);
+  // 같은 창을 정상 도우미로 보면 204위 옵션으로 잡힌다(번호가 보이는 장면임을 확인).
+  assert.equal((await evaluate(window, { tracker: row })).result.rank, 204);
+  // 번호가 창에 없으면 예전 문장 글자 그대로.
+  const missing = await evaluate(windowWith(), { tracker: row, findRankFromWindow: notExactFinder });
+  assert.equal(groupTrackingRankMessage(missing.result, "대표 문장"), "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 찾지 못했습니다.");
+  assert.deepEqual(missing.result.optionGroup, { checkedOptionCount: 3 });
+});
+
+test("아이쉘 장면: acceptResult 불통과(rejected)도 남고 문장은 '순위 확인을 통과하지 못해', 대표가 이기면 문장은 대표 그대로", async () => {
+  const row = ishellTracker();
+  const rejected = await evaluate(ishellWindow(), { tracker: row, acceptResult: () => false });
+  assert.deepEqual(assertRankUntouched(rejected, row, "not_found").droppedVisible, [{ productId: ISHELL_OPTION, reason: "rejected" }]);
+  assert.equal(groupTrackingRankMessage(rejected.result, "대표 문장"), "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다."
+    + " 옵션 3개 중 1개는 결과에 보였지만 순위 확인을 통과하지 못해 순위에 쓰지 않았습니다.");
+
+  // 대표 12위가 이기고 204위 옵션은 정확 상품 아님: matchBasis 'primary' 흔적만, 순위·문장은 대표 결과 그대로.
+  const primaryWindow = ishellWindow({ 12: card(12, PRIMARY) });
+  const primary = await evaluate(primaryWindow, { tracker: row, findRankFromWindow: notExactFinder });
+  assert.deepEqual(assertRankUntouched(primary, row, "primary"), {
+    checkedOptionCount: 3,
+    droppedVisibleCount: 1,
+    droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }],
+  });
+  assert.equal(primary.result.rank, 12);
+  assert.equal("optionMallMismatchProductIds" in primary.result, false);
+  assert.equal(groupTrackingRankMessage(primary.result, "대표 문장"), "대표 문장");
+  // 빠진 번호가 없는 정상 판정(대표가 이기고 다른 카드 없음)은 대표 결과 객체 그대로.
+  const clean = await evaluate(windowWith({ 12: card(12, PRIMARY) }), { tracker: row, findRankFromWindow: notExactFinder });
+  assert.equal(clean.result, clean.representativeResult);
+});
+
+test("창에 보였지만 못 쓴 번호: 목록은 최대 10개·개수는 전체, 이유가 다 확인되지 않거나 섞이면 일반 문구", async () => {
+  assert.equal(OPTION_DROPPED_VISIBLE_MAX, 10);
+  assert.deepEqual([...OPTION_DROPPED_VISIBLE_REASONS], ["not_exact", "rejected"]);
+  const ids = Array.from({ length: 12 }, (_, index) => String(99900009100 + index));
+  const row = tracker({ option_product_ids: ids });
+  const window = windowWith(Object.fromEntries(ids.map((id, index) => [101 + index, card(101 + index, id)])));
+  const many = await evaluate(window, { tracker: row, findRankFromWindow: notExactFinder });
+  const group = assertRankUntouched(many, row, "not_found");
+  assert.equal(group.droppedVisibleCount, 12);
+  assert.deepEqual(group.droppedVisible, ids.slice(0, 10).map((productId) => ({ productId, reason: "not_exact" })));
+  assert.match(groupTrackingRankMessage(many.result, ""), / 옵션 12개 중 12개는 결과에 보였지만 순위 확인을 통과하지 못해 순위에 쓰지 않았습니다\.$/u);
+
+  // 하나는 정확 상품 아님, 하나는 순위 확인 불통과.
+  const mixedRow = tracker({ option_product_ids: ids.slice(0, 2) });
+  const mixed = await evaluate(window, {
+    tracker: mixedRow,
+    findRankFromWindow: async (win, options) => (options.targetProductId === ids[0] ? notExactFinder(win, options) : findShoppingRankFromWindow(win, options)),
+    acceptResult: () => false,
+  });
+  assert.deepEqual(assertRankUntouched(mixed, mixedRow, "not_found").droppedVisible, [
+    { productId: ids[0], reason: "not_exact" },
+    { productId: ids[1], reason: "rejected" },
+  ]);
+  assert.match(groupTrackingRankMessage(mixed.result, ""), /옵션 2개 중 2개는 결과에 보였지만 순위 확인을 통과하지 못해/u);
+});
+
+test("창에 보였지만 못 쓴 번호 스냅샷 키: 번호·이유 두 칸만, 알려진 이유·번호 모양만, 최대 10개", () => {
+  const entries = [
+    { productId: ISHELL_OPTION, reason: "not_exact", title: "x" },
+    { productId: "12", reason: "not_exact" },
+    { productId: "99900009999", reason: "weird" },
+    null,
+    ...Array.from({ length: 12 }, (_, index) => ({ productId: String(99900009200 + index), reason: "rejected" })),
+  ];
+  const fields = groupOptionSnapshotFields({
+    matchBasis: "not_found",
+    optionGroup: { checkedOptionCount: 3, droppedVisibleCount: 14, droppedVisible: entries },
+  });
+  assert.equal(fields.optionGroup.droppedVisibleCount, 14);
+  assert.equal(fields.optionGroup.droppedVisible.length, 10);
+  assert.deepEqual(fields.optionGroup.droppedVisible[0], { productId: ISHELL_OPTION, reason: "not_exact" });
+  assert.ok(fields.optionGroup.droppedVisible.slice(1).every((entry) => entry.reason === "rejected"));
+  assert.deepEqual(groupOptionSnapshotFields({
+    matchBasis: "primary",
+    optionGroup: { checkedOptionCount: 3, droppedVisibleCount: 0, droppedVisible: "x" },
+  }), { matchBasis: "primary", optionGroup: { checkedOptionCount: 3 } });
+  // 건너뜀 표시(matchBasis 없음)에는 싣지 않는다.
+  assert.deepEqual(groupOptionSnapshotFields({
+    optionGroup: { checkedOptionCount: 3, skipped: "evaluation_error", droppedVisibleCount: 1, droppedVisible: [entries[0]] },
+  }), { optionGroup: { checkedOptionCount: 3, skipped: "evaluation_error" } });
 });

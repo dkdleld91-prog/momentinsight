@@ -61,7 +61,15 @@ const OPTION_GROUP_SNAPSHOT_KEYS = [
   "mallMismatchProductIds",
   "primaryProductRank",
   "primaryRankSource",
+  // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 대표가 이긴 결과·둘 다 없음 결과에 있을 때만. 목록은 번호·이유
+  // (OPTION_DROPPED_VISIBLE_REASONS) 최대 OPTION_DROPPED_VISIBLE_MAX 개, 개수는 전체.
+  "droppedVisibleCount",
+  "droppedVisible",
 ];
+// 옵션 번호가 300개 창에 보였는데(scanVisibleOptionProductIds) 정식 판정에서 빠진 이유: not_exact = 정확 상품 카드로
+// 확인되지 않음(exactOnlyOptionLookup 실패), rejected = 순위 확인 불통과(acceptableOptionCandidate·acceptResult).
+export const OPTION_DROPPED_VISIBLE_REASONS = Object.freeze(["not_exact", "rejected"]);
+export const OPTION_DROPPED_VISIBLE_MAX = 10;
 // 옵션 판정 건너뜀 표시(대표 승인 2026-10-30): 옵션 번호가 있는데 판정이 대표 결과를 그대로 돌려준 길에만, matchBasis
 // 없이 item.optionGroup 에 이 키들만 싣는다. 순위·문장·커밋 인자는 그대로다(관리자 카드 한 줄·서버 경고 1줄과 같은 이유 코드).
 export const OPTION_SKIP_REASONS = Object.freeze([
@@ -871,6 +879,8 @@ export async function evaluateGroupTrackingRank({
     );
     const accepted = [];
     const mallMismatchProductIds = [];
+    // 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가). 순위 고르기에는 쓰지 않고 흔적으로만 남긴다.
+    const droppedVisible = [];
     for (const optionId of visibleIds) {
       const key = cacheKey(optionId);
       let entry = lookupCache.get(key);
@@ -899,9 +909,15 @@ export async function evaluateGroupTrackingRank({
       // 기억한 예외도 처음과 같이 아래 catch 로 가서 대표 결과를 쓴다.
       if (entry.error) throw entry.error;
       const exactLookup = exactOnlyOptionLookup(entry.lookup);
-      if (!exactLookup) continue;
+      if (!exactLookup) {
+        droppedVisible.push({ productId: optionId, reason: "not_exact" });
+        continue;
+      }
       const candidate = selectRepresentative(exactLookup, optionId);
-      if (!acceptableOptionCandidate(candidate, optionId, window) || acceptResult(candidate) !== true) continue;
+      if (!acceptableOptionCandidate(candidate, optionId, window) || acceptResult(candidate) !== true) {
+        droppedVisible.push({ productId: optionId, reason: "rejected" });
+        continue;
+      }
       const rank = Number(candidate.rank);
       const mallCheck = optionStoreCheck({
         cardMallName: candidate.item.mallName,
@@ -926,13 +942,17 @@ export async function evaluateGroupTrackingRank({
     const mismatchFields = mallMismatchProductIds.length
       ? { mallMismatchCount: mallMismatchProductIds.length, mallMismatchProductIds: [...mallMismatchProductIds] }
       : {};
+    const droppedFields = droppedVisible.length
+      ? { droppedVisibleCount: droppedVisible.length, droppedVisible: droppedVisible.slice(0, OPTION_DROPPED_VISIBLE_MAX) }
+      : {};
 
     if (primaryFound && (!best || primaryRank <= best.rank)) {
       // 대표가 더 높거나 같다. 그룹상품은 카드 한 장이라, 대표 카드와 다른 순위에서 옵션이 보이면 잘못 넣은 번호일 수
       // 있어 확인 키만 남긴다(대표가 상품·원부 어느 쪽이든). 다른 스토어로 뺀 번호도 흔적으로 남긴다(규칙 E').
       // 문장(groupTrackingRankMessage 의 'primary')은 대표 결과 문장 그대로다.
+      // 창에 보였지만 순위에 못 쓴 번호도 흔적으로 남긴다(2026-10-30 추가, 문장은 대표 결과 그대로).
       const otherCardRanks = cardRanks.filter((rank) => rank !== primaryRank);
-      if (!otherCardRanks.length && !mallMismatchProductIds.length) return representativeResult;
+      if (!otherCardRanks.length && !mallMismatchProductIds.length && !droppedVisible.length) return representativeResult;
       return {
         ...representativeResult,
         matchBasis: "primary",
@@ -940,6 +960,7 @@ export async function evaluateGroupTrackingRank({
           checkedOptionCount,
           ...(otherCardRanks.length ? { otherCardCount: otherCardRanks.length, otherCardBestRank: otherCardRanks[0] } : {}),
           ...mismatchFields,
+          ...droppedFields,
         },
         ...(mallMismatchProductIds.length ? { optionMallMismatchProductIds: mallMismatchProductIds } : {}),
       };
@@ -952,6 +973,7 @@ export async function evaluateGroupTrackingRank({
         optionGroup: {
           checkedOptionCount,
           ...mismatchFields,
+          ...droppedFields,
         },
         optionMallMismatchProductIds: mallMismatchProductIds,
       };
@@ -1018,6 +1040,21 @@ function idListText(ids = []) {
 // 2차 수정 #10 원칙). 꼬리 글자를 바꾸면 두 화면의 같은 글자도 함께 바꾼다(화면 테스트가 대조한다).
 export const GROUP_OPTION_UNVERIFIED_TAIL = " 스토어를 확인하지 못해 확인 없이 기록했습니다.";
 
+// 창에 보였지만 순위에 못 쓴 번호가 있는 'not_found' 문장(2026-10-30 추가): '모두 … 찾지 못했습니다'는 사실과 달라
+// '모두 … 순위로 잡지 못했습니다'로 쓰고, 몇 개가 보였는지는 관리자용 꼬리로 붙인다. 광고주 화면 '메시지'는 이 꼬리를
+// 뺀 문장을 보인다 — 두 화면 renderRankTrackerCard 가 이 패턴과 같은 글자로 뺀다(화면 테스트가 대조한다).
+// 이유가 모두 not_exact 로 확인된 때만 '같은 상품으로 확인되지 않아', 그 밖(rejected 섞임·목록 상한 넘음)은 일반 문구.
+export const GROUP_OPTION_DROPPED_TAIL_PATTERN = / 옵션 [0-9]+개 중 [0-9]+개는 결과에 보였지만 (?:같은 상품으로 확인되지 않아|순위 확인을 통과하지 못해) 순위에 쓰지 않았습니다\./g;
+
+function groupOptionDroppedTail(group = {}) {
+  const count = Number.isSafeInteger(group.droppedVisibleCount) && group.droppedVisibleCount > 0 ? group.droppedVisibleCount : 0;
+  if (!count) return "";
+  const listed = Array.isArray(group.droppedVisible) ? group.droppedVisible : [];
+  const allNotExact = listed.length === count && listed.every((entry) => entry?.reason === "not_exact");
+  const why = allNotExact ? "같은 상품으로 확인되지 않아" : "순위 확인을 통과하지 못해";
+  return ` 옵션 ${Number(group.checkedOptionCount || 0)}개 중 ${count}개는 결과에 보였지만 ${why} 순위에 쓰지 않았습니다.`;
+}
+
 export function groupTrackingRankMessage(result = {}, baseMessage = "") {
   const basis = result?.matchBasis;
   if (!basis) return baseMessage;
@@ -1038,7 +1075,9 @@ export function groupTrackingRankMessage(result = {}, baseMessage = "") {
   if (basis === "not_found") {
     const checked = Number(result.checkedCount || 0);
     const scope = checked > 0 ? `오가닉 상위 ${checked}개 결과` : "검색 결과";
-    return `대표 상품번호와 그룹상품 옵션 ${Number(group.checkedOptionCount || 0)}개 모두 ${scope}에서 찾지 못했습니다.${mismatchTail}`;
+    const droppedTail = groupOptionDroppedTail(group);
+    const outcome = droppedTail ? "순위로 잡지 못했습니다" : "찾지 못했습니다";
+    return `대표 상품번호와 그룹상품 옵션 ${Number(group.checkedOptionCount || 0)}개 모두 ${scope}에서 ${outcome}.${droppedTail}${mismatchTail}`;
   }
   return baseMessage;
 }
@@ -1061,6 +1100,19 @@ function skippedOptionSnapshotFields(result) {
   return { optionGroup };
 }
 
+// 창에 보였지만 순위에 못 쓴 번호 목록: 번호·이유 두 칸만, 알려진 이유·옵션 번호 모양만, 최대 OPTION_DROPPED_VISIBLE_MAX 개.
+function droppedVisibleSnapshotEntries(value) {
+  if (!Array.isArray(value)) return [];
+  const entries = [];
+  for (const entry of value) {
+    const productId = normalizeText(entry?.productId);
+    if (!isOptionProductId(productId) || !OPTION_DROPPED_VISIBLE_REASONS.includes(entry?.reason)) continue;
+    entries.push({ productId, reason: entry.reason });
+    if (entries.length >= OPTION_DROPPED_VISIBLE_MAX) break;
+  }
+  return entries;
+}
+
 // buildProductRankSnapshotRecord 가 item 끝에 붙이는 키. matchBasis 가 없으면 건너뜀 표시만(없으면 빈 객체)이라
 // 옵션 없는 추적·대표로 잡힌 보통 행은 지금과 같은 바이트다.
 export function groupOptionSnapshotFields(result = {}) {
@@ -1072,6 +1124,15 @@ export function groupOptionSnapshotFields(result = {}) {
   for (const key of OPTION_GROUP_SNAPSHOT_KEYS) {
     const value = source[key];
     if (value === undefined || value === null || value === "") continue;
+    if (key === "droppedVisibleCount") {
+      if (Number.isSafeInteger(value) && value > 0) optionGroup[key] = value;
+      continue;
+    }
+    if (key === "droppedVisible") {
+      const entries = droppedVisibleSnapshotEntries(value);
+      if (entries.length) optionGroup[key] = entries;
+      continue;
+    }
     if (Array.isArray(value)) {
       const ids = normalizeStoredOptionProductIds(value);
       if (ids.length) optionGroup[key] = ids;

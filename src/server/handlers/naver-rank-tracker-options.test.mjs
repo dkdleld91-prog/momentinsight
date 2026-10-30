@@ -751,3 +751,83 @@ test("옵션 판정 건너뜀(2026-10-30): 관리자 응답은 이유 코드만,
     }
   });
 });
+
+test("창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 관리자 응답만 상세, 광고주 응답은 변경 전 item·currentMatchBasis 그대로", async () => {
+  const now = Date.now();
+  const iso = (hoursAgo) => new Date(now - hoursAgo * 60 * 60 * 1000).toISOString();
+  const ishellOption = "11463197547";
+  const dropped = { droppedVisibleCount: 1, droppedVisible: [{ productId: ishellOption, reason: "not_exact" }] };
+  const primaryItem = {
+    trackingRankSource: "exact_product", title: "대표", isOrganic: true, isAd: false,
+    matchBasis: "primary", optionGroup: { checkedOptionCount: 3, ...dropped },
+  };
+  const notFoundItem = {
+    trackingRankSource: "not_found", isOrganic: true, isAd: false,
+    matchBasis: "not_found", optionGroup: { checkedOptionCount: 3, ...dropped },
+  };
+  const mismatchPrimaryItem = {
+    ...primaryItem,
+    optionGroup: { checkedOptionCount: 3, mallMismatchCount: 1, mallMismatchProductIds: [OPTION_16PRO], ...dropped },
+  };
+  const snap = (id, hoursAgo, rank, item) => ({
+    id, tracker_id: SELF_ID, checked_at: iso(hoursAgo), rank, matched: Boolean(rank), checked_count: 300, item, message: "대표",
+  });
+  const row = () => trackerRow({ option_product_ids: [OPTION_16PRO, ishellOption] });
+  const snapshots = [snap("s3", 1, 12, primaryItem), snap("s2", 5, null, notFoundItem), snap("s1", 10, 12, mismatchPrimaryItem)];
+
+  const admin = trackerPayload(row(), snapshots, null, { optionSkipVisible: true });
+  assert.deepEqual(admin.snapshots[0].item.optionGroup, primaryItem.optionGroup);
+  assert.equal(admin.currentMatchBasis, "primary");
+  assert.equal(admin.snapshots[1].item.matchBasis, "not_found", "옛 기록 칸(compact)에도 판정 키");
+
+  const advertiser = trackerPayload(row(), snapshots);
+  // 대표가 이기고 남는 표시가 옵션 개수뿐이면 변경 전에는 대표 결과 그대로였다 — 두 키를 통째로 뺀다.
+  assert.deepEqual(advertiser.snapshots[0].item, { trackingRankSource: "exact_product", title: "대표", isOrganic: true, isAd: false });
+  assert.equal(advertiser.currentMatchBasis, "");
+  assert.equal("matchBasis" in advertiser.snapshots[0].item, false);
+  // 옛 기록 칸은 compact 이고, 거기서도 변경 전과 같다(not_found 는 원래 판정 키가 있었다).
+  assert.equal(advertiser.snapshots[1].item.matchBasis, "not_found");
+  const notFoundOnly = trackerPayload(row(), [snapshots[1]]);
+  assert.deepEqual(notFoundOnly.snapshots[0].item.optionGroup, { checkedOptionCount: 3 });
+  assert.equal(notFoundOnly.currentMatchBasis, "not_found");
+  const mismatchOnly = trackerPayload(row(), [snapshots[2]]);
+  assert.deepEqual(mismatchOnly.snapshots[0].item.optionGroup, { checkedOptionCount: 3, mallMismatchCount: 1, mallMismatchProductIds: [OPTION_16PRO] });
+  assert.equal(mismatchOnly.currentMatchBasis, "primary");
+  for (const payload of [advertiser, notFoundOnly, mismatchOnly]) {
+    assert.equal(JSON.stringify(payload).includes("droppedVisible"), false);
+    assert.equal(JSON.stringify(payload.snapshots).includes(ishellOption), false, "기록 칸에는 빠진 번호가 없다(넣은 번호 목록은 예전처럼 추적 칸에)");
+  }
+  assert.equal(primaryItem.optionGroup.droppedVisibleCount, 1, "저장된 행은 건드리지 않는다");
+
+  await withEnv(async () => {
+    const ownerTables = groupTables();
+    ownerTables.naver_rank_snapshots = [{ ...snapshots[1], item: structuredClone(notFoundItem) }];
+    const advertiserTables = {
+      naver_rank_trackers: [trackerRow({ agency_code: ADVERTISER, option_product_ids: [OPTION_16PRO, ishellOption] })],
+      naver_rank_snapshots: [{ ...snapshots[1], item: structuredClone(notFoundItem) }],
+    };
+    const clients = [{ id: "client-1", status: "active", disconnected_at: null }];
+    const advertiserScope = { agencyCode: ADVERTISER, accessCode: ADVERTISER };
+    const quiet = console.warn;
+    console.warn = () => {};
+    try {
+      for (const [label, tables, options, expected] of [
+        ["owner", ownerTables, {}, notFoundItem.optionGroup],
+        ["team", advertiserTables, { role: "team", ...advertiserScope }, notFoundItem.optionGroup],
+        ["client", advertiserTables, { role: "client", ...advertiserScope }, { checkedOptionCount: 3 }],
+        ["no-session access code", advertiserTables, { role: null, ...advertiserScope }, { checkedOptionCount: 3 }],
+      ]) {
+        const { ctx } = fakeDatabase(structuredClone(tables), { clients });
+        // eslint-disable-next-line no-await-in-loop
+        const response = await handleRankTrackersRequest(request("GET", null, options), ctx);
+        // eslint-disable-next-line no-await-in-loop
+        const body = await response.json();
+        assert.equal(response.status, 200, label);
+        const self = body.trackers.find((entry) => entry.id === SELF_ID);
+        assert.deepEqual(self.snapshots[0].item.optionGroup, expected, label);
+      }
+    } finally {
+      console.warn = quiet;
+    }
+  });
+});

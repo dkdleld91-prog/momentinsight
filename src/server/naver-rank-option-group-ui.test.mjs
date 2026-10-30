@@ -19,7 +19,7 @@ import test from "node:test";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
-import { GROUP_OPTION_UNVERIFIED_TAIL } from "./naver-rank-option-group.mjs";
+import { GROUP_OPTION_DROPPED_TAIL_PATTERN, GROUP_OPTION_UNVERIFIED_TAIL } from "./naver-rank-option-group.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))));
 const readRepoFile = (relative) => fs.readFileSync(path.join(repositoryRoot, relative), "utf8");
@@ -1485,3 +1485,62 @@ for (const [label, source] of PAGES) {
     assert.doesNotMatch(plainHtml, /옵션 판정 건너뜀/u);
   });
 }
+
+// 창에 보였지만 순위에 못 쓴 번호(2026-10-30 추가): 관리자 카드 '그룹상품 확인' 줄에 한 줄. 광고주 화면에는 줄이 없고,
+// '메시지'는 관리자용 꼬리를 뺀 문장이다(서버 GROUP_OPTION_DROPPED_TAIL_PATTERN 과 같은 글자로 뺀다).
+const ISHELL_OPTION = "11463197547";
+for (const [label, source] of PAGES) {
+  test(`${label}: 창에 보였지만 순위에 못 쓴 번호는 관리자 카드 한 줄, 광고주 화면에는 줄·꼬리 없음`, () => {
+    const main = "대표 상품번호와 그룹상품 옵션 3개 모두 오가닉 상위 300개 결과에서 순위로 잡지 못했습니다.";
+    const tail = " 옵션 3개 중 1개는 결과에 보였지만 같은 상품으로 확인되지 않아 순위에 쓰지 않았습니다.";
+    const make = (basis, optionGroup, extra = {}) => baseTracker({
+      optionProductIds: [OPTION_A, ISHELL_OPTION, OPTION_B], optionProductCount: 3, optionEditable: true,
+      currentMatchBasis: basis, currentRank: null, lastMessage: main + tail,
+      snapshots: [snapshot(kst("2026-10-23", 9), null, { trackingRankSource: "not_found", matchBasis: basis, optionGroup })],
+      ...extra,
+    });
+    const dropped = make("not_found", { checkedOptionCount: 3, droppedVisibleCount: 1, droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }] });
+    // 광고주 응답 모양(서버가 두 키를 뺀 item).
+    const advertiserShape = make("not_found", { checkedOptionCount: 3 });
+    const messageOf = (html) => parseHtml(html).querySelector(".mi-rank-ops-message");
+    for (const role of ["owner", "client"]) {
+      const html = renderCard(source, label, dropped, role);
+      if (label === "admin.html" && role === "owner") {
+        const lines = parseHtml(html).querySelectorAll("[data-rank-option-hit]");
+        assert.equal(lines.length, 1, "한 줄");
+        assert.deepEqual(lines[0].children.filter((node) => node instanceof MiniElement).map((node) => node.textContent),
+          ["그룹상품 확인", `보였지만 순위에 못 쓴 번호 1개 · ${ISHELL_OPTION}`]);
+        assert.equal(lines[0].querySelector(".is-warn").getAttribute("title"),
+          `이번 결과에 보였지만 순위에 쓰지 않은 번호입니다: ${ISHELL_OPTION}(같은 상품으로 확인 안 됨). 순위에는 쓰지 않고 이 줄에만 남깁니다. 같은 그룹상품 번호가 맞는지 확인해주세요.`);
+        assert.equal(messageOf(html).textContent, `메시지 ${main}${tail}`, "관리자 세션은 꼬리까지");
+        continue;
+      }
+      assert.equal(parseHtml(html).querySelectorAll("[data-rank-option-hit]").length, 0, `${role}: 줄 없음`);
+      assert.equal(messageOf(html).textContent, `메시지 ${main}`, `${role}: 꼬리를 뺀 문장`);
+      assert.equal(html, renderCard(source, label, advertiserShape, role), `${role}: 상세 키가 있어도 없어도 같은 HTML`);
+    }
+    // 대표가 이긴 측정: 목록 상한(10개)을 넘은 개수는 '외 n개', 이유 모름은 '기타'.
+    if (label === "admin.html") {
+      const ids = Array.from({ length: 10 }, (_, index) => String(99900009100 + index));
+      const many = make("primary", {
+        checkedOptionCount: 12, droppedVisibleCount: 12,
+        droppedVisible: ids.map((productId, index) => ({ productId, reason: index === 1 ? "rejected" : (index === 2 ? "x" : "not_exact") })),
+      }, { currentRank: 12, lastMessage: "네이버쇼핑 오가닉 12위" });
+      const note = parseHtml(renderCard(source, label, many)).querySelector("[data-rank-option-hit]").querySelector(".is-warn");
+      assert.equal(note.textContent, `보였지만 순위에 못 쓴 번호 12개 · ${ids.slice(0, 3).join(", ")} 외 9개`);
+      assert.match(note.getAttribute("title"), new RegExp(`${ids[1]}\\(순위 확인 통과 못함\\), ${ids[2]}\\(기타\\)`, "u"));
+      // 옵션으로 잡힌 측정에는 이 키가 섞여 와도 보이지 않는다(서버는 대표가 이긴·둘 다 없음 측정에만 남긴다).
+      const hit = optionHitTracker();
+      const hitDropped = optionHitTracker();
+      hitDropped.snapshots[0].item.optionGroup = { ...hitDropped.snapshots[0].item.optionGroup, droppedVisibleCount: 1, droppedVisible: [{ productId: ISHELL_OPTION, reason: "not_exact" }] };
+      assert.equal(renderCard(source, label, hitDropped), renderCard(source, label, hit));
+    }
+  });
+}
+
+test("창에 보였지만 못 쓴 번호 꼬리: 두 화면이 빼는 패턴은 서버 GROUP_OPTION_DROPPED_TAIL_PATTERN 과 같은 글자", () => {
+  for (const [label, source] of PAGES) {
+    const card = htmlFunction(source, "renderRankTrackerCard", label);
+    assert.ok(card.includes(`if (!optionState.admin && typeof lastMessage === "string") lastMessage = lastMessage.replace(/${GROUP_OPTION_DROPPED_TAIL_PATTERN.source}/${GROUP_OPTION_DROPPED_TAIL_PATTERN.flags}, "");`), label);
+  }
+});

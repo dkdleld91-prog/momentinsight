@@ -62,6 +62,17 @@ const OPTION_GROUP_SNAPSHOT_KEYS = [
   "primaryProductRank",
   "primaryRankSource",
 ];
+// 옵션 판정 건너뜀 표시(대표 승인 2026-10-30): 옵션 번호가 있는데 판정이 대표 결과를 그대로 돌려준 길에만, matchBasis
+// 없이 item.optionGroup 에 이 키들만 싣는다. 순위·문장·커밋 인자는 그대로다(관리자 카드 한 줄·서버 경고 1줄과 같은 이유 코드).
+export const OPTION_SKIP_REASONS = Object.freeze([
+  "lookup_budget_exhausted",
+  "evaluation_error",
+  "final_result_rejected",
+  "selector_missing",
+]);
+const OPTION_SKIP_SNAPSHOT_KEYS = ["checkedOptionCount", "skipped", "errorName", "errorMessage"];
+const OPTION_ERROR_NAME_MAX = 40;
+const OPTION_ERROR_TEXT_MAX = 80;
 
 export const OPTION_REJECTION_LABELS = Object.freeze({
   digit_length: `숫자 ${OPTION_PRODUCT_ID_MIN_DIGITS}~${OPTION_PRODUCT_ID_MAX_DIGITS}자리만 받습니다`,
@@ -712,6 +723,47 @@ function optionEvaluationFailure(reason, error = null) {
   }));
 }
 
+// 예외 문구는 관리자 진단용으로 80자만 남긴다: 주소의 ?·# 뒤(검색어·토큰), 이메일, 0으로 시작하는 전화번호 모양은 지운다.
+function optionErrorText(error) {
+  if (!(error instanceof Error)) return "";
+  const text = String(error.message || "")
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s?#]*)[?#]\S*/giu, "$1")
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/gu, "[email]")
+    .replace(/(?<![0-9])0[0-9]{1,2}[-. ]?[0-9]{3,4}[-. ]?[0-9]{4}(?![0-9])/gu, "[phone]")
+    .replace(/[\u0000-\u001f\u007f]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  return text.length > OPTION_ERROR_TEXT_MAX ? `${text.slice(0, OPTION_ERROR_TEXT_MAX - 1)}…` : text;
+}
+
+// 옵션 번호가 있는데 대표 결과를 그대로 쓰는 길: 대표 결과에 건너뜀 표시만 더한다(matchBasis 는 붙이지 않는다 —
+// groupTrackingRankMessage 가 대표 문장 그대로 돌려주고, 커밋 인자도 대표 결과 그대로다).
+function skippedOptionResult(representativeResult, checkedOptionCount, reason, error = null) {
+  try {
+    return skippedOptionMark(representativeResult, checkedOptionCount, reason, error);
+  } catch {
+    return representativeResult;
+  }
+}
+
+function skippedOptionMark(representativeResult, checkedOptionCount, reason, error) {
+  if (!representativeResult || typeof representativeResult !== "object" || Array.isArray(representativeResult)) {
+    return representativeResult;
+  }
+  if (!Number.isSafeInteger(checkedOptionCount) || checkedOptionCount < 1) return representativeResult;
+  const errorName = error instanceof Error ? String(error.name || "Error").slice(0, OPTION_ERROR_NAME_MAX) : "";
+  const errorMessage = optionErrorText(error);
+  return {
+    ...representativeResult,
+    optionGroup: {
+      checkedOptionCount,
+      skipped: reason,
+      ...(errorName ? { errorName } : {}),
+      ...(errorMessage ? { errorMessage } : {}),
+    },
+  };
+}
+
 // 같은 창(submit 한 번 = 키워드 한 묶음, 최대 100추적)에서 옵션 번호 하나의 정식 판정 결과는 추적과 상관없다.
 // skipTargetMetadata:true 라 targetMallName·targetProductTitle 은 결과에 쓰이지 않고(naver-shopping-rank.mjs 의
 // resolveRankTarget 만 읽고 이 경로는 그 함수를 건너뜀), 대표 URL·원부 연속성은 넘기지 않는다. 그래서 창·판정
@@ -762,14 +814,19 @@ export async function evaluateGroupTrackingRank({
   acceptResult = () => true,
   findRankFromWindow = findShoppingRankFromWindow,
 } = {}) {
+  let checkedOptionCount = 0;
   try {
     const optionIds = normalizeStoredOptionProductIds(optionProductIds);
-    if (!optionIds.length || typeof selectRepresentative !== "function") return representativeResult;
+    if (!optionIds.length) return representativeResult;
+    checkedOptionCount = optionIds.length;
+    if (typeof selectRepresentative !== "function") {
+      optionEvaluationFailure("selector_missing");
+      return skippedOptionResult(representativeResult, checkedOptionCount, "selector_missing");
+    }
     const primaryProductId = normalizeText(tracker?.product_id);
     const primaryRank = representativeResult?.matched === true ? positiveRank(representativeResult.rank) : null;
     const primaryFound = Boolean(primaryRank);
     const visibleIds = scanVisibleOptionProductIds(window, optionIds);
-    const checkedOptionCount = optionIds.length;
 
     if (!visibleIds.length) {
       if (primaryFound) return representativeResult;
@@ -790,7 +847,8 @@ export async function evaluateGroupTrackingRank({
         lookupState.warned = true;
         optionEvaluationFailure("lookup_budget_exhausted");
       }
-      return representativeResult;
+      // 경고는 창마다 1줄, 건너뜀 표시는 건너뛴 추적마다(관리자 카드 한 줄).
+      return skippedOptionResult(representativeResult, checkedOptionCount, "lookup_budget_exhausted");
     }
 
     const eligibility = trackerOptionEligibility(tracker);
@@ -923,12 +981,12 @@ export async function evaluateGroupTrackingRank({
       || !acceptableOptionCandidate(finalResult, best.optionId, window)
       || acceptResult(finalResult) !== true) {
       optionEvaluationFailure("final_result_rejected");
-      return representativeResult;
+      return skippedOptionResult(representativeResult, checkedOptionCount, "final_result_rejected");
     }
     return finalResult;
   } catch (error) {
-    optionEvaluationFailure("exception", error);
-    return representativeResult;
+    optionEvaluationFailure("evaluation_error", error);
+    return skippedOptionResult(representativeResult, checkedOptionCount, "evaluation_error", error);
   }
 }
 
@@ -974,10 +1032,29 @@ export function groupTrackingRankMessage(result = {}, baseMessage = "") {
   return baseMessage;
 }
 
-// buildProductRankSnapshotRecord 가 item 끝에 붙이는 키. matchBasis 가 없으면 빈 객체라
+// matchBasis 없는 결과: 옵션 판정 건너뜀 표시(이유 코드가 OPTION_SKIP_REASONS 중 하나이고 옵션 1개 이상)만 싣는다.
+// 그 밖에는 빈 객체 — 옵션 없는 추적·대표로 잡힌 보통 행은 지금과 같은 바이트다.
+function skippedOptionSnapshotFields(result) {
+  const source = result?.optionGroup;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const count = source.checkedOptionCount;
+  if (!OPTION_SKIP_REASONS.includes(source.skipped) || !Number.isSafeInteger(count) || count < 1) return {};
+  const optionGroup = {};
+  for (const key of OPTION_SKIP_SNAPSHOT_KEYS) {
+    const value = source[key];
+    if (key === "checkedOptionCount" || key === "skipped") optionGroup[key] = value;
+    else if (typeof value === "string" && value) {
+      optionGroup[key] = key === "errorName" ? value.slice(0, OPTION_ERROR_NAME_MAX) : value.slice(0, OPTION_ERROR_TEXT_MAX);
+    }
+  }
+  return { optionGroup };
+}
+
+// buildProductRankSnapshotRecord 가 item 끝에 붙이는 키. matchBasis 가 없으면 건너뜀 표시만(없으면 빈 객체)이라
 // 옵션 없는 추적·대표로 잡힌 보통 행은 지금과 같은 바이트다.
 export function groupOptionSnapshotFields(result = {}) {
   const basis = result?.matchBasis;
+  if (!basis) return skippedOptionSnapshotFields(result);
   if (!["group_option", "not_found", "primary"].includes(basis)) return {};
   const source = result.optionGroup && typeof result.optionGroup === "object" ? result.optionGroup : {};
   const optionGroup = {};

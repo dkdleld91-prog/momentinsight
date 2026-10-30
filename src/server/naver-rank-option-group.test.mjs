@@ -13,6 +13,7 @@ import {
   OPTION_INPUT_MAX_CHARS,
   OPTION_LOOKUPS_PER_WINDOW_MAX,
   OPTION_PRODUCT_IDS_MAX,
+  OPTION_SKIP_REASONS,
   optionColumnRecentlyMissing,
   optionStoreCheck,
   optionTitleCheck,
@@ -150,6 +151,21 @@ async function evaluate(window, overrides = {}) {
     ...(overrides.findRankFromWindow ? { findRankFromWindow: overrides.findRankFromWindow } : {}),
   });
   return { representativeResult, result };
+}
+
+// 옵션 판정 건너뜀(2026-10-30): 대표 결과의 모든 칸은 그대로이고 optionGroup 건너뜀 표시만 더해진다.
+function assertSkippedOption({ result, representativeResult }, reason, extra = {}) {
+  assert.notEqual(result, representativeResult);
+  const { optionGroup, ...rest } = result;
+  assert.deepEqual(rest, representativeResult, "순위·matched·문장 재료는 대표 결과 그대로");
+  assert.equal("matchBasis" in result, false);
+  assert.equal(optionGroup.skipped, reason);
+  assert.deepEqual(Object.keys(optionGroup).filter((key) => !["checkedOptionCount", "skipped", "errorName", "errorMessage"].includes(key)), []);
+  if (!("checkedOptionCount" in extra)) assert.ok(optionGroup.checkedOptionCount >= 1);
+  for (const [key, value] of Object.entries(extra)) assert.equal(optionGroup[key], value, key);
+  if (!("errorName" in extra)) assert.equal("errorName" in optionGroup, false);
+  assert.equal(groupTrackingRankMessage(result, "대표 문장"), "대표 문장");
+  assert.deepEqual(groupOptionSnapshotFields(result), { optionGroup: { ...optionGroup } });
 }
 
 async function quietWarnings(callback) {
@@ -1084,21 +1100,22 @@ test("T11 옵션 판정은 던지지 않는다: 도우미 예외·원부로 둔�
   const throwingFind = await quietWarnings(() => evaluate(window, {
     findRankFromWindow: async () => { throw new Error("helper exploded"); },
   }));
-  assert.equal(throwingFind.value.result, throwingFind.value.representativeResult);
+  assertSkippedOption(throwingFind.value, "evaluation_error", { errorName: "Error", errorMessage: "helper exploded" });
   assert.equal(throwingFind.lines.length, 1);
   assert.match(throwingFind.lines[0], /naver_rank_option_evaluation_failed/u);
+  assert.match(throwingFind.lines[0], /"reason":"evaluation_error"/u);
   assert.equal(throwingFind.lines[0].includes(OPTION_16PRO), false);
   assert.equal(throwingFind.lines[0].includes("helper exploded"), false);
 
   const throwingSelect = await quietWarnings(() => evaluate(window, {
     selectRepresentative: () => { throw new TypeError("select exploded"); },
   }));
-  assert.equal(throwingSelect.value.result, throwingSelect.value.representativeResult);
+  assertSkippedOption(throwingSelect.value, "evaluation_error", { errorName: "TypeError", errorMessage: "select exploded" });
 
   const throwingAccept = await quietWarnings(() => evaluate(window, {
     acceptResult: () => { throw new Error("accept exploded"); },
   }));
-  assert.equal(throwingAccept.value.result, throwingAccept.value.representativeResult);
+  assertSkippedOption(throwingAccept.value, "evaluation_error", { errorName: "Error", errorMessage: "accept exploded" });
 
   const forcedCatalog = await evaluate(window, {
     selectRepresentative: (result, id) => ({
@@ -1113,7 +1130,8 @@ test("T11 옵션 판정은 던지지 않는다: 도우미 예외·원부로 둔�
   const finalRejected = await quietWarnings(() => evaluate(window, {
     acceptResult: (candidate) => candidate?.matchBasis !== "group_option",
   }));
-  assert.equal(finalRejected.value.result, finalRejected.value.representativeResult);
+  assertSkippedOption(finalRejected.value, "final_result_rejected");
+  assert.equal(finalRejected.lines.length, 1);
   assert.match(finalRejected.lines[0], /final_result_rejected/u);
 });
 
@@ -1220,7 +1238,8 @@ test("T13 창 하나의 정식 판정 상한: 넘으면 그 추적은 대표 결
   assert.equal(finderCalls, OPTION_LOOKUPS_PER_WINDOW_MAX);
   const fallback = results.slice(OPTION_LOOKUPS_PER_WINDOW_MAX / 20);
   assert.ok(fallback.length > 0);
-  assert.ok(fallback.every((result) => result === representativeResult), "상한을 넘은 추적은 대표 결과 객체 그대로");
+  // 상한을 넘은 추적은 대표 결과 그대로에 건너뜀 표시만 더한다(2026-10-30).
+  for (const result of fallback) assertSkippedOption({ result, representativeResult }, "lookup_budget_exhausted", { checkedOptionCount: 20 });
   assert.equal(lines.length, 1, "경고는 창마다 1줄");
   assert.match(lines[0], /lookup_budget_exhausted/u);
   // 다른 창은 새로 센다.
@@ -1354,5 +1373,118 @@ test("스냅샷 키는 허용 목록만, matchBasis 가 없으면 빈 객체", (
   assert.deepEqual(groupOptionSnapshotFields({
     matchBasis: "not_found",
     optionGroup: { checkedOptionCount: 2, mallMismatchProductIds: [] },
+  }), { matchBasis: "not_found", optionGroup: { checkedOptionCount: 2 } });
+});
+
+// ───────────────────────── 옵션 판정 건너뜀 이유(대표 승인 2026-10-30) ─────────────────────────
+// 아이쉘(12356459438) 장면: 옵션 목록에 있는 번호(11463197547)가 300개 창 204위에 보이는데 대표 번호는 없다.
+// 판정이 건너뛰거나(창당 상한) 실패하면(예외·최종 검사) 대표 결과 그대로 커밋되므로, 각각 이유 코드가 남아야 한다.
+const ISHELL_OPTION = "11463197547";
+const ishellTracker = (overrides = {}) => tracker({ option_product_ids: [OPTION_16PRO, ISHELL_OPTION, OPTION_15], ...overrides });
+const ishellWindow = (cards = {}) => windowWith({ ...cards, 204: card(204, ISHELL_OPTION) });
+
+test("아이쉘 장면: 같은 창에서 정상 판정이면 204위 옵션으로 잡힌다(번호가 보이고 판정 가능한 창)", async () => {
+  const { result } = await evaluate(ishellWindow(), { tracker: ishellTracker() });
+  assert.equal(result.matchBasis, "group_option");
+  assert.equal(result.rank, 204);
+  assert.equal(result.matchedOptionProductId, ISHELL_OPTION);
+  assert.equal("skipped" in result.optionGroup, false);
+});
+
+test("아이쉘 장면: 판정 예외(evaluation_error)·최종 검사 실패(final_result_rejected)·판정 함수 없음(selector_missing)은 각각 이유가 남는다", async () => {
+  const window = ishellWindow();
+  const row = ishellTracker();
+  const thrown = await quietWarnings(() => evaluate(window, {
+    tracker: row,
+    findRankFromWindow: async () => {
+      throw new RangeError(`lookup failed https://search.shopping.naver.com/search/all?query=${encodeURIComponent("아이폰 필름")}&pagingIndex=7 for ab.cd@example.com 010-1234-5678 ${"x".repeat(120)}`);
+    },
+  }));
+  assertSkippedOption(thrown.value, "evaluation_error", { checkedOptionCount: 3, errorName: "RangeError" });
+  const text = thrown.value.result.optionGroup.errorMessage;
+  assert.ok(text.length <= 80, `문구 ${text.length}자`);
+  assert.match(text, /^lookup failed https:\/\/search\.shopping\.naver\.com\/search\/all for \[email\] \[phone\] ?x*…$/u);
+  assert.doesNotMatch(text, /query|pagingIndex|example\.com|1234-5678/u);
+  assert.equal(thrown.lines.length, 1);
+  assert.match(thrown.lines[0], /"reason":"evaluation_error"/u);
+  assert.match(thrown.lines[0], /"errorType":"RangeError"/u);
+  assert.equal(thrown.lines[0].includes("lookup failed"), false, "로그에는 문구·번호를 싣지 않는다");
+  assert.equal(thrown.lines[0].includes(ISHELL_OPTION), false);
+
+  // 문자열을 던지면 이름·문구 없이 이유만.
+  const thrownString = await quietWarnings(() => evaluate(window, { tracker: row, findRankFromWindow: async () => { throw "boom"; } }));
+  assertSkippedOption(thrownString.value, "evaluation_error", { checkedOptionCount: 3 });
+  assert.equal("errorMessage" in thrownString.value.result.optionGroup, false);
+
+  const rejected = await quietWarnings(() => evaluate(window, {
+    tracker: row,
+    acceptResult: (candidate) => candidate?.matchBasis !== "group_option",
+  }));
+  assertSkippedOption(rejected.value, "final_result_rejected", { checkedOptionCount: 3 });
+  assert.match(rejected.lines[0], /"reason":"final_result_rejected"/u);
+
+  const representativeResult = await representative(window, row);
+  const noSelector = await quietWarnings(() => evaluateGroupTrackingRank({
+    window, tracker: row, representativeResult, optionProductIds: row.option_product_ids, historyRows: HISTORY,
+  }));
+  assertSkippedOption({ result: noSelector.value, representativeResult }, "selector_missing", { checkedOptionCount: 3 });
+  assert.match(noSelector.lines[0], /"reason":"selector_missing"/u);
+});
+
+test("아이쉘 장면: 창당 판정 상한을 앞선 추적들이 다 쓰면(lookup_budget_exhausted) 204위 번호를 건너뛴 이유가 추적마다 남고 경고는 1줄", async () => {
+  const others = Array.from({ length: OPTION_LOOKUPS_PER_WINDOW_MAX }, (_, index) => String(99900007000 + index));
+  const window = ishellWindow(Object.fromEntries(others.map((id, index) => [index + 1, card(index + 1, id, { mallName: "다른몰" })])));
+  const { value, lines } = await quietWarnings(async () => {
+    for (let index = 0; index < others.length; index += 20) {
+      const ids = others.slice(index, index + 20);
+      // eslint-disable-next-line no-await-in-loop
+      await evaluate(window, { tracker: tracker({ option_product_ids: ids }) });
+    }
+    const first = await evaluate(window, { tracker: ishellTracker() });
+    const second = await evaluate(window, { tracker: ishellTracker({ keyword: `${KEYWORD} 2` }) });
+    return { first, second };
+  });
+  assertSkippedOption(value.first, "lookup_budget_exhausted", { checkedOptionCount: 3 });
+  assertSkippedOption(value.second, "lookup_budget_exhausted", { checkedOptionCount: 3 });
+  assert.equal(value.first.result.matched, false);
+  assert.equal(lines.length, 1, "경고는 창마다 1줄");
+  assert.match(lines[0], /"reason":"lookup_budget_exhausted"/u);
+});
+
+test("정상 판정·옵션 없음은 결과 객체·스냅샷 키가 예전과 바이트 동일(건너뜀 표시 없음)", async () => {
+  // 옵션 없음: 대표 결과 객체 그대로, 스냅샷 키 없음.
+  const plainWindow = ishellWindow();
+  const noOption = await evaluate(plainWindow, { tracker: tracker({ option_product_ids: [] }) });
+  assert.equal(noOption.result, noOption.representativeResult);
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(noOption.result)), "{}");
+  // 대표가 보이고 옵션 카드가 없음 / 대표가 이기고 다른 카드 없음: 대표 결과 객체 그대로.
+  const primaryOnly = await evaluate(windowWith({ 12: card(12, PRIMARY) }), { tracker: ishellTracker() });
+  assert.equal(primaryOnly.result, primaryOnly.representativeResult);
+  const primaryWins = await evaluate(windowWith({ 12: card(12, PRIMARY) }), {
+    tracker: ishellTracker(),
+    acceptResult: () => false,
+  });
+  assert.equal(primaryWins.result, primaryWins.representativeResult);
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(primaryWins.result)), "{}");
+  // 옵션으로 잡힘·둘 다 없음: 스냅샷 키 글자 그대로.
+  const hit = await evaluate(plainWindow, { tracker: ishellTracker() });
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(hit.result)),
+    `{"matchBasis":"group_option","matchedOptionProductId":"${ISHELL_OPTION}","optionGroup":{"checkedOptionCount":3,"matchedOptionTitle":"아이쉘 아이폰16 프로 저반사 액정보호필름 2매","mallCheck":"matched","titleCheck":"ok"}}`);
+  const missing = await evaluate(windowWith(), { tracker: ishellTracker() });
+  assert.equal(JSON.stringify(groupOptionSnapshotFields(missing.result)), '{"matchBasis":"not_found","optionGroup":{"checkedOptionCount":3}}');
+  for (const run of [hit, missing]) assert.equal(JSON.stringify(run.result.optionGroup).includes("skipped"), false);
+});
+
+test("건너뜀 스냅샷 키는 허용 목록·알려진 이유·옵션 1개 이상만, matchBasis 가 있으면 건너뜀 키를 싣지 않는다", () => {
+  assert.deepEqual([...OPTION_SKIP_REASONS], ["lookup_budget_exhausted", "evaluation_error", "final_result_rejected", "selector_missing"]);
+  assert.deepEqual(groupOptionSnapshotFields({ optionGroup: { checkedOptionCount: 2, skipped: "weird" } }), {});
+  assert.deepEqual(groupOptionSnapshotFields({ optionGroup: { checkedOptionCount: 0, skipped: "evaluation_error" } }), {});
+  assert.deepEqual(groupOptionSnapshotFields({ optionGroup: [] }), {});
+  assert.deepEqual(groupOptionSnapshotFields({
+    optionGroup: { checkedOptionCount: 2, skipped: "evaluation_error", errorName: "E".repeat(60), errorMessage: "m".repeat(120), secret: "x", mallCheck: "matched" },
+  }), { optionGroup: { checkedOptionCount: 2, skipped: "evaluation_error", errorName: "E".repeat(40), errorMessage: "m".repeat(80) } });
+  assert.deepEqual(groupOptionSnapshotFields({
+    matchBasis: "not_found",
+    optionGroup: { checkedOptionCount: 2, skipped: "evaluation_error", errorName: "Error" },
   }), { matchBasis: "not_found", optionGroup: { checkedOptionCount: 2 } });
 });

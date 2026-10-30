@@ -131,3 +131,105 @@ test("빌드가 dist/guide/<slug>.html 로 내보내고 sitemap·라우팅에 �
   // 공개 빌드 검사도 안내 페이지를 필수 산출물로 본다.
   assert.ok(read("scripts/check-public-build-security.mjs").includes("GUIDE_PAGES.map((page) => `guide/${page.slug}.html`)"));
 });
+
+// ── 2026-10-30 고칠 목록(fix-1030, 대표 승인) ──────────────────────────────────────────────
+const byslug = Object.fromEntries(pages.map((page) => [page.slug, page]));
+const rankPage = byslug["naver-shopping-rank-tracking"];
+const keywordPage = byslug["naver-keyword-search-volume"];
+const mainText = (html) => html.slice(html.indexOf("<main>"), html.indexOf("</main>")).replace(/<[^>]+>/gu, " ").replace(/\s+/gu, " ");
+const count = (text, needle) => text.split(needle).length - 1;
+
+test("순위 페이지는 '순위 확인'이 아니라 '순위 추적·30일 변동 기록'을 앞세운다(주소는 그대로)", () => {
+  const html = rankPage.html;
+  const title = (html.match(/<title>([^<]+)<\/title>/u) || [])[1] || "";
+  const heads = [title, meta(html, "name", "description"), meta(html, "property", "og:title"), meta(html, "property", "og:description"), meta(html, "name", "twitter:title"), meta(html, "name", "twitter:description")];
+  for (const text of heads) {
+    assert.ok(text, "머리 값 있음");
+    assert.doesNotMatch(text, /순위 확인/u, text);
+  }
+  assert.ok(title.startsWith("네이버 쇼핑 순위 추적") && title.includes("30일 순위 변동 기록"), title);
+  assert.match(meta(html, "property", "og:title"), /^네이버 쇼핑 순위 추적 · 30일 변동 기록/u);
+  assert.match((html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/u) || [])[1].replace(/<[^>]+>/gu, ""), /순위 추적.*30일 변동/u);
+  assert.equal(rankPage.slug, "naver-shopping-rank-tracking");
+});
+
+test("두 페이지 모두 첫 화면 바로 아래에 '이럴 때 씁니다' 3가지와 가짜 데이터 예시 숫자 1개", () => {
+  const expected = {
+    "naver-shopping-rank-tracking": ["광고비를 쓰기 전에", "바꾼 뒤 효과 확인", "광고주에게 기록으로 보고", "23위 → 9위"],
+    "naver-keyword-search-volume": ["상품 등록 전에 키워드 고르기", "시즌 전에 광고 준비", "광고비 예산 잡기", "5월 최다 → 4월 준비"],
+  };
+  for (const page of pages) {
+    const start = page.html.indexOf('id="mi-guide-use"');
+    const end = page.html.indexOf('id="mi-guide-what"');
+    assert.ok(start > page.html.indexOf('class="mi-hero"') && start < end, `${page.slug}: 첫 화면 다음, 기능 카드 앞`);
+    const block = page.html.slice(start, end);
+    assert.equal((block.match(/<article class="mi-card">/gu) || []).length, 3, page.slug);
+    assert.equal((block.match(/class="mi-example"/gu) || []).length, 1, `${page.slug}: 예시 숫자 1개`);
+    assert.match(block, /<p class="mi-example"><span>예시 숫자 · 가짜 데이터<\/span><strong>[^<]+<\/strong><\/p>/u, page.slug);
+    for (const phrase of expected[page.slug]) assert.ok(block.includes(phrase), `${page.slug}: ${phrase}`);
+  }
+});
+
+test("순위 기능 카드는 4개, '몇 페이지 몇 번째'·'가격비교(원부)'는 자주 묻는 질문으로", () => {
+  const html = rankPage.html;
+  const cards = html.slice(html.indexOf('id="mi-guide-what"'), html.indexOf('id="mi-guide-how"'));
+  assert.equal((cards.match(/<article class="mi-card">/gu) || []).length, 4);
+  assert.doesNotMatch(cards, /몇 페이지 몇 번째|가격비교\(원부\)/u);
+  const faq = html.slice(html.indexOf('id="mi-guide-faq"'), html.indexOf('id="mi-guide-related"'));
+  assert.ok(faq.includes("몇 페이지 몇 번째인지도 나오나요?"));
+  assert.ok(faq.includes("광고를 뺀 40개 보기 기준으로 몇 페이지 몇 번째인지도"));
+  assert.ok(faq.includes("가격비교(원부) 카드로 묶인 상품은 어떻게 세나요?"));
+});
+
+test("같은 말 되풀이 줄이기: 본문에서 '하루 2~3회'·'광고를 뺀 상위 300개'는 두 번까지", () => {
+  const text = mainText(rankPage.html);
+  assert.ok(count(text, "하루 2~3회") <= 2, `하루 2~3회 ${count(text, "하루 2~3회")}번`);
+  assert.ok(count(text, "광고를 뺀 상위 300개") + count(text, "광고를 뺀 상위 순위") <= 2, "광고를 뺀 상위 300개");
+  for (const page of pages) {
+    assert.doesNotMatch(page.html.slice(page.html.indexOf('<footer class="mi-footer">')), /하루 2~3회|수집/u, `${page.slug}: 바닥 줄`);
+  }
+  const keyword = mainText(keywordPage.html);
+  assert.ok(count(keyword, "최대 5개") <= 2, `최대 5개 ${count(keyword, "최대 5개")}번`);
+});
+
+test("'오가닉·원부·회차'는 처음 나올 때 쉬운 말로 풀고, '수집'은 쓰지 않는다", () => {
+  const text = mainText(rankPage.html);
+  const near = (word, explain) => {
+    const at = text.indexOf(word);
+    assert.ok(at >= 0, word);
+    assert.ok(text.slice(Math.max(0, at - 20), at + word.length + 40).includes(explain), `${word}: ${text.slice(at, at + 60)}`);
+  };
+  near("오가닉", "광고가 아닌 일반 상품");
+  near("원부", "여러 판매처를 하나로 묶은 네이버 가격비교 카드");
+  near("회차", "한 번 확인하는 것을");
+  for (const page of pages) assert.doesNotMatch(mainText(page.html), /수집/u, page.slug);
+});
+
+test("키워드 페이지에는 '로그인 없이 연관 키워드 조회' 안내·링크가 없다(10/20 홈 결정)", () => {
+  assert.doesNotMatch(keywordPage.html, /related-keywords|로그인 없이 연관|IP별/u);
+  assert.equal((keywordPage.html.match(/itemtype="https:\/\/schema\.org\/Question"/gu) || []).length, 5);
+});
+
+test("가격은 비공개: 요금·금액 문구가 없다", () => {
+  for (const page of pages) {
+    const text = mainText(page.html);
+    assert.doesNotMatch(text, /\d[\d,]*\s*(?:만\s*)?원(?!부)|요금|가격 안내|월\s*구독|₩|VAT/u, page.slug);
+  }
+});
+
+test("예시 그림의 width·height 가 실제 webp 크기와 같다(광고주 화면 다시 찍기)", () => {
+  const webpSize = (file) => {
+    const b = fs.readFileSync(new URL(`../${file}`, import.meta.url));
+    const chunk = b.subarray(12, 16).toString("latin1");
+    if (chunk === "VP8X") return [1 + b.readUIntLE(24, 3), 1 + b.readUIntLE(27, 3)];
+    if (chunk === "VP8 ") return [b.readUInt16LE(26) & 0x3fff, b.readUInt16LE(28) & 0x3fff];
+    const v = b.readUInt32LE(21);
+    return [(v & 0x3fff) + 1, ((v >> 14) & 0x3fff) + 1];
+  };
+  for (const page of pages) {
+    for (const match of page.html.matchAll(/(?:src|srcset)="(\/guide\/img\/[a-z0-9-]+\.webp)" width="(\d+)" height="(\d+)"/gu)) {
+      assert.deepEqual(webpSize(`public${match[1]}`), [Number(match[2]), Number(match[3])], match[1]);
+    }
+    assert.equal([...page.html.matchAll(/(?:src|srcset)="\/guide\/img\/[a-z0-9-]+\.webp" width="\d+" height="\d+"/gu)].length, 2, page.slug);
+  }
+});

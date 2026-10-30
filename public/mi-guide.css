@@ -332,6 +332,32 @@ body {
   font-size: 13.5px;
 }
 
+/* 이럴 때 씁니다: 예시 숫자(가짜 데이터) 한 줄 (2026-10-30) */
+#mi-guide .mi-card .mi-example {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px dashed #c9d6ea;
+  border-radius: 10px;
+  background: #f5f8fd;
+}
+
+#mi-guide .mi-example span {
+  color: var(--mi-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#mi-guide .mi-example strong {
+  color: var(--mi-navy);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
 /* ── 예시 화면 ───────────────────────────────────────────── */
 #mi-guide .mi-shot {
   overflow: hidden;
@@ -781,14 +807,16 @@ body {
   }
 }
 
+/* 아주 좁은 화면(320px대)에서만 제목 구(句) 묶음을 풀어 가로 넘침을 막는다. 390px 휴대폰은 구 단위로 줄바꿈. */
+@media (max-width: 360px) {
+  #mi-guide .mi-nb {
+    white-space: normal;
+  }
+}
+
 @media (max-width: 430px) {
   #mi-guide .mi-brand span:last-child {
     display: none;
-  }
-
-  /* 좁은 화면(320px)에서는 제목 구(句) 묶음을 풀어 가로 넘침을 막는다 */
-  #mi-guide .mi-nb {
-    white-space: normal;
   }
 
   #mi-guide h1 {

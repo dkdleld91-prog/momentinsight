@@ -650,6 +650,42 @@ test("T13 성능: 창에 실제로 보이는 다른 카드 번호 50개(상한, 
   });
 });
 
+test("아이쉘 장면(2026-10-30): 같은 묶음 앞 추적들이 창당 판정 상한을 다 쓰면 옵션 204위가 보여도 대표 결과로 커밋하고 스냅샷에 건너뜀 이유가 남는다", async () => {
+  await withWorkerEnv(async () => {
+    const ishellOption = "11463197547";
+    const others = Array.from({ length: 200 }, (_, index) => String(99900008000 + index));
+    const window = strictWindow({
+      ...Object.fromEntries(others.map((id, index) => [index + 1, card(index + 1, id, { mallName: "다른몰" })])),
+      204: card(204, ishellOption),
+    });
+    const fillers = Array.from({ length: 4 }, (_, index) => tracker({
+      id: `123e4567-e89b-42d3-a456-${String(426614176000 + index).padStart(12, "0")}`,
+      option_product_ids: others.slice(index * 50, index * 50 + 50),
+    }));
+    const ishell = tracker({ id: TRACKER_B, option_product_ids: [OPTION_16PRO, ishellOption, OPTION_15] });
+    const history = [...fillers.map((row) => PRIMARY_HISTORY(row.id)), PRIMARY_HISTORY(TRACKER_B)];
+    const { value: run, lines } = await withQuietWarnings(() => submit([...fillers, ishell], window, { history }));
+    assert.equal(run.response.status, 200);
+    assert.equal(run.body.committedCount, 5);
+    const skipped = run.state.commits.find((commit) => commit.args.p_tracker_id === TRACKER_B).args;
+    assert.deepEqual(skipped.p_snapshot.item.optionGroup, { checkedOptionCount: 3, skipped: "lookup_budget_exhausted" });
+    assert.equal("matchBasis" in skipped.p_snapshot.item, false);
+    assert.equal(lines.filter((line) => line.includes("naver_rank_option_evaluation_failed")).length, 1);
+    assert.match(lines.find((line) => line.includes("naver_rank_option_evaluation_failed")), /"reason":"lookup_budget_exhausted"/u);
+    // 순위·문장·커밋 인자는 옵션 없는 같은 추적과 같다(건너뜀 표시만 다르다).
+    const plain = await submit([{ ...ishell, option_product_ids: [] }], window, { history });
+    const plainArgs = plain.state.commits[0].args;
+    const { optionGroup: _mark, ...skippedItem } = skipped.p_snapshot.item;
+    assert.deepEqual({ ...skipped, p_snapshot: { ...skipped.p_snapshot, item: skippedItem } }, plainArgs);
+    assert.equal(skipped.p_snapshot.message, plainArgs.p_snapshot.message);
+    assert.equal(skipped.p_snapshot.rank, null);
+    // 같은 창을 상한 없이 보면 204위 옵션으로 잡힌다(번호가 보이는 장면임을 확인).
+    const alone = await submit([ishell], window, { history: [PRIMARY_HISTORY(TRACKER_B)] });
+    assert.equal(alone.state.commits[0].args.p_snapshot.rank, 204);
+    assert.equal(alone.state.commits[0].args.p_snapshot.item.matchBasis, "group_option");
+  });
+});
+
 test("T16 submit 중 옵션 판정은 외부 요청(네이버 상품·스토어 페이지)을 하지 않는다", async () => {
   await withWorkerEnv(async () => {
     const originalFetch = globalThis.fetch;

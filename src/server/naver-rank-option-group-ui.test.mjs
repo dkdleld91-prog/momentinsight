@@ -1444,3 +1444,44 @@ test("U12 표시 끄기 확인 문구: 번호를 넣은 추적은 번호가 있�
   assert.match(env.confirms[0], /그룹상품 번호를 넣은 추적은 번호가 있는 동안 계속 그룹상품입니다/u);
   assert.equal(env.requests.length, 0);
 });
+
+// 옵션 판정 건너뜀(대표 승인 2026-10-30): 서버가 대표 결과 그대로 기록하며 남긴 이유를 관리자 카드 '그룹상품 확인' 줄에
+// 한 줄로 보인다. 광고주 화면은 표시 없는 같은 측정과 HTML 이 글자 하나까지 같다.
+for (const [label, source] of PAGES) {
+  test(`${label}: 옵션 판정 건너뜀 이유는 관리자 카드 한 줄, 광고주 화면 출력은 그대로`, () => {
+    const message = "네이버쇼핑 오가닉 300위 안에서 찾지 못했습니다.";
+    const make = (optionGroup, extra = {}) => baseTracker({
+      optionProductIds: [OPTION_A, OPTION_B], optionProductCount: 2, optionEditable: true, currentMatchBasis: null,
+      currentRank: null, lastMessage: message,
+      snapshots: [snapshot(kst("2026-10-23", 9), null, { trackingRankSource: "not_found", ...(optionGroup ? { optionGroup } : {}), ...extra })],
+    });
+    const plainHtml = renderCard(source, label, make(null));
+    const cases = [
+      [{ checkedOptionCount: 2, skipped: "lookup_budget_exhausted" }, "옵션 판정 건너뜀 · 같은 키워드에 확인할 번호가 너무 많음", /같은 키워드 추적들에 넣은 번호를 점검/u],
+      [{ checkedOptionCount: 2, skipped: "evaluation_error", errorName: "TypeError", errorMessage: "x is not a function" }, "옵션 판정 건너뜀 · 확인 중 오류", /\(오류: TypeError\)\. 번호를 확인하다 오류가 났습니다/u],
+      [{ checkedOptionCount: 2, skipped: "final_result_rejected" }, "옵션 판정 건너뜀 · 잡힌 카드가 마지막 확인을 통과하지 못함", /마지막 확인을 통과하지 못했습니다/u],
+      [{ checkedOptionCount: 2, skipped: "selector_missing" }, "옵션 판정 건너뜀 · 판정 준비 오류", /판정을 시작하지 못했습니다/u],
+      [{ checkedOptionCount: 2, skipped: "constructor" }, "옵션 판정 건너뜀 · 기타", /다음 측정에서 다시 확인합니다/u],
+    ];
+    for (const [optionGroup, text, titlePattern] of cases) {
+      const html = renderCard(source, label, make(optionGroup));
+      if (label === "client.html") {
+        assert.equal(html, plainHtml, "광고주 화면은 건너뜀 표시 없는 측정과 같은 HTML");
+        continue;
+      }
+      const lines = parseHtml(html).querySelectorAll("[data-rank-option-hit]");
+      assert.equal(lines.length, 1, "한 줄");
+      assert.deepEqual(lines[0].children.filter((node) => node instanceof MiniElement).map((node) => node.textContent), ["그룹상품 확인", text]);
+      const title = lines[0].querySelector(".is-warn").getAttribute("title");
+      assert.match(title, /^이번 측정은 넣은 그룹상품 번호를 확인하지 않고 대표 상품번호 결과 그대로 기록했습니다/u);
+      assert.match(title, titlePattern);
+      assert.equal(title.includes("x is not a function"), false, "오류 문구는 화면에 싣지 않는다");
+      assert.equal(parseHtml(html).querySelector(".mi-rank-ops-message").textContent, `메시지 ${message}`, "문장은 대표 결과 그대로");
+    }
+    // matchBasis 가 있는 측정(정상 판정)에는 건너뜀 키가 섞여 와도 보이지 않는다 — 정상 판정 카드는 예전과 같다.
+    const normal = make({ checkedOptionCount: 2 }, { matchBasis: "not_found" });
+    const normalSkipped = make({ checkedOptionCount: 2, skipped: "evaluation_error" }, { matchBasis: "not_found" });
+    assert.equal(renderCard(source, label, normalSkipped), renderCard(source, label, normal));
+    assert.doesNotMatch(plainHtml, /옵션 판정 건너뜀/u);
+  });
+}

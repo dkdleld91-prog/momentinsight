@@ -30,6 +30,7 @@ const measures = (fake) => fake.calls.executeScript.filter((call) => call.func =
 
 // 쪽이 스스로 다시 불러온다: 탭 loading 사건 → (delay 뒤) complete 사건. delay 가 null 이면 끝나지 않는다.
 function selfReload(fake, tab, delay = 15) {
+  tab.selfReloaded = true;
   tab.status = "loading";
   fake.events.tabsOnUpdated.emit(tab.id, { status: "loading" });
   if (delay === null) return;
@@ -389,6 +390,23 @@ const probe429WhileLoading = ({ tab }) => (tab.status === "loading"
   ? { readyState: "loading", host: "www.coupang.com", path: "/np/search", httpStatus: 429, blockedText: false }
   : { readyState: "complete", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false });
 
+// 쪽이 스스로 다시 불러오는 동안에만 429 를 보이는 probe(첫 load 중에는 200). 다시 불러오기는 끝나지 않게 두고(selfReload delay null),
+// load 확인이 그 429 를 본 다음에야 complete 로 끝낸다 — 첫 load 가 load 확인 주기(10ms)보다 늦게 끝나는 느린 실행 환경(GitHub 러너)이나
+// 타이머가 밀려도 순서가 늘 같다(2026-10-30). 첫 load 중 429 는 아래 "첫 load 중 본 429" 시험이 본다.
+const probe429ThenFinishSelfReload = ({ tab, chrome: fakeRef }) => {
+  if (tab.selfReloaded !== true) {
+    return { readyState: tab.status === "loading" ? "loading" : "complete", host: "www.coupang.com", path: "/np/search", httpStatus: 200, blockedText: false };
+  }
+  if (tab.status === "loading" && tab.selfReloadFinishQueued !== true) {
+    tab.selfReloadFinishQueued = true;
+    setTimeout(() => {
+      tab.status = "complete";
+      fakeRef.events.tabsOnUpdated.emit(tab.id, { status: "complete" });
+    }, 0);
+  }
+  return probe429WhileLoading({ tab });
+};
+
 test("1번 더 읽기 사이(첫 측정 뒤 기다리는 동안) 주소가 같은 q 의 다른 쪽(page=2)으로 바뀌면 두 번째 측정 없이 user_navigated(바뀐 이름 page)", async () => {
   let count = 0;
   const { fake, background } = setup({
@@ -455,12 +473,14 @@ test("1번 더 읽기 전 기다리는 동안 load 확인이 본 차단 HTTP(429
           measure: ({ tab, chrome: fakeRef }) => {
             count += 1;
             if (count === 1) {
-              selfReload(fakeRef, tab, 60);
+              selfReload(fakeRef, tab, null);
               return undefined;
             }
             return second === "ok" ? rawPage() : { extractError: true, host: "www.coupang.com", path: "/np/search", query: "", items: [], httpStatus: 200, error: "x" };
           },
-          probe: probe429WhileLoading,
+          probe: probe429ThenFinishSelfReload,
+          // 첫 load 를 load 확인 주기보다 길게 해 느린 러너와 같은 순서를 늘 만든다
+          loadDelayMs: 30,
         },
       },
     });

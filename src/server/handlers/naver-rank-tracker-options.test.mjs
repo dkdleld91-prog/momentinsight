@@ -683,3 +683,27 @@ test("목록 GET: 퍼센트 인코딩이 깨진 옛 URL 행이 섞여도 500 이
     assert.equal(broken.groupOptionSuggestionCount, 0);
   });
 });
+
+test("옵션 판정 건너뜀(2026-10-30): 화면 응답은 이유 코드만 싣고 오류 이름·문구는 싣지 않는다, 표시 없는 행은 그대로", () => {
+  const now = Date.now();
+  const iso = (hoursAgo) => new Date(now - hoursAgo * 60 * 60 * 1000).toISOString();
+  const skippedItem = {
+    trackingRankSource: "not_found",
+    isOrganic: true,
+    isAd: false,
+    optionGroup: { checkedOptionCount: 3, skipped: "evaluation_error", errorName: "TypeError", errorMessage: "x is not a function" },
+  };
+  const plainItem = { trackingRankSource: "exact_product", title: "대표", isOrganic: true, isAd: false };
+  const snapshots = [
+    { id: "s2", tracker_id: SELF_ID, checked_at: iso(1), rank: null, matched: false, checked_count: 300, item: skippedItem, message: "대표" },
+    { id: "s1", tracker_id: SELF_ID, checked_at: iso(10), rank: 12, matched: true, checked_count: 300, item: plainItem, message: "대표" },
+  ];
+  const payload = trackerPayload(trackerRow({ option_product_ids: [OPTION_16PRO] }), snapshots);
+  assert.deepEqual(payload.snapshots[0].item.optionGroup, { checkedOptionCount: 3, skipped: "evaluation_error" });
+  assert.equal(JSON.stringify(payload).includes("x is not a function"), false);
+  assert.equal(JSON.stringify(payload).includes("TypeError"), false);
+  assert.equal(skippedItem.optionGroup.errorName, "TypeError", "저장된 행은 건드리지 않는다");
+  assert.equal(payload.currentMatchBasis, "");
+  const plain = trackerPayload(trackerRow({ option_product_ids: [OPTION_16PRO] }), [snapshots[1]]);
+  assert.equal("optionGroup" in plain.snapshots[0].item, false);
+});

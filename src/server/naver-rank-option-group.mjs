@@ -714,20 +714,31 @@ function truncateTitle(value) {
   return title.length > OPTION_TITLE_MAX ? `${title.slice(0, OPTION_TITLE_MAX - 1)}…` : title;
 }
 
-function optionEvaluationFailure(reason, error = null) {
-  console.warn(JSON.stringify({
-    level: "warn",
-    event: "naver_rank_option_evaluation_failed",
-    reason: String(reason || "").slice(0, 40),
-    errorType: error instanceof Error ? String(error.name || "Error").slice(0, 40) : "",
-  }));
+function optionErrorName(error) {
+  if (!(error instanceof Error)) return "";
+  return String(error.name || "Error").replace(/[^A-Za-z0-9_$.]/gu, "").slice(0, OPTION_ERROR_NAME_MAX) || "Error";
 }
 
-// 예외 문구는 관리자 진단용으로 80자만 남긴다: 주소의 ?·# 뒤(검색어·토큰), 이메일, 0으로 시작하는 전화번호 모양은 지운다.
+// 경고 1줄도 판정 결과를 바꾸지 않는다 — 이상한 예외(이름 읽기에서 또 던짐)여도 삼킨다(절대 던지지 않음).
+function optionEvaluationFailure(reason, error = null) {
+  try {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "naver_rank_option_evaluation_failed",
+      reason: String(reason || "").slice(0, 40),
+      errorType: optionErrorName(error),
+    }));
+  } catch {
+    // 경고를 못 남겨도 대표 결과는 그대로 쓴다.
+  }
+}
+
+// 예외 문구는 DB 진단용으로 80자만 남긴다(화면 응답에는 싣지 않음): ?·# 뒤(절대·상대 주소의 검색어·토큰), 이메일,
+// 0으로 시작하는 전화번호 모양은 지운다.
 function optionErrorText(error) {
   if (!(error instanceof Error)) return "";
   const text = String(error.message || "")
-    .replace(/\b([a-z][a-z0-9+.-]*:\/\/[^\s?#]*)[?#]\S*/giu, "$1")
+    .replace(/[?#]\S*/gu, "")
     .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/gu, "[email]")
     .replace(/(?<![0-9])0[0-9]{1,2}[-. ]?[0-9]{3,4}[-. ]?[0-9]{4}(?![0-9])/gu, "[phone]")
     .replace(/[\u0000-\u001f\u007f]+/gu, " ")
@@ -751,7 +762,7 @@ function skippedOptionMark(representativeResult, checkedOptionCount, reason, err
     return representativeResult;
   }
   if (!Number.isSafeInteger(checkedOptionCount) || checkedOptionCount < 1) return representativeResult;
-  const errorName = error instanceof Error ? String(error.name || "Error").slice(0, OPTION_ERROR_NAME_MAX) : "";
+  const errorName = optionErrorName(error);
   const errorMessage = optionErrorText(error);
   return {
     ...representativeResult,

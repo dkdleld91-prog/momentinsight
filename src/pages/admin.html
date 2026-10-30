@@ -26340,8 +26340,7 @@
           marked: editable && safe.groupProductMarked === true,
           candidateCount: editable ? candidates.length : 0,
           // 옵션 판정 건너뜀(대표 승인 2026-10-30): 서버가 대표 결과 그대로 기록하며 남긴 이유 코드(matchBasis 없는 측정에만).
-          skipped: basis ? "" : String(group.skipped || ""),
-          skippedErrorName: basis ? "" : String(group.errorName || "")
+          skipped: basis ? "" : String(group.skipped || "")
         };
       }
 
@@ -26432,7 +26431,7 @@
             var skipReason = Object.prototype.hasOwnProperty.call(skipReasons, state.skipped) ? skipReasons[state.skipped] : ["기타", "다음 측정에서 다시 확인합니다."];
             notes.push({
               text: "옵션 판정 건너뜀 · " + skipReason[0],
-              title: "이번 측정은 넣은 그룹상품 번호를 확인하지 않고 대표 상품번호 결과 그대로 기록했습니다" + (state.skippedErrorName ? "(오류: " + state.skippedErrorName + ")" : "") + ". " + skipReason[1]
+              title: "이번 측정은 넣은 그룹상품 번호를 순위에 쓰지 못하고 대표 상품번호 결과 그대로 기록했습니다. " + skipReason[1]
             });
           }
         }

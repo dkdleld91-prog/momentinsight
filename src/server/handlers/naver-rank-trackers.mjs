@@ -748,8 +748,18 @@ function withoutGroupCandidates(item) {
   return rest;
 }
 
+// 옵션 판정 건너뜀(2026-10-30)의 오류 이름·문구(item.optionGroup.errorName·errorMessage)는 DB 진단용이라 화면 응답에
+// 싣지 않는다(광고주 응답 포함). 이유 코드(skipped)·옵션 개수만 간다. 그 키가 없는 행은 같은 객체 그대로다.
+function withoutOptionErrorDetail(item) {
+  const group = item && typeof item === "object" && !Array.isArray(item) ? item.optionGroup : null;
+  if (!group || typeof group !== "object" || Array.isArray(group)
+    || (!Object.hasOwn(group, "errorName") && !Object.hasOwn(group, "errorMessage"))) return item;
+  const { errorName, errorMessage, ...optionGroup } = group;
+  return { ...item, optionGroup };
+}
+
 function snapshotPayload(row, trackerProductId = "", options = {}) {
-  const item = withoutGroupCandidates(displayProductRankItem(row.item, trackerProductId));
+  const item = withoutOptionErrorDetail(withoutGroupCandidates(displayProductRankItem(row.item, trackerProductId)));
   return {
     id: row.id,
     trackerId: row.tracker_id,

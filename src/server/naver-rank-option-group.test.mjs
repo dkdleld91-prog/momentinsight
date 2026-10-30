@@ -1397,14 +1397,14 @@ test("아이쉘 장면: 판정 예외(evaluation_error)·최종 검사 실패(fi
   const thrown = await quietWarnings(() => evaluate(window, {
     tracker: row,
     findRankFromWindow: async () => {
-      throw new RangeError(`lookup failed https://search.shopping.naver.com/search/all?query=${encodeURIComponent("아이폰 필름")}&pagingIndex=7 for ab.cd@example.com 010-1234-5678 ${"x".repeat(120)}`);
+      throw new RangeError(`lookup failed 010-1234-5678 ab.cd@example.com https://a.naver.com/s?query=${encodeURIComponent("아이폰 필름")}&pagingIndex=7 /api/x?token=abc#frag ${"x".repeat(120)}`);
     },
   }));
   assertSkippedOption(thrown.value, "evaluation_error", { checkedOptionCount: 3, errorName: "RangeError" });
   const text = thrown.value.result.optionGroup.errorMessage;
   assert.ok(text.length <= 80, `문구 ${text.length}자`);
-  assert.match(text, /^lookup failed https:\/\/search\.shopping\.naver\.com\/search\/all for \[email\] \[phone\] ?x*…$/u);
-  assert.doesNotMatch(text, /query|pagingIndex|example\.com|1234-5678/u);
+  assert.match(text, /^lookup failed \[phone\] \[email\] https:\/\/a\.naver\.com\/s \/api\/x x+…$/u);
+  assert.doesNotMatch(text, /query|pagingIndex|token|frag|example\.com|1234-5678/u);
   assert.equal(thrown.lines.length, 1);
   assert.match(thrown.lines[0], /"reason":"evaluation_error"/u);
   assert.match(thrown.lines[0], /"errorType":"RangeError"/u);

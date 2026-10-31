@@ -284,7 +284,8 @@ test("L1 관리자 목록: 그룹상품 추적에만 후보(두 번 이상), 기
     assert.equal(raw.includes("groupCandidates"), false, "기록(날짜 칸) 응답에는 후보를 싣지 않는다");
     assert.equal(fetchCalls.length, 0);
     assert.equal(state.updates.length, 0, "목록은 아무것도 쓰지 않는다");
-    assert.ok(state.selects.some((entry) => entry.columns === "id, group_name, option_product_ids, group_product_marked"));
+    // 옵션 확인일 칸(2026-10-31)은 표시 칸을 읽을 때 함께 읽는다.
+    assert.ok(state.selects.some((entry) => entry.columns === "id, group_name, option_product_ids, group_product_marked, option_checked_at"));
   });
 });
 

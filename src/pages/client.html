@@ -11338,6 +11338,26 @@
         return false;
       }
 
+      // 그룹상품 옵션 확인일(대표 승인 2026-10-31): 서버 optionCheckedAt(ISO)을 한국 달력 날짜로 읽는다. 확인한 날부터
+      // 달력 30일이 되면 다시 확인할 때다(due). 값이 없거나 읽을 수 없으면 null(=확인 기록 없음). 관리자 카드 배지와
+      // 편집창이 같이 쓴다.
+      function rankOptionCheckInfo(value) {
+        var time = value ? Date.parse(String(value)) : NaN;
+        if (!Number.isFinite(time)) return null;
+        var kstOffset = 9 * 60 * 60 * 1000;
+        var checked = new Date(time + kstOffset);
+        var today = new Date(Date.now() + kstOffset);
+        var days = Math.round((Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()) -
+          Date.UTC(checked.getUTCFullYear(), checked.getUTCMonth(), checked.getUTCDate())) / (24 * 60 * 60 * 1000));
+        if (!(days > 0)) days = 0;
+        return {
+          day: checked.getUTCFullYear() + "-" + String(checked.getUTCMonth() + 1).padStart(2, "0") + "-" + String(checked.getUTCDate()).padStart(2, "0"),
+          short: (checked.getUTCMonth() + 1) + "/" + checked.getUTCDate(),
+          days: days,
+          due: days >= 30
+        };
+      }
+
       // 카드 한 장의 그룹상품 상태. 목록 응답의 추적 칸을 먼저 쓰고, 없으면 최신 측정 item(matchBasis·
       // matchedOptionProductId·optionGroup)을 본다. 편집 버튼은 관리자 화면에서만, 서버가 optionEditable:true 를 준
       // (=대표 상품번호가 확인된 상품 기준) 추적에만 붙는다. 원부(가격비교) 추적은 서버가 false 를 주고 저장도 409 로 막는다.
@@ -11399,7 +11419,10 @@
           // 옵션 판정 건너뜀(대표 승인 2026-10-30): 서버가 대표 결과 그대로 기록하며 남긴 이유 코드(matchBasis 없는 측정에만).
           skipped: basis ? "" : String(group.skipped || ""),
           droppedVisibleCount: droppedCount > 0 ? droppedCount : 0,
-          droppedVisible: droppedCount > 0 ? dropped : []
+          droppedVisible: droppedCount > 0 ? dropped : [],
+          // 옵션 확인일(대표 승인 2026-10-31): 서버 optionCheckReady·optionCheckedAt. 번호가 있는 편집 가능 관리자 카드에만
+          // 배지를 붙인다(칸이 없으면 = 대표 SQL 전 숨김, 광고주 화면은 예전 그대로).
+          optionCheck: editable && count > 0 && safe.optionCheckReady === true ? { at: safe.optionCheckedAt || null } : null
         };
       }
 
@@ -11413,6 +11436,15 @@
           html += '<span data-rank-export-omit class="mi-rank-option-pill" title="' +
             escapeHtml("대표 상품번호와 함께 같은 그룹상품의 다른 옵션 상품번호 " + state.count + "개도 찾습니다") + '">' +
             escapeHtml(state.editable ? "그룹상품 · 번호 " + state.count + "개 사용 중" : "그룹상품 " + state.count + "개") + '</span>';
+          if (state.optionCheck) {
+            // 옵션 확인일 배지(관리자만): 확인 30일 안은 조용히 날짜, 30일이 되거나 기록이 없으면 주의 색.
+            var check = rankOptionCheckInfo(state.optionCheck.at);
+            var checkLabel = !check ? "옵션 확인 기록 없음" : (check.due ? "옵션 다시 확인" : "옵션 확인 " + check.short);
+            var checkHint = (check ? "마지막 옵션 확인 " + check.day + "(" + (check.days ? check.days + "일 전" : "오늘") + "). " : "옵션 확인 기록이 없습니다. ") +
+              "상품 페이지에서 옵션이 늘거나 줄지 않았는지 30일마다 확인하고, 편집창에서 저장하거나 '확인만 기록'을 눌러주세요.";
+            html += '<span data-rank-export-omit class="mi-rank-option-check' + (!check || check.due ? " is-due" : "") +
+              '" data-rank-option-check title="' + escapeHtml(checkHint) + '">' + escapeHtml(checkLabel) + '</span>';
+          }
         } else if (state.markReady) {
           var markHint = state.marked
             ? "그룹상품으로 표시돼 있습니다. 대표 상품번호가 결과에 없을 때 같은 스토어의 비슷한 카드를 후보로 찾습니다(순위에는 쓰지 않음). 다시 누르면 표시를 끕니다."

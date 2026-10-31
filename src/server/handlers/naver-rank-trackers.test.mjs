@@ -5239,6 +5239,9 @@ test("tracker payload keeps its existing fields in order and appends the not-fou
     "groupMarkReady",
     "groupProductMarked",
     "groupProduct",
+    // N30 옵션 확인일(2026-10-31) — 기존 칸 뒤에만 붙인다.
+    "optionCheckedAt",
+    "optionCheckReady",
   ]);
 });
 

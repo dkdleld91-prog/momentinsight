@@ -218,6 +218,7 @@ const CARD_FUNCTIONS = [
   "rankTrackerChangeLabel",
   // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부.
   "rankOptionEditAvailable",
+  "rankOptionCheckInfo",
   "rankTrackerOptionState",
   "renderRankOptionOpsPills",
   "renderRankOptionHitLine",

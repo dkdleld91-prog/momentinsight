@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
+import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
   hasShoppingRankConfig,
@@ -24,20 +25,24 @@ import {
 } from "../rank-target-url.mjs";
 import {
   forgetGroupMarkColumnMissing,
+  forgetOptionCheckedColumnMissing,
   forgetOptionColumnMissing,
   groupCandidateSummaries,
   groupMarkColumnRecentlyMissing,
   groupOptionSnapshotFields,
   groupOptionSuggestionCounts,
   isGroupMarkColumnMissingError,
+  isOptionCheckedColumnMissingError,
   isOptionColumnMissingError,
   normalizeStoredOptionProductIds,
   OPTION_PRODUCT_IDS_MAX,
   OPTION_SAME_PRODUCT_TRACKERS_MAX,
+  optionCheckedColumnRecentlyMissing,
   optionColumnRecentlyMissing,
   parseOptionProductInput,
   planOptionGroupUpdate,
   rememberGroupMarkColumnMissing,
+  rememberOptionCheckedColumnMissing,
   rememberOptionColumnMissing,
   siblingOptionSuggestions,
   trackerGroupProductState,
@@ -590,6 +595,17 @@ function payloadOptionProductIds(row, eligibility) {
   return normalizeStoredOptionProductIds(row.option_product_ids, eligibility.primaryProductIds);
 }
 
+// N30 옵션 확인일(2026-10-31 B6). 칸을 읽었으면 문자열(ISO) 또는 null(기록 없음), 못 읽었으면 undefined(모름)다.
+function optionCheckedAtKnown(value) {
+  return value === null || typeof value === "string";
+}
+
+function optionCheckedAtIso(value) {
+  if (typeof value !== "string" || !value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
 function displayProductRankItem(item, trackerProductId = "") {
   if (!item || typeof item !== "object" || Array.isArray(item)) return item || null;
   const exactTrackerProductId = normalizeText(trackerProductId);
@@ -702,6 +718,10 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null, extras
     groupMarkReady: groupState.markReady,
     groupProductMarked: groupState.marked,
     groupProduct: groupState.groupProduct,
+    // N30 옵션 확인일(2026-10-31 B6). optionCheckReady:false = 확인일 칸을 읽지 못함(대표 SQL 전) — 화면은 확인일 표시를 숨긴다.
+    // 관리자 카드에서만 쓴다. 광고주 응답에는 확인일을 싣지 않는다(키·순서는 그대로 null·false — 관리자 전용 꼬리와 같은 기준).
+    optionCheckedAt: extras?.optionSkipVisible === true ? optionCheckedAtIso(row.option_checked_at) : null,
+    optionCheckReady: extras?.optionSkipVisible === true ? optionCheckedAtKnown(row.option_checked_at) : false,
     ...(Array.isArray(extras?.groupCandidates) ? { groupCandidates: extras.groupCandidates } : {}),
   }, extras?.optionSkipVisible === true);
 }
@@ -1090,18 +1110,31 @@ async function loadTrackerGroups(ctx, trackerIds) {
   // 그룹상품 표시 칸(2026-10-27)은 옵션 칸이 있을 때만 함께 읽는다. 표시 칸 검사를 옵션·그룹 칸 검사보다 먼저 한다 —
   // isMissingRankGroupColumn 은 "does not exist" 를 넓게 잡아 그룹 이름까지 잃는다.
   let markColumnReady = optionColumnReady && !groupMarkColumnRecentlyMissing();
+  // 옵션 확인일 칸(2026-10-31 B6)은 표시 칸을 읽을 때 함께 읽는다. 확인일 칸 검사를 표시·옵션·그룹 칸 검사보다 먼저 하고,
+  // 칸이 없으면 그 칸만 빼고 다시 읽는다(표시 칸은 그대로 읽는다).
+  let checkedColumnReady = markColumnReady && !optionCheckedColumnRecentlyMissing();
+  const markColumns = () => (checkedColumnReady
+    ? "id, group_name, option_product_ids, group_product_marked, option_checked_at"
+    : "id, group_name, option_product_ids, group_product_marked");
   let columns = "id, group_name";
-  if (optionColumnReady) columns = markColumnReady ? "id, group_name, option_product_ids, group_product_marked" : "id, group_name, option_product_ids";
+  if (optionColumnReady) columns = markColumnReady ? markColumns() : "id, group_name, option_product_ids";
   let { data, error } = await query(columns);
+  if (error && checkedColumnReady && isOptionCheckedColumnMissingError(error)) {
+    rememberOptionCheckedColumnMissing("rank-tracker-groups");
+    checkedColumnReady = false;
+    ({ data, error } = await query(markColumns()));
+  }
   if (error && markColumnReady && isGroupMarkColumnMissingError(error)) {
     rememberGroupMarkColumnMissing("rank-tracker-groups");
     markColumnReady = false;
+    checkedColumnReady = false;
     ({ data, error } = await query("id, group_name, option_product_ids"));
   }
   if (error && optionColumnReady && isOptionColumnMissingError(error)) {
     rememberOptionColumnMissing("rank-tracker-groups");
     optionColumnReady = false;
     markColumnReady = false;
+    checkedColumnReady = false;
     ({ data, error } = await query("id, group_name"));
   }
 
@@ -1120,6 +1153,10 @@ async function loadTrackerGroups(ctx, trackerIds) {
       groupProductMarked: markColumnReady && typeof row.group_product_marked === "boolean"
         ? row.group_product_marked
         : null,
+      // 확인일: 칸을 읽었으면 문자열 또는 null(기록 없음), 못 읽었으면 undefined(모름).
+      optionCheckedAt: checkedColumnReady
+        ? (typeof row.option_checked_at === "string" ? row.option_checked_at : null)
+        : undefined,
     });
   });
   return groups;
@@ -1142,6 +1179,10 @@ async function attachTrackerGroups(ctx, rows) {
       group_product_marked: typeof row.group_product_marked === "boolean"
         ? row.group_product_marked
         : (typeof details?.groupProductMarked === "boolean" ? details.groupProductMarked : null),
+      // 옵션 확인일: 못 읽었으면 undefined(모름 — 화면은 확인일 표시를 숨긴다). null 은 '기록 없음'이라 모름과 섞지 않는다.
+      option_checked_at: optionCheckedAtKnown(row.option_checked_at)
+        ? row.option_checked_at
+        : (optionCheckedAtKnown(details?.optionCheckedAt) ? details.optionCheckedAt : undefined),
     };
   });
 }
@@ -3048,7 +3089,8 @@ export async function controlShoppingWorker(request, ctx, body, access) {
 
 // ───────────────────── N30 그룹상품 번호 편집 (2026-10-23, 관리자 화면 전용) ─────────────────────
 // 읽기·미리 보기·저장 모두 네이버 요청 0, 수집 순서(next_check_at·임대)와 깨우기에 손대지 않는다.
-// 저장은 option_product_ids 한 칸만 바꾼다. 오류는 모두 4xx(5xx 는 공용 문구 봉인 대상).
+// 저장은 option_product_ids 한 칸만 바꾼다(전체 확인 저장이면 확인일 option_checked_at 도 같은 문장으로, 2026-10-31).
+// 오류는 모두 4xx(5xx 는 공용 문구 봉인 대상).
 const OPTION_TRACKER_COLUMNS = "id, agency_code, keyword, status, product_url, product_id, mall_name, product_title";
 const OPTION_EDIT_MODES = new Set(["read", "preview", "save"]);
 const OPTION_TRACKER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -3061,19 +3103,31 @@ function optionEditForbidden(request, access) {
   return access?.admin !== true;
 }
 
-async function readOptionTrackerRows(build) {
-  const withOptions = await build(`${OPTION_TRACKER_COLUMNS}, option_product_ids`);
-  if (!withOptions.error) return { data: withOptions.data, columnReady: true };
+// 옵션 확인일 칸(option_checked_at, 2026-10-31 B6)은 옵션 칸과 함께 읽는다. 표시 칸 선례(readGroupMarkTrackerRows)처럼
+// 10분 기억과 상관없이 읽어 보고(관리자가 누를 때만이라 드물다), 칸이 없으면 그 칸만 빼고 다시 읽는다. 확인일 칸 검사를
+// 옵션 칸 검사보다 먼저 한다. checkedAtReady:false 면 확인일을 모르고 저장 때도 쓰지 않는다.
+async function readOptionTrackerRows(build, { withCheckedAt = true } = {}) {
+  let checkedAtReady = withCheckedAt === true;
+  let withOptions = await build(`${OPTION_TRACKER_COLUMNS}, option_product_ids${checkedAtReady ? ", option_checked_at" : ""}`);
+  if (withOptions.error && checkedAtReady && isOptionCheckedColumnMissingError(withOptions.error)) {
+    rememberOptionCheckedColumnMissing("rank-tracker-options");
+    checkedAtReady = false;
+    withOptions = await build(`${OPTION_TRACKER_COLUMNS}, option_product_ids`);
+  }
+  if (!withOptions.error) {
+    if (checkedAtReady) forgetOptionCheckedColumnMissing();
+    return { data: withOptions.data, columnReady: true, checkedAtReady };
+  }
   if (!isOptionColumnMissingError(withOptions.error)) throw withOptions.error;
   rememberOptionColumnMissing("rank-tracker-options");
   const legacy = await build(OPTION_TRACKER_COLUMNS);
   if (legacy.error) throw legacy.error;
-  return { data: legacy.data, columnReady: false };
+  return { data: legacy.data, columnReady: false, checkedAtReady: false };
 }
 
 // 함께 바꿀 대상은 같은 대표 번호(product_id) 추적만 읽는다(명세 §8.3-4). 같은 그룹의 다른 옵션을 대표로
 // 쓴 추적과 이 대표 번호를 옵션으로 가진 추적은 '가져오기' 후보 번호만 만든다(쓰지 않음).
-async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds, columnReady) {
+async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds, columnReady, checkedAtReady = false) {
   const limit = OPTION_SAME_PRODUCT_TRACKERS_MAX + 2;
   const scoped = (columns) => ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -3082,7 +3136,7 @@ async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds
     .in("status", ["active", "paused"]);
   const sameProduct = await readOptionTrackerRows((columns) => scoped(columns)
     .eq("product_id", primaryProductId)
-    .limit(limit));
+    .limit(limit), { withCheckedAt: checkedAtReady });
   const suggestionRows = [];
   if (columnReady && sameProduct.columnReady) {
     const readSuggestionRows = async (build) => {
@@ -3093,26 +3147,186 @@ async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds
     if (optionIds.length) await readSuggestionRows((query) => query.in("product_id", optionIds));
     await readSuggestionRows((query) => query.contains("option_product_ids", [primaryProductId]));
   }
-  return { sameProduct: sameProduct.data || [], suggestionRows, columnReady: sameProduct.columnReady };
+  return {
+    sameProduct: sameProduct.data || [],
+    suggestionRows,
+    columnReady: sameProduct.columnReady,
+    checkedAtReady: sameProduct.checkedAtReady,
+  };
 }
 
 function optionEditError(request, status, code, message, extra = {}) {
   return json(request, { ok: false, code, message, ...extra }, status);
 }
 
-function optionTargetGroups(targets) {
+// ── 동시 변경 보호·되돌림 기록 (대표 요청 2026-10-31, 옵션 번호 정식 기능 B3·B4) ──
+// 미리 보기(또는 읽기) 응답이 추적별 저장값을 DB 에 있는 그대로(정규화 전, 순서 그대로) 싣고, 저장 요청이 그 값을 그대로
+// 돌려보낸다. 서버는 지금 값과 맞춰 본 뒤 그 값을 쓰기 조건(option_product_ids = 그 값)에도 묶는다.
+const OPTION_STORED_ID_LITERAL_PATTERN = /^[0-9]+$/u;
+const OPTION_AUDIT_TRACKER_IDS_PER_ROW = 50;
+const OPTION_CHECKED_NOT_READY_MESSAGE = "확인일 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.";
+
+// 저장된 옵션 번호 그대로. 칸을 못 읽었으면 null(모름).
+function storedOptionProductIds(row) {
+  return Array.isArray(row?.option_product_ids) ? row.option_product_ids.map((id) => String(id)) : null;
+}
+
+function optionStoredIdsById(tracker, sameProductRows = []) {
+  const stored = new Map();
+  for (const row of sameProductRows) {
+    if (row?.id) stored.set(String(row.id), storedOptionProductIds(row));
+  }
+  stored.set(String(tracker.id), storedOptionProductIds(tracker));
+  return stored;
+}
+
+// 화면이 돌려보낸 expectedOptionProductIds({ 추적 id: 문자열 배열 }). 모양이 틀린 칸은 없는 것으로 본다.
+function expectedOptionProductIdsMap(value) {
+  const expected = new Map();
+  if (!value || typeof value !== "object" || Array.isArray(value)) return expected;
+  for (const [id, ids] of Object.entries(value)) {
+    if (!Array.isArray(ids) || !ids.every((entry) => typeof entry === "string")) continue;
+    expected.set(String(id).trim().toLowerCase(), ids.slice());
+  }
+  return expected;
+}
+
+function sameOptionIdList(left, right) {
+  return Array.isArray(left) && Array.isArray(right)
+    && left.length === right.length
+    && left.every((id, index) => id === right[index]);
+}
+
+// PostgREST eq 비교용 text[] 리터럴. DB 제약상 번호는 숫자뿐이라 따옴표가 필요 없다 — 숫자가 아닌 값이 하나라도 있으면
+// 만들지 않는다(null). 빈 목록은 '{}'.
+function optionIdsArrayLiteral(ids) {
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string" && OPTION_STORED_ID_LITERAL_PATTERN.test(id))) return null;
+  return `{${ids.join(",")}}`;
+}
+
+// '확인만 기록'(B6): 저장된 번호(정리한 목록)와 이번 목록이 순서와 상관없이 같은지. 둘 다 정리된(중복 없는) 목록이다.
+function sameOptionIdSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  const leftSet = new Set(left.map(String));
+  const rightSet = new Set(right.map(String));
+  return leftSet.size === rightSet.size && [...leftSet].every((id) => rightSet.has(id));
+}
+
+// 묶음 쓰기 오류가 '확실한 DB 거절'인지(H1). PostgREST 가 DB 오류 코드(SQLSTATE 5자리)나 PGRST 코드를 실어 돌려준
+// 오류는 그 문장이 되돌려진 것이라 아무 줄도 쓰이지 않았다. 코드가 없거나(게이트웨이 5xx 의 JSON 아닌 본문·연결 끊김 —
+// postgrest-js 는 fetch 실패를 code '' 로 준다) 코드 모양이 DB 코드가 아니거나(ECONNRESET·AbortError 20 등), DB 와의
+// 연결이 끊긴 코드(08xxx·PGRST001 — 확정 중에 끊겼을 수 있다), 문장 완료 여부를 모른다는 40003
+// (statement_completion_unknown), 관리자 개입·서버 종료 57P 계열(57P01·57P02·57P03 — 확정 중에 서버가 내려갔을 수
+// 있다)이면 DB 가 이미 썼는지 알 수 없다. 같은 57 계열이라도 57014(문장 취소)는 되돌려진 것이라 확실한 거절이다.
+// 던져진 예외는 부르는 쪽이 따로 '모름'으로 본다. 코드 없이 문구로만 오는 칸 없음 오류(오래된 클라이언트)는 지금처럼
+// 확실한 거절로 본다.
+const OPTION_WRITE_DB_ERROR_CODE_PATTERN = /^(?:(?:[0-9][0-9A-Z]|F0|HV|P0|XX)[0-9A-Z]{3}|PGRST[0-9A-Z]{3})$/u;
+
+function isDefiniteOptionWriteRejection(error) {
+  if (!error || typeof error !== "object") return false;
+  if (isOptionColumnMissingError(error) || isOptionCheckedColumnMissingError(error)) return true;
+  const code = String(error.code ?? "").trim().toUpperCase();
+  if (!OPTION_WRITE_DB_ERROR_CODE_PATTERN.test(code)) return false;
+  if (code.startsWith("08") || code.startsWith("57P")) return false;
+  return code !== "40003" && code !== "PGRST001";
+}
+
+// 대표 번호·바꿀 목록·미리 보기 때 저장값이 모두 같은 추적끼리 한 번에 쓴다.
+// 저장값(DB 그대로)까지 묶음 열쇠에 넣으므로, 같은 대표 번호·같은 목록으로 저장해도 추적마다 저장값이 다르면 UPDATE 가
+// 여러 번으로 나뉜다. 한 문장으로 다 되거나 다 안 되는 단위는 묶음 하나이고(묶음 사이는 원자적이지 않다), 일부 묶음만
+// 저장된 결과는 RANK_OPTION_PARTIAL(쓰기 오류)·RANK_OPTION_CHANGED(조건 불일치로 줄 수 모자람) 응답과 결과 기록
+// (naver_rank_options_save_result 의 updatedTrackerIds)에 남는다. 쓰기 오류가 확실한 거절이 아니면(H1) 그 묶음은
+// 저장됐는지 모르는 추적(uncertainTrackerIds)으로 응답과 결과 기록에 따로 남긴다.
+function optionTargetGroups(targets, storedById = new Map()) {
   const groups = [];
   const byKey = new Map();
   for (const target of targets) {
-    const key = `${target.primaryProductId}|${target.after.join(",")}`;
+    const expected = storedById.get(String(target.id)) || [];
+    const key = `${target.primaryProductId}|${target.after.join(",")}|${expected.join(",")}`;
     if (!byKey.has(key)) {
-      const group = { productId: target.primaryProductId, after: target.after, ids: [] };
+      const group = {
+        productId: target.primaryProductId,
+        after: target.after,
+        expectedLiteral: optionIdsArrayLiteral(expected),
+        ids: [],
+      };
       byKey.set(key, group);
       groups.push(group);
     }
     byKey.get(key).ids.push(target.id);
   }
   return groups;
+}
+
+// 되돌림 기록. admin-api.mjs recordAuditLog 와 같은 모양이다(그 함수는 그 파일 안에서만 쓴다). 여러 줄을 한 문장으로 넣어
+// 모두 되거나 모두 안 된다. metadata 는 sanitizeAuditMetadata 로 정리한다(배열 50개 자르기 — 옵션 번호는 50개 이하라
+// 잘리지 않고, 추적 id 목록은 50개씩 나눠 쓴다).
+async function recordOptionAuditLogs(ctx, payloads) {
+  const rows = payloads.map((payload) => ({
+    actor_id: null,
+    client_id: payload.clientId || null,
+    action: payload.action,
+    target_table: payload.targetTable,
+    target_id: payload.targetId || null,
+    metadata: sanitizeAuditMetadata(payload.metadata || {}),
+  }));
+  try {
+    const { error } = await ctx.supabaseAdmin.from("audit_logs").insert(rows);
+    return { logged: !error, error };
+  } catch (error) {
+    return { logged: false, error };
+  }
+}
+
+function optionAuditFailedWarning(stage, error) {
+  console.warn(JSON.stringify({
+    level: "warn",
+    event: "naver_rank_tracker_options_audit_failed",
+    stage,
+    errorType: safeRankErrorType(error),
+    errorCode: safeRankErrorCode(error),
+  }));
+}
+
+// 결과 기록: 실제로 저장된 추적(일부만 저장된 경우 포함)과 그중 확인일까지 쓴 추적, 저장됐는지 모르는 추적(H1, 있을 때만).
+// 세 목록 모두 50개씩 나눠 쓴다. 실패해도 저장은 그대로 두고 경고만 남긴다.
+async function recordOptionSaveResult(ctx, trackerId, result) {
+  const ids = result.updatedTrackerIds.map((id) => String(id));
+  const checkedIds = result.checkedTrackerIds.map((id) => String(id));
+  const uncertainIds = (result.uncertainTrackerIds || []).map((id) => String(id));
+  const perRow = OPTION_AUDIT_TRACKER_IDS_PER_ROW;
+  const partCount = Math.max(
+    1,
+    Math.ceil(ids.length / perRow),
+    Math.ceil(checkedIds.length / perRow),
+    Math.ceil(uncertainIds.length / perRow),
+  );
+  const slice = (list, index) => list.slice(index * perRow, (index + 1) * perRow);
+  const logged = await recordOptionAuditLogs(ctx, Array.from({ length: partCount }, (_, index) => ({
+    action: "naver_rank_options_save_result",
+    targetTable: "naver_rank_trackers",
+    targetId: trackerId,
+    metadata: {
+      updatedTrackerIds: slice(ids, index),
+      checkedTrackerIds: slice(checkedIds, index),
+      ...(uncertainIds.length ? { uncertainTrackerIds: slice(uncertainIds, index) } : {}),
+      targetCount: result.targetCount,
+      checkedAtRecorded: result.checkedAtRecorded,
+      fullReview: result.fullReview,
+      ...(result.checkOnly ? { checkOnly: true } : {}),
+      outcome: result.outcome,
+      ...(partCount > 1
+        ? {
+          updatedCount: ids.length,
+          checkedCount: checkedIds.length,
+          ...(uncertainIds.length ? { uncertainCount: uncertainIds.length } : {}),
+          part: index + 1,
+          partCount,
+        }
+        : {}),
+    },
+  })));
+  if (!logged.logged) optionAuditFailedWarning("result", logged.error);
 }
 
 async function handleTrackerOptions(request, ctx, body, access) {
@@ -3189,7 +3403,14 @@ async function handleTrackerOptions(request, ctx, body, access) {
     optionIds = parsed.optionProductIds;
   }
 
-  const candidates = await loadOptionGroupCandidates(ctx, scope, eligibility.primaryProductId, optionIds, self.columnReady);
+  const candidates = await loadOptionGroupCandidates(
+    ctx,
+    scope,
+    eligibility.primaryProductId,
+    optionIds,
+    self.columnReady,
+    self.checkedAtReady,
+  );
   const plan = planOptionGroupUpdate({
     tracker,
     optionProductIds: optionIds,
@@ -3207,6 +3428,8 @@ async function handleTrackerOptions(request, ctx, body, access) {
   }
   const siblingGroups = await loadTrackerGroups(ctx, plan.siblings.map((sibling) => sibling.id));
   const suggestions = siblingOptionSuggestions(tracker, [...candidates.sameProduct, ...candidates.suggestionRows], optionIds);
+  const sameProductRowsById = new Map(candidates.sameProduct.map((row) => [String(row.id), row]));
+  const storedById = optionStoredIdsById(tracker, candidates.sameProduct);
   const sameProduct = {
     trackers: plan.siblings.map((sibling) => ({
       id: sibling.id,
@@ -3220,12 +3443,21 @@ async function handleTrackerOptions(request, ctx, body, access) {
       afterOptionProductIds: sibling.after,
       addedCount: sibling.addedCount,
       removedCount: sibling.removedCount,
+      optionCheckedAt: candidates.checkedAtReady
+        ? optionCheckedAtIso(sameProductRowsById.get(String(sibling.id))?.option_checked_at)
+        : null,
     })),
     siblingOptionProductIds: suggestions,
     shrinkingTrackerCount: plan.siblings.filter((sibling) => sibling.removedCount > 0).length,
     limit: OPTION_SAME_PRODUCT_TRACKERS_MAX,
   };
   const targetTrackerIds = plan.targets.map((target) => target.id);
+  // 미리 보기 때 본 저장값(B4). 함께 적용 체크와 상관없이 이 추적과 같은 대표 번호 추적을 모두 싣는다(화면이 체크를 바꿔도
+  // 다시 받지 않게). 칸을 못 읽었으면 null.
+  const expectedOptionProductIds = {};
+  for (const id of [tracker.id, ...plan.siblings.map((sibling) => sibling.id)]) {
+    expectedOptionProductIds[id] = storedById.get(String(id)) ?? null;
+  }
   const common = {
     columnReady: self.columnReady,
     tracker: {
@@ -3234,6 +3466,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       primaryProductId: eligibility.primaryProductId,
       productUrl: tracker.product_url || "",
       optionProductIds: currentIds,
+      optionCheckedAt: self.checkedAtReady ? optionCheckedAtIso(tracker.option_checked_at) : null,
     },
     parsed,
     sameProduct,
@@ -3242,6 +3475,9 @@ async function handleTrackerOptions(request, ctx, body, access) {
     targetTrackerIds,
     removedOptionProductIds: mode === "read" ? [] : plan.removedOptionProductIds,
     limit: OPTION_PRODUCT_IDS_MAX,
+    // 옵션 확인일(B6). checkedAtReady:false = 확인일 칸을 읽지 못함(대표 SQL 전) — 화면은 '확인만 기록'을 숨긴다.
+    checkedAtReady: self.checkedAtReady,
+    expectedOptionProductIds,
   };
 
   if (mode === "read") {
@@ -3258,6 +3494,17 @@ async function handleTrackerOptions(request, ctx, body, access) {
   }
 
   // save
+  // '확인만 기록'(B6, checkOnly:true): 번호는 그대로 두고 옵션 확인일만 남긴다. 전체 확인(fullReview)일 때만 받는다.
+  const checkOnly = body.checkOnly === true;
+  const fullReview = body.fullReview === true;
+  if (checkOnly && !fullReview) {
+    return optionEditError(
+      request,
+      400,
+      "RANK_OPTION_CHECK_ONLY_INVALID",
+      "확인만 기록 요청이 올바르지 않습니다. 화면을 새로 고친 뒤 다시 시도해주세요.",
+    );
+  }
   if (parsed.rejected.length) {
     return optionEditError(
       request,
@@ -3289,56 +3536,236 @@ async function handleTrackerOptions(request, ctx, body, access) {
     }
   }
 
+  // 동시 변경 보호(B4): 미리 보기 때 본 저장값이 없으면(옛 화면) 저장하지 않고, 지금 값과 다르면 쓰기 전에 거절한다.
+  const expectedById = expectedOptionProductIdsMap(body.expectedOptionProductIds);
+  if (plan.targets.some((target) => optionIdsArrayLiteral(expectedById.get(String(target.id).toLowerCase())) === null)) {
+    return optionEditError(request, 409, "RANK_OPTION_PREVIEW_REQUIRED", "화면을 새로 고친 뒤 다시 미리 보기 해주세요.");
+  }
+  if (plan.targets.some((target) => !Array.isArray(storedById.get(String(target.id))))) {
+    // 함께 바뀌는 추적의 옵션 칸을 못 읽었다(칸 없음 경합). 쓰기 조건을 만들 수 없어 쓰지 않는다.
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_NOT_READY",
+      "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.",
+    );
+  }
+  if (plan.targets.some((target) => !sameOptionIdList(
+    expectedById.get(String(target.id).toLowerCase()),
+    storedById.get(String(target.id)),
+  ))) {
+    return optionEditError(request, 409, "RANK_OPTION_CHANGED", "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.");
+  }
+  if (checkOnly) {
+    // 확인일 칸이 없으면(대표 SQL 전) '확인만 기록'은 남길 것이 없다.
+    if (!self.checkedAtReady) {
+      return optionEditError(request, 409, "RANK_OPTION_NOT_READY", OPTION_CHECKED_NOT_READY_MESSAGE);
+    }
+    // 대상마다 저장된 번호(정리한 목록 = target.before)와 이번 목록이 집합으로 같을 때만 — 다르면 번호가 바뀌는 저장이다.
+    if (plan.targets.some((target) => !sameOptionIdSet(target.before, target.after))) {
+      return optionEditError(
+        request,
+        409,
+        "RANK_OPTION_CHECK_ONLY_MISMATCH",
+        "번호가 저장된 것과 달라 확인만 기록할 수 없습니다. 미리 보기 한 뒤 저장해주세요.",
+      );
+    }
+    // 번호가 없는 추적에는 확인일을 남기지 않는다(아래 조건부 갱신과 같은 규칙) — 이 추적에 번호가 없으면 기록할 것이 없다.
+    if (!plan.selfTarget.after.length) {
+      return optionEditError(
+        request,
+        400,
+        "RANK_OPTION_CHECK_ONLY_INVALID",
+        "저장된 그룹상품 번호가 없어 확인만 기록할 수 없습니다.",
+      );
+    }
+  }
+
+  // 되돌림 기록 먼저(B3): 바꿀 추적마다 저장 전·바꿀 목록 한 줄. 기록을 못 남기면 저장하지 않는다.
+  // '확인만 기록'은 번호를 쓰지 않으므로 바꾼 뒤 목록도 저장값 그대로다.
+  const intent = await recordOptionAuditLogs(ctx, plan.targets.map((target) => ({
+    action: "naver_rank_options_save_intent",
+    targetTable: "naver_rank_trackers",
+    targetId: target.id,
+    metadata: {
+      before: storedById.get(String(target.id)),
+      after: checkOnly ? storedById.get(String(target.id)) : target.after,
+      fullReview,
+      ...(checkOnly ? { checkOnly: true } : {}),
+      applyToSameProduct,
+      primaryProductId: target.primaryProductId,
+      keyword: target.keyword,
+    },
+  })));
+  if (!intent.logged) {
+    optionAuditFailedWarning("intent", intent.error);
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_AUDIT_FAILED",
+      "되돌림 기록을 남기지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요.",
+    );
+  }
+
+  // 조건부 갱신(B4): 미리 보기 때 저장값과 같을 때만 쓴다. 확인일(B6)은 전체 목록을 보고 저장한 경우(fullReview)에만, 번호와
+  // 같은 문장으로 쓴다 — 추적마다 둘 다 되거나 둘 다 안 된다. 후보 넣기 저장(fullReview:false)은 확인일을 바꾸지 않는다.
+  // 번호를 모두 지우는 묶음(바꿀 목록이 빈 목록)에는 확인일을 남기지 않는다 — 확인할 옵션이 없다.
+  // '확인만 기록'은 확인일 한 칸만 쓴다(번호를 다시 쓰면 저장 순서가 정리된 순서로 바뀐다). 쓰기 조건은 같다.
+  const checkedAt = new Date().toISOString();
+  let writeCheckedAt = fullReview && self.checkedAtReady;
+  const stampsCheckedAt = (group) => writeCheckedAt && group.after.length > 0;
+  const updateValues = (group, withCheckedAt) => {
+    if (checkOnly) return { option_checked_at: checkedAt };
+    return withCheckedAt
+      ? { option_product_ids: group.after, option_checked_at: checkedAt }
+      : { option_product_ids: group.after };
+  };
+  const updateGroup = (group, withCheckedAt) => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update(updateValues(group, withCheckedAt))
+    .in("id", group.ids)
+    .in("agency_code", scope)
+    .eq("product_id", group.productId)
+    .eq("option_product_ids", group.expectedLiteral)
+    .select("id");
+  // 갱신 호출이 던진 예외는 결과를 모르는 오류로 돌려준다(H1) — 요청이 DB 에 닿아 이미 썼을 수 있다.
+  const runUpdateGroup = async (group, withCheckedAt) => {
+    try {
+      const { data, error } = await updateGroup(group, withCheckedAt);
+      return { data, error, thrown: false };
+    } catch (thrownError) {
+      return { data: null, error: thrownError || new Error("option_update_threw"), thrown: true };
+    }
+  };
   const updatedTrackerIds = [];
-  for (const target of optionTargetGroups(plan.targets)) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data, error } = await ctx.supabaseAdmin
-      .from("naver_rank_trackers")
-      .update({ option_product_ids: target.after })
-      .in("id", target.ids)
-      .in("agency_code", scope)
-      .eq("product_id", target.productId)
-      .select("id");
-    if (error) {
-      if (updatedTrackerIds.length) {
+  // 실제로 확인일까지 쓴 추적. 중간에 확인일 칸 없음으로 바뀌어도 이미 쓴 묶음은 여기에 남는다.
+  const checkedTrackerIds = [];
+  // 쓰기 오류가 확실한 DB 거절이 아니어서(코드 없음·연결류·예외) 저장됐는지 모르는 추적(H1).
+  const uncertainTrackerIds = [];
+  let failure = null;
+  const resultRecord = () => ({
+    updatedTrackerIds,
+    checkedTrackerIds,
+    uncertainTrackerIds,
+    targetCount: plan.targets.length,
+    checkedAtRecorded: checkedTrackerIds.length > 0,
+    fullReview,
+    checkOnly,
+  });
+  try {
+    for (const group of optionTargetGroups(plan.targets, storedById)) {
+      let withCheckedAt = stampsCheckedAt(group);
+      // '확인만 기록'에서 확인일을 남기지 않는 묶음(번호 없는 추적)은 쓸 것이 없다.
+      if (checkOnly && !withCheckedAt) continue;
+      // eslint-disable-next-line no-await-in-loop
+      let { data, error, thrown } = await runUpdateGroup(group, withCheckedAt);
+      // 확인일 칸만 없으면(대표 SQL 전) 확인일 없이 같은 조건부 갱신을 한 번 더 한다. CHECK 위반(23514)은 먼저 거른다.
+      // '확인만 기록'은 확인일 말고 쓸 것이 없어 다시 하지 않는다(아래에서 409).
+      if (error && !thrown && withCheckedAt && !checkOnly && String(error.code || "") !== "23514"
+        && isOptionCheckedColumnMissingError(error)) {
+        rememberOptionCheckedColumnMissing("rank-tracker-options-save");
+        writeCheckedAt = false;
+        withCheckedAt = false;
+        // eslint-disable-next-line no-await-in-loop
+        ({ data, error, thrown } = await runUpdateGroup(group, false));
+      }
+      if (error && (thrown || !isDefiniteOptionWriteRejection(error))) {
+        // 이 묶음은 썼는지 모른다. 남은 묶음은 쓰지 않고, 확인된 저장·모르는 추적을 응답과 결과 기록에 나눠 남긴다.
+        uncertainTrackerIds.push(...group.ids);
         console.warn(JSON.stringify({
           level: "warn",
-          event: "naver_rank_tracker_options_partial",
+          event: "naver_rank_tracker_options_uncertain",
+          updatedCount: updatedTrackerIds.length,
+          uncertainCount: uncertainTrackerIds.length,
+          targetCount: plan.targets.length,
+          thrown,
+          errorType: safeRankErrorType(error),
+          errorCode: safeRankErrorCode(error),
+        }));
+        const savedLabel = updatedTrackerIds.length
+          ? `추적 ${plan.targets.length}개 중 ${updatedTrackerIds.length}개를 저장했습니다.`
+          : "저장 중 오류가 났습니다.";
+        failure = {
+          code: "RANK_OPTION_PARTIAL",
+          message: `${savedLabel} 추적 ${uncertainTrackerIds.length}개는 저장됐는지 확인하지 못했습니다. 편집창을 다시 열어 확인해주세요.`,
+          extra: { updatedTrackerIds, uncertainTrackerIds },
+        };
+        break;
+      }
+      if (error) {
+        if (updatedTrackerIds.length) {
+          console.warn(JSON.stringify({
+            level: "warn",
+            event: "naver_rank_tracker_options_partial",
+            updatedCount: updatedTrackerIds.length,
+            targetCount: plan.targets.length,
+          }));
+          // 같은 저장값으로 다시 저장하면 이미 저장된 추적의 조건(저장값)이 맞지 않아 늘 거절된다 — 다시 미리 보기부터.
+          failure = {
+            code: "RANK_OPTION_PARTIAL",
+            message: `추적 ${plan.targets.length}개 중 ${updatedTrackerIds.length}개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.`,
+            extra: { updatedTrackerIds },
+          };
+          break;
+        }
+        // CHECK 위반(23514)을 칸 없음 판정보다 먼저 거른다 — 제약 이름에 option_product_ids 가 들어 있어
+        // 칸 없음으로 잘못 보면 이 함수 인스턴스의 워커 submit 이 10분 동안 옵션을 무시한다.
+        if (String(error.code || "") === "23514") {
+          failure = { code: "RANK_OPTION_INVALID", message: "그룹상품 번호 형식을 DB 가 받지 않았습니다. 다시 미리 보기 해주세요." };
+          break;
+        }
+        if (checkOnly && isOptionCheckedColumnMissingError(error)) {
+          rememberOptionCheckedColumnMissing("rank-tracker-options-check");
+          failure = { code: "RANK_OPTION_NOT_READY", message: OPTION_CHECKED_NOT_READY_MESSAGE };
+          break;
+        }
+        if (isOptionColumnMissingError(error)) {
+          rememberOptionColumnMissing("rank-tracker-options-save");
+          failure = {
+            code: "RANK_OPTION_NOT_READY",
+            message: "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.",
+          };
+          break;
+        }
+        throw error;
+      }
+      const groupUpdatedIds = (data || []).map((row) => row.id);
+      updatedTrackerIds.push(...groupUpdatedIds);
+      if (withCheckedAt) checkedTrackerIds.push(...groupUpdatedIds);
+      if (groupUpdatedIds.length < group.ids.length) {
+        // 미리 보기 뒤 누가 먼저 바꿨다. 남은 추적은 쓰지 않고, 이미 바뀐 추적은 응답과 결과 기록에 남긴다.
+        console.warn(JSON.stringify({
+          level: "warn",
+          event: "naver_rank_tracker_options_changed",
           updatedCount: updatedTrackerIds.length,
           targetCount: plan.targets.length,
         }));
-        return optionEditError(
-          request,
-          409,
-          "RANK_OPTION_PARTIAL",
-          `추적 ${plan.targets.length}개 중 ${updatedTrackerIds.length}개만 저장했습니다. 같은 내용으로 다시 저장해주세요.`,
-          { updatedTrackerIds },
-        );
+        failure = {
+          code: "RANK_OPTION_CHANGED",
+          message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.",
+          extra: { updatedTrackerIds },
+        };
+        break;
       }
-      // CHECK 위반(23514)을 칸 없음 판정보다 먼저 거른다 — 제약 이름에 option_product_ids 가 들어 있어
-      // 칸 없음으로 잘못 보면 이 함수 인스턴스의 워커 submit 이 10분 동안 옵션을 무시한다.
-      if (String(error.code || "") === "23514") {
-        return optionEditError(request, 409, "RANK_OPTION_INVALID", "그룹상품 번호 형식을 DB 가 받지 않았습니다. 다시 미리 보기 해주세요.");
-      }
-      if (isOptionColumnMissingError(error)) {
-        rememberOptionColumnMissing("rank-tracker-options-save");
-        return optionEditError(
-          request,
-          409,
-          "RANK_OPTION_NOT_READY",
-          "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요.",
-        );
-      }
-      throw error;
     }
-    updatedTrackerIds.push(...(data || []).map((row) => row.id));
+  } catch (error) {
+    await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: "error" });
+    throw error;
   }
+  const checkedAtRecorded = resultRecord().checkedAtRecorded;
+  await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: failure?.code || "saved" });
+  if (failure) return optionEditError(request, 409, failure.code, failure.message, failure.extra);
   console.log(JSON.stringify({
     level: "info",
     event: "naver_rank_tracker_options_saved",
     trackerCount: updatedTrackerIds.length,
     optionCount: optionIds.length,
+    ...(checkOnly ? { checkOnly: true } : {}),
   }));
+  let message = optionIds.length
+    ? `그룹상품 번호 ${optionIds.length}개를 추적 ${updatedTrackerIds.length}개에 저장했습니다. 다음 순위 확인부터 적용됩니다.`
+    : `그룹상품 번호를 지웠습니다(추적 ${updatedTrackerIds.length}개). 다음 순위 확인부터 대표 상품번호만 찾습니다.`;
+  if (checkOnly) message = `옵션 확인일을 기록했습니다(추적 ${checkedTrackerIds.length}개). 번호는 그대로입니다.`;
   return json(request, {
     ok: true,
     mode,
@@ -3346,9 +3773,9 @@ async function handleTrackerOptions(request, ctx, body, access) {
     updatedTrackerIds,
     optionProductIds: optionIds,
     removedOptionProductIds: plan.removedOptionProductIds,
-    message: optionIds.length
-      ? `그룹상품 번호 ${optionIds.length}개를 추적 ${updatedTrackerIds.length}개에 저장했습니다. 다음 순위 확인부터 적용됩니다.`
-      : `그룹상품 번호를 지웠습니다(추적 ${updatedTrackerIds.length}개). 다음 순위 확인부터 대표 상품번호만 찾습니다.`,
+    checkedAtRecorded,
+    optionCheckedAt: checkedAtRecorded ? checkedAt : null,
+    message,
   });
 }
 

@@ -1199,6 +1199,40 @@ export function forgetGroupMarkColumnMissing() {
   groupMarkColumnMissingUntilMs = 0;
 }
 
+// 옵션 확인일 칸(option_checked_at, 대표 요청 2026-10-31 B6). 표시 칸과 같은 방식: 오류 코드를 먼저 보고 message 만 읽는다.
+// 칸 이름에 옵션 번호 칸 이름이 없어 이 오류는 isOptionColumnMissingError·isGroupMarkColumnMissingError 에 걸리지 않는다
+// (옵션 칸 판정에 걸리면 옵션 칸 전체를 없는 것으로 보고 수집 제출이 10분 동안 옵션을 무시한다).
+let optionCheckedColumnMissingUntilMs = 0;
+
+export function isOptionCheckedColumnMissingError(error) {
+  if (!error || typeof error !== "object") return false;
+  const message = String(error.message || "");
+  if (!/option_checked_at/iu.test(message)) return false;
+  const code = String(error.code ?? "").trim().toUpperCase();
+  if (code) return OPTION_COLUMN_MISSING_CODES.has(code);
+  return /does not exist|schema cache|could not find/iu.test(message);
+}
+
+export function optionCheckedColumnRecentlyMissing(nowMs = Date.now()) {
+  return nowMs < optionCheckedColumnMissingUntilMs;
+}
+
+export function rememberOptionCheckedColumnMissing(source = "", nowMs = Date.now()) {
+  const alreadyKnown = nowMs < optionCheckedColumnMissingUntilMs;
+  optionCheckedColumnMissingUntilMs = nowMs + OPTION_COLUMN_MISSING_MEMO_MS;
+  if (!alreadyKnown) {
+    console.warn(JSON.stringify({
+      level: "warn",
+      event: "naver_rank_option_checked_column_missing",
+      source: String(source || "").slice(0, 40),
+    }));
+  }
+}
+
+export function forgetOptionCheckedColumnMissing() {
+  optionCheckedColumnMissingUntilMs = 0;
+}
+
 // 추적 한 행의 그룹상품 상태. 던지지 않는다. markReady:false = 표시 칸을 읽지 못함(대표 SQL 전) — 표시 버튼을 숨긴다.
 export function trackerGroupProductState(tracker = {}) {
   let eligibility;

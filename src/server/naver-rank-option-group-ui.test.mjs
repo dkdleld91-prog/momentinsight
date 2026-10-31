@@ -174,7 +174,7 @@ const CARD_FUNCTIONS = [
   "rankTrackerRecentRanks", "rankTrackerAverageRank", "rankTrackerSevenDayAverageRank", "rankTrackerLatestRank",
   "rankTrackerPreviousRank", "rankTrackerTrend", "rankTrackerNeedsAttention", "rankTrackerInsight", "rankTrackerCatalogHint",
   "rankTrackerActionNote", "rankTrackerChangeLabel", "rankTrackerCurrentSourceLabel", "rankOptionEditAvailable",
-  "rankTrackerOptionState", "renderRankOptionOpsPills", "renderRankOptionHitLine", "renderRankTrackerCard",
+  "rankOptionCheckInfo", "rankTrackerOptionState", "renderRankOptionOpsPills", "renderRankOptionHitLine", "renderRankTrackerCard",
   "cloneRankCardForExport", "cloneRankTrackerCardForShare",
 ];
 
@@ -548,7 +548,7 @@ for (const [label, source] of PAGES) {
 test("U6 admin.html·client.html 의 그룹상품 공통 함수와 카드·날짜 칸·캐시 함수는 글자 하나까지 같다", () => {
   for (const name of [
     "rankTrackerOptionState", "renderRankOptionOpsPills", "renderRankOptionHitLine", "renderRankTrackerCard", "renderRankSlot",
-    "compactRankSnapshotForCache", "cloneRankTrackerCardForShare", "renderRankHistory",
+    "compactRankSnapshotForCache", "cloneRankTrackerCardForShare", "renderRankHistory", "rankOptionCheckInfo",
   ]) {
     assert.equal(htmlFunction(adminSource, name, "admin"), htmlFunction(clientSource, name, "client"), name);
   }
@@ -724,7 +724,7 @@ const TRACKER_ID = "0f8a3c1e-1111-4a2b-9c3d-000000000001";
 const SIBLING_ID = "0f8a3c1e-2222-4a2b-9c3d-000000000002";
 const MEMBER_ID = "0f8a3c1e-3333-4a2b-9c3d-000000000003";
 
-function editorEnv({ confirmAnswers = [], lookup = null } = {}) {
+function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = false } = {}) {
   const documentRef = { activeElement: null };
   documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
   const html = new FakeElement("html", documentRef);
@@ -735,6 +735,21 @@ function editorEnv({ confirmAnswers = [], lookup = null } = {}) {
   const rankCard = documentRef.createElement("article");
   rankCard.setAttribute("data-rank-card", "");
   root.appendChild(rankCard);
+  // 옵션 확인 버튼 설치 안내(관리자 화면 정적 HTML 의 details)를 흉내 낸다: 편집창이 카드에서 떼어 창 안에 넣는다.
+  let installBlock = null;
+  if (install) {
+    installBlock = documentRef.createElement("details");
+    installBlock.className = "mi-rank-option-install";
+    installBlock.setAttribute("data-rank-option-install", "");
+    installBlock.hidden = true;
+    const link = documentRef.createElement("a");
+    link.className = "mi-rank-option-bookmarklet";
+    link.setAttribute("data-rank-option-bookmarklet", "");
+    link.setAttribute("href", "javascript:void(0)");
+    link.textContent = "모먼트 옵션 확인";
+    installBlock.appendChild(link);
+    rankCard.appendChild(installBlock);
+  }
   const editButton = documentRef.createElement("button");
   editButton.setAttribute("data-rank-option-edit", TRACKER_ID);
   editButton.setAttribute("data-rank-option-keyword", "아이폰 17 필름");
@@ -774,12 +789,21 @@ function editorEnv({ confirmAnswers = [], lookup = null } = {}) {
       return { ok: next.status < 300, status: next.status, json: async () => next.payload };
     },
   };
+  context.URL = URL;
   vm.createContext(context);
-  vm.runInContext(`${htmlFunction(adminSource, "setStatus")}\n${htmlFunction(adminSource, "initRankOptionProductEditor")}\ninitRankOptionProductEditor();`, context);
+  if (now !== null) vm.runInContext(`Date.now = function () { return ${now}; };`, context);
+  // 편집창이 부르는 화면 공통 도우미(상품 주소·옵션 확인일)는 원본 그대로 싣는다.
+  vm.runInContext([
+    htmlFunction(adminSource, "setStatus"),
+    htmlFunction(adminSource, "rankTrackerProductUrl"),
+    htmlFunction(adminSource, "rankOptionCheckInfo"),
+    htmlFunction(adminSource, "initRankOptionProductEditor"),
+    "initRankOptionProductEditor();",
+  ].join("\n"), context);
   const modal = () => root.querySelector("[data-rank-option-modal]");
   const q = (selector) => modal().querySelector(selector);
   return {
-    root, rankCard, editButton, requests, events, timers, confirms, windowListeners, documentRef, modal, q,
+    root, rankCard, editButton, requests, events, timers, confirms, windowListeners, documentRef, modal, q, installBlock,
     respond(payload, status = 200) { responses.push({ payload, status }); },
     fail(message) { responses.push({ throws: message }); },
     saveButton: () => q("[data-rank-option-save]"),
@@ -788,6 +812,15 @@ function editorEnv({ confirmAnswers = [], lookup = null } = {}) {
     apply: () => q("[data-rank-option-apply]"),
     status: () => q("[data-rank-option-status]").textContent,
     preview: () => q("[data-rank-option-preview]"),
+    checkOnly: () => q("[data-rank-option-check-only]"),
+    checkLine: () => q("[data-rank-option-checkline]"),
+    // 넓은 화면 확인일 글(좁은 화면은 짧은 글 checkShort 만 보인다).
+    checkText: () => q("[data-rank-option-checkline-full]").textContent,
+    checkShort: () => q("[data-rank-option-checkline-short]").textContent,
+    diffRow: (kind) => {
+      const row = q("[data-rank-option-preview]").querySelector(`[data-rank-option-diff-row="${kind}"]`);
+      return row ? row.querySelector(".mi-rank-option-chips").querySelectorAll("li").map((node) => node.textContent) : [];
+    },
   };
 }
 
@@ -799,18 +832,30 @@ function sibling(extra = {}) {
   };
 }
 
-function optionsPayload({ mode = "read", saved = [], parsed = null, siblings = [sibling()], suggestions = [], willUpdateCount = 1, message = "" } = {}) {
+// 서버 약속(2026-10-31): 읽기·미리 보기는 checkedAtReady·tracker.optionCheckedAt·expectedOptionProductIds(이 추적과
+// 같은 상품 추적 전부의 DB 저장값 그대로)를 함께 준다.
+function optionsPayload({
+  mode = "read", saved = [], parsed = null, siblings = [sibling()], suggestions = [], willUpdateCount = 1, message = "",
+  removed = [], checkedAt = null, checkedAtReady = true, expected = undefined,
+} = {}) {
   return {
     ok: true,
     mode,
     columnReady: true,
-    tracker: { id: TRACKER_ID, keyword: "아이폰 17 필름", primaryProductId: PRIMARY, productUrl: `https://smartstore.naver.com/ishell/products/${PRIMARY}`, optionProductIds: saved },
+    checkedAtReady,
+    tracker: {
+      id: TRACKER_ID, keyword: "아이폰 17 필름", primaryProductId: PRIMARY, productUrl: `https://smartstore.naver.com/ishell/products/${PRIMARY}`,
+      optionProductIds: saved, optionCheckedAt: checkedAt,
+    },
     parsed,
     sameProduct: { trackers: siblings, siblingOptionProductIds: suggestions, shrinkingTrackerCount: 0, limit: 100 },
     applyToSameProduct: false,
     willUpdateCount,
     targetTrackerIds: [TRACKER_ID],
-    removedOptionProductIds: [],
+    removedOptionProductIds: removed,
+    expectedOptionProductIds: expected !== undefined ? expected : Object.fromEntries([
+      [TRACKER_ID, saved], ...siblings.map((row) => [row.id, row.beforeOptionProductIds || []]),
+    ]),
     limit: 20,
     message: message || `그룹상품 번호 ${saved.length}개`,
   };
@@ -863,7 +908,10 @@ test("U9 편집창: 열면 저장값을 읽고, 미리 보기 전·입력 바뀐
   assert.equal(env.saveButton().disabled, false, "미리 보기 성공 뒤 저장 켜짐");
   const previewText = env.preview().textContent;
   assert.match(previewText, /넣은 칸 2개 → 번호 2개/u);
-  assert.deepEqual(env.preview().querySelector(".mi-rank-option-chips").querySelectorAll("li").map((node) => node.textContent), [OPTION_A, OPTION_B]);
+  // 번호는 저장된 번호와 비교한 칸 안에 보인다(B1, 2026-10-31): 저장 A · 붙여 넣음 A, B → 새로 추가 B · 같음 A.
+  assert.match(previewText, /저장된 번호와 비교 · 새로 추가 1 · 빠짐 0 · 같음 1/u);
+  assert.deepEqual(env.diffRow("added"), [OPTION_B]);
+  assert.deepEqual(env.diffRow("same"), [OPTION_A]);
   assert.match(previewText, /함께 바뀌는 추적 2개/u);
   assert.match(previewText, /이 추적\(아이폰 17 필름\) · 지금 1개 → 2개 · 더함 1/u);
   assert.match(previewText, /아이폰17 케이스 · 운영중 · 지금 0개 → 2개 · 더함 2/u);
@@ -917,6 +965,9 @@ test("U9 편집창: 저장은 미리 본 대상 추적 id 를 함께 보내고, 
   assert.deepEqual(saveBody, {
     action: "options", trackerId: TRACKER_ID, mode: "save", optionInput: `${OPTION_A}, ${OPTION_B}`, applyToSameProduct: true,
     expectedTrackerIds: [TRACKER_ID, SIBLING_ID],
+    // 미리 보기 응답의 추적별 저장값 그대로(B4)·전체 목록을 보고 저장(B6 확인일).
+    expectedOptionProductIds: { [TRACKER_ID]: [], [SIBLING_ID]: [] },
+    fullReview: true,
   });
   assert.equal(env.events.length, 1);
   assert.equal(env.events[0].type, "mi:rank-trackers-changed");
@@ -942,13 +993,20 @@ test("U9 편집창: 저장이 거절되면(409 대상 바뀜) 미리 보기를 �
   await flush();
   assert.equal(plain(env.requests.at(-1).body).applyToSameProduct, false, "체크가 숨으면 함께 적용하지 않는다");
   env.respond({ ok: false, code: "RANK_OPTION_TARGETS_CHANGED", message: "미리 보기 뒤에 함께 바뀌는 추적이 달라졌습니다. 다시 미리 보기 해주세요." }, 409);
+  // 대상이 바뀌었으면(U4) 지금 저장된 번호를 다시 읽는다 — 그 사이 같은 상품 추적이 하나 생겼다.
+  env.respond(optionsPayload({ saved: [] }));
   click(env.saveButton());
   await flush();
-  assert.deepEqual(plain(env.requests.at(-1).body.expectedTrackerIds), [TRACKER_ID]);
+  assert.deepEqual(plain(env.requests.at(-2).body.expectedTrackerIds), [TRACKER_ID]);
+  assert.deepEqual(plain(env.requests.at(-1).body), { action: "options", trackerId: TRACKER_ID, mode: "read" });
   assert.equal(env.events.length, 0, "실패하면 목록 다시 읽기 신호를 보내지 않는다");
   assert.equal(env.saveButton().disabled, true);
   assert.equal(env.preview().textContent, "");
-  assert.match(env.status(), /함께 바뀌는 추적이 달라졌습니다/u);
+  assert.equal(env.status(), "미리 보기 뒤에 함께 바뀌는 추적이 달라졌습니다. 다시 미리 보기 해주세요. 최신 번호로 다시 불러왔습니다.",
+    "서버 문장 뒤에 안내를 겹쳐 붙이지 않는다");
+  assert.equal(env.input().value, "", "입력칸을 다시 읽은 저장 번호로 맞춘다");
+  assert.equal(env.q(".mi-rank-option-apply").hidden, false, "다시 읽은 같은 상품 추적이 보인다");
+  assert.equal(env.previewButton().disabled, false, "다시 미리 보기 할 수 있다");
 });
 
 test("U9 편집창: 주소 추적 꼬리 줄이기·같은 그룹 번호 가져오기·번호가 줄어드는 추적 경고·개수 초과", async () => {
@@ -1253,6 +1311,9 @@ test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고
   assert.deepEqual(plain(env.requests[2].body), {
     action: "options", trackerId: TRACKER_ID, mode: "save", optionInput: `${OPTION_A}\n${CAND_A}\n${CAND_B}`, applyToSameProduct: true,
     expectedTrackerIds: [TRACKER_ID, SIBLING_ID],
+    // 후보 넣기도 미리 보기의 저장값 조건을 쓰지만(B4) 전체 목록 확인이 아니라 확인일은 바꾸지 않는다(B6).
+    expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A], [SIBLING_ID]: [] },
+    fullReview: false,
   }, "저장은 기존 옵션 저장 API('다른 키워드에도 적용' 포함)");
   assert.equal(env.events.length, 1);
   assert.equal(env.events[0].type, "mi:rank-trackers-changed");
@@ -1553,4 +1614,862 @@ test("창에 보였지만 못 쓴 번호 꼬리: 두 화면이 빼는 패턴은 
     const card = htmlFunction(source, "renderRankTrackerCard", label);
     assert.ok(card.includes(`if (!optionState.admin && typeof lastMessage === "string") lastMessage = lastMessage.replace(/${GROUP_OPTION_DROPPED_TAIL_PATTERN.source}/${GROUP_OPTION_DROPPED_TAIL_PATTERN.flags}, "");`), label);
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// U13~U17 옵션 번호 정식판(대표 승인 2026-10-31, 구현 명세 §3): 카드 옵션 확인일 배지(관리자만)·편집창 비교 표(B1)·
+// 대표 상품번호 없음 경고(B2)·빠지는 번호 확인(B3)·저장값 조건 전송과 서버 거절 문장(B4)·상품 페이지 열기(B5)·
+// 옵션 확인일과 '확인만 기록'(B6)·버튼 설치 안내(A7)
+// ─────────────────────────────────────────────────────────────
+const OPTION_C = "99900000003";
+const checkTracker = (extra = {}) => baseTracker({
+  optionProductIds: [OPTION_A, OPTION_B], optionProductCount: 2, optionEditable: true, optionCheckReady: true, optionCheckedAt: null, ...extra,
+});
+const CHECK_FIELDS = ["optionCheckReady", "optionCheckedAt"];
+const withoutCheckFields = (tracker) => Object.fromEntries(Object.entries(tracker).filter(([key]) => !CHECK_FIELDS.includes(key)));
+const checkBadge = (html) => parseHtml(html).querySelector("[data-rank-option-check]");
+
+for (const [label, source] of PAGES) {
+  test(`${label}: U13 옵션 확인일 배지 — 30일 안 '옵션 확인 M/D'·30일(한국 달력)부터 '옵션 다시 확인'·기록 없음, 관리자만`, () => {
+    const render = (extra, role = "owner") => renderCard(source, label, checkTracker(extra), role);
+    if (label === "client.html") {
+      for (const extra of [{}, { optionCheckedAt: kst("2026-10-01") }, { optionCheckedAt: kst("2026-09-01") }]) {
+        const html = render(extra);
+        assert.doesNotMatch(html, /data-rank-option-check|옵션 확인|옵션 다시 확인/u, "광고주 화면에는 배지가 없다");
+        assert.equal(html, renderCard(source, label, withoutCheckFields(checkTracker(extra))), "칸이 있어도 없어도 같은 HTML");
+      }
+      return;
+    }
+    // NOW = 2026-10-23 12:00 KST.
+    const recent = checkBadge(render({ optionCheckedAt: kst("2026-10-01", 9) }));
+    assert.equal(recent.textContent, "옵션 확인 10/1");
+    assert.deepEqual(recent.classList, ["mi-rank-option-check"], "30일 안은 조용한 톤");
+    assert.ok(recent.hasAttribute("data-rank-export-omit"), "공유 이미지에서 빠진다");
+    assert.match(recent.getAttribute("title"), /^마지막 옵션 확인 2026-10-01\(22일 전\)\. /u);
+    assert.equal(checkBadge(render({ optionCheckedAt: kst("2026-10-23", 8) })).getAttribute("title").slice(0, 26), "마지막 옵션 확인 2026-10-23(오늘). ");
+    // 경계: 한국 달력 기준 29일은 그대로, 30일부터 '다시 확인'. UTC 날짜가 아니라 한국 날짜로 센다.
+    assert.equal(checkBadge(render({ optionCheckedAt: "2026-09-23T15:30:00.000Z" })).textContent, "옵션 확인 9/24", "09-24 00:30 KST → 29일");
+    const due = checkBadge(render({ optionCheckedAt: "2026-09-23T14:30:00.000Z" }));
+    assert.equal(due.textContent, "옵션 다시 확인", "09-23 23:30 KST → 30일");
+    assert.deepEqual(due.classList, ["mi-rank-option-check", "is-due"]);
+    assert.match(due.getAttribute("title"), /2026-09-23\(30일 전\)/u);
+    const none = checkBadge(render({ optionCheckedAt: null }));
+    assert.equal(none.textContent, "옵션 확인 기록 없음");
+    assert.ok(none.classList.includes("is-due"));
+    assert.equal(checkBadge(render({ optionCheckedAt: "날짜 아님" })).textContent, "옵션 확인 기록 없음", "읽을 수 없는 값은 기록 없음");
+    // 배지는 '그룹상품 · 번호 n개 사용 중' 알약 바로 뒤.
+    const ops = parseHtml(render({})).querySelector(".mi-rank-ops-row");
+    const pillIndex = ops.children.findIndex((node) => node instanceof MiniElement && node.classList.includes("mi-rank-option-pill"));
+    assert.ok(ops.children[pillIndex + 1].hasAttribute("data-rank-option-check"));
+
+    // 숨김: 칸이 없거나(대표 SQL 전 optionCheckReady false·옛 응답) 번호가 없거나 종료 추적이거나 광고주 역할 세션.
+    const plainCard = renderCard(source, label, withoutCheckFields(checkTracker()));
+    assert.equal(render({ optionCheckReady: false }), plainCard);
+    assert.equal(renderCard(source, label, checkTracker({ optionCheckReady: undefined })), plainCard);
+    assert.doesNotMatch(render({ optionProductIds: [], optionProductCount: 0 }), /data-rank-option-check/u);
+    assert.doesNotMatch(render({ status: "completed" }), /data-rank-option-check/u);
+    assert.doesNotMatch(render({}, "client"), /data-rank-option-check/u);
+    // 공유 이미지 복제에는 없다.
+    assert.equal(shareClone(source, label, render({ optionCheckedAt: kst("2026-09-01") })).querySelector("[data-rank-option-check]"), null);
+  });
+}
+
+test("U13 옵션 확인일 도우미는 한국 달력 날짜로 센다(두 화면 같은 글자)", () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`Date.now = function () { return ${NOW}; };\n${htmlFunction(clientSource, "rankOptionCheckInfo")}`, context);
+  const info = (value) => plain(vm.runInContext(`rankOptionCheckInfo(${JSON.stringify(value)})`, context));
+  assert.deepEqual(info(kst("2026-10-23", 0)), { day: "2026-10-23", short: "10/23", days: 0, due: false });
+  assert.deepEqual(info("2026-09-24T14:59:59.000Z"), { day: "2026-09-24", short: "9/24", days: 29, due: false });
+  assert.deepEqual(info("2026-09-23T15:00:00.000Z"), { day: "2026-09-24", short: "9/24", days: 29, due: false });
+  assert.deepEqual(info("2026-09-23T14:59:59.000Z"), { day: "2026-09-23", short: "9/23", days: 30, due: true });
+  assert.deepEqual(info("2026-10-25T00:00:00.000Z"), { day: "2026-10-25", short: "10/25", days: 0, due: false }, "앞선 시각(시계 차이)은 오늘로");
+  for (const value of [null, "", "x", undefined]) assert.equal(info(value), null);
+});
+
+async function openEditorWith(env, payload) {
+  env.respond(payload);
+  click(env.editButton);
+  await flush();
+}
+
+async function previewWith(env, text, payload) {
+  env.input().value = text;
+  dispatch(env.input(), "input");
+  env.respond(payload);
+  click(env.previewButton());
+  await flush();
+}
+
+test("U14 편집창 비교 표(B1)·대표 상품번호 없음 경고(B2)·빠지는 번호(B3)와 저장 버튼 글자, 한 번 누르면 저장", async () => {
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }));
+  const alerts = () => ({
+    primary: env.preview().querySelector("[data-rank-option-primary-warn]"),
+    removed: env.preview().querySelector("[data-rank-option-removed-warn]"),
+  });
+
+  // 같은 목록: 비교만, 경고 없음, '저장'.
+  await previewWith(env, `${OPTION_A}\n${OPTION_B}`, optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B]) }));
+  assert.match(env.preview().textContent, /저장된 번호와 비교 · 새로 추가 0 · 빠짐 0 · 같음 2/u);
+  assert.deepEqual([env.diffRow("added"), env.diffRow("removed"), env.diffRow("same")], [[], [], [OPTION_A, OPTION_B]]);
+  assert.deepEqual(alerts(), { primary: null, removed: null });
+  assert.equal(env.saveButton().textContent, "저장");
+
+  // 버튼으로 복사한 목록(대표 번호 포함): 새로 추가 C · 빠짐 B → 빨간 줄과 '빠지는 번호 1개 확인하고 저장'.
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_B],
+    parsed: parsedOf([OPTION_A, OPTION_C], { inputTokenCount: 3, primaryRemoved: true, primaryRemovedCount: 1 }),
+  }));
+  assert.match(env.preview().textContent, /새로 추가 1 · 빠짐 1 · 같음 1/u);
+  assert.deepEqual([env.diffRow("added"), env.diffRow("removed"), env.diffRow("same")], [[OPTION_C], [OPTION_B], [OPTION_A]]);
+  assert.equal(alerts().primary, null, "대표 상품번호가 들어 있으면 경고 없음");
+  assert.ok(alerts().removed.classList.contains("is-danger"));
+  assert.match(alerts().removed.textContent, new RegExp(`^저장하면 빠지는 번호 1개: ${OPTION_B}\\. 빠진 번호로는 더 이상 순위를 찾지 않습니다\\.`, "u"));
+  assert.equal(env.saveButton().textContent, "빠지는 번호 1개 확인하고 저장");
+  assert.equal(env.saveButton().disabled, false, "경고는 막지 않는다");
+
+  // 대표 번호 없는 새 번호(다른 상품 페이지에서 복사했을 수 있음) + 빠지는 번호.
+  await previewWith(env, `99900000008\n99900000009`, optionsPayload({
+    mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_A, OPTION_B], parsed: parsedOf(["99900000008", "99900000009"]),
+  }));
+  assert.ok(alerts().primary.classList.contains("is-warn"), "노란 경고");
+  assert.match(alerts().primary.textContent, /^이 추적의 대표 상품번호가 목록에 없습니다\. 다른 상품 페이지에서 복사했을 수 있습니다\./u);
+  assert.match(alerts().primary.textContent, new RegExp(`대표 상품번호\\(${PRIMARY}\\)`, "u"));
+  assert.equal(env.saveButton().textContent, "경고·빠지는 번호 확인하고 저장");
+
+  // 대표 번호 없는 새 번호만(빠짐 없음) → '경고 확인하고 저장'.
+  await previewWith(env, `${OPTION_A}\n${OPTION_B}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B, OPTION_C]),
+  }));
+  assert.ok(alerts().primary);
+  assert.equal(alerts().removed, null);
+  assert.equal(env.saveButton().textContent, "경고 확인하고 저장");
+  // 입력이 바뀌면 지난 확인 사항 글자도 거둔다.
+  env.input().value = OPTION_A;
+  dispatch(env.input(), "input");
+  assert.equal(env.saveButton().textContent, "저장");
+  assert.equal(env.saveButton().disabled, true);
+
+  // 저장된 번호를 빼기만 하면(새 번호 없음) 대표 번호 경고는 없다 — 빠지는 번호만.
+  await previewWith(env, OPTION_A, optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_B], parsed: parsedOf([OPTION_A]) }));
+  assert.equal(alerts().primary, null);
+  assert.equal(env.saveButton().textContent, "빠지는 번호 1개 확인하고 저장");
+  // 버튼은 한 번 누르면 저장한다(묻지 않음).
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A], checkedAtRecorded: true, message: "저장" });
+  click(env.saveButton());
+  await flush();
+  assert.equal(env.confirms.length, 0);
+  assert.equal(env.requests.at(-1).body.mode, "save");
+  assert.equal(env.requests.at(-1).body.fullReview, true);
+});
+
+test("U14 대표 상품번호 경고(B2)는 '같은 상품의 다른 추적에서 가져오기'로 넣은 번호에는 뜨지 않는다(U1)", async () => {
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: [], siblings: [], suggestions: [OPTION_A, OPTION_B] }));
+  click(env.q("[data-rank-option-import]"));
+  assert.equal(env.input().value, `${OPTION_A}\n${OPTION_B}`);
+  // 서버 미리 보기의 같은 상품 번호(siblingOptionProductIds)는 입력에 든 번호를 빼고 온다 — 빈 목록이어도 읽을 때 받은 번호로 본다.
+  env.respond(optionsPayload({ mode: "preview", saved: [], siblings: [], suggestions: [], parsed: parsedOf([OPTION_A, OPTION_B]) }));
+  click(env.previewButton());
+  await flush();
+  assert.deepEqual(env.diffRow("added"), [OPTION_A, OPTION_B]);
+  assert.equal(env.preview().querySelector("[data-rank-option-primary-warn]"), null, "가져온 번호는 다른 상품에서 복사한 번호가 아니다");
+  assert.equal(env.saveButton().textContent, "저장");
+
+  // 같은 상품 추적에 없던 번호가 하나라도 섞이면 경고(다른 상품 페이지에서 복사했을 수 있음).
+  await previewWith(env, `${OPTION_A}\n${OPTION_B}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [], siblings: [], suggestions: [], parsed: parsedOf([OPTION_A, OPTION_B, OPTION_C]),
+  }));
+  assert.ok(env.preview().querySelector("[data-rank-option-primary-warn]"));
+  assert.equal(env.saveButton().textContent, "경고 확인하고 저장");
+});
+
+test("U16 상품 페이지 열기(B5)는 카드 제목 링크와 같은 주소 — 목록 추적의 상품 주소가 비면 최근 순위 결과 링크(U6)", async () => {
+  const link = `https://smartstore.naver.com/ishell/products/${PRIMARY}?NaPm=ct%3Dabc`;
+  const listTracker = baseTracker({ id: TRACKER_ID, productUrl: "", product_url: "", snapshots: [snapshot(kst("2026-10-23", 9), 12, { link })] });
+  // 카드 제목 링크(renderRankProductTitle 원본)가 쓰는 주소.
+  const context = { URL };
+  vm.createContext(context);
+  vm.runInContext(["escapeHtml", "rankTrackerProductUrl", "renderRankProductTitle"].map((name) => htmlFunction(adminSource, name)).join("\n"), context);
+  context.__tracker = listTracker;
+  const cardHref = decodeEntities(vm.runInContext('renderRankProductTitle(__tracker, "상품")', context).match(/href="([^"]*)"/u)[1]);
+  assert.equal(cardHref, link);
+
+  const env = editorEnv({ now: NOW, lookup: (id) => (id === TRACKER_ID ? listTracker : null) });
+  const payload = optionsPayload({ saved: [OPTION_A] });
+  payload.tracker.productUrl = ""; // 편집 API 는 product_url 칸만 준다.
+  await openEditorWith(env, payload);
+  const open = env.q("[data-rank-option-open]");
+  assert.equal(open.hidden, false);
+  assert.equal(open.getAttribute("href"), cardHref, "카드 제목 링크와 같은 주소");
+
+  // 두 주소가 다르면 카드 제목과 같은 목록 추적 주소를 쓴다. 목록에 없으면 편집 API 주소(U16 위 시험).
+  const own = editorEnv({ now: NOW, lookup: (id) => (id === TRACKER_ID ? baseTracker({ id: TRACKER_ID }) : null) });
+  const otherPayload = optionsPayload({ saved: [OPTION_A] });
+  otherPayload.tracker.productUrl = "https://smartstore.naver.com/other/products/99900000077";
+  await openEditorWith(own, otherPayload);
+  assert.equal(own.q("[data-rank-option-open]").getAttribute("href"), `https://smartstore.naver.com/ishell/products/${PRIMARY}`);
+});
+
+test("U14 모두 지우기·함께 바뀌는 다른 추적에서 빠지는 번호도 B3 로 센다", async () => {
+  const env = editorEnv({ confirmAnswers: [true] });
+  const shrinking = sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_A, "99900000007"], afterOptionProductIds: [OPTION_A, OPTION_C], addedCount: 1, removedCount: 1 });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [sibling({ beforeOptionProductIds: [OPTION_A, "99900000007"], optionProductCount: 2 })] }));
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A], siblings: [shrinking], willUpdateCount: 2,
+    parsed: parsedOf([OPTION_A, OPTION_C], { inputTokenCount: 3, primaryRemoved: true }),
+  }));
+  const removedWarn = env.preview().querySelector("[data-rank-option-removed-warn]");
+  assert.match(removedWarn.textContent, /빠지는 번호 1개: 99900000007\. .*다른 키워드 추적 1개에서도 번호가 빠집니다\./u);
+  assert.equal(env.diffRow("removed").length, 0, "이 추적 비교 칸에는 이 추적에서 빠지는 번호만");
+  assert.equal(env.saveButton().textContent, "빠지는 번호 1개 확인하고 저장");
+  // 체크를 끄면(이 추적만) 다른 추적은 빠지지 않는다.
+  env.apply().checked = false;
+  dispatch(env.apply(), "change");
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A], siblings: [shrinking], parsed: parsedOf([OPTION_A, OPTION_C], { inputTokenCount: 3, primaryRemoved: true }),
+  }));
+  assert.equal(env.preview().querySelector("[data-rank-option-removed-warn]"), null);
+  assert.equal(env.saveButton().textContent, "저장");
+
+  // 모두 지우기: 목록이 비면 빨간 줄이 '모두 지웁니다'로 시작한다.
+  const clearEnv = editorEnv({ confirmAnswers: [true] });
+  await openEditorWith(clearEnv, optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }));
+  clearEnv.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_A, OPTION_B], parsed: parsedOf([]) }));
+  click(clearEnv.q("[data-rank-option-clear]"));
+  await flush();
+  assert.match(clearEnv.preview().querySelector("[data-rank-option-removed-warn]").textContent, new RegExp(`^이 추적의 그룹상품 번호를 모두 지웁니다\\. 저장하면 빠지는 번호 2개: ${OPTION_A}, ${OPTION_B}\\.`, "u"));
+  assert.match(clearEnv.preview().textContent, /번호 0개 — 저장하면 그룹상품 번호를 비우고 대표 상품번호만 찾습니다/u);
+  assert.equal(clearEnv.saveButton().textContent, "빠지는 번호 2개 확인하고 저장");
+});
+
+test("U15 저장 거절(B4): 동시 변경·되돌림 기록 실패·옛 화면·일부 저장은 서버 문장 그대로, 이미 바뀐 추적은 개수를 알리고 목록 다시 읽기", async () => {
+  const typed = `${PRIMARY}\n${OPTION_A}\n${OPTION_B}`;
+  const cases = [
+    // 동시 변경(U4): 지금 저장된 번호를 다시 읽어 입력칸을 맞춘다. 이미 바뀐 추적이 있으면 개수를 알린다(U5).
+    {
+      failure: { ok: false, code: "RANK_OPTION_CHANGED", message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.", updatedTrackerIds: [SIBLING_ID] },
+      reread: optionsPayload({ saved: [OPTION_A, OPTION_C] }),
+      status: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요. 추적 1개는 이미 새 번호로 저장됐습니다. 최신 번호로 다시 불러왔습니다.",
+      input: `${OPTION_A}\n${OPTION_C}`,
+      reloaded: [SIBLING_ID],
+    },
+    // 다시 읽기가 끊기면 저장 결과 문장은 그대로 두고 창을 다시 열라고 한다.
+    {
+      failure: { ok: false, code: "RANK_OPTION_CHANGED", message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요." },
+      rereadFails: true,
+      status: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요. 최신 번호를 다시 불러오지 못했습니다. 창을 닫고 다시 열어주세요.",
+      input: typed,
+      reloaded: null,
+    },
+    {
+      failure: { ok: false, code: "RANK_OPTION_AUDIT_FAILED", message: "되돌림 기록을 남기지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요." },
+      status: "되돌림 기록을 남기지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요.",
+      input: typed,
+      reloaded: null,
+    },
+    {
+      failure: { ok: false, code: "RANK_OPTION_PREVIEW_REQUIRED", message: "화면을 새로 고친 뒤 다시 미리 보기 해주세요." },
+      status: "화면을 새로 고친 뒤 다시 미리 보기 해주세요.",
+      input: typed,
+      reloaded: null,
+    },
+    // 일부 저장(U5): 서버 문장(다시 미리 보기 안내 포함)에 이미 새 번호로 바뀐 추적 수를 붙인다. 이미 바뀐 추적은 저장값이
+    // 미리 보기 때와 달라졌으므로 지금 저장된 번호를 다시 읽어 저장값·입력칸을 DB 에 맞춘다(M2).
+    {
+      failure: { ok: false, code: "RANK_OPTION_PARTIAL", message: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.", updatedTrackerIds: [TRACKER_ID] },
+      reread: optionsPayload({ saved: [OPTION_A, OPTION_B] }),
+      status: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요. 추적 1개는 이미 새 번호로 저장됐습니다. 최신 번호로 다시 불러왔습니다.",
+      input: `${OPTION_A}\n${OPTION_B}`,
+      reloaded: [TRACKER_ID],
+    },
+  ];
+  for (const { failure, reread, rereadFails, status, input, reloaded } of cases) {
+    const env = editorEnv();
+    await openEditorWith(env, optionsPayload({ saved: [OPTION_A] }));
+    await previewWith(env, typed, optionsPayload({
+      mode: "preview", saved: [OPTION_A], willUpdateCount: 2, parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }),
+      expected: { [TRACKER_ID]: [OPTION_A], [SIBLING_ID]: [] },
+    }));
+    env.respond(failure, 409);
+    if (reread) env.respond(reread);
+    if (rereadFails) env.fail("Failed to fetch");
+    const before = env.requests.length;
+    click(env.saveButton());
+    await flush();
+    const sent = env.requests.slice(before).map((request) => plain(request.body));
+    assert.deepEqual(sent[0].expectedOptionProductIds, { [TRACKER_ID]: [OPTION_A], [SIBLING_ID]: [] }, "미리 보기 값 그대로 보낸다");
+    assert.deepEqual(sent.slice(1), reread || rereadFails ? [{ action: "options", trackerId: TRACKER_ID, mode: "read" }] : [],
+      `${failure.code}: 번호·대상이 바뀐 거절·일부 저장만 다시 읽는다`);
+    assert.equal(env.status(), status, `${failure.code}: 서버 문장 그대로`);
+    assert.equal(env.input().value, input, `${failure.code}: 입력칸`);
+    assert.equal(env.preview().textContent, "", "다시 미리 보기 하게 둔다");
+    assert.equal(env.saveButton().disabled, true);
+    assert.equal(env.saveButton().textContent, "저장");
+    assert.equal(env.previewButton().disabled, false, "다시 미리 보기 할 수 있다");
+    assert.deepEqual(env.events.map((event) => plain(event.detail.trackerIds)), reloaded ? [reloaded] : [], `${failure.code}: 이미 바뀐 추적만 다시 읽기`);
+  }
+});
+
+test("U15 후보 넣기 저장 거절(U5·U7): 서버 문장 + 이미 바뀐 추적 수 + '후보를 다시 골라 넣어주세요.'", async () => {
+  // 그 사이 다른 곳에서 CAND_B 가 들어갔다(동시 변경·대상 바뀜 뒤 다시 읽는 지금 저장값, M2).
+  const latest = optionsPayload({ saved: [OPTION_A, CAND_B], expected: { [TRACKER_ID]: [CAND_B, OPTION_A], [SIBLING_ID]: [] } });
+  const cases = [
+    {
+      failure: { ok: false, code: "RANK_OPTION_CHANGED", message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.", updatedTrackerIds: [SIBLING_ID] },
+      line: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요. 추적 1개는 이미 새 번호로 저장됐습니다. 후보를 다시 골라 넣어주세요. 최신 번호로 다시 불러왔습니다.",
+      reread: latest,
+    },
+    {
+      failure: { ok: false, code: "RANK_OPTION_TARGETS_CHANGED", message: "미리 보기 뒤에 함께 바뀌는 추적이 달라졌습니다. 다시 미리 보기 해주세요." },
+      line: "미리 보기 뒤에 함께 바뀌는 추적이 달라졌습니다. 다시 미리 보기 해주세요. 후보를 다시 골라 넣어주세요. 최신 번호로 다시 불러왔습니다.",
+      reread: latest,
+    },
+    {
+      failure: { ok: false, code: "RANK_OPTION_AUDIT_FAILED", message: "되돌림 기록을 남기지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요." },
+      line: "되돌림 기록을 남기지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요. 후보를 다시 골라 넣어주세요.",
+    },
+    // 일부 저장(F5): 다른 추적만 저장되고 이 추적은 그 사이 바뀐 번호라 저장되지 않았다 → 일반 저장처럼 다시 읽는다.
+    {
+      failure: { ok: false, code: "RANK_OPTION_PARTIAL", message: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.", updatedTrackerIds: [SIBLING_ID] },
+      line: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요. 추적 1개는 이미 새 번호로 저장됐습니다. 후보를 다시 골라 넣어주세요. 최신 번호로 다시 불러왔습니다.",
+      reread: latest,
+    },
+    // 그 밖의 거절은 예전처럼 서버 문장 + ' 다시 골라 넣어주세요.'(이미 바뀐 추적 수는 그 앞에).
+    {
+      failure: { ok: false, code: "RANK_OPTION_NOT_READY", message: "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요." },
+      line: "그룹상품 번호 칸이 아직 DB 에 없습니다. 대표 SQL 실행 뒤 다시 시도해주세요. 다시 골라 넣어주세요.",
+    },
+  ];
+  for (const { failure, line, reread } of cases) {
+    const env = candidateEnv(candidateTracker());
+    env.respond(optionsPayload({ saved: [OPTION_A] }));
+    click(env.candButton);
+    await flush();
+    env.pick(0);
+    click(env.add());
+    env.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+    env.respond(failure, 409);
+    if (reread) env.respond(reread);
+    click(env.confirmRun());
+    await flush();
+    const modes = env.requests.map((request) => request.body.mode);
+    assert.deepEqual(modes, reread ? ["read", "preview", "save", "read"] : ["read", "preview", "save"], `${failure.code}: 번호·대상이 바뀐 거절·일부 저장만 다시 읽는다`);
+    assert.equal(env.result(), line, failure.code);
+    assert.equal(env.add().disabled, false, `${failure.code}: 다시 고를 수 있다`);
+    if (!reread) {
+      assert.equal(env.input().value, OPTION_A, `${failure.code}: 입력칸 그대로`);
+      continue;
+    }
+    // 저장값·입력칸·후보 목록이 DB 의 지금 번호에 맞는다: 입력칸은 최신 번호, 이미 들어간 CAND_B 는 후보에서 빠지고 고른 CAND_A 는 그대로.
+    assert.equal(env.input().value, `${OPTION_A}\n${CAND_B}`, `${failure.code}: 입력칸을 최신 번호로`);
+    assert.deepEqual(env.items().map((node) => node.getAttribute("data-rank-cand-item")), [CAND_A], `${failure.code}: 후보 목록도 최신 번호 기준`);
+    assert.equal(env.add().textContent, "고른 1개 넣기");
+    // 다시 읽은 저장값이 다음 '확인만 기록' 조건으로 간다(열린 창의 저장값 = DB).
+    env.apply().checked = false;
+    dispatch(env.apply(), "change");
+    env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, CAND_B], checkedAtRecorded: true, optionCheckedAt: "2026-10-23T03:00:00.000Z", message: "저장" });
+    env.respond(latest);
+    click(env.checkOnly());
+    await flush();
+    const checkBody = plain(env.requests.at(-2).body);
+    assert.equal(checkBody.checkOnly, true);
+    assert.equal(checkBody.optionInput, `${OPTION_A}\n${CAND_B}`);
+    assert.deepEqual(checkBody.expectedOptionProductIds, { [TRACKER_ID]: [CAND_B, OPTION_A], [SIBLING_ID]: [] }, `${failure.code}: 다시 읽은 저장값`);
+  }
+});
+
+test("U15 일반 저장 일부 저장(M2): 다시 읽은 저장값·입력칸이 DB 와 같아 다음 '확인만 기록'이 그 값으로 간다", async () => {
+  const env = editorEnv({ now: NOW });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}\n${OPTION_B}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }),
+  }));
+  env.respond({ ok: false, code: "RANK_OPTION_PARTIAL", message: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.", updatedTrackerIds: [TRACKER_ID] }, 409);
+  // 이 추적은 새 번호로 저장됐다(DB 저장값은 순서까지 그대로 받는다).
+  env.respond(optionsPayload({ saved: [OPTION_B, OPTION_A], siblings: [], expected: { [TRACKER_ID]: [OPTION_B, OPTION_A] } }));
+  click(env.saveButton());
+  await flush();
+  assert.deepEqual(plain(env.requests.at(-1).body), READ_BODY);
+  assert.equal(env.input().value, `${OPTION_B}\n${OPTION_A}`, "입력칸 = DB 의 지금 번호");
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_B, OPTION_A], checkedAtRecorded: true, optionCheckedAt: "2026-10-23T03:00:00.000Z", message: "저장" });
+  env.respond(optionsPayload({ saved: [OPTION_B, OPTION_A], siblings: [], expected: { [TRACKER_ID]: [OPTION_B, OPTION_A] } }));
+  click(env.checkOnly());
+  await flush();
+  const body = plain(env.requests.at(-2).body);
+  assert.equal(body.checkOnly, true, "저장 안 한 입력으로 막히지 않는다");
+  assert.equal(body.optionInput, `${OPTION_B}\n${OPTION_A}`);
+  assert.deepEqual(body.expectedOptionProductIds, { [TRACKER_ID]: [OPTION_B, OPTION_A] }, "다시 읽은 저장값(미리 보기 때 값이 아님)");
+});
+
+test("U15 저장됐는지 알 수 없는 추적(H1 uncertainTrackerIds): 서버 문장 그대로 + 다시 읽기 + 카드 다시 읽기 — 일반 저장·후보 넣기·확인만 기록", async () => {
+  // 서버 모양(2026-10-31): 쓰기 결과를 모르는 묶음이 있으면 RANK_OPTION_PARTIAL + uncertainTrackerIds, 문장에 안내가 들어 있다.
+  const uncertainMessage = "저장 중 오류가 났습니다. 추적 1개는 저장됐는지 확인하지 못했습니다. 편집창을 다시 열어 확인해주세요.";
+  const failure = (extra = {}) => ({ ok: false, code: "RANK_OPTION_PARTIAL", message: uncertainMessage, updatedTrackerIds: [], uncertainTrackerIds: [SIBLING_ID], ...extra });
+  const typed = `${PRIMARY}\n${OPTION_A}\n${OPTION_B}`;
+  const previewPayload = () => optionsPayload({ mode: "preview", saved: [OPTION_A], willUpdateCount: 2, parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) });
+
+  // 일반 저장: 서버 문장(그 안내 포함) + 이미 바뀐 추적 수 + 다시 읽기. 화면 안내(' 미리 보기를 다시 눌러주세요.')는 붙이지 않는다.
+  const savedMessage = "추적 2개 중 1개를 저장했습니다. 추적 1개는 저장됐는지 확인하지 못했습니다. 편집창을 다시 열어 확인해주세요.";
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(env, typed, previewPayload());
+  env.respond(failure({ message: savedMessage, updatedTrackerIds: [TRACKER_ID] }), 409);
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_B] }));
+  click(env.saveButton());
+  await flush();
+  assert.deepEqual(plain(env.requests.at(-1).body), READ_BODY, "다시 읽는다");
+  assert.equal(env.status(), `${savedMessage} 추적 1개는 이미 새 번호로 저장됐습니다. 최신 번호로 다시 불러왔습니다.`);
+  assert.equal(env.input().value, `${OPTION_A}\n${OPTION_B}`, "입력칸 = DB 의 지금 번호");
+  assert.equal(env.preview().textContent, "");
+  assert.deepEqual(env.events.map((event) => plain(event.detail.trackerIds)), [[TRACKER_ID, SIBLING_ID]], "저장됐는지 알 수 없는 추적도 카드 다시 읽기");
+
+  // 코드가 서버 문장을 그대로 보이는 목록 밖이어도 uncertainTrackerIds 가 있으면 같은 처리를 한다.
+  const other = editorEnv();
+  await openEditorWith(other, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(other, typed, previewPayload());
+  other.respond(failure({ code: "RANK_OPTION_SAVE_FAILED" }), 500);
+  other.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(other.saveButton());
+  await flush();
+  assert.deepEqual(plain(other.requests.at(-1).body), READ_BODY);
+  assert.equal(other.status(), `${uncertainMessage} 최신 번호로 다시 불러왔습니다.`);
+  assert.equal(other.input().value, OPTION_A);
+  assert.deepEqual(other.events.map((event) => plain(event.detail.trackerIds)), [[SIBLING_ID]]);
+
+  // 같은 거절이라도 uncertainTrackerIds 가 비면 예전 그대로(다시 읽기 없음·화면 안내 덧붙임).
+  const quiet = editorEnv();
+  await openEditorWith(quiet, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(quiet, typed, previewPayload());
+  quiet.respond({ ok: false, code: "RANK_OPTION_SAVE_FAILED", message: "저장하지 못했습니다.", uncertainTrackerIds: [] }, 500);
+  click(quiet.saveButton());
+  await flush();
+  assert.equal(quiet.requests.at(-1).body.mode, "save");
+  assert.equal(quiet.status(), "저장하지 못했습니다. 미리 보기를 다시 눌러주세요.");
+  assert.equal(quiet.input().value, typed);
+  assert.equal(quiet.events.length, 0);
+
+  // 후보 넣기: 서버 문장 + ' 후보를 다시 골라 넣어주세요.' + 다시 읽기.
+  const cand = candidateEnv(candidateTracker());
+  cand.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(cand.candButton);
+  await flush();
+  cand.pick(0);
+  click(cand.add());
+  cand.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+  cand.respond(failure(), 409);
+  cand.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(cand.confirmRun());
+  await flush();
+  assert.deepEqual(cand.requests.map((request) => request.body.mode), ["read", "preview", "save", "read"]);
+  assert.equal(cand.result(), `${uncertainMessage} 후보를 다시 골라 넣어주세요. 최신 번호로 다시 불러왔습니다.`);
+  assert.deepEqual(cand.events.map((event) => plain(event.detail.trackerIds)), [[SIBLING_ID]]);
+  assert.equal(cand.add().disabled, false);
+
+  // 확인만 기록: 서버 문장 그대로 + 다시 읽기.
+  const check = editorEnv({ now: NOW });
+  await openEditorWith(check, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  check.respond(failure(), 409);
+  check.respond(optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  click(check.checkOnly());
+  await flush();
+  assert.equal(check.requests.at(-2).body.checkOnly, true);
+  assert.deepEqual(plain(check.requests.at(-1).body), READ_BODY);
+  assert.equal(check.status(), `${uncertainMessage} 최신 번호로 다시 불러왔습니다.`);
+  assert.deepEqual(check.events.map((event) => plain(event.detail.trackerIds)), [[SIBLING_ID]]);
+});
+
+test("U15 후보 넣기 일부 저장(F5): RANK_OPTION_PARTIAL 은 uncertainTrackerIds 가 있든 없든 다시 읽고 후보 목록을 지금 번호 기준으로 다시 그린다", async () => {
+  const partialMessage = "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.";
+  for (const extra of [{}, { uncertainTrackerIds: [SIBLING_ID] }]) {
+    const label = extra.uncertainTrackerIds ? "uncertainTrackerIds 있음" : "uncertainTrackerIds 없음";
+    const env = candidateEnv(candidateTracker());
+    env.respond(optionsPayload({ saved: [OPTION_A] }));
+    click(env.candButton);
+    await flush();
+    env.pick(0);
+    click(env.add());
+    env.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+    env.respond({ ok: false, code: "RANK_OPTION_PARTIAL", message: partialMessage, updatedTrackerIds: [TRACKER_ID], ...extra }, 409);
+    // 이 추적은 고른 후보까지 저장됐다(다른 추적은 저장되지 않았거나 저장됐는지 모른다).
+    env.respond(optionsPayload({ saved: [OPTION_A, CAND_A] }));
+    click(env.confirmRun());
+    await flush();
+    assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview", "save", "read"], `${label}: 다시 읽는다`);
+    assert.deepEqual(plain(env.requests.at(-1).body), READ_BODY, label);
+    assert.equal(env.result(), `${partialMessage} 추적 1개는 이미 새 번호로 저장됐습니다. 후보를 다시 골라 넣어주세요. 최신 번호로 다시 불러왔습니다.`, label);
+    assert.equal(env.input().value, `${OPTION_A}\n${CAND_A}`, `${label}: 입력칸 = DB 의 지금 번호`);
+    assert.deepEqual(env.items().map((node) => node.getAttribute("data-rank-cand-item")), [CAND_B], `${label}: 이미 들어간 CAND_A 는 후보에서 빠진다`);
+    assert.equal(env.add().textContent, "고른 후보 넣기", `${label}: 고른 후보도 지금 번호 기준`);
+    assert.equal(env.add().disabled, true, label);
+    assert.equal(env.q("[data-rank-option-kept]").hidden, true, `${label}: 넣으려던 목록이 그대로 저장돼 보관할 것이 없다`);
+    assert.deepEqual(env.events.map((event) => plain(event.detail.trackerIds)), [extra.uncertainTrackerIds ? [TRACKER_ID, SIBLING_ID] : [TRACKER_ID]], `${label}: 카드 다시 읽기`);
+  }
+});
+
+test("U15 저장 거절 뒤 다시 읽기(F2): 넣으려던 번호를 보관하고 '넣으려던 번호 다시 넣기'로 입력칸에 돌린다 — 일반 저장·후보 넣기(확인만 기록은 보관할 글 없음)", async () => {
+  const typed = `${PRIMARY}\n${OPTION_A}\n${OPTION_B}`;
+  const changed = { ok: false, code: "RANK_OPTION_CHANGED", message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요." };
+  const kept = (env) => env.q("[data-rank-option-kept]");
+  const restore = (env) => env.q("[data-rank-option-kept-restore]");
+  const previewPayload = (saved = [OPTION_A], extra = {}) => optionsPayload({
+    mode: "preview", saved, parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }), ...extra,
+  });
+
+  // 일반 저장: 동시 변경 거절 → 다시 읽기가 입력칸을 DB 의 지금 번호로 바꾼다 → 붙여 넣었던 글을 보관한다.
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A] }));
+  assert.equal(kept(env).hidden, true, "처음에는 보관한 번호가 없다");
+  await previewWith(env, typed, previewPayload());
+  env.respond(changed, 409);
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_C] }));
+  click(env.saveButton());
+  await flush();
+  assert.equal(env.input().value, `${OPTION_A}\n${OPTION_C}`, "입력칸 = DB 의 지금 번호");
+  assert.equal(env.status(), `${changed.message} 최신 번호로 다시 불러왔습니다.`, "저장 결과 문장은 그대로");
+  assert.equal(kept(env).hidden, false, "넣으려던 번호를 보관했다고 알린다");
+  assert.equal(kept(env).querySelector("span").textContent, "넣으려던 번호를 보관했습니다.");
+  assert.equal(restore(env).textContent, "넣으려던 번호 다시 넣기");
+  assert.equal(restore(env).disabled, false);
+  // 다시 넣으면 붙여 넣었던 글 그대로 돌아오고 줄은 사라진다. 요청은 없고, 저장은 미리 보기부터 다시.
+  const before = env.requests.length;
+  click(restore(env));
+  assert.equal(env.requests.length, before, "다시 넣기는 요청을 보내지 않는다");
+  assert.equal(env.input().value, typed);
+  assert.equal(kept(env).hidden, true);
+  assert.equal(env.saveButton().disabled, true, "미리 보기 전에는 저장할 수 없다");
+  assert.equal(env.previewButton().disabled, false);
+  assert.equal(env.status(), "넣으려던 번호를 다시 넣었습니다. 아직 저장 전입니다. 미리 보기로 지금 저장된 번호와 비교한 뒤 저장해주세요.");
+  // 다시 미리 보기(지금 저장값 기준 비교) → 저장하면 붙여 넣었던 글 그대로 보낸다.
+  env.respond(previewPayload([OPTION_A, OPTION_C], { removed: [OPTION_C], expected: { [TRACKER_ID]: [OPTION_A, OPTION_C], [SIBLING_ID]: [] } }));
+  click(env.previewButton());
+  await flush();
+  assert.deepEqual(env.diffRow("removed"), [OPTION_C], "다시 읽은 번호와 비교한다");
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], checkedAtRecorded: true, message: "저장" });
+  click(env.saveButton());
+  await flush();
+  const saveBody = plain(env.requests.at(-1).body);
+  assert.equal(saveBody.mode, "save");
+  assert.equal(saveBody.optionInput, typed);
+  assert.deepEqual(saveBody.expectedOptionProductIds, { [TRACKER_ID]: [OPTION_A, OPTION_C], [SIBLING_ID]: [] }, "다시 미리 본 저장값 조건");
+
+  // 다시 읽은 번호가 붙여 넣은 번호와 같으면(이 추적은 저장됨) 잃을 것이 없어 보관하지 않는다.
+  const same = editorEnv();
+  await openEditorWith(same, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(same, typed, previewPayload());
+  same.respond({ ok: false, code: "RANK_OPTION_PARTIAL", message: "추적 2개 중 1개만 저장했습니다. 다시 미리 보기 한 뒤 저장해주세요.", updatedTrackerIds: [TRACKER_ID] }, 409);
+  same.respond(optionsPayload({ saved: [OPTION_B, OPTION_A] }));
+  click(same.saveButton());
+  await flush();
+  assert.equal(same.input().value, `${OPTION_B}\n${OPTION_A}`);
+  assert.equal(kept(same).hidden, true, "같은 번호면 보관 줄 없음");
+
+  // 다시 읽기가 끊기면 입력칸이 붙여 넣었던 글 그대로라 보관 줄이 필요 없다.
+  const offline = editorEnv();
+  await openEditorWith(offline, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(offline, typed, previewPayload());
+  offline.respond(changed, 409);
+  offline.fail("Failed to fetch");
+  click(offline.saveButton());
+  await flush();
+  assert.equal(offline.input().value, typed);
+  assert.equal(kept(offline).hidden, true);
+
+  // 후보 넣기: 넣으려던 목록을 **다시 읽은 최신 번호 + 고른 후보**로 보관한다(예전 저장 번호 기준이면 그 사이 다른 사람이
+  // 더한 CAND_B 가 빠지거나 지운 번호가 되살아난다 — 반박 검토 2026-11-01). 다시 넣으면 아래 입력칸에 그 목록이 들어간다.
+  const cand = candidateEnv(candidateTracker());
+  cand.respond(optionsPayload({ saved: [OPTION_A] }));
+  click(cand.candButton);
+  await flush();
+  cand.pick(0);
+  click(cand.add());
+  cand.respond({ ...optionsPayload({ mode: "preview", saved: [OPTION_A], parsed: parsedOf([OPTION_A, CAND_A]), willUpdateCount: 2 }), targetTrackerIds: [TRACKER_ID, SIBLING_ID] });
+  cand.respond(changed, 409);
+  cand.respond(optionsPayload({ saved: [OPTION_A, CAND_B] }));
+  click(cand.confirmRun());
+  await flush();
+  assert.equal(cand.input().value, `${OPTION_A}\n${CAND_B}`, "입력칸 = DB 의 지금 번호");
+  assert.equal(kept(cand).hidden, false, "후보 넣기도 넣으려던 목록을 보관한다");
+  assert.equal(restore(cand).disabled, false);
+  click(restore(cand));
+  assert.equal(cand.input().value, `${OPTION_A}\n${CAND_B}\n${CAND_A}`, "최신 번호(다른 사람이 더한 CAND_B 포함) + 고른 후보");
+  assert.equal(kept(cand).hidden, true);
+  assert.equal(cand.saveButton().disabled, true, "미리 보기부터 다시");
+
+  // 확인만 기록: 입력칸이 저장값 그대로일 때만 눌리므로 거절 뒤 다시 읽어도 보관할 글이 없다.
+  const check = editorEnv({ now: NOW });
+  await openEditorWith(check, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  check.respond({ ok: false, code: "RANK_OPTION_CHECK_ONLY_MISMATCH", message: "번호가 바뀌었습니다. 다시 확인해주세요." }, 409);
+  check.respond(optionsPayload({ saved: [OPTION_A, OPTION_C], siblings: [] }));
+  click(check.checkOnly());
+  await flush();
+  assert.deepEqual(plain(check.requests.at(-1).body), READ_BODY);
+  assert.equal(check.input().value, `${OPTION_A}\n${OPTION_C}`);
+  assert.equal(kept(check).hidden, true, "확인만 기록은 보관 줄 없음");
+
+  // 창을 닫았다 다시 열면 보관한 번호는 없다(보관은 그 창 안에서만).
+  const reopen = editorEnv();
+  await openEditorWith(reopen, optionsPayload({ saved: [OPTION_A] }));
+  await previewWith(reopen, typed, previewPayload());
+  reopen.respond(changed, 409);
+  reopen.respond(optionsPayload({ saved: [OPTION_A, OPTION_C] }));
+  click(reopen.saveButton());
+  await flush();
+  assert.equal(kept(reopen).hidden, false);
+  click(reopen.q("[data-rank-option-close]"));
+  assert.equal(reopen.modal().hidden, true, "입력칸 = 저장값이라 묻지 않고 닫힌다");
+  await openEditorWith(reopen, optionsPayload({ saved: [OPTION_A, OPTION_C] }));
+  assert.equal(kept(reopen).hidden, true, "다시 연 창에는 보관 줄 없음");
+});
+
+test("V1·V2 좁은 화면: 편집창 버튼은 낱말 중간에서 끊지 않고, 머리 확인일은 짧은 글 한 줄 + '상품 페이지 열기'·'확인만 기록' 한 줄(넓은 화면 그대로)", () => {
+  const css = adminSource.slice(adminSource.indexOf("/* N 30일 그룹상품 시작"), adminSource.indexOf("/* N 30일 그룹상품 끝 */"));
+  const rule = (selector, from = 0) => {
+    const at = css.indexOf(`${selector} {`, from);
+    assert.ok(at >= 0, selector);
+    return css.slice(at, css.indexOf("}", at));
+  };
+  // V1: 창 안 모든 .mi-button(저장·미리 보기·확인만 기록·후보 넣기 등). 긴 낱말만 아무 데서나 끊는다.
+  const buttons = rule("#mi-admin .mi-rank-option-card .mi-button");
+  assert.match(buttons, /word-break: keep-all;/u);
+  assert.match(buttons, /overflow-wrap: anywhere;/u);
+  // V2: 넓은 화면은 긴 글만(짧은 글 숨김). 좁은 화면 묶음에서만 짧은 글로 바꾸고 확인일 줄을 맨 위 한 줄로 둔다.
+  const shortAt = css.indexOf("#mi-admin .mi-rank-option-checkline-short {");
+  assert.match(rule("#mi-admin .mi-rank-option-checkline-short"), /display: none;/u);
+  const mediaAt = css.indexOf("@media (max-width: 520px) {", shortAt);
+  assert.ok(mediaAt > shortAt, "짧은 글 기본 규칙 뒤의 좁은 화면 묶음");
+  const media = blockFrom(css, mediaAt);
+  assert.match(media, /\.mi-rank-option-checkline \{\s*flex: 1 1 100%;\s*order: -1;\s*\}/u, "확인일 줄은 한 줄 전체 → 아래 줄에 링크·버튼");
+  assert.match(media, /\.mi-rank-option-checkline-full \{\s*display: none;\s*\}/u);
+  assert.match(media, /\.mi-rank-option-checkline-short \{\s*display: inline;\s*\}/u);
+  assert.doesNotMatch(media, /mi-rank-option-open|mi-rank-option-check-only|\border: [1-9]/u, "링크·버튼 순서는 그대로(초점 순서와 같음)");
+  assert.doesNotMatch(css, HEX);
+});
+
+test("U16 편집창 머리: 상품 페이지 열기(B5)·마지막 옵션 확인일(B6) 줄, 칸이 없으면 줄·버튼을 숨긴다", async () => {
+  const env = editorEnv({ now: NOW });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A, OPTION_B], checkedAt: kst("2026-10-01", 15) }));
+  const open = env.q("[data-rank-option-open]");
+  assert.equal(open.hidden, false);
+  assert.equal(open.getAttribute("href"), `https://smartstore.naver.com/ishell/products/${PRIMARY}`, "카드 제목 링크와 같은 주소");
+  assert.equal(open.getAttribute("target"), "_blank");
+  assert.match(open.getAttribute("rel"), /\bnoopener\b/u);
+  assert.equal(env.checkText(), "마지막 옵션 확인: 2026-10-01(22일 전)");
+  assert.equal(env.checkShort(), "마지막 옵션 확인 10/1 (22일 전)", "좁은 화면용 짧은 글(V2)");
+  assert.equal(env.checkLine().classList.contains("is-due"), false);
+  assert.equal(env.checkOnly().hidden, false);
+  assert.equal(env.checkOnly().textContent, "확인만 기록");
+
+  const old = editorEnv({ now: NOW });
+  await openEditorWith(old, optionsPayload({ saved: [OPTION_A], checkedAt: kst("2026-09-20", 9) }));
+  assert.equal(old.checkText(), "마지막 옵션 확인: 2026-09-20(33일 전) · 다시 확인할 때입니다");
+  assert.equal(old.checkShort(), "마지막 옵션 확인 9/20 (33일 전)", "짧은 글은 다시 확인 안내 없이 색(is-due)으로만");
+  assert.ok(old.checkLine().classList.contains("is-due"));
+
+  const none = editorEnv({ now: NOW });
+  await openEditorWith(none, optionsPayload({ saved: [OPTION_A], checkedAt: null }));
+  assert.equal(none.checkText(), "옵션 확인 기록 없음");
+  assert.equal(none.checkShort(), "옵션 확인 기록 없음");
+  assert.ok(none.checkLine().classList.contains("is-due"));
+
+  // 확인일 칸이 없으면(대표 SQL 전) 줄과 '확인만 기록'을 숨긴다. 번호가 없으면 '확인만 기록'이 없다.
+  const notReady = editorEnv({ now: NOW });
+  await openEditorWith(notReady, optionsPayload({ saved: [OPTION_A], checkedAtReady: false }));
+  assert.equal(notReady.checkLine().hidden, true);
+  assert.equal(notReady.checkOnly().hidden, true);
+  const empty = editorEnv({ now: NOW });
+  await openEditorWith(empty, optionsPayload({ saved: [] }));
+  assert.equal(empty.checkOnly().hidden, true);
+  assert.equal(empty.checkLine().hidden, true, "번호도 기록도 없으면 줄도 없다");
+
+  // 주소가 없거나 http(s) 가 아니면 링크를 숨긴다.
+  const noUrl = editorEnv({ now: NOW });
+  const payload = optionsPayload({ saved: [OPTION_A] });
+  payload.tracker.productUrl = "";
+  await openEditorWith(noUrl, payload);
+  assert.equal(noUrl.q("[data-rank-option-open]").hidden, true);
+  assert.equal(noUrl.q("[data-rank-option-open]").getAttribute("href"), null);
+});
+
+const READ_BODY = { action: "options", trackerId: TRACKER_ID, mode: "read" };
+
+test("U16 '확인만 기록'(B6): checkOnly 로 지금 목록 그대로·읽은 저장값 조건·fullReview, 기록 뒤 다시 읽기, 다른 추적 번호가 다르면 함께 기록하지 않는다", async () => {
+  const sameSibling = sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_B, OPTION_A], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 0 });
+  const env = editorEnv({ now: NOW });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [sameSibling], checkedAt: null }));
+  env.respond({
+    ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A, OPTION_B],
+    checkedAtRecorded: true, optionCheckedAt: "2026-10-23T03:00:00.000Z", message: "저장",
+  });
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [sameSibling], checkedAt: "2026-10-23T03:00:00.000Z" }));
+  click(env.checkOnly());
+  assert.equal(env.checkOnly().disabled, true, "기록·다시 읽기 중에는 다시 못 누른다");
+  await flush();
+  assert.deepEqual(plain(env.requests[1].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "save", checkOnly: true, optionInput: `${OPTION_A}\n${OPTION_B}`, applyToSameProduct: true,
+    expectedTrackerIds: [TRACKER_ID, SIBLING_ID],
+    expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A, OPTION_B], [SIBLING_ID]: [OPTION_B, OPTION_A] },
+    fullReview: true,
+  }, "서버가 확인일만 쓰게 checkOnly 를 보낸다(U2)");
+  assert.deepEqual(plain(env.requests[2].body), READ_BODY, "기록 뒤 읽기로 최신 저장값을 받는다(U3)");
+  assert.equal(env.requests.length, 3);
+  assert.equal(env.status(), "옵션 확인일을 기록했습니다(추적 2개 · 번호 2개 그대로).");
+  assert.equal(env.checkText(), "마지막 옵션 확인: 2026-10-23(오늘)");
+  assert.equal(env.checkShort(), "마지막 옵션 확인 10/23 (오늘)");
+  assert.deepEqual(env.events.map((event) => plain(event.detail.trackerIds)), [[TRACKER_ID, SIBLING_ID]], "카드 배지를 바꾸게 목록 다시 읽기");
+  assert.equal(env.modal().hidden, false, "창은 열어 둔다");
+  assert.equal(env.checkOnly().disabled, false);
+
+  // 다른 키워드 추적의 번호가 다르면 읽은 값으로 먼저 알리고(요청 없음), 체크를 끄면 이 추적만.
+  const differ = editorEnv({ now: NOW });
+  await openEditorWith(differ, optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A] })] }));
+  click(differ.checkOnly());
+  await flush();
+  assert.equal(differ.requests.length, 1, "읽기만");
+  assert.match(differ.status(), /다른 키워드 추적 1개\(아이폰17 케이스\)의 번호가 이 추적과 달라.*기록하지 않았습니다/u);
+  assert.doesNotMatch(differ.status(), /번호가 바뀝니다/u, "확인만 기록은 번호를 바꾸지 않는다");
+  differ.apply().checked = false;
+  dispatch(differ.apply(), "change");
+  differ.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], checkedAtRecorded: false, message: "저장" });
+  differ.respond(optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A] })] }));
+  click(differ.checkOnly());
+  await flush();
+  const differBody = plain(differ.requests.at(-2).body);
+  assert.equal(differBody.checkOnly, true);
+  assert.equal(differBody.applyToSameProduct, false);
+  assert.deepEqual(differBody.expectedTrackerIds, [TRACKER_ID]);
+  assert.deepEqual(plain(differ.requests.at(-1).body), READ_BODY);
+  assert.equal(differ.status(), "번호는 그대로입니다. 확인일은 기록되지 않았습니다(DB 준비 전).");
+  assert.equal(differ.checkText(), "옵션 확인 기록 없음", "기록되지 않았으면 줄은 그대로");
+  assert.equal(differ.apply().checked, false, "다시 읽어도 체크는 사용자가 둔 그대로");
+
+  // 저장하지 않은 입력이 있으면 막는다. 서버가 동시 변경으로 거절하면 서버 문장 + 지금 번호를 다시 읽어 입력칸을 맞춘다(U4).
+  const dirty = editorEnv({ now: NOW });
+  await openEditorWith(dirty, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  dirty.input().value = `${OPTION_A}\n${OPTION_B}`;
+  dispatch(dirty.input(), "input");
+  click(dirty.checkOnly());
+  await flush();
+  assert.equal(dirty.requests.length, 1);
+  assert.match(dirty.status(), /저장하지 않은 번호가 있습니다/u);
+  dirty.input().value = OPTION_A;
+  dispatch(dirty.input(), "input");
+  dirty.respond({ ok: false, code: "RANK_OPTION_CHANGED", message: "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요." }, 409);
+  dirty.respond(optionsPayload({ saved: [OPTION_A, OPTION_C], siblings: [] }));
+  click(dirty.checkOnly());
+  await flush();
+  assert.deepEqual(plain(dirty.requests.at(-1).body), READ_BODY);
+  assert.equal(dirty.status(), "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요. 최신 번호로 다시 불러왔습니다.");
+  assert.equal(dirty.input().value, `${OPTION_A}\n${OPTION_C}`, "입력칸을 최신 번호로");
+  assert.equal(dirty.events.length, 0);
+});
+
+test("U16 '확인만 기록' 두 번: 기록 뒤 다시 읽은 저장값을 다음 기록에 보낸다(U3)", async () => {
+  const env = editorEnv({ now: NOW });
+  await openEditorWith(env, optionsPayload({
+    saved: [OPTION_B, OPTION_A], siblings: [], checkedAt: kst("2026-09-01"), expected: { [TRACKER_ID]: [OPTION_B, OPTION_A] },
+  }));
+  const saved = (checkedAt) => ({
+    ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], checkedAtRecorded: true, optionCheckedAt: checkedAt, message: "저장",
+  });
+  // 그 사이 다른 창에서 같은 번호를 순서만 바꿔 저장했다(DB 저장값 그대로 비교라 이 값이 조건이 된다).
+  env.respond(saved("2026-10-23T02:00:00.000Z"));
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [], checkedAt: "2026-10-23T02:00:00.000Z", expected: { [TRACKER_ID]: [OPTION_A, OPTION_B] } }));
+  click(env.checkOnly());
+  await flush();
+  env.respond(saved("2026-10-23T03:00:00.000Z"));
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [], checkedAt: "2026-10-23T03:00:00.000Z", expected: { [TRACKER_ID]: [OPTION_A, OPTION_B] } }));
+  click(env.checkOnly());
+  await flush();
+  const bodies = env.requests.map((request) => plain(request.body));
+  assert.deepEqual(bodies.map((body) => [body.mode, body.checkOnly === true]), [["read", false], ["save", true], ["read", false], ["save", true], ["read", false]]);
+  assert.deepEqual(bodies[1].expectedOptionProductIds, { [TRACKER_ID]: [OPTION_B, OPTION_A] }, "첫 기록은 창을 열 때 읽은 값");
+  assert.deepEqual(bodies[3].expectedOptionProductIds, { [TRACKER_ID]: [OPTION_A, OPTION_B] }, "두 번째 기록은 다시 읽은 값");
+  assert.equal(bodies[3].optionInput, `${OPTION_A}\n${OPTION_B}`, "지금 목록도 다시 읽은 목록");
+  assert.equal(env.status(), "옵션 확인일을 기록했습니다(추적 1개 · 번호 2개 그대로).");
+  assert.equal(env.checkText(), "마지막 옵션 확인: 2026-10-23(오늘)");
+});
+
+test("U16 '확인만 기록': 읽은 값으로는 같아 보여도 서버가 번호가 다르다고 거절하면(RANK_OPTION_CHECK_ONLY_MISMATCH) 서버 문장 + 다시 읽기", async () => {
+  const sameSibling = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A], afterOptionProductIds: [OPTION_A], addedCount: 0 });
+  const env = editorEnv({ now: NOW });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [sameSibling] }));
+  // 같은 목록을 미리 본 뒤 '확인만 기록'을 눌렀다(입력은 저장값 그대로).
+  await previewWith(env, OPTION_A, optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [sameSibling], parsed: parsedOf([OPTION_A]) }));
+  assert.notEqual(env.preview().textContent, "");
+  const mismatch = "함께 기록할 추적의 번호가 이 추적과 달라 확인일을 기록하지 않았습니다.";
+  env.respond({ ok: false, code: "RANK_OPTION_CHECK_ONLY_MISMATCH", message: mismatch }, 409);
+  // 그 사이 다른 키워드 추적에 번호가 하나 더 들어갔다.
+  const changedSibling = sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_A, OPTION_C], afterOptionProductIds: [OPTION_A], addedCount: 0, removedCount: 1 });
+  env.respond(optionsPayload({ saved: [OPTION_A], siblings: [changedSibling] }));
+  click(env.checkOnly());
+  await flush();
+  assert.equal(env.requests.length, 4);
+  assert.equal(plain(env.requests[2].body).checkOnly, true);
+  assert.deepEqual(plain(env.requests[3].body), READ_BODY);
+  assert.equal(env.status(), `${mismatch} 최신 번호로 다시 불러왔습니다.`, "서버 문장 그대로 + 다시 읽음");
+  assert.ok(env.q("[data-rank-option-status]").classList.contains("is-warn"));
+  assert.equal(env.preview().textContent, "", "다시 읽으면 지난 미리 보기는 지운다");
+  assert.equal(env.saveButton().disabled, true);
+  assert.equal(env.events.length, 0);
+  // 다시 읽은 값으로는 이제 화면이 먼저 알린다(요청 없음).
+  click(env.checkOnly());
+  await flush();
+  assert.equal(env.requests.length, 4);
+  assert.match(env.status(), /다른 키워드 추적 1개\(아이폰17 케이스\)의 번호가 이 추적과 달라/u);
+});
+
+test("U16 일반 저장: 확인일 칸이 없어 번호만 저장되면(checkedAtRecorded:false) 창과 카드 상태 줄에 알린다", async () => {
+  const env = editorEnv();
+  const cardStatus = env.documentRef.createElement("p");
+  cardStatus.setAttribute("data-rank-status", "");
+  env.rankCard.appendChild(cardStatus);
+  await openEditorWith(env, optionsPayload({ saved: [], siblings: [] }));
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}`, optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A], { primaryRemoved: true }) }));
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A], checkedAtRecorded: false, message: "그룹상품 번호 1개를 추적 1개에 저장했습니다. 다음 순위 확인부터 적용됩니다." });
+  click(env.saveButton());
+  await flush();
+  assert.match(env.status(), /저장했습니다\. 다음 순위 확인부터 적용됩니다\. 확인일은 기록되지 않았습니다\(DB 준비 전\)\.$/u);
+  assert.equal(cardStatus.textContent, env.status());
+  assert.ok(cardStatus.classList.contains("is-warn"));
+});
+
+test("U17 버튼 설치 안내(A7): 정적 HTML 표식 사이 링크, 편집창 안으로 옮겨지고 눌러도 아무 일 없음", async () => {
+  // 원본: 표식은 관리자 화면 N 30일 카드 안에 한 번씩, 그 사이에는 끌어 놓기 링크 하나(빌드가 href 를 바꿔 끼운다).
+  const start = "<!-- mi-option-check-bookmarklet:start -->";
+  const end = "<!-- mi-option-check-bookmarklet:end -->";
+  assert.equal(adminSource.split(start).length, 2);
+  assert.equal(adminSource.split(end).length, 2);
+  assert.ok(!clientSource.includes("mi-option-check-bookmarklet") && !clientSource.includes("data-rank-option-install"), "광고주 화면에는 없다");
+  const between = adminSource.slice(adminSource.indexOf(start) + start.length, adminSource.indexOf(end));
+  assert.match(between, /^<a class="mi-rank-option-bookmarklet" data-rank-option-bookmarklet href="javascript:[^"]*" title="즐겨찾기 줄로 끌어다 놓으세요">모먼트 옵션 확인<\/a>$/u);
+  const cardFrom = adminSource.indexOf('<article class="mi-card mi-card-pad mi-rank-card" data-rank-card>');
+  const cardTo = adminSource.indexOf("</article>", cardFrom);
+  const installFrom = adminSource.indexOf('<details class="mi-rank-option-install" data-rank-option-install hidden>');
+  assert.ok(cardFrom > 0 && installFrom > cardFrom && adminSource.indexOf(start) > installFrom && adminSource.indexOf(end) < cardTo, "N 30일 카드 안의 접힌 안내");
+  const installHtml = adminSource.slice(installFrom, adminSource.indexOf("</details>", installFrom));
+  assert.doesNotMatch(installHtml, /\son[a-z]+\s*=/iu, "인라인 핸들러 없음(CSP)");
+  assert.equal((installHtml.match(/<li>/gu) || []).length, 3, "짧은 3단계 안내");
+
+  const env = editorEnv({ install: true });
+  assert.equal(env.installBlock.parentNode, null, "편집창을 열기 전에는 카드에서 떼어 둔다");
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A] }));
+  const install = env.q("[data-rank-option-install]");
+  assert.equal(install, env.installBlock);
+  assert.equal(install.hidden, false);
+  assert.equal(env.rankCard.querySelector("[data-rank-option-install]"), null);
+  const event = dispatch(install.querySelector("[data-rank-option-bookmarklet]"), "click");
+  assert.equal(event.defaultPrevented, true, "관리자 화면에서 눌러도 실행하지 않는다");
+  assert.match(install.querySelector(".mi-rank-option-install-note").textContent, /즐겨찾기 줄로 끌어 놓은 뒤/u);
+  assert.equal(env.requests.length, 1, "요청 없음");
+  assert.equal(env.modal().hidden, false);
+});
+
+test("U7 정식판 새 CSS 도 그룹상품 묶음 안에서 var(--mi-*) 토큰만 쓴다", () => {
+  const css = adminSource.slice(adminSource.indexOf("/* N 30일 그룹상품 시작"), adminSource.indexOf("/* N 30일 그룹상품 끝 */"));
+  for (const selector of [
+    ".mi-rank-ops-row .mi-rank-option-check.is-due", ".mi-rank-option-diff-row.is-added li", ".mi-rank-option-diff-row.is-removed li",
+    ".mi-rank-option-alert.is-danger", ".mi-rank-option-bookmarklet", ".mi-rank-option-checkline.is-due",
+  ]) assert.ok(css.includes(selector), selector);
 });

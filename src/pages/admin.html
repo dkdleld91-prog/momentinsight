@@ -14965,6 +14965,59 @@
   <script src="/mi-related-keywords.js?v=rq-v6-20261019"></script>
   <script>
     (function () {
+      // 옵션 확인 버튼(2.1.0)이 연 새 탭의 대기값(#mi-optfill=…)은 해시 라우터·로그인 복원보다 먼저, 동기로 받아 둔다
+      // (2026-11-01). 형식이 맞든 틀리든 주소창 해시는 N 30일 순위 화면 해시로 바꾼다(hashchange 는 일어나지 않는다).
+      rankOptionFillIntake("#mi-admin-naver-rank-tracking");
+
+      // 옵션 확인 버튼 주소 해시의 엄격 검사(명세 §1). 찾음 2.f.<pageId>.<ids>(pageId 포함·중복 없음·1~51개),
+      // 확인 못 함 2.r.<pageId>.<diag>(base64url 1~2000자), 해시('#mi-optfill=' 뒤) 2,200자 초과는 버린다.
+      // 맞으면 { v, kind, pageId, ids | diag }, 아니면 null.
+      function rankOptionFillParse(hash) {
+        var text = String(hash || "");
+        var prefix = "#mi-optfill=";
+        if (text.indexOf(prefix) !== 0) return null;
+        var payload = text.slice(prefix.length);
+        if (!payload || payload.length > 2200) return null;
+        var found = /^2\.f\.([0-9]{5,20})\.([0-9]{5,20}(?:-[0-9]{5,20}){0,50})$/.exec(payload);
+        if (found) {
+          var ids = found[2].split("-");
+          var seen = {};
+          for (var index = 0; index < ids.length; index += 1) {
+            if (seen[ids[index]]) return null;
+            seen[ids[index]] = true;
+          }
+          if (!seen[found[1]]) return null;
+          return { v: 2, kind: "f", pageId: found[1], ids: ids };
+        }
+        var refused = /^2\.r\.([0-9]{5,20})\.([A-Za-z0-9_-]{1,2000})$/.exec(payload);
+        return refused ? { v: 2, kind: "r", pageId: refused[1], diag: refused[2] } : null;
+      }
+
+      // 맞는 대기값은 이 탭의 sessionStorage 에 시각과 함께 둔다(15분·1회용, 처리는 initRankOptionFill). 틀린 해시면 예전
+      // 대기값도 지운다(마지막으로 연 주소가 이긴다). 자동으로 하는 일은 여기까지이고, 저장은 편집창에서 사람이 누른다.
+      function rankOptionFillIntake(rankHash) {
+        var hash = "";
+        try {
+          hash = String(window.location.hash || "");
+        } catch (error) {
+          return false;
+        }
+        if (hash.indexOf("#mi-optfill=") !== 0) return false;
+        var pending = rankOptionFillParse(hash);
+        try {
+          if (pending) {
+            pending.at = Date.now();
+            window.sessionStorage.setItem("mi-optfill-pending", JSON.stringify(pending));
+          } else {
+            window.sessionStorage.removeItem("mi-optfill-pending");
+          }
+        } catch (error) {}
+        try {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + rankHash);
+        } catch (error) {}
+        return Boolean(pending);
+      }
+
       var root = document.getElementById("mi-admin");
       if (!root) return;
 
@@ -27673,6 +27726,10 @@
         rankTrackerLookupForEditor = function (trackerId) {
           return rankTrackers.find(function (item) { return item && item.id === trackerId; }) || null;
         };
+        // 옵션 확인 버튼 대기값(initRankOptionFill)이 그 상품의 추적을 찾는 창구(2026-11-01). 읽기만 한다.
+        rankTrackerListForEditor = function () {
+          return rankTrackers.slice();
+        };
         var rankAutoSyncingDue = false;
         var rankAutoSyncToken = 0;
         var rankAutoSyncLastAt = 0;
@@ -28063,6 +28120,13 @@
           }
         }
 
+        // 목록을 다 그렸다는 신호(2026-11-01, 옵션 확인 버튼 대기값이 기다린다). 받기마다 한 번, 실패도 ok:false 로 쏜다.
+        function announceRankTrackersLoaded(loadState, ok) {
+          if (loadState.loadedAnnounced) return;
+          loadState.loadedAnnounced = true;
+          window.dispatchEvent(new CustomEvent("mi:rank-trackers-loaded", { detail: { scopeKey: loadState.scopeKey, ok: ok === true } }));
+        }
+
         async function loadRankTrackers(silent, forceFresh, skipAutoSyncOnce) {
           var scope = activateRankTrackerScope();
           if (!scope) {
@@ -28104,6 +28168,7 @@
                 if (loadState.announce) setStatus(rankStatus, rankTrackers.length && payload && payload.hasMore === true
                   ? "목록이 많아 검증된 일부 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
                   : (payload && payload.message) || "전체 순위 목록 검증에 실패해 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
+                announceRankTrackersLoaded(loadState, false);
                 return false;
               }
               var nextTrackers = payload.trackers;
@@ -28122,6 +28187,7 @@
                 else if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
                 else setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
               }
+              announceRankTrackersLoaded(loadState, true);
               if (rankSourceReady !== true) return true;
               if (!loadState.skipAutoSync) {
                 var autoSyncLastAtBefore = rankAutoSyncLastAt;
@@ -28136,10 +28202,17 @@
                 renderRankHistory(rankHistory, rankTrackers);
                 if (loadState.announce) setStatus(rankStatus, "순위 추적 서버 연결 실패(" + rankConnectionFailureReason(error) + ")로 마지막 정상 순위와 이력을 유지합니다. 잠시 후 자동으로 다시 불러옵니다.", "is-warn");
               }
+              announceRankTrackersLoaded(loadState, false);
               return false;
             }
           })();
-          loadState.promise.then(function () { finishSharedList(null); }, function () { finishSharedList(null); });
+          loadState.promise.then(function (ok) {
+            finishSharedList(null);
+            announceRankTrackersLoaded(loadState, ok);
+          }, function () {
+            finishSharedList(null);
+            announceRankTrackersLoaded(loadState, false);
+          });
           try {
             return await loadState.promise;
           } finally {
@@ -30739,6 +30812,470 @@
         });
       }
 
+      // 옵션 확인 버튼 대기값 처리(initRankOptionFill)의 화면별 차이(2026-11-01). 관리자 화면은 N 30일 순위 화면으로 바로
+      // 바꾸고(운영팀 홈·대표실 첫 화면을 덮는다), 총관리자는 options-locate 로 찾은 광고주 범위로 바꾼다. 로그인 전 안내는
+      // 로그인 상태 줄 아래에 둔다.
+      function rankOptionFillHost() {
+        return {
+          rankHash: "#mi-admin-naver-rank-tracking",
+          showRankScreen: function () {
+            setScreen("naver-rank-tracking", false);
+            try {
+              if (window.location.hash !== "#mi-admin-naver-rank-tracking") {
+                window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-admin-naver-rank-tracking");
+              }
+            } catch (error) {}
+          },
+          loginNoticeAnchor: function () {
+            return loginStatus;
+          },
+          switchOwnerScope: function (agencyCode) {
+            applyGlobalAdvertiserTarget(agencyCode, { force: true });
+          }
+        };
+      }
+
+      // 옵션 확인 버튼(2.1.0)이 연 새 탭의 대기값 처리(명세 §4.2, 2026-11-01). 로그인 준비(mi:rank-auth-ready) 뒤 한 번만
+      // 꺼내(15분·1회용) 순위 화면으로 바꾸고, 총관리자는 광고주를 찾아 그 범위로 바꾼 뒤, 목록을 다 받은 신호
+      // (mi:rank-trackers-loaded, 같은 범위·성공)를 기다려 그 상품의 추적 편집창을 연다. 자동으로 하는 일은 서버 읽기(찾기·
+      // 미리 보기)와 확인 못 한 페이지 진단 기록뿐이고, 저장·확인만 기록은 사람이 누른다. 범위·로그인이 바뀌면 그만둔다.
+      // 화면별 차이는 rankOptionFillHost·rankOptionEditorHost 로만 받는다(광고주 화면과 같은 함수).
+      function initRankOptionFill() {
+        var rankCard = root.querySelector("[data-rank-card]");
+        if (!rankCard) return;
+        var FILL_KEY = "mi-optfill-pending";
+        var FILL_TTL_MS = 15 * 60 * 1000;
+        var FILL_WAIT_MS = 45000;
+        var FILL_NONE_MESSAGE = "이 상품을 30일 순위로 추적하는 키워드가 없습니다.";
+        var fillHost = rankOptionFillHost();
+        var editorHost = rankOptionEditorHost();
+        var current = null;
+        var lastLoaded = null;
+        var waiter = null;
+        var chooser = null;
+        var note = null;
+        var waitNote = null;
+
+        function fillNode(tag, className, text) {
+          var node = document.createElement(tag);
+          if (className) node.className = className;
+          if (text !== undefined && text !== null) node.textContent = String(text);
+          return node;
+        }
+
+        function ownerLocate() {
+          return Boolean(editorHost.ownerScope && editorHost.ownerScope.canManage());
+        }
+
+        // 저장해 둔 대기값도 믿지 않고 §1 형식으로 다시 검사한다. remove 면 꺼내면서 지운다(1회용).
+        function readPending(remove) {
+          var raw = "";
+          try {
+            raw = String(window.sessionStorage.getItem(FILL_KEY) || "");
+            if (remove && raw) window.sessionStorage.removeItem(FILL_KEY);
+          } catch (error) {
+            return null;
+          }
+          if (!raw) return null;
+          var value = null;
+          try {
+            value = JSON.parse(raw);
+          } catch (error) {
+            return null;
+          }
+          if (!value || typeof value !== "object" || value.v !== 2) return null;
+          var payload = "";
+          if (value.kind === "f" && Array.isArray(value.ids)) payload = "2.f." + value.pageId + "." + value.ids.join("-");
+          if (value.kind === "r" && typeof value.diag === "string") payload = "2.r." + value.pageId + "." + value.diag;
+          var parsed = payload ? rankOptionFillParse("#mi-optfill=" + payload) : null;
+          var at = Number(value.at);
+          if (!parsed || !Number.isFinite(at)) return null;
+          parsed.at = at;
+          return parsed;
+        }
+
+        // 순위 카드 상태 줄 바로 아래 한 줄(목록 다시 읽기 문장에 덮이지 않게 따로 둔다).
+        function showNote(text, tone) {
+          if (!note) {
+            if (!text) return;
+            note = fillNode("p", "mi-code-status mi-rank-option-fill-note", "");
+            note.setAttribute("data-rank-option-fill-note", "");
+            note.setAttribute("role", "status");
+            note.setAttribute("aria-live", "polite");
+            var status = rankCard.querySelector("[data-rank-status]");
+            if (status && status.parentNode) status.parentNode.insertBefore(note, status.nextSibling);
+            else rankCard.appendChild(note);
+          }
+          setStatus(note, text, tone || "");
+        }
+
+        function showWaitNote(show) {
+          if (!show) {
+            if (waitNote) setStatus(waitNote, "", "");
+            return;
+          }
+          var anchor = fillHost.loginNoticeAnchor();
+          if (!waitNote && anchor && anchor.parentNode) {
+            waitNote = fillNode("p", "mi-code-status mi-rank-option-fill-note", "");
+            waitNote.setAttribute("data-rank-option-fill-wait", "");
+            waitNote.setAttribute("role", "status");
+            anchor.parentNode.insertBefore(waitNote, anchor.nextSibling);
+          }
+          if (waitNote) setStatus(waitNote, "로그인하면 옵션 편집창이 열립니다.", "");
+        }
+
+        function closeChooser(value) {
+          if (!chooser) return;
+          var open = chooser;
+          chooser = null;
+          open.modal.remove();
+          open.resolve(value);
+        }
+
+        // 그만둘 때(범위·로그인 바뀜, 새 대기값, 끝) 기다림과 고르는 창을 같이 닫는다.
+        function endRun(run, message, tone) {
+          if (!run || run.ended) return;
+          run.ended = true;
+          if (current === run) current = null;
+          if (waiter && waiter.run === run) waiter.stop();
+          closeChooser(null);
+          if (message) showNote(message, tone === undefined ? "is-warn" : tone);
+        }
+
+        async function postFill(body) {
+          var scope = verifiedRankTrackerScope();
+          var headers = { "content-type": "application/json" };
+          // 총관리자는 지금 보는 범위(없으면 자리표시자)를 보낸다. 찾기(options-locate)는 서버가 범위를 가리지 않는다.
+          if (ownerLocate()) headers["x-mi-agency-code"] = scope && scope.role === "owner" && scope.agencyCode ? scope.agencyCode : "owner-session";
+          var response = await miFetch(getRankTrackerApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            headers: headers,
+            body: JSON.stringify(body),
+            timeoutMs: 20000
+          });
+          var payload = await response.json().catch(function () { return null; });
+          if (!payload || typeof payload !== "object") payload = { ok: false };
+          if (!response.ok) payload.ok = false;
+          return payload;
+        }
+
+        // 작은 고르는 창(광고주 여러 곳·대표 상품번호가 다른 추적 묶음 여러 개). 고르면 그 값, 닫으면 null.
+        function choose(run, title, lead, items) {
+          closeChooser(null);
+          return new Promise(function (resolve) {
+            if (run.ended) {
+              resolve(null);
+              return;
+            }
+            var modal = fillNode("div", "mi-rank-option-modal");
+            modal.setAttribute("data-rank-option-chooser", "");
+            var card = fillNode("div", "mi-rank-option-card mi-rank-option-chooser");
+            card.setAttribute("role", "dialog");
+            card.setAttribute("aria-modal", "true");
+            card.setAttribute("aria-labelledby", "mi-rank-option-chooser-title");
+            card.tabIndex = -1;
+            var head = fillNode("div", "mi-rank-option-head");
+            var headText = fillNode("div", "mi-rank-option-head-text");
+            headText.appendChild(fillNode("span", "mi-rank-option-tag", "N 30일 · 옵션 확인 버튼"));
+            var heading = fillNode("h3", "", title);
+            heading.id = "mi-rank-option-chooser-title";
+            headText.appendChild(heading);
+            var close = fillNode("button", "mi-rank-option-close", "×");
+            close.type = "button";
+            close.setAttribute("aria-label", "닫기");
+            close.setAttribute("data-rank-option-chooser-cancel", "");
+            head.appendChild(headText);
+            head.appendChild(close);
+            var main = fillNode("div", "mi-rank-option-main");
+            main.appendChild(fillNode("p", "mi-rank-option-chooser-lead", lead));
+            var list = fillNode("ul", "mi-rank-option-chooser-list");
+            items.forEach(function (item) {
+              var row = fillNode("li", "");
+              var pick = fillNode("button", "mi-button is-ghost", item.label);
+              pick.type = "button";
+              pick.setAttribute("data-rank-option-chooser-pick", item.value);
+              row.appendChild(pick);
+              list.appendChild(row);
+            });
+            main.appendChild(list);
+            var foot = fillNode("div", "mi-rank-option-foot");
+            foot.appendChild(fillNode("span", "mi-rank-option-spacer"));
+            var cancel = fillNode("button", "mi-button is-ghost", "취소");
+            cancel.type = "button";
+            cancel.setAttribute("data-rank-option-chooser-cancel", "");
+            foot.appendChild(cancel);
+            card.appendChild(head);
+            card.appendChild(main);
+            card.appendChild(foot);
+            modal.appendChild(card);
+            modal.addEventListener("click", function (event) {
+              var pickButton = event.target.closest("[data-rank-option-chooser-pick]");
+              if (pickButton) {
+                closeChooser(pickButton.getAttribute("data-rank-option-chooser-pick"));
+                return;
+              }
+              if (event.target === modal || event.target.closest("[data-rank-option-chooser-cancel]")) closeChooser(null);
+            });
+            modal.addEventListener("keydown", function (event) {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              closeChooser(null);
+            });
+            chooser = { modal: modal, resolve: resolve };
+            root.appendChild(modal);
+            var first = list.querySelector("button");
+            if (first) first.focus();
+            else card.focus();
+          });
+        }
+
+        // 총관리자: 광고주 범위를 가리지 않고 그 상품을 추적하는 광고주를 찾는다(options-locate, 읽기 전용). 1곳이면 그
+        // 광고주, 여러 곳이거나 찾기가 잘렸으면 고르는 창. 0곳이면 안내만.
+        async function locateAgency(run, ids) {
+          var payload = await postFill({ action: "options-locate", productIds: ids });
+          if (run.ended) return "";
+          var items = payload.ok === true && Array.isArray(payload.items) ? payload.items.filter(function (item) {
+            return item && item.trackerId && String(item.agencyCode || "").trim();
+          }) : null;
+          if (!items) {
+            endRun(run, "이 상품을 추적하는 광고주를 찾지 못했습니다. 잠시 뒤 버튼을 다시 눌러 주세요.");
+            return "";
+          }
+          if (!items.length) {
+            endRun(run, FILL_NONE_MESSAGE);
+            return "";
+          }
+          var groups = [];
+          items.forEach(function (item) {
+            var code = String(item.agencyCode).trim().toLowerCase();
+            var group = groups.find(function (entry) { return entry.code === code; });
+            if (!group) {
+              group = { code: code, name: String(item.advertiserName || "").trim(), keywords: [] };
+              groups.push(group);
+            }
+            group.keywords.push(String(item.keyword || "").trim() || "키워드 없음");
+          });
+          var truncated = payload.truncated === true;
+          if (groups.length === 1 && !truncated) return groups[0].code;
+          var picked = await choose(run, "어느 광고주의 추적을 열까요?",
+            "이 상품을 30일 순위로 추적하는 광고주가 " + groups.length + "곳입니다." +
+              (truncated ? " 찾은 추적이 많아 50개까지만 보였습니다(더 있음)." : ""),
+            groups.map(function (group) {
+              return {
+                value: group.code,
+                label: (group.name ? group.name + " (" + group.code + ")" : group.code) + " · 추적 " + group.keywords.length + "개 · 「" +
+                  group.keywords[0] + "」" + (group.keywords.length > 1 ? " 외" : "")
+              };
+            }));
+          if (run.ended) return "";
+          if (!picked) endRun(run, "옵션 편집창 열기를 취소했습니다.", "");
+          return picked || "";
+        }
+
+        function switchScope(run, agencyCode) {
+          run.switching = true;
+          try {
+            fillHost.switchOwnerScope(agencyCode);
+          } finally {
+            run.switching = false;
+          }
+          var scope = verifiedRankTrackerScope();
+          if (!scope) {
+            endRun(run, "광고주 범위를 바꾸지 못했습니다. 광고주를 고른 뒤 버튼을 다시 눌러 주세요.");
+            return false;
+          }
+          run.scopeKey = scope.key;
+          return true;
+        }
+
+        // 같은 범위 목록을 다 받을 때까지 기다린다. 이미 받았으면 바로. 실패(또는 45초 무소식)면 한 번 다시 읽고, 또
+        // 실패하면 안내. 범위·로그인이 바뀌면 그만둔다.
+        function waitLoaded(run) {
+          return new Promise(function (resolve) {
+            var retried = false;
+            var timer = 0;
+            var settled = false;
+            function settle(value) {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timer);
+              if (waiter === check) waiter = null;
+              resolve(value);
+            }
+            function arm() {
+              window.clearTimeout(timer);
+              timer = window.setTimeout(function () {
+                check({ scopeKey: run.scopeKey, ok: false });
+              }, FILL_WAIT_MS);
+            }
+            function check(loaded) {
+              if (settled) return;
+              if (run.ended) {
+                settle(false);
+                return;
+              }
+              var scope = verifiedRankTrackerScope();
+              if (!scope || (run.scopeKey && scope.key !== run.scopeKey)) {
+                settle(false);
+                endRun(run, "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.");
+                return;
+              }
+              run.scopeKey = scope.key;
+              if (!loaded || loaded.scopeKey !== scope.key) return;
+              if (loaded.ok) {
+                settle(true);
+                return;
+              }
+              if (!retried) {
+                retried = true;
+                arm();
+                window.dispatchEvent(new CustomEvent("mi:rank-trackers-changed", { detail: { trackerIds: [] } }));
+                return;
+              }
+              settle(false);
+              endRun(run, "순위 목록을 불러오지 못해 옵션 편집창을 열지 못했습니다. 목록이 보이면 버튼을 다시 눌러 주세요.");
+            }
+            check.run = run;
+            check.stop = function () { settle(false); };
+            waiter = check;
+            arm();
+            check(lastLoaded && lastLoaded.ok ? lastLoaded : null);
+          });
+        }
+
+        // 그 상품의 추적: 대표 상품번호나 저장된 옵션 번호가 넘어온 번호(ids ∪ pageId)와 겹치는 추적. 대표 상품번호별로 묶어
+        // 1묶음이면 그 묶음 첫 추적, 여러 묶음이면 고르는 창(버튼을 누른 상품이 대표인 묶음이 앞).
+        async function pickTracker(run, ids) {
+          var pageId = run.pending.pageId;
+          var wanted = ids.indexOf(pageId) >= 0 ? ids.slice() : ids.concat([pageId]);
+          var list = typeof rankTrackerListForEditor === "function" ? rankTrackerListForEditor() : [];
+          var matched = (Array.isArray(list) ? list : []).filter(function (tracker) {
+            if (!tracker || !tracker.id) return false;
+            var options = Array.isArray(tracker.optionProductIds) ? tracker.optionProductIds.map(String) : [];
+            return wanted.indexOf(String(tracker.productId || "")) >= 0 || options.some(function (id) { return wanted.indexOf(id) >= 0; });
+          });
+          var editable = matched.filter(function (tracker) {
+            return tracker.optionEditable === true && tracker.status !== "completed";
+          });
+          if (!matched.length) {
+            endRun(run, FILL_NONE_MESSAGE);
+            return null;
+          }
+          if (!editable.length) {
+            endRun(run, "이 상품을 추적하는 키워드 " + matched.length + "개는 그룹상품 번호를 넣을 수 없는 추적입니다(원부 추적·종료된 추적).");
+            return null;
+          }
+          var groups = [];
+          editable.forEach(function (tracker) {
+            var primary = String(tracker.productId || "");
+            var group = groups.find(function (entry) { return entry.primary === primary; });
+            if (!group) {
+              group = { primary: primary, trackers: [] };
+              groups.push(group);
+            }
+            group.trackers.push(tracker);
+          });
+          groups.sort(function (left, right) {
+            return (right.primary === pageId ? 1 : 0) - (left.primary === pageId ? 1 : 0);
+          });
+          if (groups.length === 1) return groups[0].trackers[0];
+          var value = await choose(run, "어느 상품의 추적을 열까요?",
+            "넘어온 번호를 쓰는 30일 순위 추적이 대표 상품번호 " + groups.length + "가지로 나뉩니다. 열 추적을 고르세요.",
+            groups.map(function (group) {
+              var first = group.trackers[0];
+              return {
+                value: String(first.id),
+                label: "대표 " + group.primary + " · 「" + (String(first.keyword || "").trim() || "키워드 없음") + "」" +
+                  (group.trackers.length > 1 ? " 외 " + (group.trackers.length - 1) + "개" : "")
+              };
+            }));
+          if (run.ended) return null;
+          if (!value) {
+            endRun(run, "옵션 편집창 열기를 취소했습니다.", "");
+            return null;
+          }
+          return editable.find(function (tracker) { return String(tracker.id) === value; }) || null;
+        }
+
+        function openPicked(run, tracker) {
+          var pending = run.pending;
+          var detail = {
+            trackerId: String(tracker.id),
+            keyword: String(tracker.keyword || ""),
+            primary: String(tracker.productId || "")
+          };
+          if (pending.kind === "f") {
+            detail.prefillIds = pending.ids.slice();
+            detail.sourcePageId = pending.pageId;
+            detail.claimedSource = "button";
+          } else {
+            detail.claimedSource = "manual";
+            detail.notice = "자동으로 확인하지 못했습니다. 상품 페이지나 판매자센터에서 번호를 직접 넣어 주세요.";
+          }
+          endRun(run, "", "");
+          window.dispatchEvent(new CustomEvent("mi:rank-option-editor-open", { detail: detail }));
+          if (detail.opened === true) showNote("", "");
+          else showNote("편집창을 열지 못했습니다. 카드의 '그룹상품 번호'를 눌러 주세요.", "is-warn");
+        }
+
+        async function processRun(run) {
+          var pending = run.pending;
+          var ids = pending.kind === "f" ? pending.ids.slice() : [pending.pageId];
+          if (pending.kind === "r") {
+            // 확인 못 한 페이지 모양은 서버가 정해진 칸만 다시 만들어 기록한다(버튼 규칙을 고칠 근거). 실패해도 이어 간다.
+            postFill({ action: "options-diag", pageId: pending.pageId, diag: pending.diag }).catch(function () {});
+          }
+          if (ownerLocate()) {
+            var agencyCode = await locateAgency(run, ids);
+            if (run.ended || !agencyCode) return;
+            if (!switchScope(run, agencyCode)) return;
+          }
+          var loaded = await waitLoaded(run);
+          if (run.ended || !loaded) return;
+          var tracker = await pickTracker(run, ids);
+          if (run.ended || !tracker) return;
+          openPicked(run, tracker);
+        }
+
+        function start() {
+          var pending = readPending(true);
+          showWaitNote(false);
+          if (!pending) return;
+          if (current) endRun(current, "", "");
+          var age = Date.now() - pending.at;
+          if (!(age >= 0 && age <= FILL_TTL_MS)) {
+            showNote("옵션 확인 버튼에서 넘어온 지 15분이 지나 편집창을 열지 않았습니다. 상품 페이지에서 버튼을 다시 눌러 주세요.", "is-warn");
+            return;
+          }
+          var run = { pending: pending, ended: false, switching: false, scopeKey: "" };
+          current = run;
+          fillHost.showRankScreen();
+          showNote("옵션 확인 버튼에서 넘어온 상품(" + pending.pageId + ")의 30일 순위 추적을 찾는 중입니다.", "");
+          processRun(run).catch(function () {
+            endRun(run, "옵션 편집창을 열지 못했습니다. 연결을 확인한 뒤 버튼을 다시 눌러 주세요.");
+          });
+        }
+
+        window.addEventListener("mi:rank-trackers-loaded", function (event) {
+          var detail = event && event.detail && typeof event.detail === "object" ? event.detail : {};
+          lastLoaded = { scopeKey: String(detail.scopeKey || ""), ok: detail.ok === true };
+          if (waiter) waiter(lastLoaded);
+        });
+        window.addEventListener("mi:rank-scope-changed", function () {
+          if (current && !current.switching && waiter) waiter(null);
+        });
+        window.addEventListener("mi:rank-auth-ready", start);
+        // 이미 열린 탭에 버튼 주소가 들어와도(같은 문서 해시 바뀜) 같은 순서로 받는다.
+        window.addEventListener("hashchange", function () {
+          if (String(window.location.hash || "").indexOf("#mi-optfill=") !== 0) return;
+          rankOptionFillIntake(fillHost.rankHash);
+          if (root.classList.contains("is-locked")) showWaitNote(Boolean(readPending(false)));
+          else start();
+        });
+        if (root.classList.contains("is-locked") && readPending(false)) showWaitNote(true);
+      }
+
       function buildKeywordFallback(keyword) {
         return {
           volume: 0,
@@ -32192,6 +32729,7 @@
       initRankCheck(keywordInput);
       initRankTracking(keywordInput);
       initRankOptionProductEditor();
+      initRankOptionFill();
       initPlaceRankTracking(keywordInput);
       // 수집기 건강 신호 폴링. 60초는 /api/rank-collection-health 의 서버 캐시(60초)와
       // 같은 주기다 — 더 촘촘히 돌면 캐시 미스만 늘고 새로 얻는 값이 없다.

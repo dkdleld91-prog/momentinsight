@@ -2798,3 +2798,435 @@ test("U19 후보 넣기: 저장된 번호가 없는 추적은 확인 칸에 첫 
   assert.equal(env.requests.at(-1).body.primaryConfirmed, true);
   assert.equal(env.requests.at(-1).body.claimedSource, "manual");
 });
+
+// ─────────────────────────────────────────────────────────────
+// U22·U23 옵션 확인 버튼 대기값(명세 §1·§4.2): 해시 받기·처리
+// ─────────────────────────────────────────────────────────────
+const RANK_HASH = "#mi-admin-naver-rank-tracking";
+const PAGE_ID = OPTION_A; // 버튼을 누른 상품 페이지(그룹의 옵션 상품)
+const FILL_IDS = [PRIMARY, OPTION_A, OPTION_B];
+const DIAG = "eyJ2IjoiMi4xLjAiLCJyZWFzb24iOiJhbWJpZ3VvdXMifQ";
+
+function intakeContext({ hash, storageThrows = false, stored = null, now = NOW } = {}) {
+  const storage = new Map(stored ? [["mi-optfill-pending", stored]] : []);
+  const replaced = [];
+  const location = { hash, pathname: "/admin", search: "?x=1" };
+  const context = {
+    window: {
+      location,
+      sessionStorage: {
+        getItem: (key) => { if (storageThrows) throw new Error("blocked"); return storage.has(key) ? storage.get(key) : null; },
+        setItem: (key, value) => { if (storageThrows) throw new Error("blocked"); storage.set(key, String(value)); },
+        removeItem: (key) => { if (storageThrows) throw new Error("blocked"); storage.delete(key); },
+      },
+      history: { replaceState: (state, title, url) => { replaced.push(url); location.hash = url.slice(url.indexOf("#")); } },
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`Date.now = function () { return ${now}; };\n${htmlFunction(adminSource, "rankOptionFillParse")}\n${htmlFunction(adminSource, "rankOptionFillIntake")}`, context);
+  return { context, storage, replaced, location };
+}
+
+test("U22 대기값 정규식(명세 §1): 찾음·확인 못 함만 받고 위조·길이 초과·pageId 미포함·중복·개수 초과·쿼리는 버린다", () => {
+  const { context } = intakeContext({ hash: "" });
+  const parse = (hash) => plain(vm.runInContext(`rankOptionFillParse(${JSON.stringify(hash)})`, context));
+  assert.deepEqual(parse(`#mi-optfill=2.f.${PAGE_ID}.${FILL_IDS.join("-")}`), { v: 2, kind: "f", pageId: PAGE_ID, ids: FILL_IDS });
+  assert.deepEqual(parse(`#mi-optfill=2.r.${PAGE_ID}.${DIAG}`), { v: 2, kind: "r", pageId: PAGE_ID, diag: DIAG });
+  const fiftyOne = [PAGE_ID, ...Array.from({ length: 50 }, (_, index) => String(99900001000 + index))];
+  assert.equal(parse(`#mi-optfill=2.f.${PAGE_ID}.${fiftyOne.join("-")}`).ids.length, 51, "51개까지");
+  for (const [label, hash] of [
+    ["pageId 미포함", `#mi-optfill=2.f.${PAGE_ID}.${PRIMARY}-${OPTION_B}`],
+    ["중복", `#mi-optfill=2.f.${PAGE_ID}.${PAGE_ID}-${PRIMARY}-${PRIMARY}`],
+    ["52개", `#mi-optfill=2.f.${PAGE_ID}.${[...fiftyOne, "99900009999"].join("-")}`],
+    ["짧은 번호", `#mi-optfill=2.f.${PAGE_ID}.${PAGE_ID}-1234`],
+    ["버전 다름", `#mi-optfill=1.f.${PAGE_ID}.${PAGE_ID}`],
+    ["찾음에 진단", `#mi-optfill=2.f.${PAGE_ID}.${PAGE_ID}.${DIAG}`],
+    ["확인 못 함에 칸 둘", `#mi-optfill=2.r.${PAGE_ID}.${DIAG}.${DIAG}`],
+    ["확인 못 함에 패딩", `#mi-optfill=2.r.${PAGE_ID}.${DIAG}==`],
+    ["쿼리·다른 글자", `#mi-optfill=2.f.${PAGE_ID}.${PAGE_ID}?x=1`],
+    ["스크립트", `#mi-optfill=2.r.${PAGE_ID}.<script>`],
+    ["진단 2001자", `#mi-optfill=2.r.${PAGE_ID}.${"A".repeat(2001)}`],
+    ["해시 2200자 초과", `#mi-optfill=2.r.${PAGE_ID}.${"A".repeat(2000)}${"-".repeat(200)}`],
+    ["빈 값", "#mi-optfill="],
+    ["다른 해시", `#mi-admin-home`],
+  ]) {
+    assert.equal(parse(hash), null, label);
+  }
+});
+
+test("U22 해시 받기: 맞으면 sessionStorage 에 시각과 함께, 맞든 틀리든 순위 화면 해시로 바꾼다(위조는 예전 대기값도 지움), 다른 해시는 그대로", () => {
+  const ok = intakeContext({ hash: `#mi-optfill=2.f.${PAGE_ID}.${FILL_IDS.join("-")}` });
+  assert.equal(vm.runInContext(`rankOptionFillIntake(${JSON.stringify(RANK_HASH)})`, ok.context), true);
+  assert.deepEqual(JSON.parse(ok.storage.get("mi-optfill-pending")), { v: 2, kind: "f", pageId: PAGE_ID, ids: FILL_IDS, at: NOW });
+  assert.deepEqual(ok.replaced, [`/admin?x=1${RANK_HASH}`], "주소창·기록에 번호가 남지 않는다");
+
+  const forged = intakeContext({ hash: `#mi-optfill=2.f.${PAGE_ID}.${PRIMARY}`, stored: "{\"v\":2}" });
+  assert.equal(vm.runInContext(`rankOptionFillIntake(${JSON.stringify(RANK_HASH)})`, forged.context), false);
+  assert.equal(forged.storage.has("mi-optfill-pending"), false, "위조 해시는 버리고 예전 대기값도 지운다");
+  assert.deepEqual(forged.replaced, [`/admin?x=1${RANK_HASH}`]);
+
+  const other = intakeContext({ hash: "#mi-admin-home" });
+  assert.equal(vm.runInContext(`rankOptionFillIntake(${JSON.stringify(RANK_HASH)})`, other.context), false);
+  assert.deepEqual(other.replaced, [], "다른 해시는 건드리지 않는다");
+
+  const blocked = intakeContext({ hash: `#mi-optfill=2.r.${PAGE_ID}.${DIAG}`, storageThrows: true });
+  assert.equal(vm.runInContext(`rankOptionFillIntake(${JSON.stringify(RANK_HASH)})`, blocked.context), true);
+  assert.deepEqual(blocked.replaced, [`/admin?x=1${RANK_HASH}`], "저장소가 막혀도 해시는 지운다");
+
+  // 인라인 스크립트 맨 앞(해시 라우터·로그인 복원보다 먼저), 동기 호출.
+  const scriptStart = adminSource.indexOf("  <script>\n    (function () {\n");
+  const intakeCall = adminSource.indexOf(`rankOptionFillIntake("${RANK_HASH}");`);
+  assert.ok(scriptStart > 0 && intakeCall > scriptStart);
+  assert.equal(adminSource.slice(scriptStart, intakeCall).replace(/\s*\/\/[^\n]*/gu, "").trim(), "<script>\n    (function () {");
+  for (const later of ['var root = document.getElementById("mi-admin");', 'window.addEventListener("hashchange"', "restoreAdminLogin().catch(", 'setScreen(initial || "home", false);']) {
+    assert.ok(adminSource.indexOf(later, scriptStart) > intakeCall, later);
+  }
+});
+
+const fillTracker = (extra = {}) => ({ id: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY, status: "active", optionEditable: true, optionProductIds: [], ...extra });
+
+function fillEnv({ role = "team", scopeKey = "team:client-1", list = [fillTracker()], pending = null, locked = true, now = NOW } = {}) {
+  const documentRef = { activeElement: null };
+  documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
+  const html = new FakeElement("html", documentRef);
+  documentRef.documentElement = html;
+  const root = documentRef.createElement("div");
+  root.id = "mi-admin";
+  if (locked) root.classList.add("is-locked");
+  html.appendChild(root);
+  const loginForm = documentRef.createElement("div");
+  const loginStatus = documentRef.createElement("div");
+  loginStatus.setAttribute("data-admin-login-status", "");
+  loginForm.appendChild(loginStatus);
+  root.appendChild(loginForm);
+  const rankCard = documentRef.createElement("article");
+  rankCard.setAttribute("data-rank-card", "");
+  const rankStatus = documentRef.createElement("p");
+  rankStatus.setAttribute("data-rank-status", "");
+  rankCard.appendChild(rankStatus);
+  root.appendChild(rankCard);
+
+  const storage = new Map();
+  if (pending) storage.set("mi-optfill-pending", JSON.stringify({ at: now, ...pending }));
+  const location = { hash: RANK_HASH, pathname: "/admin", search: "" };
+  const listeners = {};
+  const events = [];
+  const timers = [];
+  const requests = [];
+  const routes = {};
+  const screens = [];
+  const switches = [];
+  const replaced = [];
+  const scopeRef = { current: scopeKey ? { key: scopeKey, role, agencyCode: role === "owner" ? "owner-session" : "", clientId: "" } : null };
+  const trackers = { list };
+  class TestEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } }
+  const windowRef = {
+    location,
+    sessionStorage: {
+      getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
+    history: { replaceState: (state, title, url) => { replaced.push(url); location.hash = url.slice(url.indexOf("#")); } },
+    setTimeout(handler, ms) { timers.push({ handler, ms }); return timers.length; },
+    clearTimeout() {},
+    confirm() { return true; },
+    addEventListener(type, handler) { (listeners[type] ||= []).push(handler); },
+    dispatchEvent(event) { events.push(event); (listeners[event.type] || []).slice().forEach((handler) => handler(event)); return true; },
+  };
+  const context = {
+    root, document: documentRef, window: windowRef, loginStatus, URL, CustomEvent: TestEvent,
+    rankTrackerLookupForEditor: null,
+    rankTrackerListForEditor: () => trackers.list.slice(),
+    verifiedRankTrackerScope: () => scopeRef.current,
+    sameRankTrackerScope: (value) => Boolean(value && scopeRef.current && value.key === scopeRef.current.key),
+    rankAgencyCode: () => (scopeRef.current && scopeRef.current.agencyCode) || "",
+    canManageOwnerCodes: () => role === "owner",
+    getRankTrackerApiUrl: () => "https://insight.test/api/naver-rank-trackers",
+    setScreen: (name, push) => screens.push([name, push]),
+    applyGlobalAdvertiserTarget: (code, options) => {
+      switches.push([code, plain(options)]);
+      scopeRef.current = { key: `owner:${code}`, role: "owner", agencyCode: code, clientId: "" };
+      windowRef.dispatchEvent(new TestEvent("mi:rank-scope-changed"));
+    },
+    async miFetch(url, options) {
+      const body = JSON.parse(options.body);
+      requests.push({ url, options, body });
+      const key = body.action + (body.mode ? `:${body.mode}` : "");
+      const next = (routes[key] || []).shift();
+      if (!next) throw new Error(`준비한 응답이 없다: ${key}`);
+      return { ok: next.status < 300, status: next.status, json: async () => next.payload };
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`Date.now = function () { return ${now}; };`, context);
+  vm.runInContext([
+    "setStatus", "rankTrackerProductUrl", "rankOptionCheckInfo", "rankOptionEditorHost", "rankOptionFillHost",
+    "rankOptionFillParse", "rankOptionFillIntake", "initRankOptionProductEditor", "initRankOptionFill",
+  ].map((name) => htmlFunction(adminSource, name)).join("\n") + "\ninitRankOptionProductEditor();\ninitRankOptionFill();", context);
+  const fire = (type, detail) => windowRef.dispatchEvent(new TestEvent(type, { detail }));
+  return {
+    root, rankCard, rankStatus, loginStatus, storage, requests, events, timers, screens, switches, replaced, scopeRef, trackers, location,
+    respond(key, payload, status = 200) { (routes[key] ||= []).push({ payload, status }); },
+    authReady() { root.classList.remove("is-locked"); fire("mi:rank-auth-ready"); },
+    loaded(key, ok = true) { fire("mi:rank-trackers-loaded", { scopeKey: key, ok }); },
+    fire,
+    note: () => { const node = rankCard.querySelector("[data-rank-option-fill-note]"); return node ? node.textContent : ""; },
+    noteNode: () => rankCard.querySelector("[data-rank-option-fill-note]"),
+    waitNote: () => { const node = root.querySelector("[data-rank-option-fill-wait]"); return node ? node.textContent : null; },
+    chooser: () => root.querySelector("[data-rank-option-chooser]"),
+    modal: () => root.querySelector("[data-rank-option-modal]"),
+    input: () => root.querySelector("[data-rank-option-input]"),
+    source: () => root.querySelector("[data-rank-option-source]"),
+    opened: () => events.filter((event) => event.type === "mi:rank-option-editor-open").map((event) => plain(event.detail)),
+  };
+}
+
+const foundPending = (extra = {}) => ({ v: 2, kind: "f", pageId: PAGE_ID, ids: FILL_IDS, ...extra });
+
+test("U23 대기값 처리(운영팀): 로그인 전 한 줄 → 로그인 준비 뒤 순위 화면 전환·목록 받음 신호를 기다려 편집창, 미리 보기까지만(1회용)", async () => {
+  const env = fillEnv({ pending: foundPending() });
+  assert.equal(env.waitNote(), "로그인하면 옵션 편집창이 열립니다.", "잠금 화면 로그인 상태 줄 아래");
+  assert.equal(env.loginStatus.nextSibling, env.root.querySelector("[data-rank-option-fill-wait]"));
+  assert.equal(env.requests.length, 0);
+  env.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  env.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  env.authReady();
+  assert.equal(env.storage.has("mi-optfill-pending"), false, "꺼내면서 지운다(1회용)");
+  assert.equal(env.waitNote(), "", "로그인 전 줄은 지운다");
+  assert.deepEqual(env.screens, [["naver-rank-tracking", false]], "운영팀 홈 대신 순위 화면으로 바로");
+  assert.equal(env.note(), `옵션 확인 버튼에서 넘어온 상품(${PAGE_ID})의 30일 순위 추적을 찾는 중입니다.`);
+  assert.equal(env.rankStatus.nextSibling, env.noteNode(), "순위 상태 줄 바로 아래 한 줄");
+  await flush();
+  assert.equal(env.requests.length, 0, "목록을 받기 전에는 열지 않는다(찾기 요청도 없음: 운영팀)");
+  env.loaded("team:other", true);
+  await flush();
+  assert.equal(env.opened().length, 0, "다른 범위 신호는 무시");
+  env.loaded("team:client-1", true);
+  await flush();
+  assert.deepEqual(env.opened(), [{
+    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: FILL_IDS, sourcePageId: PAGE_ID, claimedSource: "button", opened: true,
+  }]);
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview"], "읽기 → 미리 보기, 저장·확인만 기록 없음");
+  assert.equal(env.requests[1].body.sourcePageId, PAGE_ID);
+  assert.equal(env.input().value, FILL_IDS.join("\n"));
+  assert.equal(env.source().textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${PAGE_ID}). 아직 저장 전입니다.`);
+  assert.equal(env.note(), "", "열면 안내 줄을 비운다");
+  // 같은 탭에서 로그인 준비가 다시 와도(1회용) 다시 열지 않는다.
+  env.fire("mi:rank-auth-ready");
+  await flush();
+  assert.equal(env.opened().length, 1);
+});
+
+test("U23 이미 같은 범위 목록을 받았으면 바로 열고, 15분이 지났으면 버리고 안내, 저장값 위조는 무시", async () => {
+  const env = fillEnv({ pending: foundPending() });
+  env.loaded("team:client-1", true);
+  env.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  env.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  env.authReady();
+  await flush();
+  assert.equal(env.opened().length, 1, "기다릴 것 없이 연다");
+
+  const old = fillEnv({ pending: foundPending({ at: NOW - 16 * 60 * 1000 }) });
+  old.authReady();
+  await flush();
+  assert.equal(old.note(), "옵션 확인 버튼에서 넘어온 지 15분이 지나 편집창을 열지 않았습니다. 상품 페이지에서 버튼을 다시 눌러 주세요.");
+  assert.ok(old.noteNode().classList.contains("is-warn"));
+  assert.deepEqual(old.screens, []);
+  assert.equal(old.storage.has("mi-optfill-pending"), false);
+
+  const forged = fillEnv({ pending: foundPending({ ids: [OPTION_B, PRIMARY] }) });
+  assert.equal(forged.waitNote(), null, "형식이 틀린 저장값은 대기값이 아니다");
+  forged.authReady();
+  await flush();
+  assert.deepEqual([forged.screens, forged.requests.length, forged.note()], [[], 0, ""]);
+});
+
+test("U23 목록 받기 실패면 한 번 다시 읽고(mi:rank-trackers-changed) 또 실패하면 안내, 범위가 바뀌면 그만둔다", async () => {
+  const env = fillEnv({ pending: foundPending() });
+  env.authReady();
+  env.loaded("team:client-1", false);
+  await flush();
+  assert.deepEqual(env.events.filter((event) => event.type === "mi:rank-trackers-changed").map((event) => plain(event.detail)), [{ trackerIds: [] }], "한 번 다시 읽기");
+  env.loaded("team:client-1", false);
+  await flush();
+  assert.equal(env.note(), "순위 목록을 불러오지 못해 옵션 편집창을 열지 못했습니다. 목록이 보이면 버튼을 다시 눌러 주세요.");
+  env.loaded("team:client-1", true);
+  await flush();
+  assert.equal(env.opened().length, 0, "그만둔 뒤에는 열지 않는다");
+
+  // 45초 무소식도 실패로 본다.
+  const silent = fillEnv({ pending: foundPending() });
+  silent.authReady();
+  await flush();
+  assert.equal(silent.timers.at(-1).ms, 45000);
+  silent.timers.at(-1).handler();
+  assert.equal(silent.events.filter((event) => event.type === "mi:rank-trackers-changed").length, 1);
+
+  const moved = fillEnv({ pending: foundPending() });
+  moved.authReady();
+  await flush();
+  moved.scopeRef.current = { key: "team:client-2", role: "team", agencyCode: "", clientId: "client-2" };
+  moved.fire("mi:rank-scope-changed");
+  await flush();
+  assert.equal(moved.note(), "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.");
+  moved.loaded("team:client-2", true);
+  await flush();
+  assert.equal(moved.opened().length, 0);
+});
+
+test("U23 추적 찾기: 대표 번호·저장된 옵션 번호로 찾고, 대표 번호 묶음이 여럿이면 고르는 창(버튼 상품이 대표인 묶음 먼저), 없으면 안내", async () => {
+  const OTHER_PRIMARY = "99900000099";
+  const list = [
+    fillTracker({ id: "t-own-2", keyword: "아이폰17 케이스", productId: OTHER_PRIMARY, optionProductIds: [OPTION_B] }),
+    fillTracker({ id: "t-page", keyword: "아이폰 필름 2매", productId: PAGE_ID }),
+    fillTracker({ id: "t-page-2", keyword: "아이폰 필름 3매", productId: PAGE_ID }),
+    fillTracker({ id: "t-done", keyword: "종료된 추적", productId: PRIMARY, status: "completed" }),
+    fillTracker({ id: "t-none", keyword: "다른 상품", productId: "99900000777" }),
+  ];
+  const env = fillEnv({ pending: foundPending(), list });
+  env.authReady();
+  env.loaded("team:client-1", true);
+  await flush();
+  const chooser = env.chooser();
+  assert.ok(chooser, "대표 번호가 다른 묶음 2개 → 고르는 창");
+  assert.equal(chooser.querySelector("h3").textContent, "어느 상품의 추적을 열까요?");
+  const picks = chooser.querySelectorAll("[data-rank-option-chooser-pick]");
+  assert.deepEqual(picks.map((node) => [node.getAttribute("data-rank-option-chooser-pick"), node.textContent]), [
+    ["t-page", `대표 ${PAGE_ID} · 「아이폰 필름 2매」 외 1개`],
+    ["t-own-2", `대표 ${OTHER_PRIMARY} · 「아이폰17 케이스」`],
+  ], "종료·관계없는 추적은 빼고, 버튼 상품이 대표인 묶음 먼저");
+  env.respond("options:read", optionsPayload({ saved: [OPTION_B], siblings: [] }));
+  env.respond("options:preview", optionsPayload({ mode: "preview", saved: [OPTION_B], siblings: [], parsed: parsedOf([PRIMARY, OPTION_B]) }));
+  click(picks[1]);
+  await flush();
+  assert.equal(env.chooser(), null);
+  assert.equal(env.opened()[0].trackerId, "t-own-2", "옵션 번호로 찾은 추적");
+
+  // 고르는 창을 닫으면 그만둔다.
+  const cancel = fillEnv({ pending: foundPending(), list });
+  cancel.authReady();
+  cancel.loaded("team:client-1", true);
+  await flush();
+  dispatch(cancel.chooser().querySelector(".mi-rank-option-card"), "keydown", { key: "Escape" });
+  await flush();
+  assert.equal(cancel.chooser(), null);
+  assert.equal(cancel.note(), "옵션 편집창 열기를 취소했습니다.");
+  assert.equal(cancel.opened().length, 0);
+
+  const none = fillEnv({ pending: foundPending(), list: [fillTracker({ productId: "99900000777" })] });
+  none.authReady();
+  none.loaded("team:client-1", true);
+  await flush();
+  assert.equal(none.note(), "이 상품을 30일 순위로 추적하는 키워드가 없습니다.");
+  const locked = fillEnv({ pending: foundPending(), list: [fillTracker({ optionEditable: false })] });
+  locked.authReady();
+  locked.loaded("team:client-1", true);
+  await flush();
+  assert.equal(locked.note(), "이 상품을 추적하는 키워드 1개는 그룹상품 번호를 넣을 수 없는 추적입니다(원부 추적·종료된 추적).");
+});
+
+test("U23 확인 못 함(kind r): 진단을 서버에 보내고(실패 무시) 그 상품 추적 편집창을 안내와 함께 연다, 추적이 없으면 안내만", async () => {
+  const env = fillEnv({ pending: { v: 2, kind: "r", pageId: PRIMARY, diag: DIAG } });
+  env.respond("options-diag", { ok: false, message: "서버 오류" }, 500);
+  env.respond("options:read", optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  env.authReady();
+  env.loaded("team:client-1", true);
+  await flush();
+  assert.deepEqual(plain(env.requests[0].body), { action: "options-diag", pageId: PRIMARY, diag: DIAG });
+  assert.deepEqual(plain(env.requests[0].options.headers), { "content-type": "application/json" }, "운영팀은 세션 범위(머리글 없음)");
+  assert.deepEqual(env.opened(), [{
+    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, claimedSource: "manual",
+    notice: "자동으로 확인하지 못했습니다. 상품 페이지나 판매자센터에서 번호를 직접 넣어 주세요.", opened: true,
+  }]);
+  assert.deepEqual(env.requests.map((request) => request.body.action + ":" + (request.body.mode || "")), ["options-diag:", "options:read"], "미리 보기 자동 없음");
+  assert.equal(env.source().textContent, "자동으로 확인하지 못했습니다. 상품 페이지나 판매자센터에서 번호를 직접 넣어 주세요.");
+
+  const none = fillEnv({ pending: { v: 2, kind: "r", pageId: "99900000555", diag: DIAG } });
+  none.respond("options-diag", { ok: true, recorded: true });
+  none.authReady();
+  none.loaded("team:client-1", true);
+  await flush();
+  assert.equal(none.note(), "이 상품을 30일 순위로 추적하는 키워드가 없습니다.");
+  assert.equal(none.opened().length, 0);
+});
+
+test("U23 총관리자: options-locate(자리표시자 범위) → 광고주 1곳이면 그 범위로 바꾸고 그 범위 목록 신호를 기다려 연다", async () => {
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  env.loaded("owner-internal", true);
+  env.respond("options-locate", { ok: true, truncated: false, items: [
+    { agencyCode: "ISHELL", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY },
+    { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: SIBLING_ID, keyword: "아이폰17 케이스", productId: PRIMARY },
+  ] });
+  env.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  env.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  env.authReady();
+  await flush();
+  assert.deepEqual(plain(env.requests[0].body), { action: "options-locate", productIds: FILL_IDS });
+  assert.equal(env.requests[0].options.headers["x-mi-agency-code"], "owner-session");
+  assert.deepEqual(env.switches, [["ishell", { force: true }]], "광고주 1곳 → 그 범위로");
+  assert.equal(env.opened().length, 0, "옛 범위(owner-internal) 목록으로는 열지 않는다");
+  env.loaded("owner-internal", true);
+  await flush();
+  assert.equal(env.opened().length, 0);
+  env.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(env.opened().length, 1);
+  assert.equal(env.requests.at(-2).options.headers["x-mi-agency-code"], "ishell", "편집창은 바꾼 범위로 읽는다");
+  assert.ok(env.requests.every((request) => request.body.mode !== "save"));
+});
+
+test("U23 총관리자: 광고주 여러 곳·찾기 잘림은 고르는 창('더 있음'), 0곳·찾기 실패는 안내", async () => {
+  const items = [
+    { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY },
+    { agencyCode: "hadn-a02", advertiserName: "", trackerId: SIBLING_ID, keyword: "수건", productId: PAGE_ID },
+    { agencyCode: "hadn-a02", advertiserName: "", trackerId: MEMBER_ID, keyword: "수건 2", productId: PAGE_ID },
+  ];
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  env.respond("options-locate", { ok: true, truncated: false, items });
+  env.authReady();
+  await flush();
+  const chooser = env.chooser();
+  assert.equal(chooser.querySelector("h3").textContent, "어느 광고주의 추적을 열까요?");
+  assert.equal(chooser.querySelector(".mi-rank-option-chooser-lead").textContent, "이 상품을 30일 순위로 추적하는 광고주가 2곳입니다.");
+  const picks = chooser.querySelectorAll("[data-rank-option-chooser-pick]");
+  assert.deepEqual(picks.map((node) => node.textContent), ["아이쉘 (ishell) · 추적 1개 · 「아이폰 17 필름」", "hadn-a02 · 추적 2개 · 「수건」 외"]);
+  click(picks[1]);
+  await flush();
+  assert.deepEqual(env.switches, [["hadn-a02", { force: true }]]);
+
+  const truncated = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  truncated.respond("options-locate", { ok: true, truncated: true, items: items.slice(0, 1) });
+  truncated.authReady();
+  await flush();
+  assert.equal(truncated.chooser().querySelector(".mi-rank-option-chooser-lead").textContent,
+    "이 상품을 30일 순위로 추적하는 광고주가 1곳입니다. 찾은 추적이 많아 50개까지만 보였습니다(더 있음).", "잘렸으면 1곳이어도 고르게 한다");
+  click(truncated.chooser().querySelector("[data-rank-option-chooser-cancel]"));
+  await flush();
+  assert.equal(truncated.note(), "옵션 편집창 열기를 취소했습니다.");
+  assert.deepEqual(truncated.switches, []);
+
+  const none = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  none.respond("options-locate", { ok: true, truncated: false, items: [] });
+  none.authReady();
+  await flush();
+  assert.equal(none.note(), "이 상품을 30일 순위로 추적하는 키워드가 없습니다.");
+  const failed = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  failed.respond("options-locate", { ok: false, message: "총관리자 전용입니다." }, 403);
+  failed.authReady();
+  await flush();
+  assert.equal(failed.note(), "이 상품을 추적하는 광고주를 찾지 못했습니다. 잠시 뒤 버튼을 다시 눌러 주세요.");
+  assert.deepEqual(failed.switches, []);
+});
+
+test("U23 연결 지점: 대기값 처리는 편집창 바로 뒤에서 시작, 목록 받음 신호는 loadRankTrackers 가 성공·실패 모두 쏜다", () => {
+  assert.ok(adminSource.includes("      initRankTracking(keywordInput);\n      initRankOptionProductEditor();\n      initRankOptionFill();\n"));
+  const tracking = lockedFunction(adminSource, "initRankTracking");
+  assert.match(tracking, /function announceRankTrackersLoaded\(loadState, ok\) \{\s*if \(loadState\.loadedAnnounced\) return;\s*loadState\.loadedAnnounced = true;\s*window\.dispatchEvent\(new CustomEvent\("mi:rank-trackers-loaded", \{ detail: \{ scopeKey: loadState\.scopeKey, ok: ok === true \} \}\)\);/u);
+  const load = blockFrom(tracking, tracking.indexOf("async function loadRankTrackers("));
+  assert.equal((load.match(/announceRankTrackersLoaded\(loadState, true\);/gu) || []).length, 1, "다 그린 뒤 성공 한 번");
+  assert.ok(load.indexOf("announceRankTrackersLoaded(loadState, true);") > load.indexOf("renderRankHistory(rankHistory, rankTrackers);\n              rankListLastLoaded"), "목록을 다 그린 뒤");
+  assert.ok(load.indexOf("announceRankTrackersLoaded(loadState, true);") < load.indexOf("await syncDueRankTrackersIfNeeded"), "밀린 갱신을 기다리지 않는다");
+  assert.ok((load.match(/announceRankTrackersLoaded\(loadState, false\);/gu) || []).length >= 3, "검증 실패·연결 실패·옛 요청도 ok:false");
+  assert.match(tracking, /rankTrackerListForEditor = function \(\) \{\s*return rankTrackers\.slice\(\);\s*\};/u);
+});

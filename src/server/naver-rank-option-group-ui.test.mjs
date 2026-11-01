@@ -674,6 +674,14 @@ class FakeElement {
   get textContent() { return this.ownText + this.childNodes.map((child) => child.textContent).join(""); }
   set textContent(value) { this.childNodes.forEach((child) => { child.parentNode = null; }); this.childNodes = []; this.ownText = String(value); }
   appendChild(node) { if (node.parentNode) node.remove(); node.parentNode = this; this.childNodes.push(node); return node; }
+  insertBefore(node, before) {
+    if (node.parentNode) node.remove();
+    const index = before ? this.childNodes.indexOf(before) : -1;
+    node.parentNode = this;
+    if (index < 0) this.childNodes.push(node); else this.childNodes.splice(index, 0, node);
+    return node;
+  }
+  get nextSibling() { if (!this.parentNode) return null; const list = this.parentNode.childNodes; return list[list.indexOf(this) + 1] || null; }
   remove() { if (!this.parentNode) return; this.parentNode.childNodes = this.parentNode.childNodes.filter((child) => child !== this); this.parentNode = null; }
   get isConnected() { let node = this; while (node.parentNode) node = node.parentNode; return node === this.ownerDocument.documentElement; }
   contains(node) { for (let current = node; current; current = current.parentNode) if (current === this) return true; return false; }
@@ -724,7 +732,8 @@ const TRACKER_ID = "0f8a3c1e-1111-4a2b-9c3d-000000000001";
 const SIBLING_ID = "0f8a3c1e-2222-4a2b-9c3d-000000000002";
 const MEMBER_ID = "0f8a3c1e-3333-4a2b-9c3d-000000000003";
 
-function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = false } = {}) {
+// hostSource: 편집창 연결 함수(rankOptionEditorHost)를 대신할 원본(광고주 화면 연결 값 시험용). 없으면 관리자 원본 그대로.
+function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = false, hostSource = null } = {}) {
   const documentRef = { activeElement: null };
   documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
   const html = new FakeElement("html", documentRef);
@@ -797,6 +806,7 @@ function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = f
     htmlFunction(adminSource, "setStatus"),
     htmlFunction(adminSource, "rankTrackerProductUrl"),
     htmlFunction(adminSource, "rankOptionCheckInfo"),
+    hostSource || htmlFunction(adminSource, "rankOptionEditorHost"),
     htmlFunction(adminSource, "initRankOptionProductEditor"),
     "initRankOptionProductEditor();",
   ].join("\n"), context);
@@ -968,6 +978,8 @@ test("U9 편집창: 저장은 미리 본 대상 추적 id 를 함께 보내고, 
     // 미리 보기 응답의 추적별 저장값 그대로(B4)·전체 목록을 보고 저장(B6 확인일).
     expectedOptionProductIds: { [TRACKER_ID]: [], [SIBLING_ID]: [] },
     fullReview: true,
+    // 손으로 넣은 저장(2026-11-01 출처 기록, 서버는 검증하지 않고 되돌림 기록에만 남긴다).
+    claimedSource: "manual",
   });
   assert.equal(env.events.length, 1);
   assert.equal(env.events[0].type, "mi:rank-trackers-changed");
@@ -1314,6 +1326,7 @@ test("U11 후보 확인 창: 카드처럼 비교, '모두 고르기' 없음, 고
     // 후보 넣기도 미리 보기의 저장값 조건을 쓰지만(B4) 전체 목록 확인이 아니라 확인일은 바꾸지 않는다(B6).
     expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A], [SIBLING_ID]: [] },
     fullReview: false,
+    claimedSource: "manual",
   }, "저장은 기존 옵션 저장 API('다른 키워드에도 적용' 포함)");
   assert.equal(env.events.length, 1);
   assert.equal(env.events[0].type, "mi:rank-trackers-changed");
@@ -1821,7 +1834,7 @@ test("U14 모두 지우기·함께 바뀌는 다른 추적에서 빠지는 번�
     parsed: parsedOf([OPTION_A, OPTION_C], { inputTokenCount: 3, primaryRemoved: true }),
   }));
   const removedWarn = env.preview().querySelector("[data-rank-option-removed-warn]");
-  assert.match(removedWarn.textContent, /빠지는 번호 1개: 99900000007\. .*다른 키워드 추적 1개에서도 번호가 빠집니다\./u);
+  assert.match(removedWarn.textContent, /빠지는 번호 1개: 99900000007\. .*다른 키워드 추적 1개에서도 번호 1개가 빠집니다\./u);
   assert.equal(env.diffRow("removed").length, 0, "이 추적 비교 칸에는 이 추적에서 빠지는 번호만");
   assert.equal(env.saveButton().textContent, "빠지는 번호 1개 확인하고 저장");
   // 체크를 끄면(이 추적만) 다른 추적은 빠지지 않는다.
@@ -2311,6 +2324,7 @@ test("U16 '확인만 기록'(B6): checkOnly 로 지금 목록 그대로·읽은 
     expectedTrackerIds: [TRACKER_ID, SIBLING_ID],
     expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A, OPTION_B], [SIBLING_ID]: [OPTION_B, OPTION_A] },
     fullReview: true,
+    claimedSource: "manual",
   }, "서버가 확인일만 쓰게 checkOnly 를 보낸다(U2)");
   assert.deepEqual(plain(env.requests[2].body), READ_BODY, "기록 뒤 읽기로 최신 저장값을 받는다(U3)");
   assert.equal(env.requests.length, 3);
@@ -2435,22 +2449,40 @@ test("U16 일반 저장: 확인일 칸이 없어 번호만 저장되면(checkedA
   assert.ok(cardStatus.classList.contains("is-warn"));
 });
 
-test("U17 버튼 설치 안내(A7): 정적 HTML 표식 사이 링크, 편집창 안으로 옮겨지고 눌러도 아무 일 없음", async () => {
-  // 원본: 표식은 관리자 화면 N 30일 카드 안에 한 번씩, 그 사이에는 끌어 놓기 링크 하나(빌드가 href 를 바꿔 끼운다).
+test("U17 버튼 설치 안내(A7·2026-11-01 칩): 정적 HTML 표식 사이 링크 그대로, 편집창 안으로 옮겨지고 눌러도 조용히 막고 칩만 흔들린다", async () => {
+  // 원본: 표식은 관리자 화면 N 30일 카드 안에 한 번씩, 그 사이에는 끌어 놓기 링크 하나(빌드가 href 만 바꿔 끼운다).
   const start = "<!-- mi-option-check-bookmarklet:start -->";
   const end = "<!-- mi-option-check-bookmarklet:end -->";
   assert.equal(adminSource.split(start).length, 2);
   assert.equal(adminSource.split(end).length, 2);
-  assert.ok(!clientSource.includes("mi-option-check-bookmarklet") && !clientSource.includes("data-rank-option-install"), "광고주 화면에는 없다");
+  assert.ok(!clientSource.includes("mi-option-check-bookmarklet") && !clientSource.includes("data-rank-option-install"), "광고주 화면에는 아직 없다(다음 단계)");
   const between = adminSource.slice(adminSource.indexOf(start) + start.length, adminSource.indexOf(end));
-  assert.match(between, /^<a class="mi-rank-option-bookmarklet" data-rank-option-bookmarklet href="javascript:[^"]*" title="즐겨찾기 줄로 끌어다 놓으세요">모먼트 옵션 확인<\/a>$/u);
+  assert.match(between, /^<a class="mi-rank-option-bookmarklet" data-rank-option-bookmarklet href="javascript:[^"]*" title="즐겨찾기 줄로 끌어다 놓으세요">모먼트 옵션 확인<\/a>$/u,
+    "링크 태그·글자는 그대로(즐겨찾기 이름이 '모먼트 옵션 확인'으로 남는다)");
   const cardFrom = adminSource.indexOf('<article class="mi-card mi-card-pad mi-rank-card" data-rank-card>');
   const cardTo = adminSource.indexOf("</article>", cardFrom);
   const installFrom = adminSource.indexOf('<details class="mi-rank-option-install" data-rank-option-install hidden>');
   assert.ok(cardFrom > 0 && installFrom > cardFrom && adminSource.indexOf(start) > installFrom && adminSource.indexOf(end) < cardTo, "N 30일 카드 안의 접힌 안내");
   const installHtml = adminSource.slice(installFrom, adminSource.indexOf("</details>", installFrom));
   assert.doesNotMatch(installHtml, /\son[a-z]+\s*=/iu, "인라인 핸들러 없음(CSP)");
-  assert.equal((installHtml.match(/<li>/gu) || []).length, 3, "짧은 3단계 안내");
+  const steps = [...installHtml.matchAll(/<li>([^<]*)<\/li>/gu)].map((match) => match[1]);
+  assert.deepEqual(steps, [
+    "평소 쓰는 크롬 창에서 즐겨찾기 줄을 켭니다(⌘+Shift+B, 윈도우 Ctrl+Shift+B).",
+    "아래 칩을 즐겨찾기 줄로 끌어 놓습니다.",
+    "스마트스토어 상품 페이지에서 즐겨찾기의 '모먼트 옵션 확인'을 누르고 '모먼트에서 확인하고 저장'을 누릅니다.",
+  ], "짧은 3단계 안내");
+  assert.ok(installHtml.includes(`${end}<span class="mi-rank-option-drag-hint">← 즐겨찾기 줄로 끌어 놓기</span>`), "칩 옆 끌어 놓기 글(표식 밖)");
+  assert.ok(installHtml.includes("<small>예전 '모먼트 옵션 확인' 즐겨찾기가 있으면 지우고 새로 놓으세요.</small>"));
+  assert.ok(installHtml.includes("<small>끌기가 어려우면: 칩을 오른쪽 클릭 → 링크 주소 복사 → 즐겨찾기 줄 오른쪽 클릭 → 페이지 추가 → URL 칸에 붙여 넣기</small>"));
+  assert.doesNotMatch(installHtml, /번호 복사|어디에도 보내지 않습니다/u, "옛 버튼(번호 복사) 설명은 없다");
+  assert.ok(!adminSource.includes("여기서 누르는 버튼이 아닙니다"), "주황 경고 문장 삭제");
+  assert.ok(!adminSource.includes("mi-rank-option-install-note"), "경고 줄 자리도 없다");
+  const css = adminSource.slice(adminSource.indexOf("/* N 30일 그룹상품 시작"), adminSource.indexOf("/* N 30일 그룹상품 끝 */"));
+  const chipRule = css.slice(css.indexOf("#mi-admin .mi-rank-option-bookmarklet {"), css.indexOf("}", css.indexOf("#mi-admin .mi-rank-option-bookmarklet {")));
+  assert.match(chipRule, /border: 2px dashed var\(--mi-blue\);/u, "점선 테두리");
+  assert.match(chipRule, /cursor: grab;/u);
+  assert.match(css, /#mi-admin \.mi-rank-option-bookmarklet::before \{\s*content: "\\283F";/u, "손잡이 ⠿ 는 CSS 글자(링크 글자에 섞이지 않음)");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*#mi-admin \.mi-rank-option-bookmarklet\.is-nudge \{\s*animation: none;/u, "동작 줄이기면 흔들지 않는다");
 
   const env = editorEnv({ install: true });
   assert.equal(env.installBlock.parentNode, null, "편집창을 열기 전에는 카드에서 떼어 둔다");
@@ -2459,9 +2491,17 @@ test("U17 버튼 설치 안내(A7): 정적 HTML 표식 사이 링크, 편집창 
   assert.equal(install, env.installBlock);
   assert.equal(install.hidden, false);
   assert.equal(env.rankCard.querySelector("[data-rank-option-install]"), null);
-  const event = dispatch(install.querySelector("[data-rank-option-bookmarklet]"), "click");
+  const statusBefore = env.status();
+  const chip = install.querySelector("[data-rank-option-bookmarklet]");
+  const timersBefore = env.timers.length;
+  const event = dispatch(chip, "click");
   assert.equal(event.defaultPrevented, true, "관리자 화면에서 눌러도 실행하지 않는다");
-  assert.match(install.querySelector(".mi-rank-option-install-note").textContent, /즐겨찾기 줄로 끌어 놓은 뒤/u);
+  assert.ok(chip.classList.contains("is-nudge"), "칩만 살짝 흔들린다");
+  assert.equal(env.timers.length, timersBefore + 1);
+  env.timers.at(-1).handler();
+  assert.ok(!chip.classList.contains("is-nudge"), "흔들림은 곧 끝난다");
+  assert.equal(env.status(), statusBefore, "문장 경고를 띄우지 않는다");
+  assert.equal(install.textContent.includes("여기서 누르는"), false);
   assert.equal(env.requests.length, 1, "요청 없음");
   assert.equal(env.modal().hidden, false);
 });

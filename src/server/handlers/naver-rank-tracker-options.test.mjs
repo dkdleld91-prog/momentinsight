@@ -20,6 +20,9 @@ const ADVERTISER = "brand-a";
 const PRIMARY = "12356459438";
 const OPTION_16PRO = "99900000001";
 const OPTION_15 = "99900000002";
+// 저장값([OPTION_15])과 겹치지 않는 목록은 대표 번호가 없으면 '다른 상품 목록'으로 막힌다(2026-11-01 §2.3).
+// 기존 시험의 정상 저장은 첫 줄에 대표 번호를 넣는다 — 대표 번호는 빠지므로 저장 결과는 [OPTION_16PRO] 그대로다.
+const OPTION_16PRO_INPUT = `${PRIMARY}\n${OPTION_16PRO}`;
 const SELF_ID = "123e4567-e89b-42d3-a456-426614174000";
 
 function uuid(n) {
@@ -94,6 +97,8 @@ function fakeDatabase(tables, options = {}) {
         }
         if (ops.insert) {
           const inserted = JSON.parse(JSON.stringify(Array.isArray(ops.insert) ? ops.insert : [ops.insert]));
+          // stampCreatedAt: DB 기본값(created_at now())처럼 넣은 시각을 채운다(빈도·하루 상한 시험용). 기본은 넣은 그대로다.
+          if (options.stampCreatedAt) inserted.forEach((row) => { if (!row.created_at) row.created_at = new Date().toISOString(); });
           const insertError = options.insertError ? options.insertError(table, inserted, state) : null;
           if (insertError) return { data: null, error: insertError };
           tables[table] = [...(tables[table] || []), ...inserted];
@@ -154,8 +159,17 @@ function fakeDatabase(tables, options = {}) {
         update(values) { ops.update = values; return query; },
         insert(values) { ops.insert = values; return query; },
         // 배열 칸은 PostgREST 처럼 text[] 리터럴('{a,b}', 순서 포함)과 비교한다. 배열을 그대로 넘기면 맞지 않는다.
+        // 'metadata->>actorRole' 같은 JSON 칸 경로(2026-11-01 빈도·하루 상한)는 그 안의 글자 값과 비교한다.
         eq(column, value) {
           ops.eqs.push([column, value]);
+          const path = String(column).split("->>");
+          if (path.length === 2) {
+            ops.filters.push((row) => {
+              const nested = row[path[0]] && typeof row[path[0]] === "object" ? row[path[0]][path[1]] : undefined;
+              return nested !== undefined && nested !== null && String(nested) === String(value);
+            });
+            return query;
+          }
           ops.filters.push((row) => (Array.isArray(row[column])
             ? typeof value === "string" && `{${row[column].join(",")}}` === value
             : String(row[column]) === String(value)));
@@ -171,6 +185,12 @@ function fakeDatabase(tables, options = {}) {
           ops.filters.push((row) => Array.isArray(row[column]) && values.every((value) => row[column].includes(value)));
           return query;
         },
+        overlaps(column, values) {
+          if (column === "option_product_ids") ops.touchesOptions = true;
+          ops.filters.push((row) => Array.isArray(row[column]) && values.some((value) => row[column].includes(value)));
+          return query;
+        },
+        gt(column, value) { ops.filters.push((row) => String(row[column] || "") > String(value)); return query; },
         gte(column, value) { ops.filters.push((row) => String(row[column] || "") >= String(value)); return query; },
         lte(column, value) { ops.filters.push((row) => String(row[column] || "") <= String(value)); return query; },
         order() { return query; },
@@ -336,7 +356,7 @@ test("A6 저장 + 함께 적용: 같은 범위·같은 대표 번호의 상품 �
     const { ctx, state } = fakeDatabase(tables);
     const { response, body } = await post(ctx, {
       mode: "save",
-      optionInput: `https://smartstore.naver.com/main/products/${OPTION_16PRO}`,
+      optionInput: `${PRIMARY}\nhttps://smartstore.naver.com/main/products/${OPTION_16PRO}`,
       applyToSameProduct: true,
       expectedTrackerIds: [uuid(1), SELF_ID],
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
@@ -377,7 +397,7 @@ test("A6 함께 적용을 끄면 이 추적 하나만 바뀐다", async () => {
     const { ctx, state } = fakeDatabase(tables);
     const { response, body } = await post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: false,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
     });
@@ -393,7 +413,7 @@ test("미리 보기 뒤 함께 바뀌는 추적이 달라지면 저장하지 않
     const { ctx, state } = fakeDatabase(groupTables());
     const { response, body } = await post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       // 예전 미리 보기(다른 대표 번호 추적까지 함께 바꾸던 화면)가 보낸 대상 목록.
       expectedTrackerIds: [SELF_ID, uuid(1), uuid(2)],
@@ -417,12 +437,12 @@ test("다른 상품 대표 번호를 잘못 붙여 넣어도 그 상품의 추�
       option_product_ids: ["88800000002", "88800000003"],
     }));
     const { ctx, state } = fakeDatabase(tables);
-    const preview = await post(ctx, { mode: "preview", optionInput: `${CASE_PRIMARY}\n${OPTION_16PRO}`, applyToSameProduct: true });
+    const preview = await post(ctx, { mode: "preview", optionInput: `${PRIMARY}\n${CASE_PRIMARY}\n${OPTION_16PRO}`, applyToSameProduct: true });
     assert.equal(preview.response.status, 200);
     assert.deepEqual(preview.body.targetTrackerIds, [SELF_ID, uuid(1)]);
     const saved = await post(ctx, {
       mode: "save",
-      optionInput: `${CASE_PRIMARY}\n${OPTION_16PRO}`,
+      optionInput: `${PRIMARY}\n${CASE_PRIMARY}\n${OPTION_16PRO}`,
       applyToSameProduct: true,
       expectedTrackerIds: preview.body.targetTrackerIds,
       expectedOptionProductIds: preview.body.expectedOptionProductIds,
@@ -433,24 +453,27 @@ test("다른 상품 대표 번호를 잘못 붙여 넣어도 그 상품의 추�
   });
 });
 
-test("A7 권한: 광고주 세션·세션 없는 접속 코드는 403, 총관리자·운영팀은 허용", async () => {
+test("A7 권한: 세션 없는 접속 코드·알 수 없는 역할은 403, 총관리자·운영팀·광고주 세션(2026-11-01)은 허용", async () => {
   await withEnv(async () => {
     const advertiserTables = {
       naver_rank_trackers: [trackerRow({ agency_code: ADVERTISER })],
     };
     const clients = [{ id: "client-1", status: "active", disconnected_at: null }];
-    for (const [label, options] of [
-      ["client", { role: "client", agencyCode: ADVERTISER, accessCode: ADVERTISER }],
-      ["no-session access code", { role: null, agencyCode: ADVERTISER, accessCode: ADVERTISER }],
+    for (const [label, options, message] of [
+      ["no-session access code", { role: null, agencyCode: ADVERTISER, accessCode: ADVERTISER }, "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다."],
+      ["unknown role", { role: "viewer", agencyCode: ADVERTISER, accessCode: ADVERTISER }, "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다."],
     ]) {
       const { ctx, state } = fakeDatabase(structuredClone(advertiserTables), { clients });
       // eslint-disable-next-line no-await-in-loop
-      const { response, body } = await post(ctx, { mode: "save", optionInput: OPTION_16PRO }, options);
+      const { response, body } = await post(ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT }, options);
       assert.equal(response.status, 403, label);
       assert.equal(body.code, "RANK_OPTION_FORBIDDEN");
-      assert.equal(body.message, "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+      assert.equal(body.message, message, label);
       assert.equal(state.updates.length, 0);
     }
+    const client = fakeDatabase(structuredClone(advertiserTables), { clients });
+    const clientResult = await post(client.ctx, { mode: "read" }, { role: "client", agencyCode: ADVERTISER, accessCode: ADVERTISER });
+    assert.equal(clientResult.response.status, 200);
     const team = fakeDatabase(structuredClone(advertiserTables), { clients });
     const teamResult = await post(team.ctx, { mode: "read" }, { role: "team", agencyCode: ADVERTISER, accessCode: ADVERTISER });
     assert.equal(teamResult.response.status, 200);
@@ -478,7 +501,7 @@ test("A8 원부 추적·대표 번호 없는 추적에는 붙일 수 없다(409)
     const tables = groupTables();
     const { ctx } = fakeDatabase(tables);
     const catalog = await handleRankTrackersRequest(
-      request("POST", { action: "options", trackerId: uuid(5), mode: "preview", optionInput: OPTION_16PRO }),
+      request("POST", { action: "options", trackerId: uuid(5), mode: "preview", optionInput: OPTION_16PRO_INPUT }),
       ctx,
     );
     assert.equal(catalog.status, 409);
@@ -500,10 +523,10 @@ test("A9 칸 없음(대표 SQL 전): 저장은 409 RANK_OPTION_NOT_READY, 목록
     const quiet = console.warn;
     console.warn = () => {};
     try {
-      const preview = await post(save.ctx, { mode: "preview", optionInput: OPTION_16PRO });
+      const preview = await post(save.ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT });
       assert.equal(preview.response.status, 200);
       assert.equal(preview.body.columnReady, false);
-      const { response, body } = await post(save.ctx, { mode: "save", optionInput: OPTION_16PRO });
+      const { response, body } = await post(save.ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT });
       assert.equal(response.status, 409);
       assert.equal(body.code, "RANK_OPTION_NOT_READY");
       assert.equal(save.state.updates.length, 0);
@@ -574,7 +597,7 @@ test("A14 DB CHECK 위반은 409, 일부만 저장되면 409 RANK_OPTION_PARTIAL
       updateError: () => ({ code: "23514", message: "new row violates check constraint" }),
     });
     const selfExpected = { [SELF_ID]: [OPTION_15] };
-    const invalid = await post(check.ctx, { mode: "save", optionInput: OPTION_16PRO, expectedOptionProductIds: selfExpected });
+    const invalid = await post(check.ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: selfExpected });
     assert.equal(invalid.response.status, 409);
     assert.equal(invalid.body.code, "RANK_OPTION_INVALID");
 
@@ -590,7 +613,7 @@ test("A14 DB CHECK 위반은 409, 일부만 저장되면 409 RANK_OPTION_PARTIAL
     const warnings = [];
     console.warn = (line) => warnings.push(String(line));
     try {
-      const numbered = await post(checkWithNumbers.ctx, { mode: "save", optionInput: OPTION_16PRO, expectedOptionProductIds: selfExpected });
+      const numbered = await post(checkWithNumbers.ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: selfExpected });
       assert.equal(numbered.response.status, 409);
       assert.equal(numbered.body.code, "RANK_OPTION_INVALID");
     } finally {
@@ -605,7 +628,7 @@ test("A14 DB CHECK 위반은 409, 일부만 저장되면 409 RANK_OPTION_PARTIAL
     const single = fakeDatabase(tables);
     const { response, body } = await post(single.ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
     });
@@ -1006,7 +1029,7 @@ test("B4 저장에는 미리 보기 때 저장값이 있어야 한다: 없거나
       ["객체가 아님", { expectedOptionProductIds: [[OPTION_15]] }],
     ]) {
       // eslint-disable-next-line no-await-in-loop
-      const { response, body } = await post(ctx, { mode: "save", optionInput: OPTION_16PRO, ...extra });
+      const { response, body } = await post(ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, ...extra });
       assert.equal(response.status, 409, label);
       assert.equal(body.code, "RANK_OPTION_PREVIEW_REQUIRED", label);
       assert.equal(body.message, "화면을 새로 고친 뒤 다시 미리 보기 해주세요.", label);
@@ -1015,7 +1038,7 @@ test("B4 저장에는 미리 보기 때 저장값이 있어야 한다: 없거나
     assert.equal(state.inserts.length, 0, "되돌림 기록도 쓰지 않는다");
     assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, [OPTION_15]);
     // 추적 id 의 대소문자는 가리지 않는다.
-    const upper = await post(ctx, { mode: "save", optionInput: OPTION_16PRO, expectedOptionProductIds: { [SELF_ID.toUpperCase()]: [OPTION_15] } });
+    const upper = await post(ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: { [SELF_ID.toUpperCase()]: [OPTION_15] } });
     assert.equal(upper.response.status, 200);
   });
 });
@@ -1024,13 +1047,13 @@ test("B4 미리 보기 뒤 저장값이 바뀌었으면 쓰기 전에 409 CHANGE
   await withEnv(async () => {
     const tables = groupTables();
     const { ctx, state } = fakeDatabase(tables);
-    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO, applyToSameProduct: true });
+    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT, applyToSameProduct: true });
     assert.equal(preview.response.status, 200);
     // 다른 관리자가 미리 보기 뒤에 같은 대표 번호 추적의 목록을 바꿨다.
     rowById(tables, uuid(1)).option_product_ids = ["99900000088"];
     const stale = await post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedTrackerIds: preview.body.targetTrackerIds,
       expectedOptionProductIds: preview.body.expectedOptionProductIds,
@@ -1044,13 +1067,13 @@ test("B4 미리 보기 뒤 저장값이 바뀌었으면 쓰기 전에 409 CHANGE
 
     // 같은 번호라도 순서가 다르면 다른 값이다(DB 그대로 비교).
     rowById(tables, SELF_ID).option_product_ids = [OPTION_15, "99900000003"];
-    const reordered = await post(ctx, { mode: "save", optionInput: OPTION_16PRO, expectedOptionProductIds: { [SELF_ID]: ["99900000003", OPTION_15] } });
+    const reordered = await post(ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: { [SELF_ID]: ["99900000003", OPTION_15] } });
     assert.equal(reordered.response.status, 409);
     assert.equal(reordered.body.code, "RANK_OPTION_CHANGED");
 
     // 두 화면이 같은 저장값을 보고 차례로 저장: 먼저 누른 쪽만 저장되고 나중 쪽은 덮어쓰지 않는다.
     const seen = { [SELF_ID]: [OPTION_15, "99900000003"] };
-    const first = await post(ctx, { mode: "save", optionInput: OPTION_16PRO, expectedOptionProductIds: seen });
+    const first = await post(ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: seen });
     assert.equal(first.response.status, 200);
     const second = await post(ctx, { mode: "save", optionInput: "99900000004", expectedOptionProductIds: seen });
     assert.equal(second.response.status, 409);
@@ -1063,10 +1086,10 @@ test("B4 조건부 갱신: option_product_ids = 미리 보기 때 저장값 리�
   await withEnv(async () => {
     const tables = groupTables();
     const { ctx, state } = fakeDatabase(tables);
-    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO, applyToSameProduct: true });
+    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT, applyToSameProduct: true });
     const saved = await post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedTrackerIds: preview.body.targetTrackerIds,
       expectedOptionProductIds: preview.body.expectedOptionProductIds,
@@ -1094,7 +1117,7 @@ test("B4 쓰는 사이 경합으로 갱신 줄 수가 모자라면 멈추고 409
     });
     const { response, body } = await quietWarnings(() => post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       fullReview: true,
@@ -1115,6 +1138,8 @@ test("B4 쓰는 사이 경합으로 갱신 줄 수가 모자라면 멈추고 409
       checkedAtRecorded: true,
       fullReview: true,
       outcome: "RANK_OPTION_CHANGED",
+      actorRole: "owner",
+      claimedSource: "manual",
     }]);
 
     // 첫 묶음이 0줄이면 다음 묶음은 쓰지 않는다.
@@ -1126,7 +1151,7 @@ test("B4 쓰는 사이 경합으로 갱신 줄 수가 모자라면 멈추고 409
     });
     const stopped = await quietWarnings(() => post(race.ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(other, [SELF_ID, uuid(1)]),
     }));
@@ -1151,7 +1176,7 @@ test("B4 두 번째 묶음 쓰기가 실패하면 기존대로 409 PARTIAL, 이�
     });
     const { response, body } = await quietWarnings(() => post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
     }));
@@ -1171,6 +1196,8 @@ test("B4 두 번째 묶음 쓰기가 실패하면 기존대로 409 PARTIAL, 이�
       checkedAtRecorded: false,
       fullReview: false,
       outcome: "RANK_OPTION_PARTIAL",
+      actorRole: "owner",
+      claimedSource: "manual",
     });
   });
 });
@@ -1194,7 +1221,7 @@ test("H1 두 번째 묶음 쓰기가 예외로 끝나면 409 PARTIAL, 저장된 
     });
     const { response, body, warnings } = await quietSave(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
     });
@@ -1213,6 +1240,8 @@ test("H1 두 번째 묶음 쓰기가 예외로 끝나면 409 PARTIAL, 저장된 
       checkedAtRecorded: false,
       fullReview: false,
       outcome: "RANK_OPTION_PARTIAL",
+      actorRole: "owner",
+      claimedSource: "manual",
     }]);
     const warning = warnings.find((line) => line.includes("naver_rank_tracker_options_uncertain"));
     assert.ok(warning, "모르는 추적 경고를 남긴다");
@@ -1246,7 +1275,7 @@ test("H1 확실한 거절이 아닌 오류(코드 없음·연결류 코드)는 �
       // eslint-disable-next-line no-await-in-loop
       const { response, body } = await quietSave(ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         applyToSameProduct: true,
         expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       });
@@ -1275,7 +1304,7 @@ test("H1 확실한 거절이 아닌 오류(코드 없음·연결류 코드)는 �
       // eslint-disable-next-line no-await-in-loop
       const { response, body } = await quietSave(ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         applyToSameProduct: true,
         expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       });
@@ -1302,7 +1331,7 @@ test("F6 문장 완료 여부 모름(40003)·관리자 개입/서버 종료(57P0
       });
       const result = await quietSave(ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         applyToSameProduct: true,
         expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       });
@@ -1360,7 +1389,7 @@ test("H1 첫 묶음 쓰기가 예외로 끝나도 409 PARTIAL(저장 0·모름 n
     });
     const { response, body } = await quietSave(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       fullReview: true,
@@ -1381,6 +1410,8 @@ test("H1 첫 묶음 쓰기가 예외로 끝나도 409 PARTIAL(저장 0·모름 n
       checkedAtRecorded: false,
       fullReview: true,
       outcome: "RANK_OPTION_PARTIAL",
+      actorRole: "owner",
+      claimedSource: "manual",
     }]);
 
     // 첫 묶음이 코드가 실린 DB 거절(권한)이면 기존대로 500 이고, 결과 기록에 모르는 추적이 없다.
@@ -1394,7 +1425,7 @@ test("H1 첫 묶음 쓰기가 예외로 끝나도 409 PARTIAL(저장 0·모름 n
     try {
       deniedResult = await quietSave(denied.ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         expectedOptionProductIds: expectedFor(deniedTables, [SELF_ID]),
       });
     } finally {
@@ -1425,7 +1456,7 @@ test("H1 저장됐는지 모르는 추적이 51개 이상이면 결과 기록을
     });
     const { response, body } = await quietSave(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, ids),
     });
@@ -1477,6 +1508,8 @@ test("B3 되돌림 기록 먼저: 바꿀 추적마다 한 줄(저장 전·바꿀
         applyToSameProduct: true,
         primaryProductId: PRIMARY,
         keyword,
+        actorRole: "owner",
+        claimedSource: "manual",
       },
     });
     assert.deepEqual(auditRows(tables, "naver_rank_options_save_intent"), [
@@ -1492,6 +1525,8 @@ test("B3 되돌림 기록 먼저: 바꿀 추적마다 한 줄(저장 전·바꿀
       checkedAtRecorded: true,
       fullReview: true,
       outcome: "saved",
+      actorRole: "owner",
+      claimedSource: "manual",
     });
     assert.equal(JSON.stringify(tables.audit_logs).includes(OWNER_CODE), false, "범위 코드는 기록에 없다");
 
@@ -1503,7 +1538,7 @@ test("B3 되돌림 기록 먼저: 바꿀 추적마다 한 줄(저장 전·바꿀
     const failed = await quietWarnings(async (warnings) => {
       const outcome = await post(failing.ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         expectedOptionProductIds: expectedFor(failTables, [SELF_ID]),
         fullReview: true,
       });
@@ -1524,7 +1559,7 @@ test("B3 되돌림 기록 먼저: 바꿀 추적마다 한 줄(저장 전·바꿀
     const kept = await quietWarnings(async (warnings) => {
       const outcome = await post(resultFailing.ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         expectedOptionProductIds: expectedFor(resultTables, [SELF_ID]),
       });
       return { ...outcome, warnings };
@@ -1548,7 +1583,7 @@ test("B3 기록이 잘리지 않는다: 옵션 50개는 저장 전·후 그대�
     const { ctx } = fakeDatabase(tables);
     const { response, body } = await post(ctx, {
       mode: "save",
-      optionInput: next.join("\n"),
+      optionInput: [PRIMARY, ...next].join("\n"),
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, ids),
       fullReview: true,
@@ -1581,7 +1616,7 @@ test("B6 확인일: 전체 확인 저장(fullReview)이면 실제로 저장된 �
     const { ctx, state } = fakeDatabase(tables);
     const saved = await post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       fullReview: true,
@@ -1602,7 +1637,7 @@ test("B6 확인일: 전체 확인 저장(fullReview)이면 실제로 저장된 �
     const soloDb = fakeDatabase(solo);
     const soloSaved = await post(soloDb.ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: false,
       expectedOptionProductIds: expectedFor(solo, [SELF_ID]),
       fullReview: true,
@@ -1676,6 +1711,8 @@ test("B6 '확인만 기록'(checkOnly): 읽기 응답의 현재 목록·저장�
       applyToSameProduct: false,
       primaryProductId: PRIMARY,
       keyword: "아이폰 17 필름",
+      actorRole: "owner",
+      claimedSource: "manual",
     });
     const [result] = auditRows(tables, "naver_rank_options_save_result");
     assert.deepEqual(result.metadata, {
@@ -1686,6 +1723,8 @@ test("B6 '확인만 기록'(checkOnly): 읽기 응답의 현재 목록·저장�
       fullReview: true,
       checkOnly: true,
       outcome: "saved",
+      actorRole: "owner",
+      claimedSource: "manual",
     });
     const again = await post(ctx, { mode: "read" });
     assert.equal(again.body.tracker.optionCheckedAt, confirmed.body.optionCheckedAt);
@@ -1716,7 +1755,7 @@ test("B6 '확인만 기록'(checkOnly): 번호가 저장된 것과 다르면 409
     const selfExpected = expectedFor(tables, [SELF_ID]);
     for (const [label, extra] of [
       ["번호 추가", { optionInput: `${OPTION_15}\n${OPTION_16PRO}`, expectedOptionProductIds: selfExpected }],
-      ["번호 바꿈", { optionInput: OPTION_16PRO, expectedOptionProductIds: selfExpected }],
+      ["번호 바꿈", { optionInput: OPTION_16PRO_INPUT, expectedOptionProductIds: selfExpected }],
       ["모두 지움", { optionInput: "", expectedOptionProductIds: selfExpected }],
       // 함께 적용: 이 추적은 같아도 다른 키워드 추적(빈 목록)의 번호가 바뀌게 되면 거절한다.
       ["다른 키워드 추적이 다름", {
@@ -1936,7 +1975,7 @@ test("B6 확인일 칸 없음(대표 SQL 전): 읽기는 checkedAtReady:false, �
       const read = await post(ctx, { mode: "read" });
       const saved = await post(ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         expectedOptionProductIds: read.body.expectedOptionProductIds,
         fullReview: true,
       });
@@ -1990,7 +2029,7 @@ test("B6 저장 때만 확인일 칸이 없으면(스키마 캐시 PGRST204) 확
     const outcome = await quietWarnings(async (warnings) => ({
       ...(await post(ctx, {
         mode: "save",
-        optionInput: OPTION_16PRO,
+        optionInput: OPTION_16PRO_INPUT,
         applyToSameProduct: true,
         expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
         fullReview: true,
@@ -2102,7 +2141,7 @@ test("B6 저장 중간에 확인일 칸이 사라져도 이미 확인일을 쓴 
     });
     const outcome = await quietWarnings(() => post(ctx, {
       mode: "save",
-      optionInput: OPTION_16PRO,
+      optionInput: OPTION_16PRO_INPUT,
       applyToSameProduct: true,
       expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
       fullReview: true,
@@ -2125,6 +2164,788 @@ test("B6 저장 중간에 확인일 칸이 사라져도 이미 확인일을 쓴 
       checkedAtRecorded: true,
       fullReview: true,
       outcome: "saved",
+      actorRole: "owner",
+      claimedSource: "manual",
     });
+  });
+});
+
+// ───────────── 광고주 사용·다른 상품 목록 차단·옵션 확인 버튼 받는 쪽(2026-11-01, 명세 advertiser-impl-spec §2.6) ─────────────
+
+const CLIENT_ID = "223e4567-e89b-42d3-a456-426614170001";
+const OTHER_CLIENT_ID = "223e4567-e89b-42d3-a456-426614170002";
+const OTHER_ADVERTISER = "brand-x";
+const ADVERTISER_CLIENTS = [{ id: CLIENT_ID, status: "active", disconnected_at: null, agency_code: ADVERTISER, name: "브랜드 A" }];
+const CLIENT_SESSION = { role: "client", agencyCode: ADVERTISER, accessCode: ADVERTISER };
+const TEAM_SESSION = { role: "team", agencyCode: ADVERTISER, accessCode: ADVERTISER };
+const OWNER_ON_ADVERTISER = { role: "owner", agencyCode: ADVERTISER };
+
+// groupTables 의 총관리자 범위 추적을 광고주 범위로 옮기고, 다른 광고주가 같은 대표 번호를 추적하는 행을 더한다.
+function advertiserGroupTables() {
+  const tables = groupTables();
+  for (const row of tables.naver_rank_trackers) {
+    if (row.agency_code === OWNER_CODE) row.agency_code = ADVERTISER;
+  }
+  tables.naver_rank_trackers.push(trackerRow({
+    id: uuid(20),
+    keyword: "다른 광고주 같은 상품",
+    agency_code: OTHER_ADVERTISER,
+    option_product_ids: [OPTION_15, "99900000010"],
+  }));
+  return tables;
+}
+
+async function postAction(ctx, body, options) {
+  const response = await handleRankTrackersRequest(request("POST", body, options), ctx);
+  return { response, body: await response.json() };
+}
+
+function productTracker(id, productId, overrides = {}) {
+  return trackerRow({
+    id,
+    keyword: `상품 ${productId}`,
+    product_id: productId,
+    product_url: `https://smartstore.naver.com/ishell/products/${productId}`,
+    ...overrides,
+  });
+}
+
+function base64urlJson(value) {
+  return Buffer.from(typeof value === "string" ? value : JSON.stringify(value), "utf8").toString("base64url");
+}
+
+test("S1 광고주 저장(자기 범위) 200: 다른 광고주가 같은 대표 번호를 추적해도 미리 보기·저장·기록 0건, 기록에 client_id·actorRole", async () => {
+  await withEnv(async ({ fetchCalls }) => {
+    const tables = advertiserGroupTables();
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT, applyToSameProduct: true }, CLIENT_SESSION);
+    assert.equal(preview.response.status, 200);
+    assert.deepEqual(preview.body.targetTrackerIds, [SELF_ID, uuid(1)]);
+    assert.deepEqual(Object.keys(preview.body.expectedOptionProductIds).sort(), [SELF_ID, uuid(1)].sort());
+    assert.equal(JSON.stringify(preview.body).includes(uuid(20)), false, "다른 광고주 추적은 응답 어디에도 없다");
+    assert.equal(JSON.stringify(preview.body).includes(uuid(4)), false);
+    const saved = await post(ctx, {
+      mode: "save",
+      optionInput: OPTION_16PRO_INPUT,
+      applyToSameProduct: true,
+      expectedTrackerIds: preview.body.targetTrackerIds,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+    }, CLIENT_SESSION);
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body.updatedTrackerIds.sort(), [SELF_ID, uuid(1)].sort());
+    assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, [OPTION_16PRO]);
+    assert.deepEqual(rowById(tables, uuid(20)).option_product_ids, [OPTION_15, "99900000010"], "다른 광고주 같은 상품 추적은 그대로");
+    assert.ok(state.updates.every((update) => !update.ids.includes(uuid(20))));
+    for (const row of [...auditRows(tables, "naver_rank_options_save_intent"), ...auditRows(tables, "naver_rank_options_save_result")]) {
+      assert.equal(row.client_id, CLIENT_ID);
+      assert.equal(row.metadata.actorRole, "client");
+      assert.equal(row.metadata.claimedSource, "manual");
+      assert.equal(Object.hasOwn(row.metadata, "sourcePageId"), false);
+    }
+    assert.equal(JSON.stringify(tables.audit_logs).includes(ADVERTISER), false, "범위 코드는 기록에 없다");
+    assert.equal(fetchCalls.length, 0);
+    assert.equal(state.rpcCalls.length, 0);
+  });
+});
+
+test("S2 광고주 '확인만 기록'은 403 CHECK_ONLY_FORBIDDEN(추적 표를 읽기 전), 운영팀은 그대로 된다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const refused = await post(ctx, {
+      mode: "save",
+      optionInput: OPTION_15,
+      checkOnly: true,
+      fullReview: true,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+    }, CLIENT_SESSION);
+    assert.equal(refused.response.status, 403);
+    assert.equal(refused.body.code, "RANK_OPTION_CHECK_ONLY_FORBIDDEN");
+    assert.equal(refused.body.message, "확인만 기록은 운영팀 기능입니다.");
+    assert.equal(state.selects.filter((entry) => entry.table === "naver_rank_trackers").length, 0);
+    assert.equal(state.updates.length + state.inserts.length, 0);
+    const team = await post(ctx, {
+      mode: "save",
+      optionInput: OPTION_15,
+      checkOnly: true,
+      fullReview: true,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+    }, TEAM_SESSION);
+    assert.equal(team.response.status, 200, JSON.stringify(team.body));
+    assert.equal(team.body.checkedAtRecorded, true);
+    assert.deepEqual(state.updates.map((update) => Object.keys(update.values)), [["option_checked_at"]]);
+    assert.equal(auditRows(tables, "naver_rank_options_save_result")[0].metadata.actorRole, "team");
+    assert.equal(auditRows(tables, "naver_rank_options_save_result")[0].client_id, CLIENT_ID);
+  });
+});
+
+test("S3 광고주 저장: fullReview 는 무시(확인일을 찍지 않음), 목록이 실제로 바뀐 추적만 같은 문장에서 확인일을 비우고 안 바뀐 추적은 그대로", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    rowById(tables, SELF_ID).option_checked_at = "2026-10-20T00:00:00.000Z";
+    // 순서만 다르고 번호는 같다 = 목록이 바뀌지 않는다.
+    rowById(tables, uuid(1)).option_product_ids = [OPTION_16PRO, OPTION_15];
+    rowById(tables, uuid(1)).option_checked_at = "2026-10-21T00:00:00.000Z";
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const saved = await post(ctx, {
+      mode: "save",
+      optionInput: `${OPTION_15}\n${OPTION_16PRO}`,
+      applyToSameProduct: true,
+      fullReview: true,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID, uuid(1)]),
+    }, CLIENT_SESSION);
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.checkedAtRecorded, false);
+    assert.equal(saved.body.optionCheckedAt, null);
+    assert.deepEqual(state.updates.map((update) => [update.ids, update.values]), [
+      [[SELF_ID], { option_product_ids: [OPTION_15, OPTION_16PRO], option_checked_at: null }],
+      [[uuid(1)], { option_product_ids: [OPTION_15, OPTION_16PRO] }],
+    ]);
+    assert.equal(rowById(tables, SELF_ID).option_checked_at, null, "바뀐 추적은 확인일을 비운다");
+    assert.equal(rowById(tables, uuid(1)).option_checked_at, "2026-10-21T00:00:00.000Z", "안 바뀐 추적은 그대로");
+    assert.deepEqual(auditRows(tables, "naver_rank_options_save_intent").map((row) => row.metadata.fullReview), [false, false]);
+    const [result] = auditRows(tables, "naver_rank_options_save_result");
+    assert.deepEqual(result.metadata, {
+      updatedTrackerIds: [SELF_ID, uuid(1)],
+      checkedTrackerIds: [],
+      checkedClearedTrackerIds: [SELF_ID],
+      targetCount: 2,
+      checkedAtRecorded: false,
+      fullReview: false,
+      outcome: "saved",
+      actorRole: "client",
+      claimedSource: "manual",
+    });
+
+    // 아무 추적도 바뀌지 않는 저장은 확인일을 건드리지 않는다.
+    const same = advertiserGroupTables();
+    rowById(same, SELF_ID).option_checked_at = "2026-10-20T00:00:00.000Z";
+    const sameDb = fakeDatabase(same, { clients: ADVERTISER_CLIENTS });
+    const unchanged = await post(sameDb.ctx, {
+      mode: "save",
+      optionInput: OPTION_15,
+      fullReview: true,
+      expectedOptionProductIds: expectedFor(same, [SELF_ID]),
+    }, CLIENT_SESSION);
+    assert.equal(unchanged.response.status, 200);
+    assert.deepEqual(sameDb.state.updates.map((update) => update.values), [{ option_product_ids: [OPTION_15] }]);
+    assert.equal(rowById(same, SELF_ID).option_checked_at, "2026-10-20T00:00:00.000Z");
+
+    // 확인일 칸이 없으면(대표 SQL 전) 비울 것도 없다 — 번호만 쓴다.
+    const missing = advertiserGroupTables();
+    const missingDb = fakeDatabase(missing, { clients: ADVERTISER_CLIENTS, checkedColumnMissing: true });
+    const noColumn = await quietWarnings(() => post(missingDb.ctx, {
+      mode: "save",
+      optionInput: `${OPTION_15}\n${OPTION_16PRO}`,
+      expectedOptionProductIds: expectedFor(missing, [SELF_ID]),
+    }, CLIENT_SESSION));
+    assert.equal(noColumn.response.status, 200);
+    assert.deepEqual(missingDb.state.updates.map((update) => Object.keys(update.values)), [["option_product_ids"]]);
+  });
+});
+
+test("S4 광고주 저장 빈도: 10분에 저장 결과 20줄이면 429(쓰기·기록 0), 미리 보기·다른 광고주·운영팀 줄·10분 지난 줄은 세지 않는다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const now = Date.now();
+    const at = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString();
+    const resultRow = (clientId, actorRole, minutesAgo) => ({
+      action: "naver_rank_options_save_result",
+      client_id: clientId,
+      metadata: { actorRole },
+      created_at: at(minutesAgo),
+    });
+    tables.audit_logs = [
+      ...Array.from({ length: 19 }, () => resultRow(CLIENT_ID, "client", 1)),
+      ...Array.from({ length: 5 }, () => resultRow(CLIENT_ID, "owner", 1)),
+      ...Array.from({ length: 5 }, () => resultRow(OTHER_CLIENT_ID, "client", 1)),
+      ...Array.from({ length: 5 }, () => resultRow(CLIENT_ID, "client", 11)),
+      { ...resultRow(CLIENT_ID, "client", 1), action: "naver_rank_options_save_intent" },
+    ];
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
+    const first = await post(ctx, {
+      mode: "save",
+      optionInput: OPTION_16PRO_INPUT,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+    }, CLIENT_SESSION);
+    assert.equal(first.response.status, 200, "19줄이면 저장한다");
+    const writesBefore = state.writes.length;
+    const limited = await post(ctx, {
+      mode: "save",
+      optionInput: `${OPTION_16PRO}\n99900000004`,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+    }, CLIENT_SESSION);
+    assert.equal(limited.response.status, 429);
+    assert.equal(limited.body.code, "RANK_OPTION_RATE_LIMITED");
+    assert.equal(limited.body.message, "잠시 뒤 다시 저장해 주세요.");
+    assert.equal(state.writes.length, writesBefore, "되돌림 기록도 쓰지 않는다");
+    assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, [OPTION_16PRO]);
+    const preview = await post(ctx, { mode: "preview", optionInput: `${OPTION_16PRO}\n99900000004` }, CLIENT_SESSION);
+    assert.equal(preview.response.status, 200, "미리 보기는 세지 않는다");
+    // 운영팀·총관리자는 같은 광고주에 저장해도 빈도 제한을 받지 않는다.
+    const team = await post(ctx, {
+      mode: "save",
+      optionInput: `${OPTION_16PRO}\n99900000004`,
+      expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+    }, TEAM_SESSION);
+    assert.equal(team.response.status, 200);
+
+    // 세지 못하면 저장하지 않는다.
+    const broken = fakeDatabase(advertiserGroupTables(), { clients: ADVERTISER_CLIENTS });
+    broken.ctx.supabaseAdmin = new Proxy(broken.ctx.supabaseAdmin, {
+      get(target, key) {
+        if (key !== "from") return target[key];
+        return (table) => {
+          const query = target.from(table);
+          if (table !== "audit_logs") return query;
+          return { select: () => { throw new Error("audit_logs unavailable"); } };
+        };
+      },
+    });
+    const failed = await quietWarnings(() => post(broken.ctx, {
+      mode: "save",
+      optionInput: OPTION_16PRO_INPUT,
+      expectedOptionProductIds: { [SELF_ID]: [OPTION_15] },
+    }, CLIENT_SESSION));
+    assert.equal(failed.response.status, 409);
+    assert.equal(failed.body.code, "RANK_OPTION_AUDIT_FAILED");
+    assert.equal(broken.state.updates.length, 0);
+  });
+});
+
+test("S5 광고주 응답 칸 목록 고정(read·preview·save·오류): 확인일·후보 없음, 내부 문구 없음 — 총관리자 응답은 그대로", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    rowById(tables, SELF_ID).option_checked_at = "2026-10-20T00:00:00.000Z";
+    rowById(tables, uuid(1)).option_checked_at = "2026-10-21T00:00:00.000Z";
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const commonKeys = [
+      "ok", "mode", "columnReady", "tracker", "parsed", "sameProduct", "applyToSameProduct", "willUpdateCount",
+      "targetTrackerIds", "removedOptionProductIds", "limit", "checkedAtReady", "expectedOptionProductIds",
+    ];
+    const siblingKeys = [
+      "id", "keyword", "status", "groupName", "primaryProductId", "relation", "optionProductCount",
+      "beforeOptionProductIds", "afterOptionProductIds", "addedCount", "removedCount", "optionCheckedAt",
+    ];
+    const read = await post(ctx, { mode: "read" }, CLIENT_SESSION);
+    assert.equal(read.response.status, 200);
+    assert.deepEqual(Object.keys(read.body), [...commonKeys, "message"]);
+    assert.deepEqual(Object.keys(read.body.tracker), ["id", "keyword", "primaryProductId", "productUrl", "optionProductIds", "optionCheckedAt"]);
+    assert.equal(read.body.tracker.optionCheckedAt, null);
+    assert.equal(read.body.checkedAtReady, false);
+    assert.deepEqual(Object.keys(read.body.sameProduct), ["trackers", "shrinkingTrackerCount", "limit"]);
+    assert.deepEqual(Object.keys(read.body.sameProduct.trackers[0]), siblingKeys);
+    assert.ok(read.body.sameProduct.trackers.every((entry) => entry.optionCheckedAt === null));
+    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT, applyToSameProduct: true }, CLIENT_SESSION);
+    assert.deepEqual(Object.keys(preview.body), [...commonKeys, "guard", "message"]);
+    assert.deepEqual(Object.keys(preview.body.guard), ["blocked", "reason", "blockedTrackers", "needsPrimaryConfirm", "otherPrimaryHits"]);
+    assert.deepEqual(Object.keys(preview.body.sameProduct), ["trackers", "shrinkingTrackerCount", "limit"]);
+    assert.equal(preview.body.tracker.optionCheckedAt, null);
+    assert.equal(preview.body.checkedAtReady, false);
+    const saved = await post(ctx, {
+      mode: "save",
+      optionInput: OPTION_16PRO_INPUT,
+      applyToSameProduct: true,
+      fullReview: true,
+      expectedTrackerIds: preview.body.targetTrackerIds,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+    }, CLIENT_SESSION);
+    assert.deepEqual(Object.keys(saved.body), [
+      "ok", "mode", "updatedCount", "updatedTrackerIds", "optionProductIds", "removedOptionProductIds",
+      "checkedAtRecorded", "optionCheckedAt", "message",
+    ]);
+    assert.equal(saved.body.optionCheckedAt, null);
+    for (const body of [read.body, preview.body, saved.body]) {
+      assert.equal(/대표 SQL|관리자 화면/u.test(JSON.stringify(body)), false);
+      assert.equal(JSON.stringify(body).includes("2026-10-2"), false, "운영팀 확인일이 새지 않는다");
+    }
+
+    // 오류 응답도 내부 문구를 일반 문구로.
+    const notReady = fakeDatabase(advertiserGroupTables(), { clients: ADVERTISER_CLIENTS, optionColumnMissing: true });
+    const missing = await quietWarnings(() => post(notReady.ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT }, CLIENT_SESSION));
+    assert.equal(missing.response.status, 409);
+    assert.deepEqual(missing.body, {
+      ok: false,
+      code: "RANK_OPTION_NOT_READY",
+      message: "지금은 그룹상품 번호를 저장할 수 없습니다. 잠시 뒤 다시 시도해 주세요.",
+    });
+    forgetOptionColumnMissing();
+
+    // 총관리자(같은 광고주 범위) 응답은 지금 그대로: 확인일·가져오기 후보가 실린다.
+    const ownerTables = advertiserGroupTables();
+    rowById(ownerTables, SELF_ID).option_checked_at = "2026-10-20T00:00:00.000Z";
+    const owner = fakeDatabase(ownerTables, { clients: ADVERTISER_CLIENTS });
+    const ownerRead = await post(owner.ctx, { mode: "read" }, OWNER_ON_ADVERTISER);
+    assert.equal(ownerRead.body.tracker.optionCheckedAt, "2026-10-20T00:00:00.000Z");
+    assert.equal(ownerRead.body.checkedAtReady, true);
+    assert.ok(Array.isArray(ownerRead.body.sameProduct.siblingOptionProductIds));
+    const ownerMissing = fakeDatabase(advertiserGroupTables(), { clients: ADVERTISER_CLIENTS, optionColumnMissing: true });
+    const ownerError = await quietWarnings(() => post(ownerMissing.ctx, { mode: "save", optionInput: OPTION_16PRO_INPUT }, OWNER_ON_ADVERTISER));
+    assert.match(ownerError.body.message, /대표 SQL 실행 뒤/u);
+  });
+});
+
+test("S6 group-mark 는 광고주 세션에 계속 403, 목록 응답의 관리자 표시는 계속 숨김", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    tables.naver_rank_trackers.forEach((row) => { row.group_product_marked = false; });
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const mark = await postAction(ctx, { action: "group-mark", trackerId: SELF_ID, marked: true }, CLIENT_SESSION);
+    assert.equal(mark.response.status, 403);
+    assert.equal(mark.body.code, "RANK_GROUP_MARK_FORBIDDEN");
+    assert.equal(state.updates.length, 0);
+    const team = await postAction(ctx, { action: "group-mark", trackerId: SELF_ID, marked: true }, TEAM_SESSION);
+    assert.equal(team.response.status, 200);
+  });
+});
+
+test("S7 다른 상품 목록 차단(사고 재현): 저장 10개 vs 겹치지 않는 17개·대표 번호 없음 → 미리 보기 blocked, 저장 409 FOREIGN_LIST(쓰기·기록 0)", async () => {
+  await withEnv(async () => {
+    const stored = Array.from({ length: 10 }, (_, index) => String(13744478600 + index));
+    const pasted = Array.from({ length: 17 }, (_, index) => String(13744370900 + index));
+    for (const session of [undefined, CLIENT_SESSION, TEAM_SESSION]) {
+      const tables = session ? advertiserGroupTables() : groupTables();
+      rowById(tables, SELF_ID).option_product_ids = [...stored];
+      const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+      const label = session?.role || "owner";
+      // eslint-disable-next-line no-await-in-loop
+      const preview = await post(ctx, { mode: "preview", optionInput: pasted.join("\n") }, session);
+      assert.equal(preview.response.status, 200, label);
+      assert.deepEqual(preview.body.guard, {
+        blocked: true,
+        reason: "foreign_list",
+        blockedTrackers: [{ trackerId: SELF_ID, keyword: "아이폰 17 필름" }],
+        needsPrimaryConfirm: false,
+        otherPrimaryHits: [],
+      }, label);
+      for (const extra of [{}, { primaryConfirmed: true }]) {
+        // eslint-disable-next-line no-await-in-loop
+        const saved = await post(ctx, {
+          mode: "save",
+          optionInput: pasted.join("\n"),
+          expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+          ...extra,
+        }, session);
+        assert.equal(saved.response.status, 409, label);
+        assert.equal(saved.body.code, "RANK_OPTION_FOREIGN_LIST", label);
+        assert.equal(
+          saved.body.message,
+          `이 목록에는 이 상품(대표 ${PRIMARY})도, 지금 저장된 번호도 하나도 없습니다. 다른 상품의 목록으로 보여 저장하지 않았습니다.`,
+        );
+        assert.deepEqual(saved.body.guard, preview.body.guard, label);
+      }
+      assert.equal(state.updates.length, 0, label);
+      assert.equal(state.inserts.length, 0, `${label}: 되돌림 기록도 쓰지 않는다`);
+      assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, stored, label);
+    }
+  });
+});
+
+test("S8 추적별 차단: 형제 추적 하나만 저장값과 겹치지 않아도 막는다, 함께 적용을 끄면 이 추적만 저장 — removedCount 는 추적마다", async () => {
+  await withEnv(async () => {
+    const tables = groupTables();
+    rowById(tables, uuid(1)).option_product_ids = ["99900000050", "99900000051"];
+    const { ctx, state } = fakeDatabase(tables);
+    const input = `${OPTION_15}\n${OPTION_16PRO}`;
+    const preview = await post(ctx, { mode: "preview", optionInput: input, applyToSameProduct: true });
+    assert.equal(preview.body.guard.blocked, true);
+    assert.equal(preview.body.guard.reason, "foreign_list");
+    assert.deepEqual(preview.body.guard.blockedTrackers, [{ trackerId: uuid(1), keyword: "아이폰17 케이스" }]);
+    // 형제 추적에서 빠질 번호 수(그 추적의 저장값 기준).
+    assert.deepEqual(preview.body.sameProduct.trackers.map((entry) => [entry.id, entry.removedCount, entry.addedCount]), [[uuid(1), 2, 2]]);
+    const blocked = await post(ctx, {
+      mode: "save",
+      optionInput: input,
+      applyToSameProduct: true,
+      expectedTrackerIds: preview.body.targetTrackerIds,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+    });
+    assert.equal(blocked.response.status, 409);
+    assert.equal(blocked.body.code, "RANK_OPTION_FOREIGN_LIST");
+    assert.equal(state.updates.length + state.inserts.length, 0);
+
+    const solo = await post(ctx, { mode: "preview", optionInput: input, applyToSameProduct: false });
+    assert.equal(solo.body.guard.blocked, false);
+    assert.deepEqual(solo.body.sameProduct.trackers.map((entry) => entry.removedCount), [2], "함께 적용과 무관하게 싣는다");
+    const saved = await post(ctx, {
+      mode: "save",
+      optionInput: input,
+      applyToSameProduct: false,
+      expectedOptionProductIds: solo.body.expectedOptionProductIds,
+    });
+    assert.equal(saved.response.status, 200);
+    assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, [OPTION_15, OPTION_16PRO]);
+    assert.deepEqual(rowById(tables, uuid(1)).option_product_ids, ["99900000050", "99900000051"]);
+  });
+});
+
+test("S9 버튼 목록에 대표 번호가 없고 저장값이 모두 비었으면 차단(button_primary_missing), 대표 번호가 있으면 저장 — 기록에 claimedSource·sourcePageId", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    rowById(tables, SELF_ID).option_product_ids = [];
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const button = { sourcePageId: OPTION_16PRO, claimedSource: "button" };
+    const preview = await post(ctx, { mode: "preview", optionInput: `${OPTION_16PRO}\n${OPTION_15}`, applyToSameProduct: true, ...button }, CLIENT_SESSION);
+    assert.deepEqual(preview.body.guard, {
+      blocked: true,
+      reason: "button_primary_missing",
+      blockedTrackers: [],
+      needsPrimaryConfirm: false,
+      otherPrimaryHits: [{ productId: OPTION_16PRO, keyword: "아이폰16 프로 필름", trackerId: uuid(2) }],
+    });
+    const blocked = await post(ctx, {
+      mode: "save",
+      optionInput: `${OPTION_16PRO}\n${OPTION_15}`,
+      applyToSameProduct: true,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+      primaryConfirmed: true,
+      ...button,
+    }, CLIENT_SESSION);
+    assert.equal(blocked.response.status, 409);
+    assert.equal(blocked.body.code, "RANK_OPTION_FOREIGN_LIST");
+    assert.equal(blocked.body.message, `버튼에서 넘어온 목록에 이 상품(대표 ${PRIMARY})이 없어 저장하지 않았습니다. 이 상품 페이지에서 다시 눌러 주세요.`);
+    assert.equal(state.updates.length + state.inserts.length, 0);
+
+    const okInput = `${PRIMARY}\n${OPTION_16PRO}`;
+    const saved = await post(ctx, {
+      mode: "save",
+      optionInput: okInput,
+      applyToSameProduct: true,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+      sourcePageId: PRIMARY,
+      claimedSource: "button",
+    }, CLIENT_SESSION);
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    for (const row of [...auditRows(tables, "naver_rank_options_save_intent"), ...auditRows(tables, "naver_rank_options_save_result")]) {
+      assert.equal(row.metadata.claimedSource, "button");
+      assert.equal(row.metadata.sourcePageId, PRIMARY);
+      assert.equal(row.metadata.actorRole, "client");
+      assert.equal(row.client_id, CLIENT_ID);
+    }
+
+    // 모양이 틀린 sourcePageId 는 400(차단 규칙을 비껴가지 못하게).
+    for (const sourcePageId of ["1234", "12345x", { id: PRIMARY }, "1".repeat(21)]) {
+      // eslint-disable-next-line no-await-in-loop
+      const bad = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO, sourcePageId }, CLIENT_SESSION);
+      assert.equal(bad.response.status, 400, JSON.stringify(sourcePageId));
+      assert.equal(bad.body.code, "RANK_OPTION_SOURCE_INVALID");
+    }
+  });
+});
+
+test("S10 손 입력 첫 채우기에 대표 번호가 없으면 확인 체크(primaryConfirmed:true)가 있어야 저장 — 409 PRIMARY_CONFIRM_REQUIRED", async () => {
+  await withEnv(async () => {
+    const tables = groupTables();
+    rowById(tables, SELF_ID).option_product_ids = [];
+    const { ctx, state } = fakeDatabase(tables);
+    const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO, applyToSameProduct: true });
+    assert.equal(preview.body.guard.blocked, false);
+    assert.equal(preview.body.guard.reason, null);
+    assert.equal(preview.body.guard.needsPrimaryConfirm, true);
+    const base = {
+      mode: "save",
+      optionInput: OPTION_16PRO,
+      applyToSameProduct: true,
+      expectedOptionProductIds: preview.body.expectedOptionProductIds,
+    };
+    for (const primaryConfirmed of [undefined, false, "true", 1]) {
+      // eslint-disable-next-line no-await-in-loop
+      const refused = await post(ctx, { ...base, ...(primaryConfirmed === undefined ? {} : { primaryConfirmed }) });
+      assert.equal(refused.response.status, 409, String(primaryConfirmed));
+      assert.equal(refused.body.code, "RANK_OPTION_PRIMARY_CONFIRM_REQUIRED");
+      assert.equal(refused.body.message, `이 번호들이 상품 ${PRIMARY} 의 그룹 옵션이 맞는지 확인한 뒤 저장해 주세요.`);
+      assert.equal(refused.body.guard.needsPrimaryConfirm, true);
+    }
+    assert.equal(state.updates.length + state.inserts.length, 0);
+    const confirmed = await post(ctx, { ...base, primaryConfirmed: true });
+    assert.equal(confirmed.response.status, 200);
+    assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, [OPTION_16PRO]);
+  });
+});
+
+test("S11 정상 4가지는 막지 않는다: 처음 채우기(대표 번호 포함)·저장값+새 번호·대표 번호 든 버튼 목록·대표 번호 없음+겹침, 모두 지우기도", async () => {
+  await withEnv(async () => {
+    const cases = [
+      ["처음 채우기", [], `${PRIMARY}\n${OPTION_16PRO}`, {}, [OPTION_16PRO]],
+      ["저장값+새 번호", [OPTION_15], `${OPTION_15}\n${OPTION_16PRO}`, {}, [OPTION_15, OPTION_16PRO]],
+      ["대표 번호 든 버튼 목록", [OPTION_15], `${PRIMARY}\n${OPTION_16PRO}`, { sourcePageId: PRIMARY, claimedSource: "button" }, [OPTION_16PRO]],
+      ["대표 번호 없음+겹침", [OPTION_15, "99900000003"], `99900000003\n${OPTION_16PRO}`, {}, ["99900000003", OPTION_16PRO]],
+      ["처음 채우기(버튼, 다른 옵션 페이지)", [], `${OPTION_16PRO}\n${PRIMARY}`, { sourcePageId: OPTION_16PRO, claimedSource: "button" }, [OPTION_16PRO]],
+      ["모두 지우기", [OPTION_15], "", {}, []],
+    ];
+    for (const [label, stored, input, extra, expected] of cases) {
+      const tables = groupTables();
+      rowById(tables, SELF_ID).option_product_ids = [...stored];
+      const { ctx } = fakeDatabase(tables);
+      // eslint-disable-next-line no-await-in-loop
+      const preview = await post(ctx, { mode: "preview", optionInput: input, ...extra });
+      assert.equal(preview.body.guard.blocked, false, label);
+      assert.equal(preview.body.guard.needsPrimaryConfirm, false, label);
+      // eslint-disable-next-line no-await-in-loop
+      const saved = await post(ctx, { mode: "save", optionInput: input, expectedOptionProductIds: preview.body.expectedOptionProductIds, ...extra });
+      assert.equal(saved.response.status, 200, `${label}: ${JSON.stringify(saved.body)}`);
+      assert.deepEqual(rowById(tables, SELF_ID).option_product_ids, expected, label);
+    }
+  });
+});
+
+test("S12 otherPrimaryHits: 같은 범위에서 입력 번호를 대표 번호로 쓰는 활성·일시중지 추적, 대표 번호마다 1개(활성 먼저)·입력 순서·최대 5개", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const others = ["88800000011", "88800000012", "88800000013", "88800000014", "88800000015"];
+    others.forEach((productId, index) => tables.naver_rank_trackers.push(productTracker(uuid(30 + index), productId, { agency_code: ADVERTISER })));
+    tables.naver_rank_trackers.push(
+      // 같은 대표 번호의 일시중지 추적(활성이 먼저), 다른 광고주·끝난 추적·원부 추적은 빠진다.
+      productTracker(uuid(40), OPTION_16PRO, { agency_code: ADVERTISER, keyword: "가 일시중지", status: "paused" }),
+      productTracker(uuid(41), "88800000016", { agency_code: OTHER_ADVERTISER }),
+      productTracker(uuid(42), "88800000017", { agency_code: ADVERTISER, status: "completed" }),
+    );
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const input = ["88800000016", "88800000017", OPTION_16PRO, ...others].join("\n");
+    const preview = await post(ctx, { mode: "preview", optionInput: input }, CLIENT_SESSION);
+    assert.equal(preview.body.guard.blocked, true);
+    assert.deepEqual(preview.body.guard.otherPrimaryHits, [
+      { productId: OPTION_16PRO, keyword: "아이폰16 프로 필름", trackerId: uuid(2) },
+      { productId: "88800000011", keyword: "상품 88800000011", trackerId: uuid(30) },
+      { productId: "88800000012", keyword: "상품 88800000012", trackerId: uuid(31) },
+      { productId: "88800000013", keyword: "상품 88800000013", trackerId: uuid(32) },
+      { productId: "88800000014", keyword: "상품 88800000014", trackerId: uuid(33) },
+    ]);
+    // 대표 번호가 막힘 없이 들어 있어도 같은 정보를 싣는다(옮기기 버튼은 화면이 막혔을 때만 보인다).
+    const withPrimary = await post(ctx, { mode: "preview", optionInput: `${PRIMARY}\n${OPTION_16PRO}` }, CLIENT_SESSION);
+    assert.equal(withPrimary.body.guard.blocked, false);
+    assert.deepEqual(withPrimary.body.guard.otherPrimaryHits.map((hit) => hit.trackerId), [uuid(2)]);
+  });
+});
+
+test("S13 되돌림 기록 칸: 총관리자(광고주 범위)·운영팀·세션 없는 관리자 코드도 client_id·actorRole·claimedSource 를 남긴다", async () => {
+  await withEnv(async () => {
+    for (const [label, session, clientId, actorRole] of [
+      ["owner on advertiser", OWNER_ON_ADVERTISER, CLIENT_ID, "owner"],
+      ["team", TEAM_SESSION, CLIENT_ID, "team"],
+      ["admin-code", { role: null, adminCode: true }, null, "admin-code"],
+    ]) {
+      const tables = session.agencyCode ? advertiserGroupTables() : groupTables();
+      const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+      // eslint-disable-next-line no-await-in-loop
+      const saved = await post(ctx, {
+        mode: "save",
+        optionInput: OPTION_16PRO_INPUT,
+        expectedOptionProductIds: expectedFor(tables, [SELF_ID]),
+        claimedSource: "something-else",
+      }, session);
+      assert.equal(saved.response.status, 200, label);
+      const rows = [...auditRows(tables, "naver_rank_options_save_intent"), ...auditRows(tables, "naver_rank_options_save_result")];
+      assert.equal(rows.length, 2, label);
+      for (const row of rows) {
+        assert.equal(row.client_id, clientId, label);
+        assert.equal(row.metadata.actorRole, actorRole, label);
+        assert.equal(row.metadata.claimedSource, "manual", `${label}: button 이 아니면 manual`);
+      }
+    }
+  });
+});
+
+test("S14 options-locate: 총관리자 세션만, 상품번호 1~52개 형식, 광고주 범위를 가리지 않고 대표·옵션 번호로 찾고 50개에서 자른다", async () => {
+  await withEnv(async () => {
+    const tables = groupTables();
+    tables.naver_rank_trackers.push(
+      productTracker(uuid(50), PRIMARY, { agency_code: OTHER_ADVERTISER, keyword: "다른 광고주 고리수건" }),
+      productTracker(uuid(51), "77700000001", { agency_code: ADVERTISER, keyword: "옵션으로 가진 추적", option_product_ids: ["13744370949"] }),
+      productTracker(uuid(52), "77700000002", { agency_code: ADVERTISER, status: "completed", option_product_ids: ["13744370949"] }),
+    );
+    const clients = [
+      { id: OTHER_CLIENT_ID, agency_code: OTHER_ADVERTISER, name: "브랜드 X", status: "active" },
+      { id: CLIENT_ID, agency_code: ADVERTISER, name: "브랜드 A", status: "active" },
+    ];
+    const { ctx, state } = fakeDatabase(tables, { clients });
+    const locate = (body, options) => postAction(ctx, { action: "options-locate", ...body }, options);
+
+    for (const [label, options] of [
+      ["team", TEAM_SESSION],
+      ["client", CLIENT_SESSION],
+      ["admin-code", { role: null, adminCode: true }],
+    ]) {
+      const fakeClients = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+      // eslint-disable-next-line no-await-in-loop
+      const refused = await postAction(fakeClients.ctx, { action: "options-locate", productIds: [PRIMARY] }, options);
+      assert.equal(refused.response.status, 403, label);
+      assert.equal(refused.body.code, "RANK_OPTION_LOCATE_FORBIDDEN", label);
+    }
+    for (const productIds of [undefined, [], PRIMARY, ["1234"], [`${PRIMARY}x`], [Number(PRIMARY)], Array.from({ length: 53 }, (_, i) => String(10000000 + i))]) {
+      // eslint-disable-next-line no-await-in-loop
+      const bad = await locate(productIds === undefined ? {} : { productIds });
+      assert.equal(bad.response.status, 400, JSON.stringify(productIds));
+      assert.equal(bad.body.code, "RANK_OPTION_LOCATE_INVALID");
+    }
+
+    const found = await locate({ productIds: [PRIMARY, "13744370949"] });
+    assert.equal(found.response.status, 200);
+    assert.equal(found.body.truncated, false);
+    const byTracker = new Map(found.body.items.map((item) => [item.trackerId, item]));
+    // 대표 번호로 맞는 추적(범위 무관·활성·일시중지) + 옵션 번호로 맞는 추적, 끝난 추적은 빠진다.
+    assert.deepEqual(byTracker.get(uuid(50)), {
+      agencyCode: OTHER_ADVERTISER,
+      advertiserName: "브랜드 X",
+      trackerId: uuid(50),
+      keyword: "다른 광고주 고리수건",
+      productId: PRIMARY,
+    });
+    assert.equal(byTracker.get(SELF_ID).agencyCode, OWNER_CODE);
+    assert.equal(byTracker.get(SELF_ID).advertiserName, null);
+    assert.equal(byTracker.get(uuid(51)).advertiserName, "브랜드 A");
+    assert.equal(byTracker.has(uuid(52)), false);
+    assert.equal(byTracker.has(uuid(3)), false, "끝난 추적");
+    assert.ok(byTracker.has(uuid(4)), "다른 광고주 범위도 찾는다");
+    assert.deepEqual(found.body.items.map((item) => Object.keys(item))[0], ["agencyCode", "advertiserName", "trackerId", "keyword", "productId"]);
+    assert.equal(state.updates.length, 0);
+
+    // 51개 이상이면 50개에서 자르고 truncated.
+    const many = groupTables();
+    many.naver_rank_trackers = Array.from({ length: 60 }, (_, index) => productTracker(uuid(200 + index), "66600000001", {
+      agency_code: `brand-${index % 3}`,
+    }));
+    const manyDb = fakeDatabase(many, { clients: [] });
+    const cut = await postAction(manyDb.ctx, { action: "options-locate", productIds: ["66600000001"] });
+    assert.equal(cut.body.items.length, 50);
+    assert.equal(cut.body.truncated, true);
+    many.naver_rank_trackers = many.naver_rank_trackers.slice(0, 50);
+    const exact = await postAction(fakeDatabase(many, { clients: [] }).ctx, { action: "options-locate", productIds: ["66600000001"] });
+    assert.equal(exact.body.items.length, 50);
+    assert.equal(exact.body.truncated, false);
+
+    // 옵션 칸이 없으면(대표 SQL 전) 대표 번호로 맞는 추적만.
+    const noColumn = fakeDatabase(tables, { clients, optionColumnMissing: true });
+    const partial = await quietWarnings(() => postAction(noColumn.ctx, { action: "options-locate", productIds: [PRIMARY, "13744370949"] }));
+    assert.equal(partial.response.status, 200);
+    assert.equal(partial.body.items.some((item) => item.trackerId === uuid(51)), false);
+    assert.ok(partial.body.items.some((item) => item.trackerId === uuid(50)));
+    forgetOptionColumnMissing();
+  });
+});
+
+test("S15 options-diag: 정해진 형식으로 다시 만든 진단만 남긴다(이상한 칸·값 버림, 못 풀면 unparsed), 범위 코드는 남기지 않는다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+    const diag = base64urlJson({
+      v: "2.1.0",
+      reason: "ambiguous",
+      counts: {
+        items: 3, groups: 2, bad_key: 1, negative: -1, huge: 10_000_001, fraction: 1.5, text: "3",
+        a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7,
+      },
+      keys: ["optionList", "productNo", "id#n", "13744370949", "has space", 7, "x".repeat(41), "<script>", ...Array.from({ length: 30 }, (_, i) => `k${i}`)],
+      extra: "<img src=x onerror=alert(1)>",
+      html: { nested: true },
+    });
+    const sent = await postAction(ctx, { action: "options-diag", pageId: "13744370949", diag }, CLIENT_SESSION);
+    assert.equal(sent.response.status, 200);
+    assert.deepEqual(sent.body, { ok: true, recorded: true });
+    const [row] = auditRows(tables, "naver_rank_option_check_refused");
+    assert.equal(row.client_id, CLIENT_ID);
+    assert.equal(row.target_id, null);
+    assert.deepEqual(Object.keys(row.metadata), ["actorRole", "pageId", "scopeHash", "diag"]);
+    assert.equal(row.metadata.actorRole, "client");
+    assert.equal(row.metadata.pageId, "13744370949");
+    assert.match(row.metadata.scopeHash, /^[0-9a-f]{16}$/u);
+    assert.deepEqual(row.metadata.diag, {
+      v: "2.1.0",
+      reason: "ambiguous",
+      counts: { items: 3, groups: 2, a: 1, b: 2, c: 3, d: 4, e: 5, f: 6 },
+      keys: ["optionList", "productNo", "id#n", "#n", ...Array.from({ length: 16 }, (_, i) => `k${i}`)],
+    });
+    assert.equal(JSON.stringify(tables.audit_logs).includes(ADVERTISER), false, "범위 코드는 기록에 없다");
+
+    for (const [label, raw, expected] of [
+      ["형식 밖 글자", "not base64!!", { reason: "unparsed" }],
+      ["JSON 아님", base64urlJson("{not json"), { reason: "unparsed" }],
+      ["배열", base64urlJson([1, 2]), { reason: "unparsed" }],
+      ["문자열 아님", { reason: "ambiguous" }, { reason: "unparsed" }],
+      ["너무 김", "A".repeat(2001), { reason: "unparsed" }],
+      ["모르는 이유 코드", base64urlJson({ v: "x", reason: "evil", counts: [1], keys: "k" }), { reason: "unparsed", counts: {}, keys: [] }],
+      ["없음", undefined, { reason: "unparsed" }],
+    ]) {
+      const db = fakeDatabase(advertiserGroupTables(), { clients: ADVERTISER_CLIENTS });
+      // eslint-disable-next-line no-await-in-loop
+      const result = await postAction(db.ctx, { action: "options-diag", pageId: PRIMARY, ...(raw === undefined ? {} : { diag: raw }) });
+      assert.equal(result.body.recorded, true, label);
+      assert.deepEqual(db.state.inserts[0].rows[0].metadata.diag, expected, label);
+      assert.equal(db.state.inserts[0].rows[0].metadata.actorRole, "owner", label);
+    }
+
+    for (const pageId of [undefined, "1234", "abc12345", "1".repeat(21)]) {
+      // eslint-disable-next-line no-await-in-loop
+      const bad = await postAction(ctx, { action: "options-diag", ...(pageId === undefined ? {} : { pageId }), diag }, CLIENT_SESSION);
+      assert.equal(bad.response.status, 400, String(pageId));
+      assert.equal(bad.body.code, "RANK_OPTION_DIAG_INVALID");
+    }
+    const anonymous = await postAction(ctx, { action: "options-diag", pageId: PRIMARY, diag }, { role: null, agencyCode: ADVERTISER, accessCode: ADVERTISER });
+    assert.equal(anonymous.response.status, 403);
+    assert.equal(auditRows(tables, "naver_rank_option_check_refused").length, 1);
+  });
+});
+
+test("S16 options-diag 하루 상한: 같은 범위 30건이면 쓰지 않고 recorded:false — 다른 광고주·24시간 지난 줄은 세지 않는다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const now = Date.now();
+    const refusedRow = (clientId, hoursAgo) => ({
+      action: "naver_rank_option_check_refused",
+      client_id: clientId,
+      metadata: { actorRole: "client" },
+      created_at: new Date(now - hoursAgo * 60 * 60_000).toISOString(),
+    });
+    tables.audit_logs = [
+      ...Array.from({ length: 29 }, () => refusedRow(CLIENT_ID, 1)),
+      ...Array.from({ length: 5 }, () => refusedRow(OTHER_CLIENT_ID, 1)),
+      ...Array.from({ length: 5 }, () => refusedRow(CLIENT_ID, 25)),
+    ];
+    const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
+    const body = { action: "options-diag", pageId: PRIMARY, diag: base64urlJson({ v: "2.1.0", reason: "not_found", counts: {}, keys: [] }) };
+    const thirtieth = await postAction(ctx, body, CLIENT_SESSION);
+    assert.deepEqual(thirtieth.body, { ok: true, recorded: true });
+    const over = await postAction(ctx, body, CLIENT_SESSION);
+    assert.equal(over.response.status, 200);
+    assert.deepEqual(over.body, { ok: true, recorded: false });
+    assert.equal(state.inserts.length, 1);
+
+    // 광고주가 없는 범위(총관리자 본 범위)는 역할+범위로 센다.
+    const owner = fakeDatabase(groupTables(), { stampCreatedAt: true });
+    const results = [];
+    for (let index = 0; index < 31; index += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      results.push((await postAction(owner.ctx, body)).body.recorded);
+    }
+    assert.deepEqual(results, [...Array(30).fill(true), false]);
+    // 같은 범위라도 역할이 다르면(세션 없는 관리자 코드) 따로 센다.
+    const adminCode = await postAction(owner.ctx, body, { role: null, adminCode: true });
+    assert.equal(adminCode.body.recorded, true);
+  });
+});
+
+test("S17 운영팀·총관리자 기존 동작 불변: 전체 확인 저장은 확인일을 찍고, 응답에 확인일·가져오기 후보가 실리며 빈도 제한이 없다", async () => {
+  await withEnv(async () => {
+    for (const [label, session] of [["team", TEAM_SESSION], ["owner", OWNER_ON_ADVERTISER]]) {
+      const tables = advertiserGroupTables();
+      const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+      // eslint-disable-next-line no-await-in-loop
+      const preview = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO_INPUT, applyToSameProduct: true }, session);
+      assert.ok(Array.isArray(preview.body.sameProduct.siblingOptionProductIds), label);
+      assert.equal(preview.body.checkedAtReady, true, label);
+      // eslint-disable-next-line no-await-in-loop
+      const saved = await post(ctx, {
+        mode: "save",
+        optionInput: OPTION_16PRO_INPUT,
+        applyToSameProduct: true,
+        fullReview: true,
+        expectedTrackerIds: preview.body.targetTrackerIds,
+        expectedOptionProductIds: preview.body.expectedOptionProductIds,
+      }, session);
+      assert.equal(saved.response.status, 200, label);
+      assert.equal(saved.body.checkedAtRecorded, true, label);
+      assert.equal(rowById(tables, SELF_ID).option_checked_at, saved.body.optionCheckedAt, label);
+      assert.equal(rowById(tables, uuid(1)).option_checked_at, saved.body.optionCheckedAt, label);
+    }
   });
 });

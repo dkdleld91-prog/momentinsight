@@ -30863,6 +30863,7 @@
         var FILL_WAIT_MS = 45000;
         var FILL_NONE_MESSAGE = "이 상품을 30일 순위로 추적하는 키워드가 없습니다.";
         var FILL_SCOPE_MESSAGE = "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
+        var FILL_LIST_MESSAGE = "고르는 동안 순위 목록이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
         var fillHost = rankOptionFillHost();
         var editorHost = rankOptionEditorHost();
         var current = null;
@@ -31181,18 +31182,29 @@
 
         // 그 상품의 추적: 대표 상품번호나 저장된 옵션 번호가 넘어온 번호(ids ∪ pageId)와 겹치는 추적. 대표 상품번호별로 묶어
         // 1묶음이면 그 묶음 첫 추적, 여러 묶음이면 고르는 창(버튼을 누른 상품이 대표인 묶음이 앞).
+        function fillWantedIds(run, ids) {
+          var pageId = run.pending.pageId;
+          return ids.indexOf(pageId) >= 0 ? ids.slice() : ids.concat([pageId]);
+        }
+
+        function fillTrackerMatches(tracker, wanted) {
+          if (!tracker || !tracker.id) return false;
+          var options = Array.isArray(tracker.optionProductIds) ? tracker.optionProductIds.map(String) : [];
+          return wanted.indexOf(String(tracker.productId || "")) >= 0 || options.some(function (id) { return wanted.indexOf(id) >= 0; });
+        }
+
+        function fillTrackerEditable(tracker) {
+          return tracker.optionEditable === true && tracker.status !== "completed";
+        }
+
         async function pickTracker(run, ids) {
           var pageId = run.pending.pageId;
-          var wanted = ids.indexOf(pageId) >= 0 ? ids.slice() : ids.concat([pageId]);
+          var wanted = fillWantedIds(run, ids);
           var list = typeof rankTrackerListForEditor === "function" ? rankTrackerListForEditor() : [];
           var matched = (Array.isArray(list) ? list : []).filter(function (tracker) {
-            if (!tracker || !tracker.id) return false;
-            var options = Array.isArray(tracker.optionProductIds) ? tracker.optionProductIds.map(String) : [];
-            return wanted.indexOf(String(tracker.productId || "")) >= 0 || options.some(function (id) { return wanted.indexOf(id) >= 0; });
+            return fillTrackerMatches(tracker, wanted);
           });
-          var editable = matched.filter(function (tracker) {
-            return tracker.optionEditable === true && tracker.status !== "completed";
-          });
+          var editable = matched.filter(fillTrackerEditable);
           if (!matched.length) {
             endRun(run, FILL_NONE_MESSAGE);
             return null;
@@ -31260,8 +31272,9 @@
           var ids = pending.kind === "f" ? pending.ids.slice() : [pending.pageId];
           // 확인 못 한 페이지 모양은 서버가 정해진 칸만 다시 만들어 기록한다(버튼 규칙을 고칠 근거). 실패해도 이어 간다.
           // 총관리자는 찾은 광고주 범위로 바꾼 뒤 보내 그 광고주 기록·하루 상한으로 센다(못 찾음·취소·실패면 지금 범위로, 한 번).
+          // 범위·로그인이 바뀌어 그만둔 처리(scopeAborted)는 진단도 보내지 않는다(바뀐 범위에 엉뚱한 기록·하루 상한 소모).
           function sendDiag() {
-            if (pending.kind !== "r") return;
+            if (pending.kind !== "r" || run.scopeAborted) return;
             postFill({ action: "options-diag", pageId: pending.pageId, diag: pending.diag }).catch(function () {});
           }
           if (ownerLocate()) {
@@ -31279,17 +31292,23 @@
           if (run.ended || !loaded) return;
           var tracker = await pickTracker(run, ids);
           if (run.ended || !tracker) return;
-          // 한 겹 더: 고르는 동안 범위·목록이 바뀌었으면(신호를 놓쳤어도) 옛 범위 추적의 편집창을 열지 않는다.
+          // 한 겹 더: 고르는 동안 범위·목록이 바뀌었으면(신호를 놓쳤어도) 옛 범위 추적의 편집창을 열지 않는다. 같은 id 가
+          // 남아 있어도 지금 목록의 그 줄이 넘어온 번호와 더는 맞지 않거나 편집할 수 없게 됐으면 열지 않는다.
           var scopeNow = verifiedRankTrackerScope();
-          var listNow = typeof rankTrackerListForEditor === "function" ? rankTrackerListForEditor() : [];
-          var stillListed = (Array.isArray(listNow) ? listNow : []).some(function (item) {
-            return item && String(item.id) === String(tracker.id);
-          });
-          if (!scopeNow || scopeNow.key !== run.scopeKey || !stillListed) {
+          if (!scopeNow || scopeNow.key !== run.scopeKey) {
+            run.scopeAborted = true;
             endRun(run, FILL_SCOPE_MESSAGE);
             return;
           }
-          openPicked(run, tracker);
+          var listNow = typeof rankTrackerListForEditor === "function" ? rankTrackerListForEditor() : [];
+          var fresh = (Array.isArray(listNow) ? listNow : []).find(function (item) {
+            return item && String(item.id) === String(tracker.id);
+          });
+          if (!fresh || !fillTrackerMatches(fresh, fillWantedIds(run, ids)) || !fillTrackerEditable(fresh)) {
+            endRun(run, FILL_LIST_MESSAGE);
+            return;
+          }
+          openPicked(run, fresh);
         }
 
         function start() {
@@ -31333,11 +31352,18 @@
           var scopeKey = scope ? String(scope.key || "") : "";
           var knownKey = run.scopeKey || run.startScopeKey;
           if (!knownKey) {
-            if (root.classList.contains("is-locked")) endRun(run, FILL_SCOPE_MESSAGE);
-            else run.startScopeKey = scopeKey;
+            if (root.classList.contains("is-locked")) {
+              run.scopeAborted = true;
+              endRun(run, FILL_SCOPE_MESSAGE);
+            } else {
+              run.startScopeKey = scopeKey;
+            }
             return;
           }
-          if (scopeKey !== knownKey) endRun(run, FILL_SCOPE_MESSAGE);
+          if (scopeKey !== knownKey) {
+            run.scopeAborted = true;
+            endRun(run, FILL_SCOPE_MESSAGE);
+          }
         });
         window.addEventListener("mi:rank-auth-ready", start);
         // 이미 열린 탭에 버튼 주소가 들어와도(같은 문서 해시 바뀜) 같은 순서로 받는다.

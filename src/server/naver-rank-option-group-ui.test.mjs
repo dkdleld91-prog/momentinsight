@@ -3625,6 +3625,7 @@ test("U28 광고주 카드: '그룹상품 번호' 버튼은 있고 관리자 전
 // 추적 고르는 창에서 바꾸면 옛 범위 추적의 편집창을 열었다.
 // ─────────────────────────────────────────────────────────────
 const SCOPE_MOVED = "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
+const LIST_MOVED = "고르는 동안 순위 목록이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
 const ownerScope = (code) => ({ key: `owner:${code}`, role: "owner", agencyCode: code, clientId: "" });
 const ISHELL_ITEM = { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY };
 const HADN_ITEM = { agencyCode: "hadn-a02", advertiserName: "", trackerId: SIBLING_ID, keyword: "수건", productId: PAGE_ID };
@@ -3814,6 +3815,57 @@ test("U29 같은 범위로 다시 온 신호(실제로 안 바뀜)는 처리를 
   assert.deepEqual([earlyMoved.switches, earlyMoved.opened().length, earlyMoved.note()], [[], 0, SCOPE_MOVED]);
 });
 
+test("U29 총관리자 확인 못 함(kind r): 찾기 중 범위를 바꾸거나 로그아웃해 그만두면 진단도 보내지 않는다(Codex 2차)", async () => {
+  const refused = () => ({ v: 2, kind: "r", pageId: PRIMARY, diag: DIAG });
+  const diagRequests = (env) => env.requests.filter((request) => request.body.action === "options-diag");
+  // 찾기 응답을 기다리는 동안 다른 광고주로 바꿈.
+  const moved = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused() });
+  const releaseMoved = moved.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  moved.respond("options-diag", { ok: true, recorded: true });
+  moved.authReady();
+  await flush();
+  moved.scopeRef.current = ownerScope("hadn-a02");
+  moved.fire("mi:rank-scope-changed");
+  releaseMoved();
+  await flush();
+  assert.deepEqual([moved.switches, diagRequests(moved).length, moved.note()], [[], 0, SCOPE_MOVED], "바뀐 범위(hadn-a02)로 진단을 보내지 않는다");
+
+  // 광고주 고르는 창이 열린 동안 바꿈.
+  const choosing = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused() });
+  choosing.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM, HADN_ITEM] });
+  choosing.respond("options-diag", { ok: true, recorded: true });
+  choosing.authReady();
+  await flush();
+  assert.ok(choosing.chooser());
+  choosing.scopeRef.current = ownerScope("other-a01");
+  choosing.fire("mi:rank-scope-changed");
+  await flush();
+  assert.deepEqual([choosing.chooser(), diagRequests(choosing).length, choosing.note()], [null, 0, SCOPE_MOVED]);
+
+  // 시작 범위가 없을 때 찾기 중 로그아웃(화면 잠김).
+  const out = fillEnv({ role: "owner", scopeKey: "", pending: refused() });
+  const releaseOut = out.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  out.respond("options-diag", { ok: true, recorded: true });
+  out.authReady();
+  await flush();
+  out.root.classList.add("is-locked");
+  out.scopeRef.current = null;
+  out.fire("mi:rank-scope-changed");
+  releaseOut();
+  await flush();
+  assert.deepEqual([diagRequests(out).length, out.note()], [0, SCOPE_MOVED]);
+
+  // 대조군: 사용자가 고르는 창에서 취소하면(범위 변경 아님) 지금 범위로 한 번 보낸다(기존 규칙 그대로).
+  const cancelled = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused() });
+  cancelled.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM, HADN_ITEM] });
+  cancelled.respond("options-diag", { ok: true, recorded: true });
+  cancelled.authReady();
+  await flush();
+  click(cancelled.chooser().querySelector("[data-rank-option-chooser-cancel]"));
+  await flush();
+  assert.equal(diagRequests(cancelled).length, 1);
+});
+
 test("U29 총관리자 시작 범위가 없을 때: 찾기 중 로그아웃(화면 잠김)이면 그만두고, 로그인된 채 범위가 아직 없는 신호로는 그만두지 않는다", async () => {
   // 시작 범위 없음 → 찾기 응답을 기다리는 동안 로그아웃 → 찾은 광고주로 바꾸지 않고 안내.
   const out = fillEnv({ role: "owner", scopeKey: "", pending: foundPending() });
@@ -3884,7 +3936,44 @@ test("U29 한 겹 더: 신호 없이 범위·목록이 바뀌었어도 고른 �
   env.trackers.list = [fillTracker({ id: "t-page", keyword: "아이폰 필름 2매", productId: PAGE_ID })];
   click(env.chooser().querySelectorAll("[data-rank-option-chooser-pick]")[1]);
   await flush();
-  assert.deepEqual([env.opened().length, env.note(), env.requests.length], [0, SCOPE_MOVED, 0]);
+  assert.deepEqual([env.opened().length, env.note(), env.requests.length], [0, LIST_MOVED, 0]);
+
+  // 같은 id 가 남아 있어도 지금 목록의 그 줄이 넘어온 번호와 더는 맞지 않으면(대표 번호·옵션이 바뀜) 열지 않는다(Codex 2차).
+  const drifted = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  drifted.authReady();
+  drifted.loaded("team:client-1", true);
+  await flush();
+  drifted.trackers.list = [
+    fillTracker({ id: "t-own-2", keyword: "아이폰17 케이스", productId: "99900000099", optionProductIds: [] }),
+    fillTracker({ id: "t-page", keyword: "아이폰 필름 2매", productId: PAGE_ID }),
+  ];
+  const pickOwn = drifted.chooser().querySelectorAll("[data-rank-option-chooser-pick]").find((node) => node.getAttribute("data-rank-option-chooser-pick") === "t-own-2");
+  assert.ok(pickOwn, "t-own-2 고르기 단추");
+  click(pickOwn);
+  await flush();
+  assert.deepEqual([drifted.opened().length, drifted.note(), drifted.requests.length], [0, LIST_MOVED, 0]);
+
+  // 같은 id·같은 번호여도 고르는 사이 종료된 추적이면 열지 않는다.
+  const ended = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  ended.authReady();
+  ended.loaded("team:client-1", true);
+  await flush();
+  ended.trackers.list = twoGroupList().map((tracker) => (tracker.id === "t-page" ? { ...tracker, status: "completed" } : tracker));
+  const pickPage = ended.chooser().querySelectorAll("[data-rank-option-chooser-pick]").find((node) => node.getAttribute("data-rank-option-chooser-pick") === "t-page");
+  click(pickPage);
+  await flush();
+  assert.deepEqual([ended.opened().length, ended.note()], [0, LIST_MOVED]);
+
+  // 지금 목록의 줄이 그대로면 지금 줄로 연다(대조군).
+  const same = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  same.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  same.authReady();
+  same.loaded("team:client-1", true);
+  await flush();
+  click(same.chooser().querySelectorAll("[data-rank-option-chooser-pick]").find((node) => node.getAttribute("data-rank-option-chooser-pick") === "t-page"));
+  await flush();
+  assert.equal(same.opened().length, 1);
+  assert.equal(same.opened()[0].trackerId, "t-page");
 
   // 신호 없이 범위만 바뀜(목록은 아직 옛 범위 그대로).
   const quiet = fillEnv({ pending: foundPending(), list: twoGroupList() });

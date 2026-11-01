@@ -3447,6 +3447,12 @@ test("U27 광고주 화면 편집창(실제 광고주 연결 값): 범위 머리
   assert.equal(env.checkOnly().hidden, true, "확인만 기록 없음");
   assert.equal(env.checkLine().hidden, true, "옵션 확인일 줄 없음");
   assert.equal(env.q("[data-rank-cand]").hidden, true, "후보 칸 없음");
+  // 사용법은 같은 6줄이되, 광고주 카드에 없는 '다른 스토어로 보여 뺀 번호' 줄·광고주 화면에 없는 'N 상품 순위' 단건 조회는 말하지 않는다.
+  const guideLines = env.q(".mi-rank-option-guide").querySelectorAll("li").map((node) => node.textContent);
+  assert.equal(guideLines.length, 6);
+  assert.ok(guideLines.every((line) => !/다른 스토어로 보여 뺀 번호|N 상품 순위/u.test(line)), "관리자 화면에만 있는 표시 안내 없음");
+  assert.ok(guideLines.includes("같은 스토어 그룹상품 옵션만 넣으세요. 스토어는 상품 주소의 스토어 주소로, 주소가 없으면 스토어 이름으로 확인합니다. 다른 스토어 상품으로 보이면 순위에 넣지 않습니다."));
+  assert.ok(guideLines.includes("번호 찾는 법: 각 옵션 상품 페이지 주소에서 /products/ 뒤 숫자입니다."));
   click(markButton);
   await flush();
   assert.equal(env.requests.length, 1, "그룹상품 표시 버튼은 아무 요청도 하지 않는다");

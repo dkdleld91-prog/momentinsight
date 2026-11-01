@@ -38,7 +38,7 @@ const privateBaseline = Object.freeze({
   // 편집창·대기값 처리 함수와 광고주 연결 함수, 목록 받음 신호·저장 뒤 다시 읽기가 더해져 바뀌었다(관리자 전용 표시는 그대로
   // 없음 — naver-rank-option-group-ui 시험 U24~U28). 10차 값
   // 1cc55d924d6de40ae7fccf4980fbc766bcec8ec0317e2dcfe0c0bebc624a4a11.
-  clientInline: ["f87f42183c6d6e8bbccb92225d2292b2bd7642416580d8aca52e69d2c6835cf9"],
+  clientInline: ["a88c9945f84b92c5a65e754d4e87f2e0df9b2268fbdf1d282d784720f6beb96a"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

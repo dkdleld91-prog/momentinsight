@@ -433,6 +433,8 @@ function assertDiagShape(encoded) {
   assert.ok(encoded.length >= 1 && encoded.length <= 2000, `${encoded.length}자`);
   assert.match(encoded, /^[A-Za-z0-9_-]+$/);
   const text = Buffer.from(encoded, "base64url").toString("utf8");
+  // 진단은 영문·숫자·기호(ASCII)만: 이름 같은 한글 글자는 어떤 모양으로도 실려 갈 수 없다.
+  assert.match(text, /^[\x20-\x7e]+$/, "진단 글자는 ASCII 만");
   const diag = JSON.parse(text);
   assert.deepEqual(Object.keys(diag), ["v", "reason", "counts", "keys"]);
   assert.equal(diag.v, "2.1.0");
@@ -447,6 +449,8 @@ function assertDiagShape(encoded) {
   for (const key of diag.keys) assert.match(key, /^[A-Za-z0-9_#.-]{1,40}$/);
   // 상품번호 모양 숫자(5자리 이상)는 이유·키에 없다. counts 값은 개수라(훑은 묶음 수 등) 5자리를 넘을 수 있어 따로 본다.
   assert.equal(/[0-9]{5,}/.test(`${diag.reason} ${diag.keys.join(" ")}`), false, "진단 키에 상품번호 모양 숫자 없음");
+  // counts 값은 10,000,000(8자리) 이하라, 풀어 낸 진단 글 어디에도 9자리 이상 숫자(흔한 10~11자리 상품번호 모양)가 없다.
+  assert.equal(/[0-9]{9,}/.test(text), false, "진단 글에 9자리 이상 숫자 없음");
   return { diag, text };
 }
 
@@ -590,8 +594,11 @@ test("확인 못 함(거절): '모먼트에서 직접 입력'은 2.r 값 — 진
     assert.equal(diag.counts.reasonCount, 52);
     assert.equal(diag.counts.chosenCount, 53);
     assert.ok(diag.keys.includes("STATE.groupProduct.products"), diag.keys.join(","));
-    assert.equal(text.includes("옵션"), false);
-    assert.equal(hash.includes("20000000001"), false);
+    // 해시의 진단은 base64url 이라 번호가 글자 그대로 보일 수 없으니, 풀어 낸 진단 글과 counts 값에서 그룹 번호를 하나하나 찾는다.
+    for (const { productNo } of groupOfSize(53).groupProduct.products) {
+      assert.equal(text.includes(productNo), false, `진단 글에 ${productNo} 없음`);
+      assert.equal(Object.values(diag.counts).includes(Number(productNo)), false, `counts 값에 ${productNo} 없음`);
+    }
     assertQuiet(run);
   }
 });

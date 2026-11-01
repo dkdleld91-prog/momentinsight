@@ -174,7 +174,7 @@ const CARD_FUNCTIONS = [
   "rankTrackerRecentRanks", "rankTrackerAverageRank", "rankTrackerSevenDayAverageRank", "rankTrackerLatestRank",
   "rankTrackerPreviousRank", "rankTrackerTrend", "rankTrackerNeedsAttention", "rankTrackerInsight", "rankTrackerCatalogHint",
   "rankTrackerActionNote", "rankTrackerChangeLabel", "rankTrackerCurrentSourceLabel", "rankOptionEditAvailable",
-  "rankOptionCheckInfo", "rankTrackerOptionState", "renderRankOptionOpsPills", "renderRankOptionHitLine", "renderRankTrackerCard",
+  "rankOptionIdsEditAvailable", "rankOptionCheckInfo", "rankTrackerOptionState", "renderRankOptionOpsPills", "renderRankOptionHitLine", "renderRankTrackerCard",
   "cloneRankCardForExport", "cloneRankTrackerCardForShare",
 ];
 
@@ -195,16 +195,18 @@ const CARD_STUBS = `
   function formatRankRemain() { return "3시간"; }
 `;
 
-function cardSandbox(source, label, role = "owner") {
+// role: 관리자 화면 세션 역할(secureSession). clientSession: 광고주 화면 세션(secureClientSession, 기본은 광고주 정식 계정).
+function cardSandbox(source, label, role = "owner", clientSession = { role: "client", trial: false }) {
   const context = {};
   vm.createContext(context);
-  vm.runInContext(`Date.now = function () { return ${NOW}; }; var secureSession = { role: ${JSON.stringify(role)} };`, context);
+  vm.runInContext(`Date.now = function () { return ${NOW}; }; var secureSession = { role: ${JSON.stringify(role)} }; ` +
+    `var secureClientSession = ${JSON.stringify(clientSession)};`, context);
   vm.runInContext(CARD_FUNCTIONS.map((name) => htmlFunction(source, name, label)).join("\n\n") + CARD_STUBS, context);
   return context;
 }
 
-function renderCard(source, label, tracker, role = "owner") {
-  const context = cardSandbox(source, label, role);
+function renderCard(source, label, tracker, role = "owner", clientSession = undefined) {
+  const context = cardSandbox(source, label, role, clientSession);
   context.__tracker = tracker;
   return vm.runInContext("renderRankTrackerCard(__tracker, null)", context);
 }
@@ -244,21 +246,24 @@ const EDIT_BUTTON = /<button class="mi-rank-option-edit[^"]*"[^>]*>[^<]*<\/butto
 // U1 무변경
 // ─────────────────────────────────────────────────────────────
 for (const [label, source] of PAGES) {
-  test(`${label}: U1 그룹상품 칸이 없거나 비어 있는 카드는 예전 HTML 그대로(관리자는 편집 버튼 하나만 더)`, () => {
+  test(`${label}: U1 그룹상품 칸이 없거나 비어 있는 카드는 예전 HTML 그대로(편집 버튼 하나만 더 — 2026-11-01 광고주 화면도)`, () => {
     const legacy = renderCard(source, label, baseTracker());
     assert.doesNotMatch(legacy, /mi-rank-option|data-rank-option|그룹상품|slot-option/u, "옛 응답(칸 없음) 카드에는 새 표시가 없다");
 
-    const empty = renderCard(source, label, baseTracker({
+    const emptyTracker = baseTracker({
       optionProductIds: [], optionProductCount: 0, optionEditable: true, currentMatchBasis: "",
       currentMatchedOptionProductId: null, currentMatchedOptionTitle: null, groupOptionSuggestionCount: 0,
-    }));
+    });
+    const empty = renderCard(source, label, emptyTracker);
+    // 두 화면 모두 서버가 편집 가능하다고 준 추적에 편집 버튼 하나만 붙는다(광고주 화면은 2026-11-01 부터).
+    assert.equal((empty.match(EDIT_BUTTON) || []).length, 1, "편집 버튼 하나만 붙는다");
+    assert.equal(empty.replace(EDIT_BUTTON, ""), legacy, "버튼을 빼면 예전 HTML 과 같다");
+    assert.match(empty, />그룹상품 번호 넣기<\/button>/u);
     if (label === "client.html") {
-      assert.equal(empty, legacy, "광고주 화면은 바이트 단위로 같다");
+      // 체험 계정은 저장이 잠겨 있어(TRIAL_LOCKED) 버튼이 없다 = 예전 HTML 그대로.
+      assert.equal(renderCard(source, label, emptyTracker, "owner", { role: "client", trial: true }), legacy, "체험 계정은 바이트 단위로 같다");
     } else {
-      assert.equal((empty.match(EDIT_BUTTON) || []).length, 1, "관리자 화면은 편집 버튼 하나만 붙는다");
-      assert.equal(empty.replace(EDIT_BUTTON, ""), legacy, "버튼을 빼면 예전 HTML 과 같다");
-      assert.match(empty, />그룹상품 번호 넣기<\/button>/u);
-      // 광고주 역할 세션이 관리자 화면을 열어도 버튼은 없다(서버도 403).
+      // 광고주 역할 세션이 관리자 화면을 열어도 버튼은 없다(관리자용 편집창 연결 값은 총관리자·운영팀만).
       assert.equal(renderCard(source, label, baseTracker({ optionProductIds: [], optionEditable: true }), "client"), legacy);
     }
   });
@@ -268,7 +273,7 @@ for (const [label, source] of PAGES) {
 // U2 알약·버튼
 // ─────────────────────────────────────────────────────────────
 for (const [label, source] of PAGES) {
-  test(`${label}: U2 '그룹상품 n개' 알약과 관리자 편집 버튼·가져오기 권유`, () => {
+  test(`${label}: U2 '그룹상품 n개' 알약과 편집 버튼·가져오기 권유(2026-11-01 광고주 화면도 같은 버튼)`, () => {
     const html = renderCard(source, label, baseTracker({
       optionProductIds: [OPTION_A, OPTION_B, "99900000003"], optionProductCount: 3, optionEditable: true,
     }));
@@ -279,28 +284,23 @@ for (const [label, source] of PAGES) {
     assert.equal(pill.textContent, label === "client.html" ? "그룹상품 3개" : "그룹상품 · 번호 3개 사용 중");
     assert.ok(pill.hasAttribute("data-rank-export-omit"), "공유 이미지에서 빠진다");
     assert.equal(pill.parent.classList.includes("mi-rank-ops-row"), true, "운영줄에 있다");
-    const button = card.querySelector("[data-rank-option-edit]");
-    if (label === "client.html") {
-      assert.equal(button, null, "광고주 화면에는 편집 버튼이 없다(표시만)");
-      assert.doesNotMatch(html, /data-rank-option-edit/u);
-    } else {
-      assert.ok(button);
-      assert.equal(button.getAttribute("data-rank-option-edit"), "t-1");
-      assert.equal(button.getAttribute("data-rank-option-primary"), PRIMARY);
-      assert.equal(button.getAttribute("data-rank-option-keyword"), "아이폰 16 프로 필름");
-      assert.equal(button.getAttribute("aria-haspopup"), "dialog");
-      assert.equal(button.textContent, "그룹상품 번호");
-    }
+    // 편집 버튼은 두 화면 같은 글자·같은 속성(광고주 화면도 같은 편집창을 연다, 2026-11-01).
+    const buttons = card.querySelectorAll("[data-rank-option-edit]");
+    assert.equal(buttons.length, 1, "편집 버튼 하나(후보 버튼 없음)");
+    const button = buttons[0];
+    assert.equal(button.getAttribute("data-rank-option-edit"), "t-1");
+    assert.equal(button.getAttribute("data-rank-option-primary"), PRIMARY);
+    assert.equal(button.getAttribute("data-rank-option-keyword"), "아이폰 16 프로 필름");
+    assert.equal(button.getAttribute("aria-haspopup"), "dialog");
+    assert.equal(button.getAttribute("data-rank-option-focus"), null);
+    assert.equal(button.textContent, "그룹상품 번호");
 
-    // 같은 그룹의 다른 추적에만 있는 번호(서버 groupOptionSuggestionCount)가 있으면 '가져오기'를 권한다.
+    // 같은 그룹의 다른 추적에만 있는 번호(서버 groupOptionSuggestionCount)가 있으면 '가져오기'를 권한다(편집창의 같은 그룹
+    // 번호 가져오기와 같은 값이라 광고주 화면도 같다).
     const suggestEmpty = renderCard(source, label, baseTracker({ optionProductIds: [], optionEditable: true, groupOptionSuggestionCount: 2 }));
     const suggestMore = renderCard(source, label, baseTracker({ optionProductIds: [OPTION_A], optionProductCount: 1, optionEditable: true, groupOptionSuggestionCount: 2 }));
-    if (label === "client.html") {
-      assert.doesNotMatch(suggestEmpty + suggestMore, /가져오기|data-rank-option-edit/u);
-    } else {
-      assert.match(suggestEmpty, /class="mi-rank-option-edit is-suggest"[^>]*>그룹상품 번호 가져오기<\/button>/u);
-      assert.match(suggestMore, /class="mi-rank-option-edit is-suggest"[^>]*>그룹상품 번호 \+2<\/button>/u);
-    }
+    assert.match(suggestEmpty, /class="mi-rank-option-edit is-suggest"[^>]*>그룹상품 번호 가져오기<\/button>/u);
+    assert.match(suggestMore, /class="mi-rank-option-edit is-suggest"[^>]*>그룹상품 번호 \+2<\/button>/u);
 
     // 원부 추적(서버 optionEditable:false)·종료 추적에는 버튼이 없다. 알약은 저장된 번호가 있을 때만.
     for (const extra of [{ optionEditable: false }, { optionEditable: true, status: "completed" }]) {
@@ -561,6 +561,17 @@ test("U6 admin.html·client.html 의 그룹상품 공통 함수와 카드·날�
   };
   assert.deepEqual(["owner", "team", "client", ""].map((role) => run(adminSource, role)), [true, true, false, false]);
   assert.deepEqual(["owner", "team", "client", ""].map((role) => run(clientSource, role)), [false, false, false, false]);
+  // '그룹상품 번호' 편집 버튼(2026-11-01 광고주 사용): 관리자 화면은 지금처럼 총관리자·운영팀, 광고주 화면은 정식 광고주 세션.
+  const ids = (source, session) => {
+    const context = {};
+    vm.createContext(context);
+    vm.runInContext(`var secureSession = ${JSON.stringify(session)}; var secureClientSession = ${JSON.stringify(session)};\n` +
+      `${htmlFunction(source, "rankOptionEditAvailable")}\n${htmlFunction(source, "rankOptionIdsEditAvailable")}`, context);
+    return vm.runInContext("rankOptionIdsEditAvailable()", context);
+  };
+  assert.deepEqual(["owner", "team", "client", ""].map((role) => ids(adminSource, { role })), [true, true, false, false]);
+  assert.deepEqual([{ role: "client", trial: false }, { role: "client", trial: true }, { role: "" }, { role: "owner" }].map((session) => ids(clientSource, session)),
+    [true, false, false, false], "체험 계정은 저장이 잠겨 있어(TRIAL_LOCKED) 버튼이 없다");
 });
 
 for (const [label, source] of PAGES) {
@@ -596,12 +607,20 @@ for (const [label, source] of PAGES) {
     assert.doesNotMatch(css, /\brgba?\(|\bhsla?\(/u);
     assert.match(css, /var\(--mi-/u);
     for (const selector of [".mi-rank-option-pill", ".mi-rank-option-hit", ".mi-rank-slot-option"]) assert.ok(css.includes(selector), selector);
-    if (label === "admin.html") {
-      for (const selector of [".mi-rank-option-edit:focus-visible", ".mi-rank-option-edit:disabled", ".mi-rank-option-modal[hidden]", "@media (max-width: 520px)"]) {
-        assert.ok(css.includes(selector), selector);
-      }
-    } else {
-      assert.ok(!css.includes(".mi-rank-option-modal"), "광고주 화면에는 편집창 CSS 가 없다");
+    // 편집 버튼·편집창·설치 칩·차단·대기값 고르는 창 CSS 는 두 화면 모두(광고주 화면은 2026-11-01 #mi-clean 범위로 옮김).
+    for (const selector of [
+      ".mi-rank-option-edit:focus-visible", ".mi-rank-option-edit:disabled", ".mi-rank-option-modal[hidden]", "@media (max-width: 520px)",
+      ".mi-rank-option-card", ".mi-rank-option-bookmarklet", ".mi-rank-option-drag-hint", ".mi-rank-option-source", ".mi-rank-option-guard",
+      ".mi-rank-option-confirm-check", ".mi-rank-option-chooser", ".mi-rank-option-fill-note:empty",
+    ]) {
+      assert.ok(css.includes(selector), selector);
+    }
+    const scope = label === "admin.html" ? "#mi-admin" : "#mi-clean";
+    const selectors = css.split("\n").map((line) => line.trim()).filter((line) => /[{,]$/u.test(line) && !line.startsWith("@") && !/^\d|^from|^to/u.test(line));
+    assert.ok(selectors.every((line) => line.startsWith(scope)), `${label}: 모든 규칙이 ${scope} 범위`);
+    if (label === "client.html") {
+      // 광고주 화면에는 관리자 전용 표시(후보·그룹상품 표시·확인일 배지)가 없어 그 규칙도 옮기지 않는다.
+      assert.doesNotMatch(css, /\.mi-rank-cand\b|\.mi-rank-option-check(?![a-z-])|\.mi-rank-option-edit\.is-on/u);
     }
   });
 }
@@ -609,14 +628,16 @@ for (const [label, source] of PAGES) {
 // ─────────────────────────────────────────────────────────────
 // U8 연결 지점
 // ─────────────────────────────────────────────────────────────
-test("U8 저장 뒤 목록 다시 읽기는 관리자 initRankTracking 한 곳, 편집창은 관리자만 시작한다", () => {
-  const adminTracking = lockedFunction(adminSource, "initRankTracking");
-  const listener = adminTracking.match(/window\.addEventListener\("mi:rank-trackers-changed", function \(\) \{\s*loadRankTrackers\(true, true, true\);\s*\}\);/gu) || [];
-  assert.equal(listener.length, 1, "자동 밀린 갱신(sync-due) 없이 목록만 다시 읽는다");
-  assert.ok(!lockedFunction(clientSource, "initRankTracking").includes("mi:rank-trackers-changed"), "광고주 initRankTracking 은 그대로");
-  assert.ok(adminSource.includes("      initRankTracking(keywordInput);\n      initRankOptionProductEditor();\n"), "관리자 화면은 initRankTracking 바로 뒤에서 편집창을 연결한다");
-  assert.ok(!clientSource.includes("initRankOptionProductEditor"), "광고주 화면에는 편집창이 없다");
-  assert.ok(!clientSource.includes('action: "options"'), "광고주 화면은 그룹상품 저장 요청을 보내지 않는다");
+test("U8 저장 뒤 목록 다시 읽기는 두 화면 initRankTracking 한 곳씩, 편집창은 두 화면 모두 initRankTracking 바로 뒤에서 시작한다", () => {
+  for (const [label, source] of PAGES) {
+    const tracking = lockedFunction(source, "initRankTracking");
+    const listener = tracking.match(/window\.addEventListener\("mi:rank-trackers-changed", function \(\) \{\s*loadRankTrackers\(true, true, true\);\s*\}\);/gu) || [];
+    assert.equal(listener.length, 1, `${label}: 자동 밀린 갱신(sync-due) 없이 목록만 다시 읽는다`);
+    assert.equal(source.split('"mi:rank-trackers-changed", function').length - 1, 1, `${label}: 다시 읽기 리스너는 N 30일 목록 한 곳뿐`);
+    assert.ok(source.includes("      initRankTracking(keywordInput);\n      initRankOptionProductEditor();\n      initRankOptionFill();\n"),
+      `${label}: initRankTracking 바로 뒤에서 편집창·대기값 처리를 연결한다`);
+    assert.equal(source.split("initRankOptionProductEditor();").length - 1, 1, `${label}: 편집창은 한 번만 시작`);
+  }
   const editor = htmlFunction(adminSource, "initRankOptionProductEditor");
   assert.doesNotMatch(editor, /innerHTML|insertAdjacentHTML|outerHTML/u, "편집창은 textContent 로만 채운다");
   assert.match(editor, /miFetch\(getRankTrackerApiUrl\(\), \{/u, "요청은 기존 순위 추적 API 한 곳뿐");
@@ -732,8 +753,9 @@ const TRACKER_ID = "0f8a3c1e-1111-4a2b-9c3d-000000000001";
 const SIBLING_ID = "0f8a3c1e-2222-4a2b-9c3d-000000000002";
 const MEMBER_ID = "0f8a3c1e-3333-4a2b-9c3d-000000000003";
 
-// hostSource: 편집창 연결 함수(rankOptionEditorHost)를 대신할 원본(광고주 화면 연결 값 시험용). 없으면 관리자 원본 그대로.
-function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = false, hostSource = null } = {}) {
+// hostSource: 편집창 연결 함수(rankOptionEditorHost)를 대신할 원본(광고주 화면 연결 값 시험용). 없으면 그 화면 원본 그대로.
+// source: 편집창·도우미를 읽을 화면 원본(광고주 화면 client.html 도 같은 편집창 함수, 2026-11-01). 기본은 관리자 화면.
+function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = false, hostSource = null, source = adminSource } = {}) {
   const documentRef = { activeElement: null };
   documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
   const html = new FakeElement("html", documentRef);
@@ -803,11 +825,11 @@ function editorEnv({ confirmAnswers = [], lookup = null, now = null, install = f
   if (now !== null) vm.runInContext(`Date.now = function () { return ${now}; };`, context);
   // 편집창이 부르는 화면 공통 도우미(상품 주소·옵션 확인일)는 원본 그대로 싣는다.
   vm.runInContext([
-    htmlFunction(adminSource, "setStatus"),
-    htmlFunction(adminSource, "rankTrackerProductUrl"),
-    htmlFunction(adminSource, "rankOptionCheckInfo"),
-    hostSource || htmlFunction(adminSource, "rankOptionEditorHost"),
-    htmlFunction(adminSource, "initRankOptionProductEditor"),
+    htmlFunction(source, "setStatus"),
+    htmlFunction(source, "rankTrackerProductUrl"),
+    htmlFunction(source, "rankOptionCheckInfo"),
+    hostSource || htmlFunction(source, "rankOptionEditorHost"),
+    htmlFunction(source, "initRankOptionProductEditor"),
     "initRankOptionProductEditor();",
   ].join("\n"), context);
   const modal = () => root.querySelector("[data-rank-option-modal]");
@@ -2453,36 +2475,39 @@ test("U17 버튼 설치 안내(A7·2026-11-01 칩): 정적 HTML 표식 사이 �
   // 원본: 표식은 관리자 화면 N 30일 카드 안에 한 번씩, 그 사이에는 끌어 놓기 링크 하나(빌드가 href 만 바꿔 끼운다).
   const start = "<!-- mi-option-check-bookmarklet:start -->";
   const end = "<!-- mi-option-check-bookmarklet:end -->";
-  assert.equal(adminSource.split(start).length, 2);
-  assert.equal(adminSource.split(end).length, 2);
-  assert.ok(!clientSource.includes("mi-option-check-bookmarklet") && !clientSource.includes("data-rank-option-install"), "광고주 화면에는 아직 없다(다음 단계)");
-  const between = adminSource.slice(adminSource.indexOf(start) + start.length, adminSource.indexOf(end));
-  assert.match(between, /^<a class="mi-rank-option-bookmarklet" data-rank-option-bookmarklet href="javascript:[^"]*" title="즐겨찾기 줄로 끌어다 놓으세요">모먼트 옵션 확인<\/a>$/u,
-    "링크 태그·글자는 그대로(즐겨찾기 이름이 '모먼트 옵션 확인'으로 남는다)");
-  const cardFrom = adminSource.indexOf('<article class="mi-card mi-card-pad mi-rank-card" data-rank-card>');
-  const cardTo = adminSource.indexOf("</article>", cardFrom);
-  const installFrom = adminSource.indexOf('<details class="mi-rank-option-install" data-rank-option-install hidden>');
-  assert.ok(cardFrom > 0 && installFrom > cardFrom && adminSource.indexOf(start) > installFrom && adminSource.indexOf(end) < cardTo, "N 30일 카드 안의 접힌 안내");
-  const installHtml = adminSource.slice(installFrom, adminSource.indexOf("</details>", installFrom));
-  assert.doesNotMatch(installHtml, /\son[a-z]+\s*=/iu, "인라인 핸들러 없음(CSP)");
-  const steps = [...installHtml.matchAll(/<li>([^<]*)<\/li>/gu)].map((match) => match[1]);
-  assert.deepEqual(steps, [
-    "평소 쓰는 크롬 창에서 즐겨찾기 줄을 켭니다(⌘+Shift+B, 윈도우 Ctrl+Shift+B).",
-    "아래 칩을 즐겨찾기 줄로 끌어 놓습니다.",
-    "스마트스토어 상품 페이지에서 즐겨찾기의 '모먼트 옵션 확인'을 누르고 '모먼트에서 확인하고 저장'을 누릅니다.",
-  ], "짧은 3단계 안내");
-  assert.ok(installHtml.includes(`${end}<span class="mi-rank-option-drag-hint">← 즐겨찾기 줄로 끌어 놓기</span>`), "칩 옆 끌어 놓기 글(표식 밖)");
-  assert.ok(installHtml.includes("<small>예전 '모먼트 옵션 확인' 즐겨찾기가 있으면 지우고 새로 놓으세요.</small>"));
-  assert.ok(installHtml.includes("<small>끌기가 어려우면: 칩을 오른쪽 클릭 → 링크 주소 복사 → 즐겨찾기 줄 오른쪽 클릭 → 페이지 추가 → URL 칸에 붙여 넣기</small>"));
-  assert.doesNotMatch(installHtml, /번호 복사|어디에도 보내지 않습니다/u, "옛 버튼(번호 복사) 설명은 없다");
-  assert.ok(!adminSource.includes("여기서 누르는 버튼이 아닙니다"), "주황 경고 문장 삭제");
-  assert.ok(!adminSource.includes("mi-rank-option-install-note"), "경고 줄 자리도 없다");
-  const css = adminSource.slice(adminSource.indexOf("/* N 30일 그룹상품 시작"), adminSource.indexOf("/* N 30일 그룹상품 끝 */"));
-  const chipRule = css.slice(css.indexOf("#mi-admin .mi-rank-option-bookmarklet {"), css.indexOf("}", css.indexOf("#mi-admin .mi-rank-option-bookmarklet {")));
-  assert.match(chipRule, /border: 2px dashed var\(--mi-blue\);/u, "점선 테두리");
-  assert.match(chipRule, /cursor: grab;/u);
-  assert.match(css, /#mi-admin \.mi-rank-option-bookmarklet::before \{\s*content: "\\283F";/u, "손잡이 ⠿ 는 CSS 글자(링크 글자에 섞이지 않음)");
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\s*#mi-admin \.mi-rank-option-bookmarklet\.is-nudge \{\s*animation: none;/u, "동작 줄이기면 흔들지 않는다");
+  // 두 화면 모두 N 30일 카드 안에 같은 설치 칸(광고주 화면은 2026-11-01, 링크는 통합 때 --embed 가 /client 변형으로 채운다).
+  for (const [label, source] of PAGES) {
+    assert.equal(source.split(start).length, 2, label);
+    assert.equal(source.split(end).length, 2, label);
+    const between = source.slice(source.indexOf(start) + start.length, source.indexOf(end));
+    assert.match(between, /^<a class="mi-rank-option-bookmarklet" data-rank-option-bookmarklet href="javascript:[^"]*" title="즐겨찾기 줄로 끌어다 놓으세요">모먼트 옵션 확인<\/a>$/u,
+      `${label}: 링크 태그·글자는 그대로(즐겨찾기 이름이 '모먼트 옵션 확인'으로 남는다)`);
+    const cardFrom = source.indexOf('<article class="mi-card mi-card-pad mi-rank-card" data-rank-card>');
+    const cardTo = source.indexOf("</article>", cardFrom);
+    const installFrom = source.indexOf('<details class="mi-rank-option-install" data-rank-option-install hidden>');
+    assert.ok(cardFrom > 0 && installFrom > cardFrom && source.indexOf(start) > installFrom && source.indexOf(end) < cardTo, `${label}: N 30일 카드 안의 접힌 안내`);
+    const installHtml = source.slice(installFrom, source.indexOf("</details>", installFrom));
+    assert.doesNotMatch(installHtml, /\son[a-z]+\s*=/iu, "인라인 핸들러 없음(CSP)");
+    const steps = [...installHtml.matchAll(/<li>([^<]*)<\/li>/gu)].map((match) => match[1]);
+    assert.deepEqual(steps, [
+      "평소 쓰는 크롬 창에서 즐겨찾기 줄을 켭니다(⌘+Shift+B, 윈도우 Ctrl+Shift+B).",
+      "아래 칩을 즐겨찾기 줄로 끌어 놓습니다.",
+      "스마트스토어 상품 페이지에서 즐겨찾기의 '모먼트 옵션 확인'을 누르고 '모먼트에서 확인하고 저장'을 누릅니다.",
+    ], `${label}: 짧은 3단계 안내`);
+    assert.ok(installHtml.includes(`${end}<span class="mi-rank-option-drag-hint">← 즐겨찾기 줄로 끌어 놓기</span>`), "칩 옆 끌어 놓기 글(표식 밖)");
+    assert.ok(installHtml.includes("<small>예전 '모먼트 옵션 확인' 즐겨찾기가 있으면 지우고 새로 놓으세요.</small>"));
+    assert.ok(installHtml.includes("<small>끌기가 어려우면: 칩을 오른쪽 클릭 → 링크 주소 복사 → 즐겨찾기 줄 오른쪽 클릭 → 페이지 추가 → URL 칸에 붙여 넣기</small>"));
+    assert.doesNotMatch(installHtml, /번호 복사|어디에도 보내지 않습니다/u, "옛 버튼(번호 복사) 설명은 없다");
+    assert.ok(!source.includes("여기서 누르는 버튼이 아닙니다"), `${label}: 주황 경고 문장 없음`);
+    assert.ok(!source.includes("mi-rank-option-install-note"), `${label}: 경고 줄 자리도 없다`);
+    const scope = label === "admin.html" ? "#mi-admin" : "#mi-clean";
+    const css = source.slice(source.indexOf("/* N 30일 그룹상품 시작"), source.indexOf("/* N 30일 그룹상품 끝 */"));
+    const chipRule = css.slice(css.indexOf(`${scope} .mi-rank-option-bookmarklet {`), css.indexOf("}", css.indexOf(`${scope} .mi-rank-option-bookmarklet {`)));
+    assert.match(chipRule, /border: 2px dashed var\(--mi-blue\);/u, `${label}: 점선 테두리`);
+    assert.match(chipRule, /cursor: grab;/u);
+    assert.ok(css.includes(`${scope} .mi-rank-option-bookmarklet::before {\n      content: "\\283F";`), `${label}: 손잡이 ⠿ 는 CSS 글자(링크 글자에 섞이지 않음)`);
+    assert.ok(css.includes(`@media (prefers-reduced-motion: reduce) {\n      ${scope} .mi-rank-option-bookmarklet.is-nudge {\n        animation: none;`), `${label}: 동작 줄이기면 흔들지 않는다`);
+  }
 
   const env = editorEnv({ install: true });
   assert.equal(env.installBlock.parentNode, null, "편집창을 열기 전에는 카드에서 떼어 둔다");
@@ -2807,10 +2832,11 @@ const PAGE_ID = OPTION_A; // 버튼을 누른 상품 페이지(그룹의 옵션 
 const FILL_IDS = [PRIMARY, OPTION_A, OPTION_B];
 const DIAG = "eyJ2IjoiMi4xLjAiLCJyZWFzb24iOiJhbWJpZ3VvdXMifQ";
 
-function intakeContext({ hash, storageThrows = false, stored = null, now = NOW } = {}) {
+// source·pathname: 광고주 화면(client.html, /client)도 같은 받기 함수를 쓴다(2026-11-01).
+function intakeContext({ hash, storageThrows = false, stored = null, now = NOW, source = adminSource, pathname = "/admin" } = {}) {
   const storage = new Map(stored ? [["mi-optfill-pending", stored]] : []);
   const replaced = [];
-  const location = { hash, pathname: "/admin", search: "?x=1" };
+  const location = { hash, pathname, search: "?x=1" };
   const context = {
     window: {
       location,
@@ -2823,7 +2849,7 @@ function intakeContext({ hash, storageThrows = false, stored = null, now = NOW }
     },
   };
   vm.createContext(context);
-  vm.runInContext(`Date.now = function () { return ${now}; };\n${htmlFunction(adminSource, "rankOptionFillParse")}\n${htmlFunction(adminSource, "rankOptionFillIntake")}`, context);
+  vm.runInContext(`Date.now = function () { return ${now}; };\n${htmlFunction(source, "rankOptionFillParse")}\n${htmlFunction(source, "rankOptionFillIntake")}`, context);
   return { context, storage, replaced, location };
 }
 
@@ -2885,13 +2911,18 @@ test("U22 해시 받기: 맞으면 sessionStorage 에 시각과 함께, 맞든 �
 
 const fillTracker = (extra = {}) => ({ id: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY, status: "active", optionEditable: true, optionProductIds: [], ...extra });
 
-function fillEnv({ role = "team", scopeKey = "team:client-1", list = [fillTracker()], pending = null, locked = true, now = NOW } = {}) {
+// source·rankHash·pathname·rootId: 광고주 화면(client.html)은 같은 처리 함수에 광고주 연결 값(rankOptionFillHost·
+// rankOptionEditorHost)을 싣는다(2026-11-01).
+function fillEnv({
+  role = "team", scopeKey = "team:client-1", list = [fillTracker()], pending = null, locked = true, now = NOW,
+  source = adminSource, rankHash = RANK_HASH, pathname = "/admin", rootId = "mi-admin",
+} = {}) {
   const documentRef = { activeElement: null };
   documentRef.createElement = (tag) => new FakeElement(tag, documentRef);
   const html = new FakeElement("html", documentRef);
   documentRef.documentElement = html;
   const root = documentRef.createElement("div");
-  root.id = "mi-admin";
+  root.id = rootId;
   if (locked) root.classList.add("is-locked");
   html.appendChild(root);
   const loginForm = documentRef.createElement("div");
@@ -2908,7 +2939,7 @@ function fillEnv({ role = "team", scopeKey = "team:client-1", list = [fillTracke
 
   const storage = new Map();
   if (pending) storage.set("mi-optfill-pending", JSON.stringify({ at: now, ...pending }));
-  const location = { hash: RANK_HASH, pathname: "/admin", search: "" };
+  const location = { hash: rankHash, pathname, search: "" };
   const listeners = {};
   const events = [];
   const timers = [];
@@ -2917,7 +2948,12 @@ function fillEnv({ role = "team", scopeKey = "team:client-1", list = [fillTracke
   const screens = [];
   const switches = [];
   const replaced = [];
-  const scopeRef = { current: scopeKey ? { key: scopeKey, role, agencyCode: role === "owner" ? "owner-session" : "", clientId: "" } : null };
+  const scopeRef = {
+    current: scopeKey ? {
+      key: scopeKey, role, agencyCode: role === "owner" ? "owner-session" : (role === "client" ? "ishell" : ""),
+      clientId: role === "client" ? scopeKey.replace(/^client:/u, "") : "",
+    } : null,
+  };
   const trackers = { list };
   class TestEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } }
   const windowRef = {
@@ -2963,7 +2999,7 @@ function fillEnv({ role = "team", scopeKey = "team:client-1", list = [fillTracke
   vm.runInContext([
     "setStatus", "rankTrackerProductUrl", "rankOptionCheckInfo", "rankOptionEditorHost", "rankOptionFillHost",
     "rankOptionFillParse", "rankOptionFillIntake", "initRankOptionProductEditor", "initRankOptionFill",
-  ].map((name) => htmlFunction(adminSource, name)).join("\n") + "\ninitRankOptionProductEditor();\ninitRankOptionFill();", context);
+  ].map((name) => htmlFunction(source, name)).join("\n") + "\ninitRankOptionProductEditor();\ninitRankOptionFill();", context);
   const fire = (type, detail) => windowRef.dispatchEvent(new TestEvent(type, { detail }));
   return {
     root, rankCard, rankStatus, loginStatus, storage, requests, events, timers, screens, switches, replaced, scopeRef, trackers, location,

@@ -216,8 +216,9 @@ const CARD_FUNCTIONS = [
   "rankTrackerCatalogHint",
   "rankTrackerActionNote",
   "rankTrackerChangeLabel",
-  // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부.
+  // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부(2026-11-01 편집 버튼 함수 추가).
   "rankOptionEditAvailable",
+  "rankOptionIdsEditAvailable",
   "rankOptionCheckInfo",
   "rankTrackerOptionState",
   "renderRankOptionOpsPills",
@@ -229,6 +230,7 @@ const CARD_FUNCTIONS = [
 
 const CARD_STUBS = `
   var secureSession = { role: "owner" };
+  var secureClientSession = { role: "client", trial: false };
   var RANK_CHRONIC_ISOLATION_LABEL = "수집 방식 점검 중";
   function rankTrackerChronicIsolated() { return false; }
   function rankTrackerTitle(tracker) { return tracker.productTitle || "상품"; }

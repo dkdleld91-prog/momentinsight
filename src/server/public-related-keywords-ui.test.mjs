@@ -34,7 +34,11 @@ const privateBaseline = Object.freeze({
   // 2026-10-31 옵션 확인일(대표 승인): 공통 카드 함수에 관리자 전용 '옵션 확인' 배지가 더해져 바뀌었다(광고주 응답은
   // optionCheckReady:false 라 배지가 없다 — naver-rank-option-group-ui·naver-rank-tracker-options 시험). 9차 값
   // c3112987960130e638cb1ee69773b00f965ffec1b6aef2d5804b407a4fed163c.
-  clientInline: ["1cc55d924d6de40ae7fccf4980fbc766bcec8ec0317e2dcfe0c0bebc624a4a11"],
+  // 2026-11-01 광고주 화면 그룹상품 번호 편집(옵션 확인 버튼 대기값·편집창·카드 편집 버튼, 명세 §4): 관리자 화면과 같은 글자의
+  // 편집창·대기값 처리 함수와 광고주 연결 함수, 목록 받음 신호·저장 뒤 다시 읽기가 더해져 바뀌었다(관리자 전용 표시는 그대로
+  // 없음 — naver-rank-option-group-ui 시험 U24~U28). 10차 값
+  // 1cc55d924d6de40ae7fccf4980fbc766bcec8ec0317e2dcfe0c0bebc624a4a11.
+  clientInline: ["c67e267815feabd2f7666312df3e3fe006aef276340efd792ad237d62df3666e"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

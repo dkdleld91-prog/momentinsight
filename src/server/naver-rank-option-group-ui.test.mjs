@@ -3307,6 +3307,14 @@ test("U24 편집창·대기값 공통 함수는 admin.html·client.html 에 글�
     assert.equal(htmlFunction(clientSource, name, "client"), htmlFunction(adminSource, name, "admin"), name);
     assert.equal(clientSource.split(`      function ${name}(`).length - 1, 1, `${name} 는 광고주 화면에 한 번`);
   }
+  // 공통 함수가 부르는 화면 도우미는 광고주 화면에도 있다. 결과를 그대로 쓰는 도우미는 글자까지 같고, 세션·범위 도우미는
+  // 화면마다 자기 세션을 읽는다(광고주 화면은 광고주 세션 범위만, 범위 머리글은 miFetch 가 지운다).
+  for (const name of ["setStatus", "rankTrackerProductUrl", "rankOptionCheckInfo", "getRankTrackerApiUrl", "sameRankTrackerScope"]) {
+    assert.equal(htmlFunction(clientSource, name, "client"), htmlFunction(adminSource, name, "admin"), name);
+  }
+  for (const name of ["verifiedRankTrackerScope", "miFetch", "setScreen"]) htmlFunction(clientSource, name, "client");
+  assert.match(htmlFunction(clientSource, "miFetch"), /\["authorization", "apikey", "x-demo-admin-code", "x-mi-agency-code",/u, "광고주 화면은 범위 머리글을 보내지 않는다");
+  assert.ok(clientSource.includes('      var loginStatus = root.querySelector("[data-mi-login-status]");\n'), "로그인 전 안내 자리");
   // 광고주 화면 연결 값(명세 §4.1 host(client)): 관리자 전용 표시를 모두 끄고 총관리자 범위가 없다.
   const context = {};
   vm.createContext(context);

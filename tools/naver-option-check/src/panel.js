@@ -54,11 +54,13 @@ const content = el("div");
 panel.appendChild(content);
 
 // 주 버튼(있으면)과 '닫기'. 주 버튼을 누를 때만 고정 주소 하나를 새 탭으로 연다. 이 밖의 곳에는 창 열기가 없다.
+// 페이지 스크립트가 만든 가짜 누르기(합성 click)로는 열지 않는다 — 사람이 마우스·키보드로 누른 것(isTrusted)만 연다.
 function addButtons(primaryLabel, payload) {
   if (primaryLabel) {
     const primary = el("button", "", primaryLabel);
     primary.type = "button";
-    primary.addEventListener("click", () => {
+    primary.addEventListener("click", (event) => {
+      if (!event || event.isTrusted !== true) return;
       try {
         window.open(OPTION_FILL_TARGET + "#mi-optfill=" + payload, "_blank", "noopener,noreferrer");
       } catch {

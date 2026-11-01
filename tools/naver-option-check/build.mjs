@@ -15,7 +15,8 @@
 // 만들지 않는 경우(큰 소리로 실패)
 // - core.mjs 의 자리 수·개수 규칙이 서버(src/server/naver-rank-option-group.mjs)와 다르다.
 // - 묶은 코드에 요청·주소 이동·HTML 끼워 넣기 같은 금지 코드가 보인다(FORBIDDEN_CODE_PATTERNS).
-// - 창 열기(window.open)가 정확히 1곳이 아니거나, 그 첫 인자가 고정 주소 상수(OPTION_FILL_TARGET)로 시작하지 않는다.
+// - 창 열기(window.open)가 정확히 1곳이 아니거나, 그 모양이 정해 둔 한 줄(고정 주소 상수 + "#mi-optfill=" + payload, "_blank",
+//   "noopener,noreferrer")이 아니거나, 고정 주소 상수를 그 선언·그 한 곳 밖에서 쓴다.
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -42,8 +43,12 @@ export const OPTION_FILL_VARIANTS = Object.freeze(Object.keys(OPTION_FILL_TARGET
 export const EMBED_PAGE_VARIANTS = Object.freeze({ "src/pages/admin.html": "admin", "src/pages/client.html": "client" });
 // panel.js 의 자리 글자. 빌드가 정확히 1번 바꿔 끼운다.
 export const TARGET_PLACEHOLDER_LINE = 'const OPTION_FILL_TARGET = "__MI_OPTION_FILL_TARGET__";';
-// 허용하는 창 열기 한 곳의 모양: window.open( 바로 뒤가 고정 주소 상수 + … 인 식.
-const ALLOWED_OPEN = /\bwindow\s*\.\s*open\s*\(\s*OPTION_FILL_TARGET\s*\+/g;
+// 허용하는 창 열기 한 곳의 모양(빈칸만 달라도 됨). 첫 인자가 '고정 주소 상수 + "#mi-optfill=" + payload' 그대로여야 해서
+// 뒤에 다른 연산(&&·|| 등)을 붙여 첫 인자를 바꿀 수 없다(2026-11-01 검토 반영).
+const ALLOWED_OPEN = /\bwindow\s*\.\s*open\s*\(\s*OPTION_FILL_TARGET\s*\+\s*"#mi-optfill="\s*\+\s*payload\s*,\s*"_blank"\s*,\s*"noopener,noreferrer"\s*\)/g;
+// 걷은 뒤 남은 코드에서 open 을 이름으로 쓰는 모든 자리(window.open 별칭·self.open·{ open } = …·const o = open)를 막는다.
+// 글자 안의 "open"(attachShadow 의 mode)·noopener 같은 긴 이름은 잡지 않는다.
+const OPEN_NAME = /(?<![\w$"'`-])open(?![\w$"'`-])/;
 
 // 묶은 코드에 있으면 안 되는 것. 시험(test/bookmarklet.test.mjs)은 이 목록과 별도로 같은 금지를 다시 검사한다.
 // 글자로 찾는 검사라 완전하지 않다. 그래서 화면 코드는 만들 수 있는 요소를 목록으로 묶고(panel.js PANEL_TAGS),
@@ -84,12 +89,14 @@ export function countAllowedOpens(code) {
 }
 
 // 허용 모양의 창 열기가 정확히 1곳이면 그 한 곳만 걷고 나머지를 검사한다(2곳 이상이면 아무것도 걷지 않아 '창 열기'로 걸림).
-// 고정 주소 상수를 다른 값으로 다시 선언·대입하는 코드도 막는다(첫 인자가 늘 빌드가 박은 주소로 시작하게).
+// 고정 주소 상수는 선언 1번과 그 한 곳에만 나와야 한다(다시 대입·같은 이름 매개변수로 가리기 등을 막아, 첫 인자가 늘 빌드가 박은
+// 주소로 시작하게).
 export function findForbiddenCode(code) {
   const text = String(code);
-  const checked = countAllowedOpens(text) === 1 ? text.replace(ALLOWED_OPEN, "allowedOpenSlot(OPTION_FILL_TARGET +") : text;
+  const checked = countAllowedOpens(text) === 1 ? text.replace(ALLOWED_OPEN, "allowedOpenSlot()") : text;
   const found = FORBIDDEN_CODE_PATTERNS.filter(([, pattern]) => pattern.test(checked)).map(([name]) => name);
-  if ((text.match(/\bOPTION_FILL_TARGET\s*=(?!=)/g) || []).length > 1) found.push("고정 주소 상수 다시 대입");
+  if (OPEN_NAME.test(checked) && !found.includes("창 열기")) found.push("창 열기");
+  if ((text.match(/\bOPTION_FILL_TARGET\b/g) || []).length > 2) found.push("고정 주소 상수 다른 곳에서 씀");
   return found;
 }
 
@@ -156,6 +163,11 @@ export function buildBookmarkletCode({ variant, toolRoot = TOOL_ROOT } = {}) {
   if (forbidden.length) throw new Error(`naver-option-check: 금지 코드가 있습니다: ${forbidden.join(", ")}`);
   const opens = countAllowedOpens(code);
   if (opens !== 1) throw new Error(`naver-option-check: 고정 주소로 여는 창 열기가 정확히 1곳이어야 합니다(${opens}곳)`);
+  const declared = code.split(`const OPTION_FILL_TARGET = ${JSON.stringify(target)};`).length - 1;
+  const mentions = (code.match(/\bOPTION_FILL_TARGET\b/g) || []).length;
+  if (declared !== 1 || mentions !== 2) {
+    throw new Error(`naver-option-check: 고정 주소 상수는 선언 1번·창 열기 1곳에만 있어야 합니다(선언 ${declared}번, 모두 ${mentions}번)`);
+  }
   return code;
 }
 
@@ -219,6 +231,25 @@ export function embedBookmarklet(html, href) {
   return `${html.slice(0, found.from)}${inner}${html.slice(found.to)}`;
 }
 
+// 여러 화면 파일을 함께 쓴다: 모두 같은 폴더의 임시 파일로 먼저 쓰고, 하나라도 실패하면 임시 파일만 지우고 원본은 그대로 둔다.
+// 다 쓴 뒤에 이름 바꾸기로 한꺼번에 바꿔 끼운다(쓰다 끊겨 원본이 잘리지 않게, 2026-11-01 검토 반영).
+// 심볼릭 링크는 링크가 아니라 가리키는 실제 파일을 바꾼다.
+function writeFilesTogether(files) {
+  const staged = [];
+  try {
+    for (const file of files) {
+      const real = fs.realpathSync(file.path);
+      const temp = path.join(path.dirname(real), `.${path.basename(real)}.mi-embed-${process.pid}.tmp`);
+      staged.push({ real, temp });
+      fs.writeFileSync(temp, file.text, { encoding: "utf8", flag: "wx", mode: fs.statSync(real).mode & 0o777 });
+    }
+  } catch (error) {
+    for (const entry of staged) fs.rmSync(entry.temp, { force: true });
+    throw error;
+  }
+  for (const entry of staged) fs.renameSync(entry.temp, entry.real);
+}
+
 export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPaths = [], toolRoot = TOOL_ROOT, repoRoot = REPO_ROOT } = {}) {
   assertServerRulesMatch(repoRoot);
   const variants = {};
@@ -237,11 +268,9 @@ export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPaths = [], 
     const after = embedBookmarklet(before, variants[variant].href);
     return { path: resolved, variant, before, after };
   });
-  const embedded = plans.map((plan) => {
-    if (plan.after !== plan.before) fs.writeFileSync(plan.path, plan.after, "utf8");
-    return { path: plan.path, variant: plan.variant, changed: plan.after !== plan.before };
-  });
   fs.mkdirSync(outDir, { recursive: true });
+  writeFilesTogether(plans.filter((plan) => plan.after !== plan.before).map((plan) => ({ path: plan.path, text: plan.after })));
+  const embedded = plans.map((plan) => ({ path: plan.path, variant: plan.variant, changed: plan.after !== plan.before }));
   for (const [variant, built] of Object.entries(variants)) {
     fs.writeFileSync(path.join(outDir, `bookmarklet-${variant}.js`), built.code, "utf8");
     fs.writeFileSync(path.join(outDir, `bookmarklet-${variant}-href.txt`), `${built.href}\n`, "utf8");

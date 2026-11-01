@@ -3095,12 +3095,164 @@ const OPTION_TRACKER_COLUMNS = "id, agency_code, keyword, status, product_url, p
 const OPTION_EDIT_MODES = new Set(["read", "preview", "save"]);
 const OPTION_TRACKER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
+// 관리자 기록 보이기(optionSkipExtras·groupCandidates)와 group-mark 권한. 2026-11-01 광고주 사용 뒤에도 이름·동작 그대로다 —
+// 광고주에게는 관리자 진단·후보를 계속 숨기고 group-mark 는 403 이다. 번호 편집 권한은 아래 optionEditAllowed 가 가른다.
 function optionEditForbidden(request, access) {
   const role = String(request.headers.get("x-mi-session-role") || "").trim().toLowerCase();
   // 광고주와 연결된 운영팀 세션은 requireRankAccess 에서 admin:false 로 나와 광고주와 구분되지
   // 않는다. 세션 게이트가 덮어쓰는 역할 머리글로 가른다. 세션 없는 요청은 관리자 코드만 허용.
   if (role) return !["owner", "team"].includes(role);
   return access?.admin !== true;
+}
+
+// ── 광고주 사용(2026-11-01, 명세 advertiser-impl-spec §2) ──
+// 역할은 세션 게이트가 덮어쓰는 머리글에서만 정한다(본문 값은 보지 않는다).
+function optionSessionRole(headers) {
+  return String(headers?.get?.("x-mi-session-role") || "").trim().toLowerCase();
+}
+
+// 그룹상품 번호 편집(action "options") 권한: 총관리자·운영팀 세션, 광고주 범위(대행사 코드·광고주 id)가 확인된 광고주
+// 세션, 세션 없는 관리자 코드. 체험 세션은 순위 경로가 닫혀 있지만 여기서도 한 번 더 막는다.
+function optionEditAllowed(access, headers) {
+  const role = optionSessionRole(headers);
+  if (role === "owner" || role === "team") return true;
+  if (role === "client") {
+    const sessionScope = String(headers.get("x-mi-session-scope") || "").trim().toLowerCase();
+    return sessionScope !== "trial" && Boolean(normalizeAgencyCode(access?.agencyCode)) && Boolean(access?.clientId);
+  }
+  if (role) return false;
+  return access?.admin === true;
+}
+
+// 'owner' | 'team' | 'client' | 'admin-code'(세션 없음). 그 밖이면 빈 문자열.
+function optionActorRole(access, headers) {
+  const role = optionSessionRole(headers);
+  if (role === "owner" || role === "team" || role === "client") return role;
+  if (role) return "";
+  return access?.admin === true ? "admin-code" : "";
+}
+
+// 광고주 응답 문구: 내부 문구('대표 SQL'·'관리자 화면에서만')는 일반 문구로 바꾼다.
+const OPTION_CLIENT_ERROR_MESSAGES = Object.freeze({
+  RANK_OPTION_FORBIDDEN: "이 계정에서는 그룹상품 번호를 바꿀 수 없습니다.",
+  RANK_OPTION_NOT_READY: "지금은 그룹상품 번호를 저장할 수 없습니다. 잠시 뒤 다시 시도해 주세요.",
+  RANK_GROUP_MARK_FORBIDDEN: "이 계정에서는 그룹상품 표시를 바꿀 수 없습니다.",
+});
+const OPTION_INTERNAL_MESSAGE_PATTERN = /대표 SQL|관리자 화면/u;
+
+function clientOptionErrorMessage(code, message) {
+  if (Object.hasOwn(OPTION_CLIENT_ERROR_MESSAGES, code)) return OPTION_CLIENT_ERROR_MESSAGES[code];
+  return OPTION_INTERNAL_MESSAGE_PATTERN.test(String(message || "")) ? "지금은 처리할 수 없습니다. 잠시 뒤 다시 시도해 주세요." : message;
+}
+
+// 광고주 응답(read·preview): 확인일·확인일 칸 준비 여부를 비우고, 가져오기 후보(다른 대표 번호 추적에서 모은 번호)를 뺀다.
+// 키 순서는 관리자 응답과 같다(빈 값만 다르다).
+function clientOptionCommon(common) {
+  const { siblingOptionProductIds, ...sameProduct } = common.sameProduct;
+  return {
+    ...common,
+    tracker: { ...common.tracker, optionCheckedAt: null },
+    sameProduct: {
+      ...sameProduct,
+      trackers: sameProduct.trackers.map((entry) => ({ ...entry, optionCheckedAt: null })),
+    },
+    checkedAtReady: false,
+  };
+}
+
+// 버튼에서 넘어온 상품번호(sourcePageId, 검증 안 된 주장). 없으면 빈 문자열, 모양이 틀리면 ok:false.
+// 글자로만 받는다(options-locate 와 같은 규칙) — JSON 숫자는 2^53 을 넘으면 자릿수가 깨진 채 정규식을 통과한다.
+const OPTION_PAGE_ID_PATTERN = /^[0-9]{5,20}$/u;
+
+function optionPageIdValue(value) {
+  if (value === undefined || value === null || value === "") return { ok: true, value: "" };
+  if (typeof value !== "string") return { ok: false, value: "" };
+  const text = String(value).trim();
+  return OPTION_PAGE_ID_PATTERN.test(text) ? { ok: true, value: text } : { ok: false, value: "" };
+}
+
+// 다른 상품 목록 차단(모든 역할, 명세 §2.3). 실수 방지 장치이지 위조 방지가 아니다.
+// L = 입력 번호(대표 번호 제외), K_t = 바뀌는 추적 t 의 지금 저장값, S = 버튼에서 넘어온 상품번호.
+// blocked_t = L≠∅ ∧ 대표 번호 없음 ∧ K_t≠∅ ∧ L∩K_t=∅, 버튼 목록에 대표 번호가 없고 저장값이 모두 비었으면 button_primary_missing.
+const OPTION_OTHER_PRIMARY_HITS_MAX = 5;
+
+function optionHitPreferred(left, right) {
+  const rank = (row) => (String(row?.status || "") === "active" ? 0 : 1);
+  if (rank(left) !== rank(right)) return rank(left) < rank(right);
+  const keywordOrder = normalizeText(left?.keyword).localeCompare(normalizeText(right?.keyword), "ko");
+  if (keywordOrder !== 0) return keywordOrder < 0;
+  return String(left?.id || "") < String(right?.id || "");
+}
+
+// 같은 범위에서 입력 번호를 대표 번호로 쓰는 추적(대표 번호마다 1개, 최대 5개, 입력 순서). 이미 읽은 후보 행만 쓴다(추가 조회 0).
+function optionOtherPrimaryHits(rows, listed, primaryProductId) {
+  const order = new Map(listed.map((id, index) => [id, index]));
+  const byProduct = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const productId = normalizeText(row?.product_id);
+    if (!order.has(productId) || productId === primaryProductId) continue;
+    if (!["active", "paused"].includes(String(row?.status || ""))) continue;
+    if (!trackerOptionEligibility(row).eligible) continue;
+    const current = byProduct.get(productId);
+    if (current && !optionHitPreferred(row, current)) continue;
+    byProduct.set(productId, row);
+  }
+  return [...byProduct.entries()]
+    .sort((left, right) => order.get(left[0]) - order.get(right[0]))
+    .slice(0, OPTION_OTHER_PRIMARY_HITS_MAX)
+    .map(([productId, row]) => ({ productId, keyword: normalizeText(row.keyword), trackerId: row.id }));
+}
+
+function optionListGuard({ parsed, targets, sourcePageId, primaryProductId, relatedRows }) {
+  const listed = Array.isArray(parsed?.optionProductIds) ? parsed.optionProductIds : [];
+  const listedSet = new Set(listed);
+  const open = listed.length > 0 && parsed?.primaryRemoved !== true;
+  const blockedTrackers = open
+    ? targets
+      .filter((target) => target.before.length > 0 && !target.before.some((id) => listedSet.has(id)))
+      .map((target) => ({ trackerId: target.id, keyword: target.keyword }))
+    : [];
+  const storedEmpty = targets.every((target) => target.before.length === 0);
+  const buttonPrimaryMissing = open && Boolean(sourcePageId) && storedEmpty;
+  const blocked = blockedTrackers.length > 0 || buttonPrimaryMissing;
+  let reason = null;
+  if (blockedTrackers.length) reason = "foreign_list";
+  else if (buttonPrimaryMissing) reason = "button_primary_missing";
+  return {
+    blocked,
+    reason,
+    blockedTrackers,
+    needsPrimaryConfirm: !blocked && open && !sourcePageId && storedEmpty,
+    otherPrimaryHits: optionOtherPrimaryHits(relatedRows, listed, primaryProductId),
+  };
+}
+
+function optionGuardMessage(guard, primaryProductId) {
+  if (guard.reason === "button_primary_missing") {
+    return `버튼에서 넘어온 목록에 이 상품(대표 ${primaryProductId})이 없어 저장하지 않았습니다. 이 상품 페이지에서 다시 눌러 주세요.`;
+  }
+  return `이 목록에는 이 상품(대표 ${primaryProductId})도, 지금 저장된 번호도 하나도 없습니다. 다른 상품의 목록으로 보여 저장하지 않았습니다.`;
+}
+
+// 광고주 저장 빈도(명세 §2.2): 광고주 범위당 10분에 저장 결과 기록 20줄. 읽기·미리 보기는 세지 않는다. 결과 기록 기반 근사다
+// (51개 넘는 추적을 한 번에 저장하면 나눠 쓴 줄이 따로 세어진다). 운영팀·총관리자가 같은 광고주에 남긴 줄은 세지 않는다.
+const OPTION_CLIENT_SAVE_LIMIT = 20;
+const OPTION_CLIENT_SAVE_WINDOW_MS = 10 * 60_000;
+
+async function optionClientRecentSaveCount(ctx, clientId, nowMs = Date.now()) {
+  try {
+    const { count, error } = await ctx.supabaseAdmin
+      .from("audit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "naver_rank_options_save_result")
+      .eq("client_id", clientId)
+      .eq("metadata->>actorRole", "client")
+      .gt("created_at", new Date(nowMs - OPTION_CLIENT_SAVE_WINDOW_MS).toISOString());
+    if (error || !Number.isFinite(count)) return { ok: false, error: error || new Error("option_rate_count_missing") };
+    return { ok: true, count };
+  } catch (error) {
+    return { ok: false, error };
+  }
 }
 
 // 옵션 확인일 칸(option_checked_at, 2026-10-31 B6)은 옵션 칸과 함께 읽는다. 표시 칸 선례(readGroupMarkTrackerRows)처럼
@@ -3155,8 +3307,10 @@ async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds
   };
 }
 
+// 광고주 세션 응답(2026-11-01)은 내부 문구('대표 SQL'·'관리자 화면에서만')를 일반 문구로 바꾼다. 코드·상태·나머지 칸은 그대로다.
 function optionEditError(request, status, code, message, extra = {}) {
-  return json(request, { ok: false, code, message, ...extra }, status);
+  const visibleMessage = optionSessionRole(request.headers) === "client" ? clientOptionErrorMessage(code, message) : message;
+  return json(request, { ok: false, code, message: visibleMessage, ...extra }, status);
 }
 
 // ── 동시 변경 보호·되돌림 기록 (대표 요청 2026-10-31, 옵션 번호 정식 기능 B3·B4) ──
@@ -3237,17 +3391,20 @@ function isDefiniteOptionWriteRejection(error) {
 // 저장된 결과는 RANK_OPTION_PARTIAL(쓰기 오류)·RANK_OPTION_CHANGED(조건 불일치로 줄 수 모자람) 응답과 결과 기록
 // (naver_rank_options_save_result 의 updatedTrackerIds)에 남는다. 쓰기 오류가 확실한 거절이 아니면(H1) 그 묶음은
 // 저장됐는지 모르는 추적(uncertainTrackerIds)으로 응답과 결과 기록에 따로 남긴다.
-function optionTargetGroups(targets, storedById = new Map()) {
+// 광고주 저장(2026-11-01)은 목록이 실제로 바뀌는 추적만 확인일을 비우므로 listChanged 도 묶음 열쇠에 넣는다(관리자 저장은 늘 false).
+function optionTargetGroups(targets, storedById = new Map(), listChangedOf = () => false) {
   const groups = [];
   const byKey = new Map();
   for (const target of targets) {
     const expected = storedById.get(String(target.id)) || [];
-    const key = `${target.primaryProductId}|${target.after.join(",")}|${expected.join(",")}`;
+    const listChanged = listChangedOf(target) === true;
+    const key = `${target.primaryProductId}|${target.after.join(",")}|${expected.join(",")}|${listChanged ? 1 : 0}`;
     if (!byKey.has(key)) {
       const group = {
         productId: target.primaryProductId,
         after: target.after,
         expectedLiteral: optionIdsArrayLiteral(expected),
+        listChanged,
         ids: [],
       };
       byKey.set(key, group);
@@ -3288,28 +3445,33 @@ function optionAuditFailedWarning(stage, error) {
   }));
 }
 
-// 결과 기록: 실제로 저장된 추적(일부만 저장된 경우 포함)과 그중 확인일까지 쓴 추적, 저장됐는지 모르는 추적(H1, 있을 때만).
-// 세 목록 모두 50개씩 나눠 쓴다. 실패해도 저장은 그대로 두고 경고만 남긴다.
-async function recordOptionSaveResult(ctx, trackerId, result) {
+// 결과 기록: 실제로 저장된 추적(일부만 저장된 경우 포함)과 그중 확인일까지 쓴 추적, 저장됐는지 모르는 추적(H1, 있을 때만),
+// 광고주 저장으로 확인일을 비운 추적(있을 때만). 모든 목록을 50개씩 나눠 쓴다. 실패해도 저장은 그대로 두고 경고만 남긴다.
+// actor(2026-11-01): client_id 와 metadata 끝의 actorRole·claimedSource·sourcePageId — 광고주 저장 빈도도 이 줄로 센다.
+async function recordOptionSaveResult(ctx, trackerId, result, actor = {}) {
   const ids = result.updatedTrackerIds.map((id) => String(id));
   const checkedIds = result.checkedTrackerIds.map((id) => String(id));
   const uncertainIds = (result.uncertainTrackerIds || []).map((id) => String(id));
+  const clearedIds = (result.checkedClearedTrackerIds || []).map((id) => String(id));
   const perRow = OPTION_AUDIT_TRACKER_IDS_PER_ROW;
   const partCount = Math.max(
     1,
     Math.ceil(ids.length / perRow),
     Math.ceil(checkedIds.length / perRow),
     Math.ceil(uncertainIds.length / perRow),
+    Math.ceil(clearedIds.length / perRow),
   );
   const slice = (list, index) => list.slice(index * perRow, (index + 1) * perRow);
   const logged = await recordOptionAuditLogs(ctx, Array.from({ length: partCount }, (_, index) => ({
     action: "naver_rank_options_save_result",
     targetTable: "naver_rank_trackers",
     targetId: trackerId,
+    clientId: actor.clientId || null,
     metadata: {
       updatedTrackerIds: slice(ids, index),
       checkedTrackerIds: slice(checkedIds, index),
       ...(uncertainIds.length ? { uncertainTrackerIds: slice(uncertainIds, index) } : {}),
+      ...(clearedIds.length ? { checkedClearedTrackerIds: slice(clearedIds, index) } : {}),
       targetCount: result.targetCount,
       checkedAtRecorded: result.checkedAtRecorded,
       fullReview: result.fullReview,
@@ -3320,17 +3482,22 @@ async function recordOptionSaveResult(ctx, trackerId, result) {
           updatedCount: ids.length,
           checkedCount: checkedIds.length,
           ...(uncertainIds.length ? { uncertainCount: uncertainIds.length } : {}),
+          ...(clearedIds.length ? { checkedClearedCount: clearedIds.length } : {}),
           part: index + 1,
           partCount,
         }
         : {}),
+      ...(actor.metadata || {}),
     },
   })));
   if (!logged.logged) optionAuditFailedWarning("result", logged.error);
 }
 
 async function handleTrackerOptions(request, ctx, body, access) {
-  if (optionEditForbidden(request, access)) {
+  // 광고주 사용(2026-11-01): 편집 권한은 optionEditAllowed, 역할은 세션에서만. 광고주 오류 문구는 optionEditError 가 거른다.
+  const actorRole = optionActorRole(access, request.headers);
+  const clientActor = actorRole === "client";
+  if (!optionEditAllowed(access, request.headers)) {
     return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
   }
   const trackerId = normalizeText(body.trackerId || body.id).toLowerCase();
@@ -3341,6 +3508,25 @@ async function handleTrackerOptions(request, ctx, body, access) {
   if (!OPTION_EDIT_MODES.has(mode)) {
     return optionEditError(request, 400, "RANK_OPTION_MODE_INVALID", "지원하지 않는 그룹상품 번호 작업입니다.");
   }
+  // '확인만 기록'은 운영팀 30일 점검 기준이라 광고주에게 열지 않는다. DB 를 읽기 전에 거절한다.
+  if (clientActor && mode === "save" && body.checkOnly === true) {
+    return optionEditError(request, 403, "RANK_OPTION_CHECK_ONLY_FORBIDDEN", "확인만 기록은 운영팀 기능입니다.");
+  }
+  const sourcePage = mode === "read" ? { ok: true, value: "" } : optionPageIdValue(body.sourcePageId);
+  if (!sourcePage.ok) {
+    return optionEditError(
+      request,
+      400,
+      "RANK_OPTION_SOURCE_INVALID",
+      "버튼에서 넘어온 상품번호가 올바르지 않습니다. 옵션 확인 버튼을 다시 눌러 주세요.",
+    );
+  }
+  const sourcePageId = sourcePage.value;
+  const claimedSource = body.claimedSource === "button" ? "button" : "manual";
+  const auditActor = {
+    clientId: access.clientId || null,
+    metadata: { actorRole, claimedSource, ...(sourcePageId ? { sourcePageId } : {}) },
+  };
   const scope = agencyCodeScope(access.agencyCode);
   const self = await readOptionTrackerRows((columns) => ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -3479,24 +3665,35 @@ async function handleTrackerOptions(request, ctx, body, access) {
     checkedAtReady: self.checkedAtReady,
     expectedOptionProductIds,
   };
+  const view = clientActor ? clientOptionCommon(common) : common;
 
   if (mode === "read") {
-    return json(request, { ok: true, mode, ...common, message: `그룹상품 번호 ${currentIds.length}개` });
+    return json(request, { ok: true, mode, ...view, message: `그룹상품 번호 ${currentIds.length}개` });
   }
+  // 다른 상품 목록 차단(모든 역할, 2026-11-01). 미리 보기는 알려 주기만 하고, 저장은 아래에서 쓰기 전에 409 로 막는다.
+  const guard = optionListGuard({
+    parsed,
+    targets: plan.targets,
+    sourcePageId,
+    primaryProductId: eligibility.primaryProductId,
+    relatedRows: candidates.suggestionRows,
+  });
   if (mode === "preview") {
     const rejectedLabel = parsed.rejected.length ? ` · 받지 않은 칸 ${parsed.rejected.length}개` : "";
     return json(request, {
       ok: true,
       mode,
-      ...common,
+      ...view,
+      guard,
       message: `번호 ${optionIds.length}개 · 함께 바뀌는 추적 ${plan.targets.length}개${rejectedLabel}`,
     });
   }
 
   // save
   // '확인만 기록'(B6, checkOnly:true): 번호는 그대로 두고 옵션 확인일만 남긴다. 전체 확인(fullReview)일 때만 받는다.
+  // 광고주는 fullReview 를 무시한다(확인일을 찍지 않는다) — 대신 목록이 실제로 바뀌는 추적의 확인일을 비운다(아래 갱신).
   const checkOnly = body.checkOnly === true;
-  const fullReview = body.fullReview === true;
+  const fullReview = !clientActor && body.fullReview === true;
   if (checkOnly && !fullReview) {
     return optionEditError(
       request,
@@ -3556,6 +3753,25 @@ async function handleTrackerOptions(request, ctx, body, access) {
   ))) {
     return optionEditError(request, 409, "RANK_OPTION_CHANGED", "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.");
   }
+  // 다른 상품 목록 차단(§2.3): 동시 변경 검사 뒤·되돌림 기록 전. 아무것도 쓰지 않는다.
+  if (guard.blocked) {
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_FOREIGN_LIST",
+      optionGuardMessage(guard, eligibility.primaryProductId),
+      { guard },
+    );
+  }
+  if (guard.needsPrimaryConfirm && body.primaryConfirmed !== true) {
+    return optionEditError(
+      request,
+      409,
+      "RANK_OPTION_PRIMARY_CONFIRM_REQUIRED",
+      `이 번호들이 상품 ${eligibility.primaryProductId} 의 그룹 옵션이 맞는지 확인한 뒤 저장해 주세요.`,
+      { guard },
+    );
+  }
   if (checkOnly) {
     // 확인일 칸이 없으면(대표 SQL 전) '확인만 기록'은 남길 것이 없다.
     if (!self.checkedAtReady) {
@@ -3581,12 +3797,33 @@ async function handleTrackerOptions(request, ctx, body, access) {
     }
   }
 
+  // 광고주 저장 빈도(§2.2): 저장 직전(되돌림 기록 전). 세지 못하면 저장하지 않는다.
+  if (clientActor) {
+    if (!access.clientId) {
+      return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+    }
+    const recent = await optionClientRecentSaveCount(ctx, access.clientId);
+    if (!recent.ok) {
+      optionAuditFailedWarning("rate", recent.error);
+      return optionEditError(
+        request,
+        409,
+        "RANK_OPTION_AUDIT_FAILED",
+        "저장 기록을 확인하지 못해 저장하지 않았습니다. 잠시 뒤 다시 저장해주세요.",
+      );
+    }
+    if (recent.count >= OPTION_CLIENT_SAVE_LIMIT) {
+      return optionEditError(request, 429, "RANK_OPTION_RATE_LIMITED", "잠시 뒤 다시 저장해 주세요.");
+    }
+  }
+
   // 되돌림 기록 먼저(B3): 바꿀 추적마다 저장 전·바꿀 목록 한 줄. 기록을 못 남기면 저장하지 않는다.
   // '확인만 기록'은 번호를 쓰지 않으므로 바꾼 뒤 목록도 저장값 그대로다.
   const intent = await recordOptionAuditLogs(ctx, plan.targets.map((target) => ({
     action: "naver_rank_options_save_intent",
     targetTable: "naver_rank_trackers",
     targetId: target.id,
+    clientId: auditActor.clientId,
     metadata: {
       before: storedById.get(String(target.id)),
       after: checkOnly ? storedById.get(String(target.id)) : target.after,
@@ -3595,6 +3832,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       applyToSameProduct,
       primaryProductId: target.primaryProductId,
       keyword: target.keyword,
+      ...auditActor.metadata,
     },
   })));
   if (!intent.logged) {
@@ -3611,13 +3849,17 @@ async function handleTrackerOptions(request, ctx, body, access) {
   // 같은 문장으로 쓴다 — 추적마다 둘 다 되거나 둘 다 안 된다. 후보 넣기 저장(fullReview:false)은 확인일을 바꾸지 않는다.
   // 번호를 모두 지우는 묶음(바꿀 목록이 빈 목록)에는 확인일을 남기지 않는다 — 확인할 옵션이 없다.
   // '확인만 기록'은 확인일 한 칸만 쓴다(번호를 다시 쓰면 저장 순서가 정리된 순서로 바뀐다). 쓰기 조건은 같다.
+  // 광고주 저장(2026-11-01)은 확인일을 찍지 않고, 목록이 실제로 바뀌는(집합이 달라지는) 추적만 같은 문장에서 확인일을 비운다
+  // (운영팀 확인일이 남아 '확인됨'처럼 보이지 않게). 안 바뀌는 추적의 확인일은 건드리지 않는다.
   const checkedAt = new Date().toISOString();
   let writeCheckedAt = fullReview && self.checkedAtReady;
+  let clearCheckedAt = clientActor && !checkOnly && self.checkedAtReady;
   const stampsCheckedAt = (group) => writeCheckedAt && group.after.length > 0;
+  const clearsCheckedAt = (group) => clearCheckedAt && group.listChanged === true;
   const updateValues = (group, withCheckedAt) => {
     if (checkOnly) return { option_checked_at: checkedAt };
     return withCheckedAt
-      ? { option_product_ids: group.after, option_checked_at: checkedAt }
+      ? { option_product_ids: group.after, option_checked_at: clientActor ? null : checkedAt }
       : { option_product_ids: group.after };
   };
   const updateGroup = (group, withCheckedAt) => ctx.supabaseAdmin
@@ -3642,19 +3884,23 @@ async function handleTrackerOptions(request, ctx, body, access) {
   const checkedTrackerIds = [];
   // 쓰기 오류가 확실한 DB 거절이 아니어서(코드 없음·연결류·예외) 저장됐는지 모르는 추적(H1).
   const uncertainTrackerIds = [];
+  // 광고주 저장으로 확인일을 비운 추적.
+  const checkedClearedTrackerIds = [];
   let failure = null;
   const resultRecord = () => ({
     updatedTrackerIds,
     checkedTrackerIds,
     uncertainTrackerIds,
+    checkedClearedTrackerIds,
     targetCount: plan.targets.length,
     checkedAtRecorded: checkedTrackerIds.length > 0,
     fullReview,
     checkOnly,
   });
+  const listChangedOf = clientActor ? (target) => !sameOptionIdSet(target.before, target.after) : () => false;
   try {
-    for (const group of optionTargetGroups(plan.targets, storedById)) {
-      let withCheckedAt = stampsCheckedAt(group);
+    for (const group of optionTargetGroups(plan.targets, storedById, listChangedOf)) {
+      let withCheckedAt = stampsCheckedAt(group) || clearsCheckedAt(group);
       // '확인만 기록'에서 확인일을 남기지 않는 묶음(번호 없는 추적)은 쓸 것이 없다.
       if (checkOnly && !withCheckedAt) continue;
       // eslint-disable-next-line no-await-in-loop
@@ -3665,6 +3911,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
         && isOptionCheckedColumnMissingError(error)) {
         rememberOptionCheckedColumnMissing("rank-tracker-options-save");
         writeCheckedAt = false;
+        clearCheckedAt = false;
         withCheckedAt = false;
         // eslint-disable-next-line no-await-in-loop
         ({ data, error, thrown } = await runUpdateGroup(group, false));
@@ -3731,7 +3978,8 @@ async function handleTrackerOptions(request, ctx, body, access) {
       }
       const groupUpdatedIds = (data || []).map((row) => row.id);
       updatedTrackerIds.push(...groupUpdatedIds);
-      if (withCheckedAt) checkedTrackerIds.push(...groupUpdatedIds);
+      if (withCheckedAt && clientActor) checkedClearedTrackerIds.push(...groupUpdatedIds);
+      else if (withCheckedAt) checkedTrackerIds.push(...groupUpdatedIds);
       if (groupUpdatedIds.length < group.ids.length) {
         // 미리 보기 뒤 누가 먼저 바꿨다. 남은 추적은 쓰지 않고, 이미 바뀐 추적은 응답과 결과 기록에 남긴다.
         console.warn(JSON.stringify({
@@ -3749,11 +3997,11 @@ async function handleTrackerOptions(request, ctx, body, access) {
       }
     }
   } catch (error) {
-    await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: "error" });
+    await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: "error" }, auditActor);
     throw error;
   }
   const checkedAtRecorded = resultRecord().checkedAtRecorded;
-  await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: failure?.code || "saved" });
+  await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: failure?.code || "saved" }, auditActor);
   if (failure) return optionEditError(request, 409, failure.code, failure.message, failure.extra);
   console.log(JSON.stringify({
     level: "info",
@@ -3899,6 +4147,232 @@ async function handleTrackerGroupMark(request, ctx, body, access) {
   });
 }
 
+// ───────────────────── N30 옵션 확인 버튼 받는 쪽 (2026-11-01, 명세 advertiser-impl-spec §2.5) ─────────────────────
+// options-locate: 총관리자 새 탭은 광고주 선택이 비어 있으므로 버튼이 넘긴 상품번호로 광고주·추적을 찾는다(읽기 전용).
+// 광고주 범위를 가리지 않으므로 총관리자 세션에만 연다. 네이버 요청 0.
+const OPTION_LOCATE_PRODUCT_IDS_MAX = 52;
+const OPTION_LOCATE_ITEMS_MAX = 50;
+const OPTION_LOCATE_COLUMNS = "id, agency_code, keyword, status, product_id";
+
+function optionLocateRowOrder(left, right) {
+  const agency = String(left.agency_code || "").localeCompare(String(right.agency_code || ""));
+  if (agency !== 0) return agency;
+  const keyword = normalizeText(left.keyword).localeCompare(normalizeText(right.keyword), "ko");
+  if (keyword !== 0) return keyword;
+  return String(left.id || "").localeCompare(String(right.id || ""));
+}
+
+async function optionLocateAdvertiserNames(ctx, agencyCodes) {
+  const names = new Map();
+  if (!agencyCodes.length) return names;
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("clients")
+      .select("agency_code, name")
+      .in("agency_code", agencyCodes);
+    if (error) return names;
+    for (const row of data || []) {
+      const code = normalizeAgencyCode(row?.agency_code);
+      const name = normalizeText(row?.name);
+      if (code && name && !names.has(code)) names.set(code, name);
+    }
+  } catch {
+    // 광고주 이름은 보조 정보다. 못 읽으면 null 로 둔다.
+  }
+  return names;
+}
+
+async function handleTrackerOptionsLocate(request, ctx, body, access) {
+  if (optionActorRole(access, request.headers) !== "owner" || access.admin !== true) {
+    return optionEditError(request, 403, "RANK_OPTION_LOCATE_FORBIDDEN", "총관리자만 쓸 수 있는 작업입니다.");
+  }
+  const raw = body.productIds;
+  if (!Array.isArray(raw)
+    || raw.length < 1
+    || raw.length > OPTION_LOCATE_PRODUCT_IDS_MAX
+    || !raw.every((id) => typeof id === "string" && OPTION_PAGE_ID_PATTERN.test(id.trim()))) {
+    return optionEditError(
+      request,
+      400,
+      "RANK_OPTION_LOCATE_INVALID",
+      `상품번호는 5~20자리 숫자 1~${OPTION_LOCATE_PRODUCT_IDS_MAX}개여야 합니다.`,
+    );
+  }
+  const productIds = [...new Set(raw.map((id) => id.trim()))];
+  const limit = OPTION_LOCATE_ITEMS_MAX + 1;
+  const base = () => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select(OPTION_LOCATE_COLUMNS)
+    .in("status", ["active", "paused"]);
+  const byProduct = await base().in("product_id", productIds).limit(limit);
+  if (byProduct.error) throw byProduct.error;
+  // 대표 번호가 아닌 옵션 번호로만 맞는 추적. 옵션 칸이 없으면(대표 SQL 전) 대표 번호로 맞는 것만 쓴다.
+  let byOption = await base().overlaps("option_product_ids", productIds).limit(limit);
+  if (byOption.error) {
+    if (!isOptionColumnMissingError(byOption.error)) throw byOption.error;
+    rememberOptionColumnMissing("rank-tracker-options-locate");
+    byOption = { data: [] };
+  }
+  const seen = new Set();
+  const take = (rows) => [...(rows || [])]
+    .filter((row) => {
+      const id = String(row?.id || "");
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .sort(optionLocateRowOrder);
+  // 대표 번호로 맞는 추적을 먼저 싣는다(잘릴 때 더 직접적인 쪽을 남긴다).
+  const rows = [...take(byProduct.data), ...take(byOption.data)];
+  const kept = rows.slice(0, OPTION_LOCATE_ITEMS_MAX);
+  const names = await optionLocateAdvertiserNames(
+    ctx,
+    [...new Set(kept.map((row) => String(row.agency_code || "")).filter(Boolean))],
+  );
+  return json(request, {
+    ok: true,
+    items: kept.map((row) => ({
+      agencyCode: canonicalAgencyCode(row.agency_code),
+      advertiserName: names.get(normalizeAgencyCode(row.agency_code)) || null,
+      trackerId: row.id,
+      keyword: normalizeText(row.keyword),
+      productId: normalizeText(row.product_id),
+    })),
+    truncated: rows.length > OPTION_LOCATE_ITEMS_MAX,
+  });
+}
+
+// options-diag: 버튼이 '확인 못 함'일 때 넘긴 진단을 정해진 형식으로 다시 만들어 남긴다(형식 밖 칸·값은 버린다).
+// 화면은 진단을 그리지 않는다. 범위(광고주, 없으면 역할+범위)당 하루(24시간) 30건까지만 쓰고 넘치면 조용히 버린다.
+const OPTION_DIAG_PATTERN = /^[A-Za-z0-9_-]{1,2000}$/u;
+const OPTION_DIAG_REASON_CODES = new Set([
+  "source_unreadable",
+  "traversal_cap",
+  "ambiguous",
+  "group_list_split",
+  "mixed_id_keys",
+  "unrecognized_items",
+  "unsafe_number",
+  "digit_length",
+  "too_many",
+  "no_group_list",
+  "group_list_without_current",
+  "not_found",
+]);
+const OPTION_DIAG_VERSION_PATTERN = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/u;
+const OPTION_DIAG_COUNT_KEY_PATTERN = /^[A-Za-z]{1,24}$/u;
+const OPTION_DIAG_COUNTS_MAX = 8;
+const OPTION_DIAG_COUNT_VALUE_MAX = 10_000_000;
+const OPTION_DIAG_KEY_PATTERN = /^[A-Za-z0-9_#.-]{1,40}$/u;
+const OPTION_DIAG_KEYS_MAX = 20;
+const OPTION_DIAG_DAILY_LIMIT = 30;
+const OPTION_DIAG_WINDOW_MS = 24 * 60 * 60_000;
+
+function isPlainOptionDiagObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function rebuildOptionCheckDiag(raw) {
+  const unparsed = { reason: "unparsed" };
+  if (typeof raw !== "string" || !OPTION_DIAG_PATTERN.test(raw)) return unparsed;
+  let decoded;
+  try {
+    decoded = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
+  } catch {
+    return unparsed;
+  }
+  if (!isPlainOptionDiagObject(decoded)) return unparsed;
+  const diag = {};
+  if (typeof decoded.v === "string" && OPTION_DIAG_VERSION_PATTERN.test(decoded.v)) diag.v = decoded.v;
+  diag.reason = typeof decoded.reason === "string" && OPTION_DIAG_REASON_CODES.has(decoded.reason) ? decoded.reason : "unparsed";
+  const counts = {};
+  if (isPlainOptionDiagObject(decoded.counts)) {
+    for (const [key, value] of Object.entries(decoded.counts)) {
+      if (Object.keys(counts).length >= OPTION_DIAG_COUNTS_MAX) break;
+      if (!OPTION_DIAG_COUNT_KEY_PATTERN.test(key) || Object.hasOwn(counts, key)) continue;
+      if (!Number.isSafeInteger(value) || value < 0 || value > OPTION_DIAG_COUNT_VALUE_MAX) continue;
+      counts[key] = value;
+    }
+  }
+  diag.counts = counts;
+  const keys = [];
+  if (Array.isArray(decoded.keys)) {
+    for (const entry of decoded.keys) {
+      if (keys.length >= OPTION_DIAG_KEYS_MAX) break;
+      if (typeof entry !== "string") continue;
+      // 숫자 5자리 이상(상품번호 등)은 버튼이 이미 가렸지만 서버에서도 한 번 더 가린다.
+      const masked = entry.replace(/[0-9]{5,}/gu, "#n");
+      if (OPTION_DIAG_KEY_PATTERN.test(masked)) keys.push(masked);
+    }
+  }
+  diag.keys = keys;
+  return diag;
+}
+
+// 대행사 코드는 접속 코드를 겸해 기록에 남기지 않는다(sanitizeAuditMetadata 도 agencyCode 칸을 지운다).
+// 광고주 범위는 client_id 로 세고, 광고주가 없는 범위(총관리자 본 범위·세션 없는 관리자 코드)만 하루 상한을 셀 표식을 남긴다.
+// 표식은 서버 세션 비밀값(MI_SESSION_SECRET)으로 만든 HMAC 앞 16자다 — 비밀 없는 해시는 짧은 코드가 금방 되돌려진다.
+// 비밀값이 없으면 표식을 남기지 않고 역할로만 센다(상한이 더 빡빡해질 뿐 코드는 남지 않는다).
+function optionDiagScopeHash(agencyCode, env = process.env) {
+  const secret = String(env.MI_SESSION_SECRET || "");
+  if (!secret) return "";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`naver-rank-option-diag:${canonicalAgencyCode(agencyCode)}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
+async function optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash }, nowMs = Date.now()) {
+  try {
+    let query = ctx.supabaseAdmin
+      .from("audit_logs")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "naver_rank_option_check_refused")
+      .gt("created_at", new Date(nowMs - OPTION_DIAG_WINDOW_MS).toISOString());
+    if (clientId) query = query.eq("client_id", clientId);
+    else {
+      query = query.eq("metadata->>actorRole", actorRole);
+      if (scopeHash) query = query.eq("metadata->>scopeHash", scopeHash);
+    }
+    const { count, error } = await query;
+    if (error || !Number.isFinite(count)) return { ok: false, error: error || new Error("option_diag_count_missing") };
+    return { ok: true, count };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+async function handleTrackerOptionsDiag(request, ctx, body, access) {
+  const actorRole = optionActorRole(access, request.headers);
+  if (!actorRole || !optionEditAllowed(access, request.headers)) {
+    return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+  }
+  const page = optionPageIdValue(body.pageId);
+  if (!page.ok || !page.value) {
+    return optionEditError(request, 400, "RANK_OPTION_DIAG_INVALID", "상품번호가 올바르지 않습니다.");
+  }
+  const clientId = access.clientId || null;
+  const scopeHash = clientId ? "" : optionDiagScopeHash(access.agencyCode);
+  const recent = await optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash });
+  if (!recent.ok || recent.count >= OPTION_DIAG_DAILY_LIMIT) {
+    if (!recent.ok) optionAuditFailedWarning("diag-count", recent.error);
+    return json(request, { ok: true, recorded: false });
+  }
+  const logged = await recordOptionAuditLogs(ctx, [{
+    action: "naver_rank_option_check_refused",
+    targetTable: "naver_rank_trackers",
+    targetId: null,
+    clientId,
+    metadata: { actorRole, pageId: page.value, ...(scopeHash ? { scopeHash } : {}), diag: rebuildOptionCheckDiag(body.diag) },
+  }]);
+  if (!logged.logged) {
+    optionAuditFailedWarning("diag", logged.error);
+    return json(request, { ok: true, recorded: false });
+  }
+  return json(request, { ok: true, recorded: true });
+}
+
 async function handlePost(request, ctx) {
   const body = await request.json().catch(() => ({}));
   const action = normalizeText(body.action || "create");
@@ -3928,6 +4402,8 @@ async function handlePost(request, ctx) {
   if (action === "move") return moveTracker(request, ctx, body);
   if (action === "reorder") return reorderTrackers(request, ctx, body);
   if (action === "options") return handleTrackerOptions(request, ctx, body, access);
+  if (action === "options-locate") return handleTrackerOptionsLocate(request, ctx, body, access);
+  if (action === "options-diag") return handleTrackerOptionsDiag(request, ctx, body, access);
   if (action === "group-mark") return handleTrackerGroupMark(request, ctx, body, access);
 
   return json(request, { ok: false, message: "지원하지 않는 작업입니다." }, 400);

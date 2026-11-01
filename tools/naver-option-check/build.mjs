@@ -232,7 +232,9 @@ export function embedBookmarklet(html, href) {
 }
 
 // 여러 화면 파일을 함께 쓴다: 모두 같은 폴더의 임시 파일로 먼저 쓰고, 하나라도 실패하면 임시 파일만 지우고 원본은 그대로 둔다.
-// 다 쓴 뒤에 이름 바꾸기로 한꺼번에 바꿔 끼운다(쓰다 끊겨 원본이 잘리지 않게, 2026-11-01 검토 반영).
+// 다 쓴 뒤에 이름 바꾸기로 하나씩 바꿔 끼운다(쓰다 끊겨 원본이 잘리지 않게, 2026-11-01 검토 반영).
+// 바꿔 끼우다 중간에 실패하면 이미 바꾼 파일은 원래 글(before)로 같은 방식(임시 파일 → 이름 바꾸기)으로 되돌리고 남은 임시 파일은 지운다
+// (두 화면이 서로 다른 빌드의 버튼을 갖지 않게). 되돌리기마저 실패한 파일은 오류 문장에 이름을 적는다.
 // 심볼릭 링크는 링크가 아니라 가리키는 실제 파일을 바꾼다.
 function writeFilesTogether(files) {
   const staged = [];
@@ -240,14 +242,38 @@ function writeFilesTogether(files) {
     for (const file of files) {
       const real = fs.realpathSync(file.path);
       const temp = path.join(path.dirname(real), `.${path.basename(real)}.mi-embed-${process.pid}.tmp`);
-      staged.push({ real, temp });
-      fs.writeFileSync(temp, file.text, { encoding: "utf8", flag: "wx", mode: fs.statSync(real).mode & 0o777 });
+      const mode = fs.statSync(real).mode & 0o777;
+      staged.push({ real, temp, mode, before: file.before });
+      fs.writeFileSync(temp, file.text, { encoding: "utf8", flag: "wx", mode });
     }
   } catch (error) {
     for (const entry of staged) fs.rmSync(entry.temp, { force: true });
     throw error;
   }
-  for (const entry of staged) fs.renameSync(entry.temp, entry.real);
+  let swapped = 0;
+  try {
+    for (const entry of staged) {
+      fs.renameSync(entry.temp, entry.real);
+      swapped += 1;
+    }
+  } catch (error) {
+    for (const entry of staged.slice(swapped)) fs.rmSync(entry.temp, { force: true });
+    const notRestored = [];
+    for (const entry of staged.slice(0, swapped)) {
+      try {
+        fs.writeFileSync(entry.temp, entry.before, { encoding: "utf8", flag: "wx", mode: entry.mode });
+        fs.renameSync(entry.temp, entry.real);
+      } catch {
+        fs.rmSync(entry.temp, { force: true });
+        notRestored.push(shownPath(entry.real));
+      }
+    }
+    if (notRestored.length) {
+      const reason = error && error.message ? error.message : String(error);
+      throw new Error(`naver-option-check: 화면 파일을 바꿔 끼우다 실패했고 ${notRestored.join(", ")} 은 되돌리지 못했습니다(새 버튼으로 바뀐 채). 원래 오류: ${reason}`, { cause: error });
+    }
+    throw error;
+  }
 }
 
 export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPaths = [], toolRoot = TOOL_ROOT, repoRoot = REPO_ROOT } = {}) {
@@ -269,7 +295,7 @@ export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPaths = [], 
     return { path: resolved, variant, before, after };
   });
   fs.mkdirSync(outDir, { recursive: true });
-  writeFilesTogether(plans.filter((plan) => plan.after !== plan.before).map((plan) => ({ path: plan.path, text: plan.after })));
+  writeFilesTogether(plans.filter((plan) => plan.after !== plan.before).map((plan) => ({ path: plan.path, text: plan.after, before: plan.before })));
   const embedded = plans.map((plan) => ({ path: plan.path, variant: plan.variant, changed: plan.after !== plan.before }));
   for (const [variant, built] of Object.entries(variants)) {
     fs.writeFileSync(path.join(outDir, `bookmarklet-${variant}.js`), built.code, "utf8");

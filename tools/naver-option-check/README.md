@@ -53,6 +53,7 @@ node --test tools/naver-option-check/test/*.test.mjs
 ```
 - `--embed` 는 여러 번 줄 수 있고 파일마다 변형을 정합니다: `src/pages/admin.html` → `…/admin`, `src/pages/client.html` → `…/client`, 그 밖의 파일은 실패.
   `<!-- mi-option-check-bookmarklet:start -->` … `<!-- mi-option-check-bookmarklet:end -->` 사이 링크 하나의 `href` 만 바꿉니다. 표식이 없거나 둘 이상이면 실패하고, 한 파일이라도 실패하면 어느 파일도 쓰지 않습니다.
+  쓰기는 같은 폴더 임시 파일 → 이름 바꾸기로 하고, 바꿔 끼우다 중간에 실패하면 이미 바꾼 화면 파일을 원래 글로 되돌립니다(되돌리기마저 실패하면 그 파일 이름을 오류 문장에 적음).
 - core·panel 을 고치면 `--embed` 를 다시 돌려야 합니다(시험 '화면 파일의 버튼이 지금 빌드의 그 화면 변형과 같다'가 알려 줌). admin.html·client.html 이 바뀌므로 순위 잠금·배포 검사도 다시 봅니다.
 - 자리 수·개수 규칙은 `src/server/naver-rank-option-group.mjs` 와 같아야 합니다. 서버 값이 바뀌면 `core.mjs` 를 맞추기 전까지 빌드와 시험이 멈춥니다. 넘기는 값의 정규식·진단 칸 규칙·이유 코드(`REASON_CODES`)는 받는 쪽(화면·서버 `options-diag`)과 같아야 합니다(`advertiser-impl-spec.md` 1절).
 - `src/core.mjs`·`src/panel.js` 에는 줄 끝 주석을 쓰지 않습니다(빌드가 줄 맨 앞 주석만 걷음).

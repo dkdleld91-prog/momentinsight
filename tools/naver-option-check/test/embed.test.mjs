@@ -17,6 +17,7 @@ import {
   REPO_ROOT,
   assertServerRulesMatch,
   bookmarkletHref,
+  build,
   buildBookmarkletCode,
   embedBookmarklet,
   readEmbeddedHref,
@@ -224,6 +225,65 @@ test("명령: 두 번째 화면 파일을 쓰다 실패하면(폴더 쓰기 막�
     fs.chmodSync(lockedDir, 0o755);
     fs.rmSync(rootA, { recursive: true, force: true });
     fs.rmSync(rootB, { recursive: true, force: true });
+  }
+});
+
+// 이름 바꾸기(renameSync)를 shouldFail(몇 번째 부름) 이 참인 부름에서만 막는다.
+// build.mjs 는 같은 node:fs 객체의 renameSync 를 부르므로 이 흉내가 그대로 닿는다.
+function failRenameWhen(t, shouldFail) {
+  const original = fs.renameSync;
+  let calls = 0;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    calls += 1;
+    if (shouldFail(calls)) throw Object.assign(new Error(`EIO: 이름 바꾸기 실패 흉내(${calls}번째)`), { code: "EIO" });
+    return original(from, to);
+  });
+  return () => calls;
+}
+
+test("바꿔 끼우기: 두 번째 화면 파일 이름 바꾸기가 실패하면 이미 바꾼 첫 화면을 원래 글로 되돌리고 임시 파일·dist 버튼 파일이 남지 않는다", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mi-option-check-embed-"));
+  try {
+    const admin = copyPage(root, "admin.html");
+    const client = copyPage(root, "client.html");
+    const out = path.join(root, "dist");
+    // 1번째(관리자 바꿔 끼우기)는 되고 2번째(광고주)는 실패, 3번째(관리자 되돌리기)는 다시 된다.
+    const calls = failRenameWhen(t, (call) => call === 2);
+    assert.throws(() => build({ outDir: out, embedPaths: [admin.path, client.path] }), /EIO: 이름 바꾸기 실패 흉내\(2번째\)/);
+    assert.equal(calls(), 3, "바꿔 끼우기 2번 + 되돌리기 1번");
+    assert.equal(fs.readFileSync(admin.path, "utf8"), admin.before, "관리자 사본은 원래 글로 되돌아감");
+    assert.equal(fs.readFileSync(client.path, "utf8"), client.before, "광고주 사본 그대로");
+    assert.deepEqual(fs.readdirSync(path.dirname(admin.path)).sort(), ["admin.html", "client.html"], "임시 파일 없음");
+    assert.deepEqual(fs.existsSync(out) ? fs.readdirSync(out) : [], [], "dist 에 버튼 파일을 쓰지 않음");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("바꿔 끼우기: 되돌리기마저 실패하면 되돌리지 못한 파일 이름을 오류 문장에 적고, 임시 파일은 남기지 않는다", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "mi-option-check-embed-"));
+  try {
+    const admin = copyPage(root, "admin.html");
+    const client = copyPage(root, "client.html");
+    const out = path.join(root, "dist");
+    const calls = failRenameWhen(t, (call) => call >= 2);
+    let caught = null;
+    try {
+      build({ outDir: out, embedPaths: [admin.path, client.path] });
+    } catch (error) {
+      caught = error;
+    }
+    assert.ok(caught, "실패해야 한다");
+    assert.equal(calls(), 3);
+    assert.match(caught.message, /되돌리지 못했습니다/);
+    assert.ok(caught.message.includes("admin.html"), caught.message);
+    assert.equal(caught.message.includes("client.html"), false, "광고주 사본은 바꾸지 않았으니 이름이 없다");
+    assert.match(caught.cause.message, /이름 바꾸기 실패 흉내\(2번째\)/);
+    assert.equal(readEmbeddedHref(fs.readFileSync(admin.path, "utf8")), hrefs.admin, "되돌리지 못한 관리자 사본은 새 버튼인 채");
+    assert.equal(fs.readFileSync(client.path, "utf8"), client.before, "광고주 사본 그대로");
+    assert.deepEqual(fs.readdirSync(path.dirname(admin.path)).sort(), ["admin.html", "client.html"], "임시 파일 없음");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 

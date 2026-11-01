@@ -2874,11 +2874,38 @@ test("U22 대기값 정규식(명세 §1): 찾음·확인 못 함만 받고 위�
     ["쿼리·다른 글자", `#mi-optfill=2.f.${PAGE_ID}.${PAGE_ID}?x=1`],
     ["스크립트", `#mi-optfill=2.r.${PAGE_ID}.<script>`],
     ["진단 2001자", `#mi-optfill=2.r.${PAGE_ID}.${"A".repeat(2001)}`],
-    ["해시 2200자 초과", `#mi-optfill=2.r.${PAGE_ID}.${"A".repeat(2000)}${"-".repeat(200)}`],
+    ["진단 2200자(길이 상한도 넘음)", `#mi-optfill=2.r.${PAGE_ID}.${"A".repeat(2000)}${"-".repeat(200)}`],
     ["빈 값", "#mi-optfill="],
     ["다른 해시", `#mi-admin-home`],
   ]) {
     assert.equal(parse(hash), null, label);
+  }
+});
+
+// 받을 수 있는 가장 긴 값은 2,025자(2.r.<20자리>.<진단 2000자>)라 결과만 보면 상한이 드러나지 않는다. 정규식 호출 수로
+// '2,200자를 넘으면 정규식을 돌리기 전에 버린다'를 고정한다(긴 주소에 정규식을 돌리지 않는다).
+test("U22 길이 상한: '#mi-optfill=' 뒤 2,200자를 넘으면 정규식 전에 버리고, 2,200자까지는 정규식으로 가리며 가장 긴 값(2,025자)은 받는다", () => {
+  for (const source of [adminSource, clientSource]) {
+    const { context } = intakeContext({ hash: "", source });
+    vm.runInContext("var execCalls = 0; var realExec = RegExp.prototype.exec; RegExp.prototype.exec = function (text) { execCalls += 1; return realExec.call(this, text); };", context);
+    const run = (payload) => {
+      vm.runInContext("execCalls = 0;", context);
+      const value = plain(vm.runInContext(`rankOptionFillParse(${JSON.stringify(`#mi-optfill=${payload}`)})`, context));
+      return { value, execCalls: vm.runInContext("execCalls", context) };
+    };
+    const longPage = "9".repeat(20);
+    const longest = `2.r.${longPage}.${"A".repeat(2000)}`;
+    assert.equal(longest.length, 2025);
+    assert.deepEqual(run(longest).value, { v: 2, kind: "r", pageId: longPage, diag: "A".repeat(2000) }, "가장 긴 값");
+    const atCap = run(`2.r.${PAGE_ID}.${"A".repeat(2200 - 5 - PAGE_ID.length)}`);
+    assert.equal(atCap.value, null);
+    assert.ok(atCap.execCalls > 0, "2,200자는 정규식으로 가린다");
+    for (const payload of [`2.r.${PAGE_ID}.${"A".repeat(2201 - 5 - PAGE_ID.length)}`, "A".repeat(2201), `2.f.${PAGE_ID}.${PAGE_ID}${"-".repeat(3000)}`]) {
+      assert.ok(payload.length > 2200);
+      const over = run(payload);
+      assert.equal(over.value, null);
+      assert.equal(over.execCalls, 0, "2,200자 초과는 정규식을 돌리지 않는다");
+    }
   }
 });
 
@@ -3261,6 +3288,63 @@ test("U23 총관리자: 광고주 여러 곳·찾기 잘림은 고르는 창('�
   await flush();
   assert.equal(failed.note(), "이 상품을 추적하는 광고주를 찾지 못했습니다. 잠시 뒤 버튼을 다시 눌러 주세요.");
   assert.deepEqual(failed.switches, []);
+});
+
+// 총관리자 진단 기록은 찾은 광고주 범위로 바꾼 뒤 보낸다(지금 보던 광고주·자리표시자 범위에 기록·하루 상한이 잡히지 않게).
+test("U23 총관리자 확인 못 함(kind r): 찾기 → 범위를 바꾼 뒤 진단을 그 광고주 범위로 한 번, 못 찾음·취소·찾기 실패면 지금 범위로 한 번", async () => {
+  const diagRequests = (env) => env.requests.filter((request) => request.body.action === "options-diag");
+  const refused = { v: 2, kind: "r", pageId: PRIMARY, diag: DIAG };
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused });
+  env.respond("options-locate", { ok: true, truncated: false, items: [
+    { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY },
+  ] });
+  env.respond("options-diag", { ok: false, message: "서버 오류" }, 500);
+  env.respond("options:read", optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  env.authReady();
+  await flush();
+  assert.deepEqual(plain(env.requests[0].body), { action: "options-locate", productIds: [PRIMARY] });
+  assert.equal(env.requests[0].options.headers["x-mi-agency-code"], "owner-session");
+  assert.deepEqual(env.switches, [["ishell", { force: true }]]);
+  assert.equal(diagRequests(env).length, 1);
+  assert.deepEqual(plain(env.requests[1].body), { action: "options-diag", pageId: PRIMARY, diag: DIAG }, "범위를 바꾼 뒤 보낸다");
+  assert.equal(env.requests[1].options.headers["x-mi-agency-code"], "ishell", "찾은 광고주 범위로 기록");
+  env.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(env.opened().length, 1, "진단 실패와 관계없이 편집창");
+  assert.equal(env.opened()[0].claimedSource, "manual");
+  assert.equal(diagRequests(env).length, 1, "한 번만");
+  assert.deepEqual(env.requests.map((request) => request.body.action + ":" + (request.body.mode || "")), ["options-locate:", "options-diag:", "options:read"]);
+
+  const none = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused });
+  none.respond("options-locate", { ok: true, truncated: false, items: [] });
+  none.respond("options-diag", { ok: true, recorded: true });
+  none.authReady();
+  await flush();
+  assert.equal(none.note(), "이 상품을 30일 순위로 추적하는 키워드가 없습니다.");
+  assert.equal(diagRequests(none).length, 1, "못 찾아도 진단은 남긴다");
+  assert.equal(diagRequests(none)[0].options.headers["x-mi-agency-code"], "owner-session", "범위를 안 바꿨으면 지금 범위");
+
+  const cancelled = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused });
+  cancelled.respond("options-locate", { ok: true, truncated: true, items: [
+    { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY },
+  ] });
+  cancelled.respond("options-diag", { ok: true, recorded: true });
+  cancelled.authReady();
+  await flush();
+  assert.equal(diagRequests(cancelled).length, 0, "광고주를 고르는 동안은 보내지 않는다");
+  click(cancelled.chooser().querySelector("[data-rank-option-chooser-cancel]"));
+  await flush();
+  assert.equal(diagRequests(cancelled).length, 1);
+  assert.equal(diagRequests(cancelled)[0].options.headers["x-mi-agency-code"], "owner-session");
+  assert.deepEqual(cancelled.switches, []);
+
+  const failed = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: refused });
+  failed.respond("options-locate", { ok: false, message: "총관리자 전용입니다." }, 403);
+  failed.respond("options-diag", { ok: true, recorded: true });
+  failed.authReady();
+  await flush();
+  assert.equal(failed.note(), "이 상품을 추적하는 광고주를 찾지 못했습니다. 잠시 뒤 버튼을 다시 눌러 주세요.");
+  assert.equal(diagRequests(failed).length, 1);
 });
 
 test("U23 연결 지점: 대기값 처리는 편집창 바로 뒤에서 시작, 목록 받음 신호는 loadRankTrackers 가 성공·실패 모두 쏜다", () => {

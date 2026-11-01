@@ -1,4 +1,5 @@
-// 모먼트 옵션 확인(정식판) — 판정 부분. 화면·복사는 panel.js, 즐겨찾기 버튼으로 묶기는 build.mjs.
+// 모먼트 옵션 확인(정식판) — 판정 부분. 화면은 panel.js, 즐겨찾기 버튼으로 묶기는 build.mjs.
+// 맨 아래에는 인사이트로 넘기는 값(#mi-optfill=…)을 만드는 순수 함수가 있다(advertiser-impl-spec 1·3절, 2.1.0).
 //
 // 사람이 연 스마트스토어 상품 페이지에 이미 들어 있는 데이터(페이지 상태 객체)와 지금 상품번호만 받아
 // 그룹상품 옵션(멤버 상품) 번호 목록을 고른다. 순수 함수만 둔다: 화면·주소창·저장소를 만지지 않고,
@@ -39,7 +40,7 @@
 //
 // 아래 세 값은 src/server/naver-rank-option-group.mjs 의 같은 이름 값과 같아야 한다(시험과 build.mjs 가 확인).
 
-export const OPTION_CHECK_VERSION = "2.0.0";
+export const OPTION_CHECK_VERSION = "2.1.0";
 export const OPTION_PRODUCT_IDS_MAX = 50;
 export const OPTION_PRODUCT_ID_MIN_DIGITS = 5;
 export const OPTION_PRODUCT_ID_MAX_DIGITS = 20;
@@ -59,6 +60,8 @@ export const REASON_CODES = Object.freeze([
   "too_many",
   "no_group_list",
   "group_list_without_current",
+  // 판정이 직접 내지 않는 코드. 인사이트로 넘기는 진단(optionFillDiag)에서 이유를 못 정했을 때만 쓴다(advertiser-impl-spec 1절 목록과 같게).
+  "not_found",
 ]);
 
 const CANDIDATE_DIAG_MAX = 12;
@@ -116,6 +119,7 @@ export function reasonFor(code, count = 0) {
     no_group_list: "페이지 데이터에 그룹 표시가 있는 상품번호 목록이 없습니다.",
     group_list_without_current: "그룹 목록은 있지만 지금 상품번호가 든 목록이 없습니다.",
     mixed_id_keys: `그룹 목록에서 지금 상품번호가 든 칸이 ${count}가지이고 칸마다 번호 묶음이 달라, 어느 칸이 옵션 상품번호인지 알 수 없습니다.`,
+    not_found: "이 페이지에서 그룹상품 옵션 목록을 찾지 못했습니다.",
   };
   return { code, count, text: texts[code] || "" };
 }
@@ -712,4 +716,140 @@ export function findGroupOptions(roots, currentProductId, { limits = {}, unreada
     reasons,
     diag,
   };
+}
+
+// ── 인사이트로 넘기는 값(advertiser-impl-spec 1·3절, 2026-11-01) ──
+// 버튼은 값을 만들기만 한다. 창 열기는 panel.js 주 버튼 한 곳뿐이고, 값은 고정 주소의 '#mi-optfill=' 뒤에만 싣는다(쿼리 없음).
+// - 찾음: 2.f.<pageId>.<ids>  — ids 는 '-'로 이은 그룹 번호(지금 상품 포함, 겹침 없음, 1~51개).
+// - 확인 못 함: 2.r.<pageId>.<diag> — diag 는 정해진 칸만 담은 JSON 을 base64url(무패딩)로, 2000자 이하.
+// 받는 쪽(admin.html·client.html)과 서버(options-diag)가 같은 정규식·칸 규칙으로 다시 검사하고 다시 만든다.
+export const OPTION_FILL_FOUND_PATTERN = /^2\.f\.([0-9]{5,20})\.([0-9]{5,20}(?:-[0-9]{5,20}){0,50})$/;
+export const OPTION_FILL_REFUSED_PATTERN = /^2\.r\.([0-9]{5,20})\.([A-Za-z0-9_-]{1,2000})$/;
+export const OPTION_FILL_HASH_MAX_CHARS = 2200;
+export const OPTION_FILL_DIAG_MAX_CHARS = 2000;
+export const OPTION_FILL_DIAG_COUNTS_MAX = 8;
+export const OPTION_FILL_DIAG_KEYS_MAX = 20;
+export const OPTION_FILL_DIAG_COUNT_KEY = /^[A-Za-z]{1,24}$/;
+export const OPTION_FILL_DIAG_COUNT_VALUE_MAX = 10_000_000;
+export const OPTION_FILL_DIAG_KEY_RULE = /^[A-Za-z0-9_#.-]{1,40}$/;
+const DIAG_KEY_MAX_CHARS = 40;
+// NUMBER_RUN 은 g 깃발이라 test() 에 쓰면 lastIndex 가 남는다. 있는지 볼 때는 이것을 쓴다.
+const HAS_NUMBER_RUN = new RegExp(`[0-9]{${OPTION_PRODUCT_ID_MIN_DIGITS},}`);
+const BASE64_URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+// 찾음 값. 규칙(지금 상품 포함·겹침 없음·자리 수·개수)에 하나라도 어긋나면 빈 글자(화면은 '확인 못 함'으로 간다).
+export function optionFillFoundPayload(pageId, ids) {
+  const list = Array.isArray(ids) ? ids.map((id) => String(id)) : [];
+  if (!isServerProductId(pageId) || !list.length || list.length > OPTION_PRODUCT_IDS_MAX + 1) return "";
+  if (!list.every(isServerProductId) || !list.includes(pageId) || new Set(list).size !== list.length) return "";
+  const payload = `2.f.${pageId}.${list.join("-")}`;
+  return OPTION_FILL_FOUND_PATTERN.test(payload) ? payload : "";
+}
+
+// 확인 못 함 값. diag 는 optionFillDiag 가 만든 객체.
+export function optionFillRefusedPayload(pageId, diag, { maxChars = OPTION_FILL_DIAG_MAX_CHARS } = {}) {
+  if (!isServerProductId(pageId)) return "";
+  const encoded = encodeOptionFillDiag(diag, { maxChars });
+  if (!encoded) return "";
+  const payload = `2.r.${pageId}.${encoded}`;
+  return OPTION_FILL_REFUSED_PATTERN.test(payload) ? payload : "";
+}
+
+// ASCII 글자만 base64url(무패딩)로 바꾼다. 진단 JSON 은 칸 규칙상 ASCII 뿐이다(아니면 던짐).
+export function base64UrlAscii(text) {
+  const value = String(text);
+  const codes = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code > 0x7f) throw new Error("진단에 ASCII 가 아닌 글자가 있습니다");
+    codes.push(code);
+  }
+  let out = "";
+  for (let index = 0; index < codes.length; index += 3) {
+    const size = Math.min(3, codes.length - index);
+    const chunk = (codes[index] << 16) | ((size > 1 ? codes[index + 1] : 0) << 8) | (size > 2 ? codes[index + 2] : 0);
+    out += BASE64_URL_ALPHABET.charAt((chunk >> 18) & 63) + BASE64_URL_ALPHABET.charAt((chunk >> 12) & 63);
+    if (size > 1) out += BASE64_URL_ALPHABET.charAt((chunk >> 6) & 63);
+    if (size > 2) out += BASE64_URL_ALPHABET.charAt(chunk & 63);
+  }
+  return out;
+}
+
+// 진단 키 하나를 칸 규칙(영숫자·_#.- 40자 이하)에 맞춘다. 경로의 '[]'·'?'·'$' 같은 글자는 '_' 로, 5자리 이상 숫자는 다시 '#n' 으로
+// (판정 진단이 이미 가렸지만 한 번 더). 길면 끝 쪽(잎 키)을 남긴다.
+function optionFillDiagKey(text) {
+  let key = String(text).replace(/[^A-Za-z0-9_#.-]+/g, "_").replace(NUMBER_RUN, NUMBER_KEY_MASK);
+  if (key.length > DIAG_KEY_MAX_CHARS) key = `_${key.slice(key.length - DIAG_KEY_MAX_CHARS + 1)}`;
+  return OPTION_FILL_DIAG_KEY_RULE.test(key) ? key : "";
+}
+
+function optionFillDiagCount(value) {
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (!Number.isSafeInteger(value) || value < 0) return null;
+  return Math.min(value, OPTION_FILL_DIAG_COUNT_VALUE_MAX);
+}
+
+// 인사이트로 넘기는 진단: { v, reason, counts(영문 키 정수 8개 이하), keys(경로 20개 이하) }. 이름·글자 값·상품번호는 담지 않는다.
+// result: findGroupOptions 결과(실행 오류면 null). sources: 패널이 센 데이터 묶음 수. runtimeError: 실행 중 오류가 났음.
+export function optionFillDiag(result, { sources = null, runtimeError = false } = {}) {
+  const reasons = result && Array.isArray(result.reasons) ? result.reasons.filter((reason) => reason && REASON_CODES.includes(reason.code)) : [];
+  let reason = reasons.length ? reasons[0].code : "not_found";
+  if (runtimeError) reason = "source_unreadable";
+  const diag = result && result.diag ? result.diag : {};
+  const cut = diag.cut || {};
+  const chosen = diag.chosen || null;
+  const counted = [
+    ["runtimeError", runtimeError ? 1 : null],
+    ["nodes", diag.nodes],
+    ["jsonScripts", sources ? sources.jsonScripts : null],
+    ["unreadable", result && result.diag ? (diag.unreadableSources || 0) + (diag.readErrors || 0) : null],
+    ["capped", result && result.diag ? Number(Boolean(cut.nodes)) + (cut.depth || 0) + (cut.arrays || 0) + (cut.lists || 0) : null],
+    ["reasonCount", reasons.length ? reasons[0].count : null],
+    ["chosenCount", result && result.diag ? (chosen ? chosen.count : 0) : null],
+    ["splitPieces", chosen ? chosen.split.length : null],
+    ["groupLists", diag.groupListsWithoutCurrent],
+  ];
+  const counts = {};
+  for (const [key, value] of counted) {
+    const count = optionFillDiagCount(value);
+    if (count === null || !OPTION_FILL_DIAG_COUNT_KEY.test(key)) continue;
+    if (Object.keys(counts).length >= OPTION_FILL_DIAG_COUNTS_MAX) break;
+    counts[key] = count;
+  }
+  const keys = [];
+  const addKey = (text) => {
+    const key = optionFillDiagKey(text);
+    if (key && !keys.includes(key) && keys.length < OPTION_FILL_DIAG_KEYS_MAX) keys.push(key);
+  };
+  for (const other of reasons.slice(1)) addKey(`reason.${other.code}`);
+  if (chosen) {
+    addKey(chosen.path);
+    for (const idKey of chosen.idKeys || []) addKey(`idKey.${idKey === VALUE_ITEM_KEY ? "value" : idKey}`);
+    for (const piece of [...(chosen.split || []), ...(chosen.parallel || [])]) addKey(piece.path);
+  }
+  for (const list of diag.pairLists || []) addKey(list.path);
+  for (const list of diag.candidates || []) addKey(list.path);
+  for (const entry of diag.groupKeys || []) addKey(entry.path);
+  return { v: OPTION_CHECK_VERSION, reason, counts, keys };
+}
+
+// 진단 객체 → base64url. 칸 규칙 밖 값은 버리고 다시 만든 뒤, maxChars 를 넘으면 keys 를 뒤에서부터 줄인다.
+export function encodeOptionFillDiag(diag, { maxChars = OPTION_FILL_DIAG_MAX_CHARS } = {}) {
+  const source = diag && typeof diag === "object" ? diag : {};
+  const reason = REASON_CODES.includes(source.reason) ? source.reason : "not_found";
+  const counts = {};
+  for (const [key, value] of Object.entries(source.counts && typeof source.counts === "object" ? source.counts : {})) {
+    const count = typeof value === "boolean" ? null : optionFillDiagCount(value);
+    if (count === null || !OPTION_FILL_DIAG_COUNT_KEY.test(key)) continue;
+    if (Object.keys(counts).length >= OPTION_FILL_DIAG_COUNTS_MAX) break;
+    counts[key] = count;
+  }
+  const keys = (Array.isArray(source.keys) ? source.keys : [])
+    .filter((key) => typeof key === "string" && OPTION_FILL_DIAG_KEY_RULE.test(key) && !HAS_NUMBER_RUN.test(key))
+    .slice(0, OPTION_FILL_DIAG_KEYS_MAX);
+  for (let size = keys.length; size >= 0; size -= 1) {
+    const encoded = base64UrlAscii(JSON.stringify({ v: OPTION_CHECK_VERSION, reason, counts, keys: keys.slice(0, size) }));
+    if (encoded.length <= maxChars) return encoded;
+  }
+  return "";
 }

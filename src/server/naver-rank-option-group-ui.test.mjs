@@ -3032,7 +3032,8 @@ test("U23 이미 같은 범위 목록을 받았으면 바로 열고, 15분이 �
   await flush();
   assert.equal(old.note(), "옵션 확인 버튼에서 넘어온 지 15분이 지나 편집창을 열지 않았습니다. 상품 페이지에서 버튼을 다시 눌러 주세요.");
   assert.ok(old.noteNode().classList.contains("is-warn"));
-  assert.deepEqual(old.screens, []);
+  assert.deepEqual(old.screens, [["naver-rank-tracking", false]], "안내가 보이게 순위 화면은 연다");
+  assert.equal(old.requests.length, 0);
   assert.equal(old.storage.has("mi-optfill-pending"), false);
 
   const forged = fillEnv({ pending: foundPending({ ids: [OPTION_B, PRIMARY] }) });
@@ -3062,6 +3063,11 @@ test("U23 목록 받기 실패면 한 번 다시 읽고(mi:rank-trackers-changed
   assert.equal(silent.timers.at(-1).ms, 45000);
   silent.timers.at(-1).handler();
   assert.equal(silent.events.filter((event) => event.type === "mi:rank-trackers-changed").length, 1);
+
+  const noScope = fillEnv({ pending: foundPending(), scopeKey: "" });
+  noScope.authReady();
+  await flush();
+  assert.equal(noScope.note(), "순위 추적 범위를 확인하지 못해 옵션 편집창을 열지 않았습니다. 로그인과 광고주 연결을 확인한 뒤 버튼을 다시 눌러 주세요.");
 
   const moved = fillEnv({ pending: foundPending() });
   moved.authReady();
@@ -3229,4 +3235,25 @@ test("U23 연결 지점: 대기값 처리는 편집창 바로 뒤에서 시작, 
   assert.ok(load.indexOf("announceRankTrackersLoaded(loadState, true);") < load.indexOf("await syncDueRankTrackersIfNeeded"), "밀린 갱신을 기다리지 않는다");
   assert.ok((load.match(/announceRankTrackersLoaded\(loadState, false\);/gu) || []).length >= 3, "검증 실패·연결 실패·옛 요청도 ok:false");
   assert.match(tracking, /rankTrackerListForEditor = function \(\) \{\s*return rankTrackers\.slice\(\);\s*\};/u);
+});
+
+test("U23 이미 열린 탭에 버튼 주소가 들어와도(hashchange) 같은 순서: 잠겨 있으면 로그인 전 줄, 로그인돼 있으면 바로 처리", async () => {
+  const locked = fillEnv();
+  locked.location.hash = `#mi-optfill=2.f.${PAGE_ID}.${FILL_IDS.join("-")}`;
+  locked.fire("hashchange");
+  assert.deepEqual(locked.replaced, [`/admin${RANK_HASH}`]);
+  assert.equal(locked.waitNote(), "로그인하면 옵션 편집창이 열립니다.");
+  assert.ok(locked.storage.has("mi-optfill-pending"));
+
+  const open = fillEnv({ locked: false });
+  open.location.hash = `#mi-optfill=2.f.${PAGE_ID}.${FILL_IDS.join("-")}`;
+  open.fire("hashchange");
+  assert.deepEqual(open.screens, [["naver-rank-tracking", false]]);
+  assert.equal(open.storage.has("mi-optfill-pending"), false, "바로 꺼내 처리(1회용)");
+  assert.match(open.note(), /찾는 중입니다/u);
+
+  const other = fillEnv({ locked: false });
+  other.location.hash = "#mi-admin-home";
+  other.fire("hashchange");
+  assert.deepEqual([other.replaced, other.screens], [[], []], "다른 해시는 관여하지 않는다");
 });

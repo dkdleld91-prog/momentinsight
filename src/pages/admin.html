@@ -31018,9 +31018,26 @@
               if (event.target === modal || event.target.closest("[data-rank-option-chooser-cancel]")) closeChooser(null);
             });
             modal.addEventListener("keydown", function (event) {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              closeChooser(null);
+              if (event.key === "Escape") {
+                event.preventDefault();
+                closeChooser(null);
+                return;
+              }
+              if (event.key !== "Tab") return;
+              // 창 안에서만 초점이 돈다(편집창과 같은 방식).
+              var focusable = Array.prototype.slice.call(card.querySelectorAll("button")).filter(function (node) {
+                return !node.disabled;
+              });
+              if (!focusable.length) return;
+              var firstButton = focusable[0];
+              var lastButton = focusable[focusable.length - 1];
+              if (event.shiftKey && (document.activeElement === firstButton || document.activeElement === card)) {
+                event.preventDefault();
+                lastButton.focus();
+              } else if (!event.shiftKey && document.activeElement === lastButton) {
+                event.preventDefault();
+                firstButton.focus();
+              }
             });
             chooser = { modal: modal, resolve: resolve };
             root.appendChild(modal);
@@ -31118,7 +31135,9 @@
               var scope = verifiedRankTrackerScope();
               if (!scope || (run.scopeKey && scope.key !== run.scopeKey)) {
                 settle(false);
-                endRun(run, "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.");
+                endRun(run, run.scopeKey
+                  ? "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요."
+                  : "순위 추적 범위를 확인하지 못해 옵션 편집창을 열지 않았습니다. 로그인과 광고주 연결을 확인한 뒤 버튼을 다시 눌러 주세요.");
                 return;
               }
               run.scopeKey = scope.key;
@@ -31243,6 +31262,8 @@
           showWaitNote(false);
           if (!pending) return;
           if (current) endRun(current, "", "");
+          // 안내가 보이게 순위 화면부터 연다(만료여도).
+          fillHost.showRankScreen();
           var age = Date.now() - pending.at;
           if (!(age >= 0 && age <= FILL_TTL_MS)) {
             showNote("옵션 확인 버튼에서 넘어온 지 15분이 지나 편집창을 열지 않았습니다. 상품 페이지에서 버튼을 다시 눌러 주세요.", "is-warn");
@@ -31250,7 +31271,6 @@
           }
           var run = { pending: pending, ended: false, switching: false, scopeKey: "" };
           current = run;
-          fillHost.showRankScreen();
           showNote("옵션 확인 버튼에서 넘어온 상품(" + pending.pageId + ")의 30일 순위 추적을 찾는 중입니다.", "");
           processRun(run).catch(function () {
             endRun(run, "옵션 편집창을 열지 못했습니다. 연결을 확인한 뒤 버튼을 다시 눌러 주세요.");

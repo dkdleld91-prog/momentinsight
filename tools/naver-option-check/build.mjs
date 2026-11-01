@@ -1,18 +1,21 @@
-// 모먼트 옵션 확인 즐겨찾기 버튼 만들기(formal-plan A, impl-spec 4절).
+// 모먼트 옵션 확인 즐겨찾기 버튼 만들기(formal-plan A, impl-spec 4절 → advertiser-impl-spec 3절, 2.1.0).
 //
-// src/core.mjs(판정, export 를 걷어 냄) + src/panel.js(화면)를 한 함수로 묶어
-//   dist/bookmarklet.js       — 묶은 코드(사람이 읽는 확인용)
-//   dist/bookmarklet-href.txt — 즐겨찾기에 넣는 javascript: 주소
-// 를 만든다. dist/ 는 저장소에 넣지 않는다(.gitignore).
+// src/core.mjs(판정, export 를 걷어 냄) + src/panel.js(화면)를 한 함수로 묶고, panel.js 의 OPTION_FILL_TARGET 자리에
+// 고정 인사이트 주소를 박아 두 변형을 만든다.
+//   dist/bookmarklet-admin.js · dist/bookmarklet-admin-href.txt   — 관리자 화면용(…/admin)
+//   dist/bookmarklet-client.js · dist/bookmarklet-client-href.txt — 광고주 화면용(…/client)
+// (.js 는 사람이 읽는 확인용 묶은 코드, -href.txt 는 즐겨찾기에 넣는 javascript: 주소). dist/ 는 저장소에 넣지 않는다(.gitignore).
 //
-// node tools/naver-option-check/build.mjs [--out <폴더>] [--embed <admin.html 경로>]
-// --embed: <!-- mi-option-check-bookmarklet:start --> … <!-- mi-option-check-bookmarklet:end --> 사이 링크 하나의
-//   href 만 새 주소로 바꾼다(다른 속성·글자·표식 밖 내용은 그대로). 표식이 없거나 두 번 이상 있거나 순서가 틀리거나,
-//   사이에 href 가 있는 링크가 정확히 1개가 아니면 아무것도 쓰지 않고 실패한다.
+// node tools/naver-option-check/build.mjs [--out <폴더>] [--embed <화면 파일>]…
+// --embed: 여러 번 줄 수 있다. 파일마다 변형을 정한다 — src/pages/admin.html → …/admin, src/pages/client.html → …/client,
+//   그 밖의 파일이면 실패. <!-- mi-option-check-bookmarklet:start --> … <!-- mi-option-check-bookmarklet:end --> 사이 링크 하나의
+//   href 만 그 변형의 주소로 바꾼다(다른 속성·글자·표식 밖 내용은 그대로). 표식이 없거나 두 번 이상 있거나 순서가 틀리거나,
+//   사이에 href 가 있는 링크가 정확히 1개가 아니면 실패한다. 한 파일이라도 실패하면 어느 파일도 쓰지 않는다.
 //
 // 만들지 않는 경우(큰 소리로 실패)
 // - core.mjs 의 자리 수·개수 규칙이 서버(src/server/naver-rank-option-group.mjs)와 다르다.
 // - 묶은 코드에 요청·주소 이동·HTML 끼워 넣기 같은 금지 코드가 보인다(FORBIDDEN_CODE_PATTERNS).
+// - 창 열기(window.open)가 정확히 1곳이 아니거나, 그 첫 인자가 고정 주소 상수(OPTION_FILL_TARGET)로 시작하지 않는다.
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -29,6 +32,18 @@ export const SERVER_RULE_FILE = "src/server/naver-rank-option-group.mjs";
 export const MARKER_START = "<!-- mi-option-check-bookmarklet:start -->";
 export const MARKER_END = "<!-- mi-option-check-bookmarklet:end -->";
 export const HREF_MAX_CHARS = 200_000;
+// 버튼이 여는 주소는 이 둘뿐이다(advertiser-impl-spec 1절). 버튼 안에서 주소를 조합하지 않고 빌드가 상수로 박는다.
+export const OPTION_FILL_TARGETS = Object.freeze({
+  admin: "https://insight.momentlabs.co.kr/admin",
+  client: "https://insight.momentlabs.co.kr/client",
+});
+export const OPTION_FILL_VARIANTS = Object.freeze(Object.keys(OPTION_FILL_TARGETS));
+// --embed 가 받는 화면 파일(저장소 기준 경로 끝) → 변형.
+export const EMBED_PAGE_VARIANTS = Object.freeze({ "src/pages/admin.html": "admin", "src/pages/client.html": "client" });
+// panel.js 의 자리 글자. 빌드가 정확히 1번 바꿔 끼운다.
+export const TARGET_PLACEHOLDER_LINE = 'const OPTION_FILL_TARGET = "__MI_OPTION_FILL_TARGET__";';
+// 허용하는 창 열기 한 곳의 모양: window.open( 바로 뒤가 고정 주소 상수 + … 인 식.
+const ALLOWED_OPEN = /\bwindow\s*\.\s*open\s*\(\s*OPTION_FILL_TARGET\s*\+/g;
 
 // 묶은 코드에 있으면 안 되는 것. 시험(test/bookmarklet.test.mjs)은 이 목록과 별도로 같은 금지를 다시 검사한다.
 // 글자로 찾는 검사라 완전하지 않다. 그래서 화면 코드는 만들 수 있는 요소를 목록으로 묶고(panel.js PANEL_TAGS),
@@ -47,7 +62,7 @@ export const FORBIDDEN_CODE_PATTERNS = Object.freeze([
   ["요청 속성 대입", /\.\s*(?:href|srcdoc|action|formAction|ping|poster)\s*=(?!=)/i],
   ["요청 속성 쓰기", /setAttribute\s*\(\s*["'`](?:href|src|srcset|srcdoc|action|formaction|ping|poster|data|background|xlink:href)["'`]|setAttributeNS/i],
   ["location 변경", /\blocation\s*=(?!=)|\blocation\s*\.\s*(href|hash|search|pathname|host|hostname|protocol|port)\s*=(?!=)|\blocation\s*\.\s*(assign|replace|reload)\b/],
-  // window.open(…) 뿐 아니라 그냥 open(…)·["open"] 도 막는다.
+  // window.open(…) 뿐 아니라 그냥 open(…)·["open"] 도 막는다. 허용하는 한 곳(ALLOWED_OPEN)은 findForbiddenCode 가 미리 걷는다.
   ["창 열기", /\bopen\s*\(|\[\s*["'`]open["'`]\s*\]/],
   ["링크 누르기", /\.\s*click\s*\(|dispatchEvent|\bMouseEvent\b|\bPointerEvent\b/],
   ["HTML 끼워 넣기", /innerHTML|outerHTML|insertAdjacentHTML|document\s*\.\s*write/],
@@ -64,8 +79,18 @@ export const FORBIDDEN_CODE_PATTERNS = Object.freeze([
   ["양식 보내기", /\.\s*submit\s*\(|requestSubmit/],
 ]);
 
+export function countAllowedOpens(code) {
+  return [...String(code).matchAll(ALLOWED_OPEN)].length;
+}
+
+// 허용 모양의 창 열기가 정확히 1곳이면 그 한 곳만 걷고 나머지를 검사한다(2곳 이상이면 아무것도 걷지 않아 '창 열기'로 걸림).
+// 고정 주소 상수를 다른 값으로 다시 선언·대입하는 코드도 막는다(첫 인자가 늘 빌드가 박은 주소로 시작하게).
 export function findForbiddenCode(code) {
-  return FORBIDDEN_CODE_PATTERNS.filter(([, pattern]) => pattern.test(code)).map(([name]) => name);
+  const text = String(code);
+  const checked = countAllowedOpens(text) === 1 ? text.replace(ALLOWED_OPEN, "allowedOpenSlot(OPTION_FILL_TARGET +") : text;
+  const found = FORBIDDEN_CODE_PATTERNS.filter(([, pattern]) => pattern.test(checked)).map(([name]) => name);
+  if ((text.match(/\bOPTION_FILL_TARGET\s*=(?!=)/g) || []).length > 1) found.push("고정 주소 상수 다시 대입");
+  return found;
 }
 
 // 서버 파일을 불러오지 않고 글자에서 규칙 값만 읽는다(서버 쪽 import 사슬을 빌드에 끌어오지 않으려고).
@@ -103,19 +128,44 @@ function stripSource(source) {
     .join("\n");
 }
 
-export function buildBookmarkletCode({ toolRoot = TOOL_ROOT } = {}) {
+export function targetForVariant(variant) {
+  if (!Object.hasOwn(OPTION_FILL_TARGETS, variant)) {
+    throw new Error(`naver-option-check: 변형은 ${OPTION_FILL_VARIANTS.join("·")} 중 하나여야 합니다(${String(variant).slice(0, 20)})`);
+  }
+  return OPTION_FILL_TARGETS[variant];
+}
+
+// variant: "admin" | "client". 그 변형의 고정 주소를 panel.js 자리에 박은 묶은 코드를 돌려준다.
+export function buildBookmarkletCode({ variant, toolRoot = TOOL_ROOT } = {}) {
+  const target = targetForVariant(variant);
   const coreSource = fs.readFileSync(path.join(toolRoot, "src", "core.mjs"), "utf8");
   const panelSource = fs.readFileSync(path.join(toolRoot, "src", "panel.js"), "utf8");
   const core = stripSource(coreSource).replace(/^export\s+(?=(?:const|function|let|class)\b)/gm, "");
-  const panel = stripSource(panelSource);
+  let panel = stripSource(panelSource);
   for (const [name, part] of [["core.mjs", core], ["panel.js", panel]]) {
     if (/^\s*(?:export|import)\b/m.test(part)) throw new Error(`naver-option-check: ${name} 에 묶을 수 없는 export/import 가 남았습니다`);
   }
+  const placeholders = panel.split("\n").filter((line) => line === TARGET_PLACEHOLDER_LINE).length;
+  if (placeholders !== 1 || countOf(panel, "__MI_OPTION_FILL_TARGET__") !== 1) {
+    throw new Error(`naver-option-check: panel.js 에 고정 주소 자리(${TARGET_PLACEHOLDER_LINE})가 정확히 1줄이어야 합니다(${placeholders}줄)`);
+  }
+  panel = panel.replace(TARGET_PLACEHOLDER_LINE, `const OPTION_FILL_TARGET = ${JSON.stringify(target)};`);
   const code = `(() => {\n"use strict";\n${core}\n${panel}\n})();\n`;
   new vm.Script(code, { filename: "naver-option-check-bookmarklet.js" });
   const forbidden = findForbiddenCode(code);
   if (forbidden.length) throw new Error(`naver-option-check: 금지 코드가 있습니다: ${forbidden.join(", ")}`);
+  const opens = countAllowedOpens(code);
+  if (opens !== 1) throw new Error(`naver-option-check: 고정 주소로 여는 창 열기가 정확히 1곳이어야 합니다(${opens}곳)`);
   return code;
+}
+
+// --embed 파일 → 변형. 저장소 기준 경로(src/pages/admin.html·src/pages/client.html)로 끝나는 파일만 받는다.
+export function variantForEmbedPath(filePath) {
+  const normalized = path.resolve(String(filePath)).split(path.sep).join("/");
+  for (const [suffix, variant] of Object.entries(EMBED_PAGE_VARIANTS)) {
+    if (normalized.endsWith(`/${suffix}`)) return variant;
+  }
+  throw new Error(`naver-option-check: --embed 는 ${Object.keys(EMBED_PAGE_VARIANTS).join("·")} 만 받습니다(${shownPath(filePath)})`);
 }
 
 // 주소 안에 HTML 특수 글자(&<>"')·# 이 하나도 남지 않게 만든다(' 는 %27 로).
@@ -169,21 +219,34 @@ export function embedBookmarklet(html, href) {
   return `${html.slice(0, found.from)}${inner}${html.slice(found.to)}`;
 }
 
-export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPath = null, toolRoot = TOOL_ROOT, repoRoot = REPO_ROOT } = {}) {
+export function build({ outDir = path.join(TOOL_ROOT, "dist"), embedPaths = [], toolRoot = TOOL_ROOT, repoRoot = REPO_ROOT } = {}) {
   assertServerRulesMatch(repoRoot);
-  const code = buildBookmarkletCode({ toolRoot });
-  const href = bookmarkletHref(code);
-  let embedded = null;
-  if (embedPath) {
-    const before = fs.readFileSync(embedPath, "utf8");
-    const after = embedBookmarklet(before, href);
-    if (after !== before) fs.writeFileSync(embedPath, after, "utf8");
-    embedded = { path: embedPath, changed: after !== before };
+  const variants = {};
+  for (const variant of OPTION_FILL_VARIANTS) {
+    const code = buildBookmarkletCode({ variant, toolRoot });
+    variants[variant] = { code, href: bookmarkletHref(code), target: OPTION_FILL_TARGETS[variant] };
   }
+  // 모든 --embed 파일을 먼저 읽고 바꿔 본 뒤, 하나도 실패하지 않았을 때만 쓴다.
+  const seen = new Set();
+  const plans = embedPaths.map((embedPath) => {
+    const resolved = path.resolve(embedPath);
+    if (seen.has(resolved)) throw new Error(`naver-option-check: --embed 파일이 겹칩니다(${shownPath(resolved)})`);
+    seen.add(resolved);
+    const variant = variantForEmbedPath(resolved);
+    const before = fs.readFileSync(resolved, "utf8");
+    const after = embedBookmarklet(before, variants[variant].href);
+    return { path: resolved, variant, before, after };
+  });
+  const embedded = plans.map((plan) => {
+    if (plan.after !== plan.before) fs.writeFileSync(plan.path, plan.after, "utf8");
+    return { path: plan.path, variant: plan.variant, changed: plan.after !== plan.before };
+  });
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, "bookmarklet.js"), code, "utf8");
-  fs.writeFileSync(path.join(outDir, "bookmarklet-href.txt"), `${href}\n`, "utf8");
-  return { code, href, outDir, embedded };
+  for (const [variant, built] of Object.entries(variants)) {
+    fs.writeFileSync(path.join(outDir, `bookmarklet-${variant}.js`), built.code, "utf8");
+    fs.writeFileSync(path.join(outDir, `bookmarklet-${variant}-href.txt`), `${built.href}\n`, "utf8");
+  }
+  return { variants, outDir, embedded };
 }
 
 function parseArgs(argv) {
@@ -193,7 +256,7 @@ function parseArgs(argv) {
     if (arg === "--embed" || arg === "--out") {
       const value = argv[index + 1];
       if (!value || value.startsWith("--")) throw new Error(`naver-option-check: ${arg} 뒤에 경로가 필요합니다`);
-      if (arg === "--embed") options.embedPath = path.resolve(value);
+      if (arg === "--embed") (options.embedPaths ||= []).push(path.resolve(value));
       else options.outDir = path.resolve(value);
       index += 1;
     } else {
@@ -211,8 +274,9 @@ function shownPath(target) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const result = build(parseArgs(process.argv.slice(2)));
-    const embedNote = result.embedded ? ` · ${shownPath(result.embedded.path)} ${result.embedded.changed ? "바꿈" : "이미 같음"}` : "";
-    console.log(`naver-option-check: 코드 ${result.code.length}자 · 주소 ${result.href.length}자 -> ${shownPath(result.outDir)}${embedNote}`);
+    const sizes = Object.entries(result.variants).map(([variant, built]) => `${variant} 코드 ${built.code.length}자·주소 ${built.href.length}자`).join(" / ");
+    const embedNote = result.embedded.map((entry) => ` · ${shownPath(entry.path)}(${entry.variant}) ${entry.changed ? "바꿈" : "이미 같음"}`).join("");
+    console.log(`naver-option-check: ${sizes} -> ${shownPath(result.outDir)}${embedNote}`);
   } catch (error) {
     console.error(error && error.message ? error.message : error);
     process.exit(1);

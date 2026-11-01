@@ -2513,3 +2513,288 @@ test("U7 정식판 새 CSS 도 그룹상품 묶음 안에서 var(--mi-*) 토큰�
     ".mi-rank-option-alert.is-danger", ".mi-rank-option-bookmarklet", ".mi-rank-option-checkline.is-due",
   ]) assert.ok(css.includes(selector), selector);
 });
+
+// ─────────────────────────────────────────────────────────────
+// U18~U21 붙여 넣기 없는 흐름·광고주 사용·다른 목록 차단(2026-11-01 명세 §4.1)
+// ─────────────────────────────────────────────────────────────
+const ADMIN_ONLY_NAMES = /\b(?:rankAgencyCode|canManageOwnerCodes|secureSession|setScreen|applyGlobalAdvertiserTarget|loginStatus|ownerCodeSnapshot)\b/u;
+// 광고주 화면 연결 값(명세 §4.1 host(client)). 편집창이 이 값만으로 관리자 전용 표시를 끄는지 본다.
+const CLIENT_HOST_SOURCE = `function rankOptionEditorHost() {
+  return { page: "client", canCheckOnly: false, showCandidates: false, showGroupMark: false, showCheckLine: false, ownerScope: null };
+}`;
+
+test("U18 편집창 화면 연결: 관리자 연결 값 그대로, 편집창 함수는 관리자 전용 이름을 직접 부르지 않는다(광고주 화면이 글자 그대로 옮긴다)", () => {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`function canManageOwnerCodes() { return "owner?"; }\nfunction rankAgencyCode() { return "ishell"; }\n${htmlFunction(adminSource, "rankOptionEditorHost")}`, context);
+  const host = vm.runInContext("rankOptionEditorHost()", context);
+  assert.deepEqual(Object.keys(host), ["page", "canCheckOnly", "showCandidates", "showGroupMark", "showCheckLine", "ownerScope"]);
+  assert.deepEqual([host.page, host.canCheckOnly, host.showCandidates, host.showGroupMark, host.showCheckLine], ["admin", true, true, true, true]);
+  assert.equal(host.ownerScope.canManage(), "owner?", "총관리자 범위 판단은 canManageOwnerCodes");
+  assert.equal(host.ownerScope.agencyCode(), "ishell", "범위 코드는 rankAgencyCode");
+  const editor = htmlFunction(adminSource, "initRankOptionProductEditor");
+  assert.doesNotMatch(editor, ADMIN_ONLY_NAMES, "화면별 차이는 host 로만");
+  assert.match(editor, /var host = rankOptionEditorHost\(\);/u);
+  for (const name of ["rankOptionFillParse", "rankOptionFillIntake", "initRankOptionFill"]) {
+    assert.doesNotMatch(htmlFunction(adminSource, name), ADMIN_ONLY_NAMES, `${name} 도 화면별 차이는 rankOptionFillHost·rankOptionEditorHost 로만`);
+  }
+  assert.doesNotMatch(htmlFunction(adminSource, "initRankOptionFill"), /innerHTML|insertAdjacentHTML|outerHTML/u, "대기값 처리도 textContent 로만");
+});
+
+test("U18 광고주 화면 연결 값이면: 범위 머리글 없음, 확인만 기록·확인일 줄·후보·그룹상품 표시·DB 준비 전 문구 모두 없음", async () => {
+  const lookup = (id) => (id === TRACKER_ID ? candidateTracker() : null);
+  const env = editorEnv({ hostSource: CLIENT_HOST_SOURCE, lookup });
+  const markButton = env.documentRef.createElement("button");
+  markButton.setAttribute("data-rank-group-mark", TRACKER_ID);
+  markButton.setAttribute("data-rank-group-mark-next", "true");
+  env.rankCard.appendChild(markButton);
+  const cardStatus = env.documentRef.createElement("p");
+  cardStatus.setAttribute("data-rank-status", "");
+  env.rankCard.appendChild(cardStatus);
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A, OPTION_B], checkedAt: "2026-10-20T03:00:00.000Z", checkedAtReady: true }));
+  assert.deepEqual(plain(env.requests[0].options.headers), { "content-type": "application/json" }, "광고주는 세션 범위만(머리글 없음)");
+  assert.equal(env.checkOnly().hidden, true, "확인만 기록 없음");
+  assert.equal(env.checkLine().hidden, true, "옵션 확인일 줄 없음");
+  assert.equal(env.q("[data-rank-cand]").hidden, true, "후보 칸 없음");
+  click(markButton);
+  await flush();
+  assert.equal(env.requests.length, 1, "그룹상품 표시 버튼은 광고주 화면에서 아무 요청도 하지 않는다");
+  await previewWith(env, `${PRIMARY}\n${OPTION_A}\n${OPTION_C}`, optionsPayload({
+    mode: "preview", saved: [OPTION_A, OPTION_B], removed: [OPTION_B], parsed: parsedOf([OPTION_A, OPTION_C], { primaryRemoved: true }),
+  }));
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_C], checkedAtRecorded: false, message: "그룹상품 번호 2개를 추적 1개에 저장했습니다. 다음 순위 확인부터 적용됩니다." });
+  click(env.saveButton());
+  await flush();
+  assert.equal(env.status(), "그룹상품 번호 2개를 추적 1개에 저장했습니다. 다음 순위 확인부터 적용됩니다.", "광고주에게 'DB 준비 전' 문구를 보이지 않는다");
+  assert.equal(cardStatus.textContent, "");
+});
+
+const FOREIGN_PRIMARY = "13744370949"; // 사고 재현(2026-11-01): 다른 상품(호텔수건) 페이지의 목록
+const OTHER_TRACKER_ID = "0f8a3c1e-4444-4a2b-9c3d-000000000004";
+const savedTen = Array.from({ length: 10 }, (_, index) => String(99900000200 + index));
+const foreignSeventeen = Array.from({ length: 17 }, (_, index) => String(99900000300 + index));
+const guardOf = (extra = {}) => ({ blocked: false, reason: null, blockedTrackers: [], needsPrimaryConfirm: false, otherPrimaryHits: [], ...extra });
+
+test("U19 다른 목록 차단(사고 재현): 저장 10개 vs 겹침 없는 17개·대표 번호 없음 → 저장 꺼짐 '저장할 수 없음'·빨간 줄·옮기기 버튼", async () => {
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: savedTen, siblings: [] }));
+  const typed = foreignSeventeen.join("\n");
+  await previewWith(env, typed, {
+    ...optionsPayload({ mode: "preview", saved: savedTen, siblings: [], removed: savedTen, parsed: parsedOf(foreignSeventeen) }),
+    guard: guardOf({
+      blocked: true, reason: "foreign_list", blockedTrackers: [{ trackerId: TRACKER_ID, keyword: "아이폰 17 필름" }],
+      otherPrimaryHits: [{ productId: FOREIGN_PRIMARY, keyword: "호텔수건", trackerId: OTHER_TRACKER_ID }],
+    }),
+  });
+  assert.equal(env.saveButton().disabled, true, "막힌 목록은 저장할 수 없다");
+  assert.equal(env.saveButton().textContent, "저장할 수 없음");
+  const guard = env.preview().querySelector("[data-rank-option-guard]");
+  assert.deepEqual(guard.querySelectorAll(".mi-rank-option-alert").map((node) => [node.textContent, node.className]), [
+    [`이 목록에는 이 상품(대표 ${PRIMARY})도, 지금 저장된 번호도 하나도 없습니다. 다른 상품의 목록으로 보입니다.`, "mi-rank-option-alert is-danger"],
+  ]);
+  assert.equal(env.preview().querySelector("[data-rank-option-primary-warn]"), null, "노란 경고(B2)를 겹쳐 띄우지 않는다");
+  assert.match(env.status(), /^이 목록은 저장할 수 없습니다\. 빨간 줄을 확인해주세요\.$/u);
+  const move = guard.querySelector("[data-rank-option-move]");
+  assert.equal(move.textContent, `「호텔수건」(대표 ${FOREIGN_PRIMARY}) 편집창으로 옮기기`);
+  // 입력을 바꿨다 되돌려도 막힌 상태 글자는 그대로다.
+  env.input().value = `${typed}\n`;
+  dispatch(env.input(), "input");
+  env.input().value = typed;
+  dispatch(env.input(), "input");
+  assert.match(env.status(), /저장할 수 없습니다/u);
+  assert.equal(env.saveButton().disabled, true);
+
+  // 옮기기: 그 추적 편집창을 열고 같은 입력으로 미리 보기만 한다(저장은 사람).
+  env.respond({ ...optionsPayload({ saved: [], siblings: [] }), tracker: { id: OTHER_TRACKER_ID, keyword: "호텔수건", primaryProductId: FOREIGN_PRIMARY, optionProductIds: [], optionCheckedAt: null } });
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf(foreignSeventeen) }), tracker: { id: OTHER_TRACKER_ID, keyword: "호텔수건", primaryProductId: FOREIGN_PRIMARY, optionProductIds: [] }, guard: guardOf({ needsPrimaryConfirm: true }) });
+  click(move);
+  await flush();
+  assert.deepEqual(plain(env.requests.at(-2).body), { action: "options", trackerId: OTHER_TRACKER_ID, mode: "read" });
+  assert.deepEqual(plain(env.requests.at(-1).body), { action: "options", trackerId: OTHER_TRACKER_ID, mode: "preview", optionInput: typed, applyToSameProduct: false });
+  assert.equal(env.input().value, typed, "같은 입력");
+  assert.match(env.q("[id=\"mi-rank-option-title\"]").textContent, /호텔수건/u);
+  assert.equal(env.q("[data-rank-option-source]").textContent, "「아이폰 17 필름」 편집창에서 옮겨 온 목록입니다. 아직 저장 전입니다.");
+  assert.equal(env.q("[data-rank-option-source]").hidden, false);
+  assert.ok(env.requests.every((request) => request.body.mode !== "save"), "옮겨도 저장하지 않는다");
+});
+
+test("U19 추적별 차단: 함께 바뀌는 형제 하나만 겹치지 않으면 그 키워드 줄만(이 추적 줄 없음) + 체크 끄기 안내", async () => {
+  const env = editorEnv();
+  const blockedSibling = sibling({ beforeOptionProductIds: savedTen, afterOptionProductIds: [OPTION_A, OPTION_B], removedCount: 10, addedCount: 2 });
+  await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [blockedSibling] }));
+  await previewWith(env, `${OPTION_A}\n${OPTION_B}`, {
+    ...optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [blockedSibling], parsed: parsedOf([OPTION_A, OPTION_B]), willUpdateCount: 2 }),
+    guard: guardOf({ blocked: true, reason: "foreign_list", blockedTrackers: [{ trackerId: SIBLING_ID, keyword: "아이폰17 케이스" }] }),
+  });
+  assert.deepEqual(env.preview().querySelector("[data-rank-option-guard]").querySelectorAll(".mi-rank-option-alert").map((node) => node.textContent), [
+    "「아이폰17 케이스」 추적의 저장된 번호와 하나도 겹치지 않습니다. 이 추적만 바꾸려면 위 '다른 키워드 추적에도 똑같이 적용' 체크를 끄고 미리 보기를 다시 누르세요.",
+  ]);
+  assert.equal(env.saveButton().textContent, "저장할 수 없음");
+  // 빠짐 확인 줄은 다른 키워드에서 빠지는 번호 수(removedCount 합)까지 보인다.
+  assert.match(env.preview().querySelector("[data-rank-option-removed-warn]").textContent, /다른 키워드 추적 1개에서도 번호 10개가 빠집니다\./u);
+  assert.equal(env.preview().querySelector("[data-rank-option-move]"), null, "옮길 곳이 없으면 버튼 없음");
+});
+
+test("U19 버튼 목록에 대표 번호 없음(button_primary_missing): 이 상품 페이지에서 다시 누르라는 빨간 줄, 저장 꺼짐", async () => {
+  const env = editorEnv();
+  env.respond(optionsPayload({ saved: [], siblings: [] }));
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B]) }), guard: guardOf({ blocked: true, reason: "button_primary_missing" }) });
+  env.windowListeners["mi:rank-option-editor-open"].forEach((handler) => handler({ detail: { trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: [OPTION_A, OPTION_B], sourcePageId: OPTION_A, claimedSource: "button" } }));
+  await flush();
+  assert.equal(env.requests.at(-1).body.sourcePageId, OPTION_A, "버튼 목록이면 미리 보기에 출처 상품 번호를 함께 보낸다");
+  assert.deepEqual(env.preview().querySelector("[data-rank-option-guard]").querySelectorAll(".mi-rank-option-alert").map((node) => node.textContent), [
+    `버튼에서 넘어온 목록에 이 상품(대표 ${PRIMARY})이 없습니다. 이 상품 페이지에서 다시 눌러 주세요.`,
+  ]);
+  assert.equal(env.saveButton().disabled, true);
+  assert.equal(env.saveButton().textContent, "저장할 수 없음");
+});
+
+test("U19 대표 번호 없는 첫 손 입력(needsPrimaryConfirm): 노란 경고와 합친 확인 체크를 해야 저장, 저장 본문 primaryConfirmed·manual", async () => {
+  const env = editorEnv();
+  await openEditorWith(env, optionsPayload({ saved: [], siblings: [] }));
+  await previewWith(env, `${OPTION_A}\n${OPTION_B}`, {
+    ...optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B]) }),
+    guard: guardOf({ needsPrimaryConfirm: true }),
+  });
+  assert.equal(env.preview().querySelector("[data-rank-option-primary-warn]"), null, "B2 노란 경고는 확인 칸과 겹치지 않는다");
+  const box = env.preview().querySelector("[data-rank-option-primary-confirm-box]");
+  assert.ok(box.classList.contains("is-warn"));
+  assert.equal(env.preview().querySelectorAll(".mi-rank-option-alert.is-warn").length, 1, "노란 칸은 하나");
+  assert.match(box.textContent, new RegExp(`^이 추적의 대표 상품번호\\(${PRIMARY}\\)가 목록에 없고, 지금 저장된 번호도 없습니다\\.`, "u"));
+  assert.match(box.textContent, new RegExp(`이 번호들이 상품 ${PRIMARY}의 그룹 옵션이 맞습니다$`, "u"));
+  assert.equal(env.saveButton().disabled, true, "체크 전 저장 꺼짐");
+  assert.equal(env.saveButton().textContent, "확인 체크 뒤 저장");
+  assert.match(env.status(), /노란 칸의 확인 체크를 한 뒤 저장해주세요/u);
+  const check = box.querySelector("[data-rank-option-primary-confirm]");
+  check.checked = true;
+  dispatch(check, "change");
+  assert.equal(env.saveButton().disabled, false);
+  assert.equal(env.saveButton().textContent, "저장");
+  assert.match(env.status(), /내용이 맞으면 저장을 눌러주세요/u);
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  click(env.saveButton());
+  await flush();
+  const body = plain(env.requests.at(-1).body);
+  assert.equal(body.primaryConfirmed, true);
+  assert.equal(body.claimedSource, "manual");
+  assert.equal("sourcePageId" in body, false, "손 입력은 출처 번호를 보내지 않는다");
+});
+
+test("U20 저장 거절 처리: 다른 목록·확인 필요(409)는 입력을 지키고 미리 보기를 다시, 빈도 제한(429)·확인만 기록 거절(403)은 미리 보기까지 그대로 두고 안내", async () => {
+  const typed = `${OPTION_A}\n${OPTION_B}`;
+  const okPreview = () => optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B]) });
+  for (const [code, status, message, rerun] of [
+    ["RANK_OPTION_FOREIGN_LIST", 409, "다른 상품의 목록으로 보여 저장하지 않았습니다.", { ...okPreview(), guard: guardOf({ blocked: true, reason: "foreign_list", blockedTrackers: [{ trackerId: TRACKER_ID, keyword: "아이폰 17 필름" }] }) }],
+    ["RANK_OPTION_PRIMARY_CONFIRM_REQUIRED", 409, "대표 상품번호가 없는 첫 입력은 확인이 필요합니다.", { ...okPreview(), guard: guardOf({ needsPrimaryConfirm: true }) }],
+  ]) {
+    const env = editorEnv();
+    await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+    await previewWith(env, typed, okPreview());
+    env.respond({ ok: false, code, message, guard: guardOf() }, status);
+    env.respond(rerun);
+    click(env.saveButton());
+    await flush();
+    assert.equal(env.input().value, typed, `${code}: 입력(초안)을 지킨다`);
+    assert.deepEqual(plain(env.requests.at(-1).body), { action: "options", trackerId: TRACKER_ID, mode: "preview", optionInput: typed, applyToSameProduct: false }, `${code}: 미리 보기를 다시`);
+    assert.ok(env.status().startsWith(message), `${code}: 서버 문장이 앞에`);
+    assert.ok(env.status().endsWith(code === "RANK_OPTION_FOREIGN_LIST" ? "이 목록은 저장할 수 없습니다. 빨간 줄을 확인해주세요." : "노란 칸의 확인 체크를 한 뒤 저장해주세요."));
+    assert.equal(env.saveButton().disabled, true);
+    assert.equal(env.events.length, 0, "아무것도 바뀌지 않았으니 목록 다시 읽기 없음");
+  }
+  for (const [code, status, message] of [
+    ["RANK_OPTION_RATE_LIMITED", 429, "잠시 뒤 다시 저장해 주세요."],
+    ["RANK_OPTION_CHECK_ONLY_FORBIDDEN", 403, "확인만 기록은 운영팀 기능입니다."],
+  ]) {
+    const env = editorEnv();
+    await openEditorWith(env, optionsPayload({ saved: [OPTION_A], siblings: [] }));
+    await previewWith(env, typed, okPreview());
+    const before = env.requests.length;
+    env.respond({ ok: false, code, message }, status);
+    click(env.saveButton());
+    await flush();
+    assert.equal(env.requests.length, before + 1, `${code}: 다시 읽기·미리 보기를 하지 않는다`);
+    assert.equal(env.status(), message);
+    assert.equal(env.input().value, typed);
+    assert.ok(env.preview().textContent.includes("저장된 번호와 비교"), `${code}: 미리 보기를 그대로 둔다`);
+    assert.equal(env.saveButton().disabled, false, `${code}: 잠시 뒤 다시 누를 수 있다`);
+  }
+});
+
+test("U21 버튼에서 넘어온 번호로 열기: 저장값을 읽은 뒤 채우고 미리 보기만 자동, 저장은 사람이(출처 button·sourcePageId), 입력을 고치면 손 입력", async () => {
+  const env = editorEnv();
+  const ids = [PRIMARY, OPTION_A, OPTION_B];
+  env.respond(optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  env.respond(optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { inputTokenCount: 3, primaryRemoved: true }) }));
+  const detail = { trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: ids, sourcePageId: OPTION_A, claimedSource: "button" };
+  env.windowListeners["mi:rank-option-editor-open"].forEach((handler) => handler({ detail }));
+  assert.equal(detail.opened, true, "열었으면 detail.opened");
+  assert.equal(env.modal().hidden, false);
+  assert.equal(env.q("[data-rank-option-source]").textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${OPTION_A}). 아직 저장 전입니다.`);
+  assert.equal(env.q("[data-rank-option-source]").classList.contains("is-warn"), false);
+  await flush();
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview"], "읽기 → 미리 보기, 저장 없음");
+  assert.deepEqual(plain(env.requests[1].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "preview", optionInput: ids.join("\n"), applyToSameProduct: false, sourcePageId: OPTION_A,
+  });
+  assert.equal(env.input().value, ids.join("\n"));
+  assert.equal(env.saveButton().disabled, false, "사람이 누르면 저장할 수 있다");
+  assert.equal(env.timers.length, 0, "자동 저장·자동 닫기 없음");
+  env.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  click(env.saveButton());
+  await flush();
+  const saveBody = plain(env.requests.at(-1).body);
+  assert.equal(saveBody.claimedSource, "button");
+  assert.equal(saveBody.sourcePageId, OPTION_A);
+  assert.equal("primaryConfirmed" in saveBody, false);
+
+  // 입력을 고치면 손 입력: 미리 보기·저장에 출처 번호를 싣지 않는다.
+  const edited = editorEnv();
+  edited.respond(optionsPayload({ saved: [], siblings: [] }));
+  edited.respond(optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  edited.windowListeners["mi:rank-option-editor-open"].forEach((handler) => handler({ detail: { ...detail } }));
+  await flush();
+  await previewWith(edited, `${PRIMARY}\n${OPTION_A}`, optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A], { primaryRemoved: true }) }));
+  assert.equal("sourcePageId" in edited.requests.at(-1).body, false);
+  edited.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A], message: "저장" });
+  click(edited.saveButton());
+  await flush();
+  assert.equal(edited.requests.at(-1).body.claimedSource, "manual");
+  assert.equal("sourcePageId" in edited.requests.at(-1).body, false);
+});
+
+test("U21 확인 못 한 페이지(kind r)로 열기: 안내 줄(주의 색)만, 저장값 그대로·미리 보기 자동 없음, 창을 닫으면 묻지 않는다", async () => {
+  const env = editorEnv();
+  env.respond(optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  const detail = { trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, claimedSource: "manual", notice: "자동으로 확인하지 못했습니다. 상품 페이지나 판매자센터에서 번호를 직접 넣어 주세요." };
+  env.windowListeners["mi:rank-option-editor-open"].forEach((handler) => handler({ detail }));
+  await flush();
+  assert.equal(env.q("[data-rank-option-source]").textContent, detail.notice);
+  assert.ok(env.q("[data-rank-option-source]").classList.contains("is-warn"));
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read"]);
+  assert.equal(env.input().value, OPTION_A, "저장된 번호를 지우지 않는다");
+  dispatch(env.q(".mi-rank-option-card"), "keydown", { key: "Escape" });
+  assert.equal(env.confirms.length, 0);
+  assert.equal(env.modal().hidden, true);
+  // 카드 버튼으로 다시 열면 안내 줄이 없다.
+  env.respond(optionsPayload({ saved: [OPTION_A], siblings: [] }));
+  click(env.editButton);
+  await flush();
+  assert.equal(env.q("[data-rank-option-source]").hidden, true);
+});
+
+test("U19 후보 넣기: 저장된 번호가 없는 추적은 확인 칸에 첫 입력 확인 문장, 서버가 확인을 요구하면 그 확인으로 primaryConfirmed", async () => {
+  const env = candidateEnv(candidateTracker({ optionProductCount: 0 }));
+  env.respond(optionsPayload({ saved: [] }));
+  click(env.candButton);
+  await flush();
+  env.pick(0);
+  click(env.add());
+  assert.match(env.confirm().textContent, new RegExp(`이 추적에는 저장된 번호가 없습니다\\. 넣으면 고른 후보가 상품 ${PRIMARY}의 그룹 옵션이 맞다고 확인한 것으로 저장합니다\\.`, "u"));
+  env.respond({ ...optionsPayload({ mode: "preview", saved: [], parsed: parsedOf([OPTION_A]), siblings: [sibling({ beforeOptionProductIds: [], afterOptionProductIds: [OPTION_A] })] }), guard: guardOf({ needsPrimaryConfirm: true }) });
+  env.respond({ ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A], message: "저장" });
+  click(env.confirmRun());
+  await flush();
+  assert.equal(env.requests.at(-1).body.mode, "save");
+  assert.equal(env.requests.at(-1).body.primaryConfirmed, true);
+  assert.equal(env.requests.at(-1).body.claimedSource, "manual");
+});

@@ -3136,6 +3136,7 @@ function optionActorRole(access, headers) {
 const OPTION_CLIENT_ERROR_MESSAGES = Object.freeze({
   RANK_OPTION_FORBIDDEN: "이 계정에서는 그룹상품 번호를 바꿀 수 없습니다.",
   RANK_OPTION_NOT_READY: "지금은 그룹상품 번호를 저장할 수 없습니다. 잠시 뒤 다시 시도해 주세요.",
+  RANK_GROUP_MARK_FORBIDDEN: "이 계정에서는 그룹상품 표시를 바꿀 수 없습니다.",
 });
 const OPTION_INTERNAL_MESSAGE_PATTERN = /대표 SQL|관리자 화면/u;
 
@@ -3305,8 +3306,10 @@ async function loadOptionGroupCandidates(ctx, scope, primaryProductId, optionIds
   };
 }
 
+// 광고주 세션 응답(2026-11-01)은 내부 문구('대표 SQL'·'관리자 화면에서만')를 일반 문구로 바꾼다. 코드·상태·나머지 칸은 그대로다.
 function optionEditError(request, status, code, message, extra = {}) {
-  return json(request, { ok: false, code, message, ...extra }, status);
+  const visibleMessage = optionSessionRole(request.headers) === "client" ? clientOptionErrorMessage(code, message) : message;
+  return json(request, { ok: false, code, message: visibleMessage, ...extra }, status);
 }
 
 // ── 동시 변경 보호·되돌림 기록 (대표 요청 2026-10-31, 옵션 번호 정식 기능 B3·B4) ──
@@ -3490,33 +3493,27 @@ async function recordOptionSaveResult(ctx, trackerId, result, actor = {}) {
 }
 
 async function handleTrackerOptions(request, ctx, body, access) {
-  // 광고주 사용(2026-11-01): 편집 권한은 optionEditAllowed, 역할은 세션에서만. 광고주 응답(오류 포함)은 내부 문구를 일반 문구로.
+  // 광고주 사용(2026-11-01): 편집 권한은 optionEditAllowed, 역할은 세션에서만. 광고주 오류 문구는 optionEditError 가 거른다.
   const actorRole = optionActorRole(access, request.headers);
   const clientActor = actorRole === "client";
-  const optionFail = (requestValue, status, code, message, extra = {}) => json(requestValue, {
-    ok: false,
-    code,
-    message: clientActor ? clientOptionErrorMessage(code, message) : message,
-    ...extra,
-  }, status);
   if (!optionEditAllowed(access, request.headers)) {
-    return optionFail(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+    return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
   }
   const trackerId = normalizeText(body.trackerId || body.id).toLowerCase();
   if (!OPTION_TRACKER_ID_PATTERN.test(trackerId)) {
-    return optionFail(request, 400, "RANK_OPTION_TRACKER_REQUIRED", "trackerId가 필요합니다.");
+    return optionEditError(request, 400, "RANK_OPTION_TRACKER_REQUIRED", "trackerId가 필요합니다.");
   }
   const mode = normalizeText(body.mode || "read").toLowerCase();
   if (!OPTION_EDIT_MODES.has(mode)) {
-    return optionFail(request, 400, "RANK_OPTION_MODE_INVALID", "지원하지 않는 그룹상품 번호 작업입니다.");
+    return optionEditError(request, 400, "RANK_OPTION_MODE_INVALID", "지원하지 않는 그룹상품 번호 작업입니다.");
   }
   // '확인만 기록'은 운영팀 30일 점검 기준이라 광고주에게 열지 않는다. DB 를 읽기 전에 거절한다.
   if (clientActor && mode === "save" && body.checkOnly === true) {
-    return optionFail(request, 403, "RANK_OPTION_CHECK_ONLY_FORBIDDEN", "확인만 기록은 운영팀 기능입니다.");
+    return optionEditError(request, 403, "RANK_OPTION_CHECK_ONLY_FORBIDDEN", "확인만 기록은 운영팀 기능입니다.");
   }
   const sourcePage = mode === "read" ? { ok: true, value: "" } : optionPageIdValue(body.sourcePageId);
   if (!sourcePage.ok) {
-    return optionFail(
+    return optionEditError(
       request,
       400,
       "RANK_OPTION_SOURCE_INVALID",
@@ -3538,12 +3535,12 @@ async function handleTrackerOptions(request, ctx, body, access) {
     .maybeSingle());
   const tracker = self.data;
   if (!tracker) {
-    return optionFail(request, 404, "RANK_OPTION_TRACKER_NOT_FOUND", "추적 항목을 찾을 수 없습니다.");
+    return optionEditError(request, 404, "RANK_OPTION_TRACKER_NOT_FOUND", "추적 항목을 찾을 수 없습니다.");
   }
   if (self.columnReady) forgetOptionColumnMissing();
   const eligibility = trackerOptionEligibility(tracker);
   if (eligibility.reason === "catalog_tracker") {
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_CATALOG_TRACKER",
@@ -3551,7 +3548,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     );
   }
   if (!eligibility.eligible) {
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_PRIMARY_INVALID",
@@ -3571,7 +3568,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       primaryProductUrl: tracker.product_url,
     });
     if (parsed.error) {
-      return optionFail(
+      return optionEditError(
         request,
         400,
         "RANK_OPTION_INPUT_TOO_LONG",
@@ -3580,7 +3577,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       );
     }
     if (parsed.overLimit) {
-      return optionFail(
+      return optionEditError(
         request,
         400,
         "RANK_OPTION_LIMIT",
@@ -3607,7 +3604,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     columnReady: self.columnReady,
   });
   if (applyToSameProduct && plan.siblings.length > OPTION_SAME_PRODUCT_TRACKERS_MAX) {
-    return optionFail(
+    return optionEditError(
       request,
       400,
       "RANK_OPTION_TOO_MANY_TRACKERS",
@@ -3697,7 +3694,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
   const checkOnly = body.checkOnly === true;
   const fullReview = !clientActor && body.fullReview === true;
   if (checkOnly && !fullReview) {
-    return optionFail(
+    return optionEditError(
       request,
       400,
       "RANK_OPTION_CHECK_ONLY_INVALID",
@@ -3705,7 +3702,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     );
   }
   if (parsed.rejected.length) {
-    return optionFail(
+    return optionEditError(
       request,
       400,
       "RANK_OPTION_INPUT_REJECTED",
@@ -3714,7 +3711,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     );
   }
   if (!self.columnReady) {
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_NOT_READY",
@@ -3725,7 +3722,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     const expected = [...new Set(body.expectedTrackerIds.map((id) => normalizeText(id).toLowerCase()))].sort();
     const actual = [...new Set(targetTrackerIds.map((id) => String(id).toLowerCase()))].sort();
     if (expected.join(",") !== actual.join(",")) {
-      return optionFail(
+      return optionEditError(
         request,
         409,
         "RANK_OPTION_TARGETS_CHANGED",
@@ -3738,11 +3735,11 @@ async function handleTrackerOptions(request, ctx, body, access) {
   // 동시 변경 보호(B4): 미리 보기 때 본 저장값이 없으면(옛 화면) 저장하지 않고, 지금 값과 다르면 쓰기 전에 거절한다.
   const expectedById = expectedOptionProductIdsMap(body.expectedOptionProductIds);
   if (plan.targets.some((target) => optionIdsArrayLiteral(expectedById.get(String(target.id).toLowerCase())) === null)) {
-    return optionFail(request, 409, "RANK_OPTION_PREVIEW_REQUIRED", "화면을 새로 고친 뒤 다시 미리 보기 해주세요.");
+    return optionEditError(request, 409, "RANK_OPTION_PREVIEW_REQUIRED", "화면을 새로 고친 뒤 다시 미리 보기 해주세요.");
   }
   if (plan.targets.some((target) => !Array.isArray(storedById.get(String(target.id))))) {
     // 함께 바뀌는 추적의 옵션 칸을 못 읽었다(칸 없음 경합). 쓰기 조건을 만들 수 없어 쓰지 않는다.
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_NOT_READY",
@@ -3753,11 +3750,11 @@ async function handleTrackerOptions(request, ctx, body, access) {
     expectedById.get(String(target.id).toLowerCase()),
     storedById.get(String(target.id)),
   ))) {
-    return optionFail(request, 409, "RANK_OPTION_CHANGED", "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.");
+    return optionEditError(request, 409, "RANK_OPTION_CHANGED", "다른 사람이 먼저 바꿨습니다. 다시 미리 보기 해주세요.");
   }
   // 다른 상품 목록 차단(§2.3): 동시 변경 검사 뒤·되돌림 기록 전. 아무것도 쓰지 않는다.
   if (guard.blocked) {
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_FOREIGN_LIST",
@@ -3766,7 +3763,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     );
   }
   if (guard.needsPrimaryConfirm && body.primaryConfirmed !== true) {
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_PRIMARY_CONFIRM_REQUIRED",
@@ -3777,11 +3774,11 @@ async function handleTrackerOptions(request, ctx, body, access) {
   if (checkOnly) {
     // 확인일 칸이 없으면(대표 SQL 전) '확인만 기록'은 남길 것이 없다.
     if (!self.checkedAtReady) {
-      return optionFail(request, 409, "RANK_OPTION_NOT_READY", OPTION_CHECKED_NOT_READY_MESSAGE);
+      return optionEditError(request, 409, "RANK_OPTION_NOT_READY", OPTION_CHECKED_NOT_READY_MESSAGE);
     }
     // 대상마다 저장된 번호(정리한 목록 = target.before)와 이번 목록이 집합으로 같을 때만 — 다르면 번호가 바뀌는 저장이다.
     if (plan.targets.some((target) => !sameOptionIdSet(target.before, target.after))) {
-      return optionFail(
+      return optionEditError(
         request,
         409,
         "RANK_OPTION_CHECK_ONLY_MISMATCH",
@@ -3790,7 +3787,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
     }
     // 번호가 없는 추적에는 확인일을 남기지 않는다(아래 조건부 갱신과 같은 규칙) — 이 추적에 번호가 없으면 기록할 것이 없다.
     if (!plan.selfTarget.after.length) {
-      return optionFail(
+      return optionEditError(
         request,
         400,
         "RANK_OPTION_CHECK_ONLY_INVALID",
@@ -3802,12 +3799,12 @@ async function handleTrackerOptions(request, ctx, body, access) {
   // 광고주 저장 빈도(§2.2): 저장 직전(되돌림 기록 전). 세지 못하면 저장하지 않는다.
   if (clientActor) {
     if (!access.clientId) {
-      return optionFail(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
+      return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
     }
     const recent = await optionClientRecentSaveCount(ctx, access.clientId);
     if (!recent.ok) {
       optionAuditFailedWarning("rate", recent.error);
-      return optionFail(
+      return optionEditError(
         request,
         409,
         "RANK_OPTION_AUDIT_FAILED",
@@ -3815,7 +3812,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       );
     }
     if (recent.count >= OPTION_CLIENT_SAVE_LIMIT) {
-      return optionFail(request, 429, "RANK_OPTION_RATE_LIMITED", "잠시 뒤 다시 저장해 주세요.");
+      return optionEditError(request, 429, "RANK_OPTION_RATE_LIMITED", "잠시 뒤 다시 저장해 주세요.");
     }
   }
 
@@ -3839,7 +3836,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
   })));
   if (!intent.logged) {
     optionAuditFailedWarning("intent", intent.error);
-    return optionFail(
+    return optionEditError(
       request,
       409,
       "RANK_OPTION_AUDIT_FAILED",
@@ -4004,7 +4001,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
   }
   const checkedAtRecorded = resultRecord().checkedAtRecorded;
   await recordOptionSaveResult(ctx, tracker.id, { ...resultRecord(), outcome: failure?.code || "saved" }, auditActor);
-  if (failure) return optionFail(request, 409, failure.code, failure.message, failure.extra);
+  if (failure) return optionEditError(request, 409, failure.code, failure.message, failure.extra);
   console.log(JSON.stringify({
     level: "info",
     event: "naver_rank_tracker_options_saved",
@@ -4338,13 +4335,7 @@ async function optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash }, no
 async function handleTrackerOptionsDiag(request, ctx, body, access) {
   const actorRole = optionActorRole(access, request.headers);
   if (!actorRole || !optionEditAllowed(access, request.headers)) {
-    const message = "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.";
-    return optionEditError(
-      request,
-      403,
-      "RANK_OPTION_FORBIDDEN",
-      actorRole === "client" ? clientOptionErrorMessage("RANK_OPTION_FORBIDDEN", message) : message,
-    );
+    return optionEditError(request, 403, "RANK_OPTION_FORBIDDEN", "그룹상품 번호는 관리자 화면에서만 바꿀 수 있습니다.");
   }
   const page = optionPageIdValue(body.pageId);
   if (!page.ok || !page.value) {

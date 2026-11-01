@@ -2493,6 +2493,7 @@ test("S6 group-mark 는 광고주 세션에 계속 403, 목록 응답의 관리�
     const mark = await postAction(ctx, { action: "group-mark", trackerId: SELF_ID, marked: true }, CLIENT_SESSION);
     assert.equal(mark.response.status, 403);
     assert.equal(mark.body.code, "RANK_GROUP_MARK_FORBIDDEN");
+    assert.equal(mark.body.message, "이 계정에서는 그룹상품 표시를 바꿀 수 없습니다.", "광고주에게는 내부 문구 대신 일반 문구");
     assert.equal(state.updates.length, 0);
     const team = await postAction(ctx, { action: "group-mark", trackerId: SELF_ID, marked: true }, TEAM_SESSION);
     assert.equal(team.response.status, 200);

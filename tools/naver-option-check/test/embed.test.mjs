@@ -1,6 +1,6 @@
 // build.mjs --embed 시험: 화면 파일의 표식 사이 링크 href 만 그 화면 변형(관리자 …/admin · 광고주 …/client)의 주소로 바꾸고,
 // 표식이 틀리거나 모르는 파일이면 큰 소리로 실패한다(하나라도 실패하면 아무 파일도 쓰지 않음).
-// 저장소 화면 파일은 고치지 않고 임시 사본으로 시험한다. 마지막 시험은 저장소의 src/pages/admin.html·client.html 이 지금 빌드와
+// 저장소 화면 파일은 고치지 않고 임시 사본(버튼 href 를 낡은 주소로 바꿔 둔 것)으로 시험한다. 마지막 시험은 저장소의 src/pages/admin.html·client.html 이 지금 빌드와
 // 같은 버튼을 품고 있는지 본다(표식이 아직 없으면 건너뜀).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -114,16 +114,27 @@ test("변형 정하기: src/pages/admin.html → admin, src/pages/client.html �
   assert.equal(codeOf(hrefs.admin).replace(OPTION_FILL_TARGETS.admin, OPTION_FILL_TARGETS.client), codeOf(hrefs.client));
 });
 
+// 사본 버튼에 일부러 넣는 낡은 주소. 두 변형 주소 어느 것과도 달라, --embed 가 반드시 쓰기(바꿔 끼우기)를 하게 만든다.
+const STALE_HREF = "javascript:void(0)";
+
 // 임시 폴더에 src/pages/<이름> 사본을 만든다. 표식이 없는 화면(아직 버튼 자리를 넣기 전)은 맨 끝에 표식 묶음을 붙인 사본을 쓴다
-// (화면 파일은 </body> 없는 조각이다).
+// (화면 파일은 </body> 없는 조각이다). 표식이 있는 사본은 버튼 href 를 낡은 주소로 바꿔 둔다: 저장소 화면에 이미 지금 빌드 버튼이
+// 들어 있어도(통합 뒤) '이미 같음'으로 쓰기가 건너뛰어지지 않게, 저장소 화면 상태와 상관없이 같은 것을 시험하려는 것이다.
+// 저장소 화면 파일 자체는 읽기만 한다.
 function copyPage(root, name, { addMarkerIfMissing = true } = {}) {
   const source = fs.readFileSync(path.join(REPO_ROOT, "src", "pages", name), "utf8");
   const target = path.join(root, "src", "pages", name);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const hasMarker = source.includes(MARKER_START) || source.includes(MARKER_END);
-  const text = hasMarker || !addMarkerIfMissing
+  const withMarker = hasMarker || !addMarkerIfMissing
     ? source
     : `${source}\n${MARKER_START}${INITIAL_ANCHOR}${MARKER_END}\n`;
+  const marked = withMarker.includes(MARKER_START) || withMarker.includes(MARKER_END);
+  const text = marked ? embedBookmarklet(withMarker, STALE_HREF) : withMarker;
+  if (marked) {
+    assert.equal(readEmbeddedHref(text), STALE_HREF, `${name} 사본 버튼이 낡은 주소여야 한다`);
+    assert.ok(text !== embedBookmarklet(text, hrefs.admin) && text !== embedBookmarklet(text, hrefs.client), `${name} 사본은 어느 변형과도 달라야 한다`);
+  }
   fs.writeFileSync(target, text);
   return { path: target, before: text };
 }

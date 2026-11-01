@@ -3020,6 +3020,7 @@ function fillEnv({
       const key = body.action + (body.mode ? `:${body.mode}` : "");
       const next = (routes[key] || []).shift();
       if (!next) throw new Error(`준비한 응답이 없다: ${key}`);
+      if (next.gate) await next.gate;
       return { ok: next.status < 300, status: next.status, json: async () => next.payload };
     },
   };
@@ -3033,6 +3034,13 @@ function fillEnv({
   return {
     root, rankCard, rankStatus, loginStatus, storage, requests, events, timers, screens, switches, replaced, scopeRef, trackers, location,
     respond(key, payload, status = 200) { (routes[key] ||= []).push({ payload, status }); },
+    // 응답을 붙잡아 두었다가 돌려준 함수를 부르면 보낸다(응답을 기다리는 동안 일어나는 일을 시험한다).
+    respondLater(key, payload, status = 200) {
+      let release = null;
+      const gate = new Promise((resolve) => { release = resolve; });
+      (routes[key] ||= []).push({ payload, status, gate });
+      return () => release();
+    },
     authReady() { root.classList.remove("is-locked"); fire("mi:rank-auth-ready"); },
     loaded(key, ok = true) { fire("mi:rank-trackers-loaded", { scopeKey: key, ok }); },
     fire,
@@ -3609,4 +3617,291 @@ test("U28 광고주 카드: '그룹상품 번호' 버튼은 있고 관리자 전
   }
   // 공유 이미지 복제에서는 편집 버튼이 빠진다(두 화면 같은 복제 함수).
   assert.equal(shareClone(clientSource, "client.html", clientHtml).querySelector("[data-rank-option-edit]"), null);
+});
+
+// ─────────────────────────────────────────────────────────────
+// U29 처리 도중 광고주 범위·로그인이 바뀌면 어느 단계에서든 그만둔다(2026-11-01 Codex 지적 반영). 예전에는 목록 받기
+// 기다림 단계에서만 반응해, 찾기 응답·광고주 고르는 창을 기다리던 총관리자가 범위를 바꾸면 찾은 범위로 다시 바꿔 버렸고,
+// 추적 고르는 창에서 바꾸면 옛 범위 추적의 편집창을 열었다.
+// ─────────────────────────────────────────────────────────────
+const SCOPE_MOVED = "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
+const ownerScope = (code) => ({ key: `owner:${code}`, role: "owner", agencyCode: code, clientId: "" });
+const ISHELL_ITEM = { agencyCode: "ishell", advertiserName: "아이쉘", trackerId: TRACKER_ID, keyword: "아이폰 17 필름", productId: PRIMARY };
+const HADN_ITEM = { agencyCode: "hadn-a02", advertiserName: "", trackerId: SIBLING_ID, keyword: "수건", productId: PAGE_ID };
+const twoGroupList = () => [
+  fillTracker({ id: "t-own-2", keyword: "아이폰17 케이스", productId: "99900000099", optionProductIds: [OPTION_B] }),
+  fillTracker({ id: "t-page", keyword: "아이폰 필름 2매", productId: PAGE_ID }),
+];
+
+test("U29 총관리자: 찾기(options-locate) 응답을 기다리는 동안 다른 광고주로 바꾸면 그만둔다 — 찾은 범위로 되바꾸지 않고 편집창도 열지 않는다", async () => {
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  const release = env.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  env.authReady();
+  await flush();
+  assert.deepEqual(env.requests.map((request) => request.body.action), ["options-locate"], "찾기 응답을 기다리는 중");
+  // 총관리자가 상단 띠에서 다른 광고주를 고른다.
+  env.scopeRef.current = ownerScope("hadn-a02");
+  env.fire("mi:rank-scope-changed");
+  assert.equal(env.note(), SCOPE_MOVED, "바꾸는 즉시 안내");
+  assert.ok(env.noteNode().classList.contains("is-warn"));
+  release();
+  await flush();
+  assert.deepEqual(env.switches, [], "찾은 광고주(ishell)로 범위를 되바꾸지 않는다");
+  env.loaded("owner:hadn-a02", true);
+  env.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(env.opened().length, 0, "편집창을 열지 않는다");
+  assert.deepEqual(env.requests.map((request) => request.body.action), ["options-locate"], "읽기·미리 보기 요청도 없음");
+  assert.equal(env.note(), SCOPE_MOVED);
+
+  // 로그아웃(범위 없음)도 같다.
+  const out = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  const releaseOut = out.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  out.authReady();
+  await flush();
+  out.scopeRef.current = null;
+  out.fire("mi:rank-scope-changed");
+  releaseOut();
+  await flush();
+  assert.deepEqual([out.switches, out.opened().length, out.note()], [[], 0, SCOPE_MOVED]);
+});
+
+test("U29 총관리자: 광고주 고르는 창이 열린 동안 범위를 바꾸면 창을 닫고 그만둔다", async () => {
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  env.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM, HADN_ITEM] });
+  env.authReady();
+  await flush();
+  assert.ok(env.chooser(), "광고주 2곳 → 고르는 창");
+  env.scopeRef.current = ownerScope("other-a01");
+  env.fire("mi:rank-scope-changed");
+  await flush();
+  assert.equal(env.chooser(), null, "고르는 창이 닫힌다");
+  assert.equal(env.note(), SCOPE_MOVED, "'취소했습니다'로 덮지 않는다");
+  assert.deepEqual(env.switches, []);
+  env.loaded("owner:other-a01", true);
+  await flush();
+  assert.equal(env.opened().length, 0);
+  assert.equal(env.requests.length, 1, "찾기 한 번뿐");
+});
+
+test("U29 추적 고르는 창이 열린 동안 범위를 바꾸면(운영팀·총관리자) 옛 범위 추적의 편집창을 열지 않는다", async () => {
+  const env = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  env.authReady();
+  env.loaded("team:client-1", true);
+  await flush();
+  assert.ok(env.chooser(), "대표 번호 묶음 2개 → 추적 고르는 창");
+  env.scopeRef.current = { key: "team:client-2", role: "team", agencyCode: "", clientId: "client-2" };
+  env.fire("mi:rank-scope-changed");
+  await flush();
+  assert.equal(env.chooser(), null, "고르는 창이 닫힌다");
+  assert.equal(env.note(), SCOPE_MOVED);
+  env.loaded("team:client-2", true);
+  await flush();
+  assert.equal(env.opened().length, 0, "편집창 열림 없음");
+  assert.equal(env.requests.length, 0, "편집창 읽기 요청도 없음");
+
+  // 총관리자: 찾은 광고주로 바꾸고 목록을 받은 뒤 추적 고르는 창에서 다른 광고주로 바꾼다.
+  const owner = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending(), list: twoGroupList() });
+  owner.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  owner.authReady();
+  await flush();
+  assert.deepEqual(owner.switches, [["ishell", { force: true }]]);
+  owner.loaded("owner:ishell", true);
+  await flush();
+  assert.ok(owner.chooser());
+  owner.scopeRef.current = ownerScope("hadn-a02");
+  owner.fire("mi:rank-scope-changed");
+  await flush();
+  assert.deepEqual([owner.chooser(), owner.opened().length, owner.note()], [null, 0, SCOPE_MOVED]);
+  assert.deepEqual(owner.switches, [["ishell", { force: true }]], "범위를 다시 바꾸지 않는다");
+
+  // 찾은 광고주로 바꾼 뒤에는 그 범위(시작 범위가 아니라)와 견준다 ①: 고르는 창에서 찾은 범위 그대로 다시 온 신호 → 창 유지, 고르면 연다.
+  const kept = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending(), list: twoGroupList() });
+  kept.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  kept.authReady();
+  await flush();
+  kept.loaded("owner:ishell", true);
+  await flush();
+  assert.ok(kept.chooser());
+  kept.fire("mi:rank-scope-changed"); // 범위는 owner:ishell 그대로
+  await flush();
+  assert.ok(kept.chooser(), "찾은 범위 그대로면 창이 그대로 열려 있다");
+  assert.match(kept.note(), /찾는 중입니다/u, "범위 바뀜 안내로 덮지 않는다");
+  kept.respond("options:read", optionsPayload({ saved: [OPTION_B], siblings: [] }));
+  kept.respond("options:preview", optionsPayload({ mode: "preview", saved: [OPTION_B], siblings: [], parsed: parsedOf([PRIMARY, OPTION_B]) }));
+  click(kept.chooser().querySelectorAll("[data-rank-option-chooser-pick]")[1]);
+  await flush();
+  assert.equal(kept.opened().length, 1, "고르면 편집창이 열린다");
+  assert.equal(kept.opened()[0].trackerId, "t-own-2");
+  assert.deepEqual(kept.switches, [["ishell", { force: true }]]);
+
+  // ②: 고르는 창에서 시작 범위(owner-internal)로 되돌리면 → 창을 닫고 안내, 범위를 다시 바꾸지 않는다.
+  const back = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending(), list: twoGroupList() });
+  back.respond("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  back.authReady();
+  await flush();
+  back.loaded("owner:ishell", true);
+  await flush();
+  assert.ok(back.chooser());
+  back.scopeRef.current = { key: "owner-internal", role: "owner", agencyCode: "owner-session", clientId: "" };
+  back.fire("mi:rank-scope-changed");
+  await flush();
+  assert.deepEqual([back.chooser(), back.opened().length, back.note()], [null, 0, SCOPE_MOVED], "시작 범위로 되돌린 것도 범위가 바뀐 것");
+  assert.deepEqual(back.switches, [["ishell", { force: true }]], "범위를 다시 바꾸지 않는다(1건)");
+  assert.equal(back.requests.length, 1, "찾기 한 번뿐, 편집창 읽기 없음");
+});
+
+test("U29 같은 범위로 다시 온 신호(실제로 안 바뀜)는 처리를 계속하고, 시작 때 범위가 없다가 처음 정해지는 신호로는 그만두지 않는다", async () => {
+  // 총관리자 찾기 응답을 기다리는 동안 같은 범위 신호 → 그대로 찾은 범위로 바꿔 연다.
+  const env = fillEnv({ role: "owner", scopeKey: "owner-internal", pending: foundPending() });
+  const release = env.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  env.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  env.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  env.authReady();
+  await flush();
+  env.fire("mi:rank-scope-changed");
+  release();
+  await flush();
+  assert.deepEqual(env.switches, [["ishell", { force: true }]]);
+  env.fire("mi:rank-scope-changed"); // 바꾼 범위 그대로 다시 온 신호
+  env.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(env.opened().length, 1, "같은 범위 신호로는 그만두지 않는다");
+  assert.equal(env.note(), "");
+
+  // 추적 고르는 창에서 같은 범위 신호 → 창은 그대로, 고르면 연다.
+  const team = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  team.authReady();
+  team.loaded("team:client-1", true);
+  await flush();
+  team.fire("mi:rank-scope-changed");
+  await flush();
+  assert.ok(team.chooser(), "창이 그대로 열려 있다");
+  team.respond("options:read", optionsPayload({ saved: [OPTION_B], siblings: [] }));
+  team.respond("options:preview", optionsPayload({ mode: "preview", saved: [OPTION_B], siblings: [], parsed: parsedOf([PRIMARY, OPTION_B]) }));
+  click(team.chooser().querySelectorAll("[data-rank-option-chooser-pick]")[1]);
+  await flush();
+  assert.equal(team.opened()[0].trackerId, "t-own-2");
+
+  // 시작 때 총관리자 범위가 아직 없었다가(초기화 중) 처음 정해지는 신호 → 그 범위를 받아 두고 이어 간다.
+  const early = fillEnv({ role: "owner", scopeKey: "", pending: foundPending() });
+  const releaseEarly = early.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  early.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  early.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  early.authReady();
+  await flush();
+  assert.equal(early.requests[0].options.headers["x-mi-agency-code"], "owner-session", "범위가 없으면 자리표시자");
+  early.scopeRef.current = { key: "owner-internal", role: "owner", agencyCode: "owner-session", clientId: "" };
+  early.fire("mi:rank-scope-changed");
+  assert.match(early.note(), /찾는 중입니다/u, "처음 정해지는 범위로는 그만두지 않는다");
+  releaseEarly();
+  await flush();
+  assert.deepEqual(early.switches, [["ishell", { force: true }]]);
+  early.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(early.opened().length, 1);
+  // 받아 둔 뒤 그 범위에서 다시 바뀌면 그만둔다.
+  const earlyMoved = fillEnv({ role: "owner", scopeKey: "", pending: foundPending() });
+  const releaseMoved = earlyMoved.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  earlyMoved.authReady();
+  await flush();
+  earlyMoved.scopeRef.current = { key: "owner-internal", role: "owner", agencyCode: "owner-session", clientId: "" };
+  earlyMoved.fire("mi:rank-scope-changed");
+  earlyMoved.scopeRef.current = ownerScope("hadn-a02");
+  earlyMoved.fire("mi:rank-scope-changed");
+  releaseMoved();
+  await flush();
+  assert.deepEqual([earlyMoved.switches, earlyMoved.opened().length, earlyMoved.note()], [[], 0, SCOPE_MOVED]);
+});
+
+test("U29 총관리자 시작 범위가 없을 때: 찾기 중 로그아웃(화면 잠김)이면 그만두고, 로그인된 채 범위가 아직 없는 신호로는 그만두지 않는다", async () => {
+  // 시작 범위 없음 → 찾기 응답을 기다리는 동안 로그아웃 → 찾은 광고주로 바꾸지 않고 안내.
+  const out = fillEnv({ role: "owner", scopeKey: "", pending: foundPending() });
+  const releaseOut = out.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  out.authReady();
+  await flush();
+  assert.match(out.note(), /찾는 중입니다/u);
+  out.root.classList.add("is-locked");
+  out.scopeRef.current = null;
+  out.fire("mi:rank-scope-changed");
+  assert.equal(out.note(), SCOPE_MOVED, "로그아웃하는 즉시 안내");
+  releaseOut();
+  await flush();
+  out.loaded("owner:ishell", true);
+  await flush();
+  assert.deepEqual([out.switches, out.opened().length, out.note()], [[], 0, SCOPE_MOVED], "로그아웃 뒤 범위를 바꾸지 않는다");
+  assert.equal(out.requests.length, 1, "찾기 한 번뿐");
+
+  // 로그인된 채 범위가 아직 없다는 신호(초기화 중) → 그만두지 않고 찾은 광고주로 바꿔 연다.
+  const idle = fillEnv({ role: "owner", scopeKey: "", pending: foundPending() });
+  const releaseIdle = idle.respondLater("options-locate", { ok: true, truncated: false, items: [ISHELL_ITEM] });
+  idle.respond("options:read", optionsPayload({ saved: [], siblings: [] }));
+  idle.respond("options:preview", optionsPayload({ mode: "preview", saved: [], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }));
+  idle.authReady();
+  await flush();
+  idle.fire("mi:rank-scope-changed"); // 범위는 아직 없음(null), 화면은 로그인 상태
+  assert.match(idle.note(), /찾는 중입니다/u, "로그인된 채 범위가 없는 신호로는 그만두지 않는다");
+  releaseIdle();
+  await flush();
+  assert.deepEqual(idle.switches, [["ishell", { force: true }]]);
+  idle.loaded("owner:ishell", true);
+  await flush();
+  assert.equal(idle.opened().length, 1);
+});
+
+test("U29 광고주 화면: 처리 중 로그아웃(범위 없음)이면 목록 기다림·추적 고르는 창 어디서든 그만둔다", async () => {
+  const clientFill = (options = {}) => fillEnv({
+    role: "client", scopeKey: CLIENT_SCOPE.key, source: clientSource, rankHash: CLIENT_RANK_HASH, pathname: "/client", rootId: "mi-clean", ...options,
+  });
+  const waiting = clientFill({ pending: foundPending() });
+  waiting.authReady();
+  await flush();
+  waiting.scopeRef.current = null;
+  waiting.fire("mi:rank-scope-changed");
+  await flush();
+  assert.equal(waiting.note(), SCOPE_MOVED);
+  waiting.loaded(CLIENT_SCOPE.key, true);
+  await flush();
+  assert.equal(waiting.opened().length, 0);
+
+  const choosing = clientFill({ pending: foundPending(), list: twoGroupList() });
+  choosing.authReady();
+  choosing.loaded(CLIENT_SCOPE.key, true);
+  await flush();
+  assert.ok(choosing.chooser());
+  choosing.scopeRef.current = null;
+  choosing.fire("mi:rank-scope-changed");
+  await flush();
+  assert.deepEqual([choosing.chooser(), choosing.opened().length, choosing.note(), choosing.requests.length], [null, 0, SCOPE_MOVED, 0]);
+});
+
+test("U29 한 겹 더: 신호 없이 범위·목록이 바뀌었어도 고른 추적이 지금 범위 목록에 없으면 열지 않는다", async () => {
+  // 추적 고르는 창이 열린 사이 목록에서 그 추적이 사라짐(신호 없음).
+  const env = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  env.authReady();
+  env.loaded("team:client-1", true);
+  await flush();
+  env.trackers.list = [fillTracker({ id: "t-page", keyword: "아이폰 필름 2매", productId: PAGE_ID })];
+  click(env.chooser().querySelectorAll("[data-rank-option-chooser-pick]")[1]);
+  await flush();
+  assert.deepEqual([env.opened().length, env.note(), env.requests.length], [0, SCOPE_MOVED, 0]);
+
+  // 신호 없이 범위만 바뀜(목록은 아직 옛 범위 그대로).
+  const quiet = fillEnv({ pending: foundPending(), list: twoGroupList() });
+  quiet.authReady();
+  quiet.loaded("team:client-1", true);
+  await flush();
+  quiet.scopeRef.current = { key: "team:client-2", role: "team", agencyCode: "", clientId: "client-2" };
+  click(quiet.chooser().querySelectorAll("[data-rank-option-chooser-pick]")[0]);
+  await flush();
+  assert.deepEqual([quiet.opened().length, quiet.note()], [0, SCOPE_MOVED]);
+});
+
+test("U29 편집창 사용법 순서 줄은 옵션 확인 버튼을 먼저 말한다(두 화면 같은 글자)", () => {
+  const line = "순서: 옵션 확인 버튼(또는 번호 붙여 넣기) → 미리 보기 → 저장.";
+  for (const [label, source] of [["admin", adminSource], ["client", clientSource]]) {
+    const editor = htmlFunction(source, "initRankOptionProductEditor", label);
+    assert.ok(editor.includes(`"${line} 저장 뒤 다음 순위 확인부터 적용됩니다.`), label);
+    assert.ok(!editor.includes("순서: 붙여 넣기 →"), `${label} 옛 문구 없음`);
+  }
 });

@@ -1515,6 +1515,8 @@ test("B3 되돌림 기록 먼저: 바꿀 추적마다 한 줄(저장 전·바꿀
         applyToSameProduct: true,
         primaryProductId: PRIMARY,
         keyword,
+        // 요청 대상 추적(편집창의 추적) 줄에만 — 광고주 저장 빈도를 요청 1건에 1줄로 센다.
+        ...(targetId === SELF_ID ? { requestRow: true } : {}),
         actorRole: "owner",
         claimedSource: "manual",
       },
@@ -1718,6 +1720,7 @@ test("B6 '확인만 기록'(checkOnly): 읽기 응답의 현재 목록·저장�
       applyToSameProduct: false,
       primaryProductId: PRIMARY,
       keyword: "아이폰 17 필름",
+      requestRow: true,
       actorRole: "owner",
       claimedSource: "manual",
     });
@@ -2351,23 +2354,40 @@ test("S3 광고주 저장: fullReview 는 무시(확인일을 찍지 않음), �
   });
 });
 
-test("S4 광고주 저장 빈도: 10분에 저장 결과 20줄이면 429(쓰기·기록 0), 미리 보기·다른 광고주·운영팀 줄·10분 지난 줄은 세지 않는다", async () => {
+// 빈도 시험용 되돌림 기록 줄(2026-11-01 v2): 저장 빈도는 되돌림 기록 가운데 요청 대상 추적 줄(requestRow:true)만 센다.
+function rateIntentRow(clientId, actorRole, createdAt, extra = { requestRow: true }) {
+  return {
+    action: "naver_rank_options_save_intent",
+    client_id: clientId,
+    metadata: { ...extra, actorRole },
+    created_at: createdAt,
+  };
+}
+
+// 지금 저장값을 그대로 돌려보내는 저장 한 번(대표 번호를 넣은 입력이라 다른 목록 차단에 걸리지 않는다).
+function saveOnce(ctx, tables, { expectedIds, ...body } = {}, session = CLIENT_SESSION) {
+  return post(ctx, {
+    mode: "save",
+    optionInput: OPTION_16PRO_INPUT,
+    expectedOptionProductIds: expectedFor(tables, expectedIds || [body.trackerId || SELF_ID]),
+    ...body,
+  }, session);
+}
+
+test("S4 광고주 저장 빈도: 10분에 요청 줄(되돌림 기록 requestRow) 20개면 429(쓰기·기록 0), 미리 보기·다른 광고주·운영팀 줄·형제 줄·결과 기록·10분 지난 줄은 세지 않는다", async () => {
   await withEnv(async () => {
     const tables = advertiserGroupTables();
     const now = Date.now();
     const at = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString();
-    const resultRow = (clientId, actorRole, minutesAgo) => ({
-      action: "naver_rank_options_save_result",
-      client_id: clientId,
-      metadata: { actorRole },
-      created_at: at(minutesAgo),
-    });
     tables.audit_logs = [
-      ...Array.from({ length: 19 }, () => resultRow(CLIENT_ID, "client", 1)),
-      ...Array.from({ length: 5 }, () => resultRow(CLIENT_ID, "owner", 1)),
-      ...Array.from({ length: 5 }, () => resultRow(OTHER_CLIENT_ID, "client", 1)),
-      ...Array.from({ length: 5 }, () => resultRow(CLIENT_ID, "client", 11)),
-      { ...resultRow(CLIENT_ID, "client", 1), action: "naver_rank_options_save_intent" },
+      ...Array.from({ length: 19 }, () => rateIntentRow(CLIENT_ID, "client", at(1))),
+      ...Array.from({ length: 5 }, () => rateIntentRow(CLIENT_ID, "owner", at(1))),
+      ...Array.from({ length: 5 }, () => rateIntentRow(CLIENT_ID, "team", at(1))),
+      ...Array.from({ length: 5 }, () => rateIntentRow(OTHER_CLIENT_ID, "client", at(1))),
+      ...Array.from({ length: 5 }, () => rateIntentRow(CLIENT_ID, "client", at(11))),
+      // 함께 적용한 형제 추적 줄(requestRow 없음)·옛 기준이던 결과 기록 줄은 세지 않는다.
+      ...Array.from({ length: 5 }, () => rateIntentRow(CLIENT_ID, "client", at(1), {})),
+      ...Array.from({ length: 5 }, () => ({ ...rateIntentRow(CLIENT_ID, "client", at(1)), action: "naver_rank_options_save_result" })),
     ];
     const { ctx, state } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
     const first = await post(ctx, {
@@ -2418,6 +2438,132 @@ test("S4 광고주 저장 빈도: 10분에 저장 결과 20줄이면 429(쓰기�
     assert.equal(failed.body.code, "RANK_OPTION_AUDIT_FAILED");
     assert.equal(broken.state.updates.length, 0);
   });
+});
+
+test("S4b 광고주 저장 빈도: 결과 기록 쓰기만 실패해도(저장은 200) 빈도에서 빠지지 않는다 — 20번 저장 뒤 21번째는 429", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const { ctx, state } = fakeDatabase(tables, {
+      clients: ADVERTISER_CLIENTS,
+      stampCreatedAt: true,
+      insertError: (_table, rows) => (rows[0]?.action === "naver_rank_options_save_result" ? { code: "XX000", message: "boom" } : null),
+    });
+    await quietWarnings(async () => {
+      for (let index = 0; index < 20; index += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const saved = await saveOnce(ctx, tables);
+        assert.equal(saved.response.status, 200, `${index + 1}번째 저장: ${JSON.stringify(saved.body)}`);
+      }
+      assert.equal(auditRows(tables, "naver_rank_options_save_result").length, 0, "결과 기록은 한 줄도 남지 않았다");
+      assert.equal(auditRows(tables, "naver_rank_options_save_intent").filter((row) => row.metadata.requestRow === true).length, 20);
+      const writesBefore = state.writes.length;
+      const limited = await saveOnce(ctx, tables);
+      assert.equal(limited.response.status, 429);
+      assert.equal(limited.body.code, "RANK_OPTION_RATE_LIMITED");
+      assert.equal(state.writes.length, writesBefore, "막힌 저장은 되돌림 기록도 쓰지 않는다");
+    });
+  });
+});
+
+test("S4c 광고주 저장 빈도: 함께 적용으로 추적 3개를 한 번에 저장해도 1회(요청 줄 1개)로 센다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    tables.naver_rank_trackers.push(trackerRow({ id: uuid(30), keyword: "아이폰17 강화유리", agency_code: ADVERTISER, group_name: "기본 그룹" }));
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    tables.audit_logs = Array.from({ length: 18 }, () => rateIntentRow(CLIENT_ID, "client", minuteAgo));
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
+    const group = [SELF_ID, uuid(1), uuid(30)];
+    const first = await saveOnce(ctx, tables, { applyToSameProduct: true, expectedIds: group });
+    assert.equal(first.response.status, 200, JSON.stringify(first.body));
+    assert.deepEqual([...first.body.updatedTrackerIds].sort(), [...group].sort());
+    const written = auditRows(tables, "naver_rank_options_save_intent").filter((row) => row.target_id);
+    assert.equal(written.length, 3, "추적마다 되돌림 기록 한 줄");
+    assert.deepEqual(written.filter((row) => row.metadata.requestRow === true).map((row) => row.target_id), [SELF_ID]);
+    // 18 + 1 = 19 → 한 번 더 저장할 수 있고 그 뒤 20 → 429. 형제 줄까지 세면 18 + 3 = 21 이라 두 번째 저장부터 막힌다.
+    const second = await saveOnce(ctx, tables, { applyToSameProduct: true, expectedIds: group });
+    assert.equal(second.response.status, 200, "형제 추적 줄은 세지 않는다");
+    const third = await saveOnce(ctx, tables, { applyToSameProduct: true, expectedIds: group });
+    assert.equal(third.response.status, 429);
+    assert.equal(third.body.code, "RANK_OPTION_RATE_LIMITED");
+  });
+});
+
+test("S4d 광고주 저장 빈도: 운영팀·총관리자가 같은 광고주 추적에 저장한 줄(client_id 같음, actorRole team·owner)은 광고주 한도를 깎지 않는다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const minuteAgo = new Date(Date.now() - 60_000).toISOString();
+    tables.audit_logs = Array.from({ length: 19 }, () => rateIntentRow(CLIENT_ID, "client", minuteAgo));
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
+    for (const [label, session, role] of [["운영팀", TEAM_SESSION, "team"], ["총관리자", OWNER_ON_ADVERTISER, "owner"]]) {
+      for (let index = 0; index < 2; index += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const saved = await saveOnce(ctx, tables, {}, session);
+        assert.equal(saved.response.status, 200, label);
+      }
+      const rows = auditRows(tables, "naver_rank_options_save_intent").filter((row) => row.metadata.actorRole === role);
+      assert.equal(rows.length, 2, label);
+      assert.ok(rows.every((row) => row.client_id === CLIENT_ID && row.metadata.requestRow === true), `${label} 줄도 같은 client_id 의 요청 줄이다`);
+    }
+    const client = await saveOnce(ctx, tables);
+    assert.equal(client.response.status, 200, "운영팀·총관리자 요청 줄 4개는 세지 않아 19 → 저장");
+    const limited = await saveOnce(ctx, tables);
+    assert.equal(limited.response.status, 429);
+  });
+});
+
+test("S4e 광고주 저장 빈도: 10분 경계 — 9분 30초 전 줄은 세고 10분 1초 전 줄은 세지 않는다", async () => {
+  await withEnv(async () => {
+    const tables = advertiserGroupTables();
+    const now = Date.now();
+    tables.audit_logs = [
+      ...Array.from({ length: 19 }, () => rateIntentRow(CLIENT_ID, "client", new Date(now - 9 * 60_000 - 30_000).toISOString())),
+      ...Array.from({ length: 5 }, () => rateIntentRow(CLIENT_ID, "client", new Date(now - 10 * 60_000 - 1_000).toISOString())),
+    ];
+    const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS, stampCreatedAt: true });
+    const first = await saveOnce(ctx, tables);
+    assert.equal(first.response.status, 200, "10분 넘은 줄 5개는 세지 않아 19 → 저장");
+    const limited = await saveOnce(ctx, tables);
+    assert.equal(limited.response.status, 429, "10분 안 줄 19개 + 방금 1개 = 20");
+  });
+});
+
+test("S4f 되돌림 기록 requestRow 는 요청 대상 추적(편집창의 추적) 줄에만 — 형제 추적을 열어 저장하면 그 추적 줄에만, 모든 역할 같은 규칙", async () => {
+  await withEnv(async () => {
+    assert.equal(sanitizeAuditMetadata({ requestRow: true }).requestRow, true, "정리 규칙은 boolean 을 그대로 둔다");
+    for (const [label, session] of [["광고주", CLIENT_SESSION], ["운영팀", TEAM_SESSION], ["총관리자", OWNER_ON_ADVERTISER]]) {
+      const tables = advertiserGroupTables();
+      const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
+      // eslint-disable-next-line no-await-in-loop
+      const saved = await saveOnce(ctx, tables, { trackerId: uuid(1), applyToSameProduct: true, expectedIds: [uuid(1), SELF_ID] }, session);
+      assert.equal(saved.response.status, 200, `${label} ${JSON.stringify(saved.body)}`);
+      const intents = auditRows(tables, "naver_rank_options_save_intent");
+      assert.equal(intents.length, 2, label);
+      assert.equal(intents.find((row) => row.target_id === uuid(1)).metadata.requestRow, true, `${label}: 요청 대상 추적 줄`);
+      assert.equal(Object.hasOwn(intents.find((row) => row.target_id === SELF_ID).metadata, "requestRow"), false, `${label}: 형제 추적 줄에는 칸이 없다`);
+      assert.equal(
+        auditRows(tables, "naver_rank_options_save_result").some((row) => Object.hasOwn(row.metadata, "requestRow")),
+        false,
+        `${label}: 결과 기록에는 없다`,
+      );
+    }
+  });
+});
+
+test("가짜 DB: 'metadata->>requestRow' eq \"true\" 는 JSON true 만 맞는다(false·칸 없음·metadata 없음은 안 맞음) — PostgREST ->> 글자 비교와 같다", async () => {
+  const { ctx } = fakeDatabase({
+    audit_logs: [
+      { action: "a", metadata: { requestRow: true } },
+      { action: "a", metadata: { requestRow: false } },
+      { action: "a", metadata: {} },
+      { action: "a", metadata: null },
+    ],
+  });
+  const { count, error } = await ctx.supabaseAdmin
+    .from("audit_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("metadata->>requestRow", "true");
+  assert.equal(error, null);
+  assert.equal(count, 1);
 });
 
 test("S5 광고주 응답 칸 목록 고정(read·preview·save·오류): 확인일·후보 없음, 내부 문구 없음 — 총관리자 응답은 그대로", async () => {

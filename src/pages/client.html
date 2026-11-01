@@ -14571,7 +14571,7 @@
             "순위 고르기: 입력한 옵션 번호는 대표 상품번호(원부 포함)와 비교해 가장 높은 순위를 씁니다(같으면 대표). 다른 스토어로 확인된 번호만 뺍니다.",
             "같은 스토어 그룹상품 옵션만 넣으세요. 스토어는 상품 주소의 스토어 주소로, 주소가 없으면 스토어 이름으로 확인합니다. 다른 스토어 상품으로 보이면 순위에 넣지 " +
               (adminGuide ? "않고 카드의 '다른 스토어로 보여 뺀 번호' 줄에 남깁니다." : "않습니다."),
-            "순서: 붙여 넣기 → 미리 보기 → 저장. 저장 뒤 다음 순위 확인부터 적용됩니다. 빼려면 번호를 지우고 저장하거나 '모두 지우기'를 누르세요. 지난 기록은 그대로 남고, 옵션으로 잡힌 날은 날짜 칸에 '옵션'으로 보입니다.",
+            "순서: 옵션 확인 버튼(또는 번호 붙여 넣기) → 미리 보기 → 저장. 저장 뒤 다음 순위 확인부터 적용됩니다. 빼려면 번호를 지우고 저장하거나 '모두 지우기'를 누르세요. 지난 기록은 그대로 남고, 옵션으로 잡힌 날은 날짜 칸에 '옵션'으로 보입니다.",
             "번호 찾는 법: 각 옵션 상품 페이지 주소에서 /products/ 뒤 숫자입니다." + (adminGuide ? " 'N 상품 순위' 단건 조회는 대표 상품번호만 봅니다." : "")
           ].forEach(function (line) {
             guide.appendChild(optionNode("li", "", line));
@@ -16288,6 +16288,7 @@
         var FILL_TTL_MS = 15 * 60 * 1000;
         var FILL_WAIT_MS = 45000;
         var FILL_NONE_MESSAGE = "이 상품을 30일 순위로 추적하는 키워드가 없습니다.";
+        var FILL_SCOPE_MESSAGE = "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요.";
         var fillHost = rankOptionFillHost();
         var editorHost = rankOptionEditorHost();
         var current = null;
@@ -16577,7 +16578,7 @@
               if (!scope || (run.scopeKey && scope.key !== run.scopeKey)) {
                 settle(false);
                 endRun(run, run.scopeKey
-                  ? "광고주 범위나 로그인이 바뀌어 옵션 편집창을 열지 않았습니다. 버튼을 다시 눌러 주세요."
+                  ? FILL_SCOPE_MESSAGE
                   : "순위 추적 범위를 확인하지 못해 옵션 편집창을 열지 않았습니다. 로그인과 광고주 연결을 확인한 뒤 버튼을 다시 눌러 주세요.");
                 return;
               }
@@ -16704,6 +16705,16 @@
           if (run.ended || !loaded) return;
           var tracker = await pickTracker(run, ids);
           if (run.ended || !tracker) return;
+          // 한 겹 더: 고르는 동안 범위·목록이 바뀌었으면(신호를 놓쳤어도) 옛 범위 추적의 편집창을 열지 않는다.
+          var scopeNow = verifiedRankTrackerScope();
+          var listNow = typeof rankTrackerListForEditor === "function" ? rankTrackerListForEditor() : [];
+          var stillListed = (Array.isArray(listNow) ? listNow : []).some(function (item) {
+            return item && String(item.id) === String(tracker.id);
+          });
+          if (!scopeNow || scopeNow.key !== run.scopeKey || !stillListed) {
+            endRun(run, FILL_SCOPE_MESSAGE);
+            return;
+          }
           openPicked(run, tracker);
         }
 
@@ -16719,7 +16730,8 @@
             showNote("옵션 확인 버튼에서 넘어온 지 15분이 지나 편집창을 열지 않았습니다. 상품 페이지에서 버튼을 다시 눌러 주세요.", "is-warn");
             return;
           }
-          var run = { pending: pending, ended: false, switching: false, scopeKey: "" };
+          var startScope = verifiedRankTrackerScope();
+          var run = { pending: pending, ended: false, switching: false, scopeKey: "", startScopeKey: startScope ? String(startScope.key || "") : "" };
           current = run;
           showNote("옵션 확인 버튼에서 넘어온 상품(" + pending.pageId + ")의 30일 순위 추적을 찾는 중입니다.", "");
           processRun(run).catch(function () {
@@ -16732,8 +16744,26 @@
           lastLoaded = { scopeKey: String(detail.scopeKey || ""), ok: detail.ok === true };
           if (waiter) waiter(lastLoaded);
         });
+        // 범위·로그인이 바뀌면 어느 단계에서든(찾기 응답·광고주 고르는 창·목록 기다림·추적 고르는 창) 그만둔다. 알던
+        // 범위가 아직 없으면(시작 때 범위가 안 정해짐) 처음 정해지는 범위를 받아 두고, 같은 범위로 다시 온 신호는 그대로 둔다.
+        // 알던 범위가 없어도 로그아웃(화면 잠김)이면 그만둔다(로그인된 채 범위가 아직 없는 초기화 신호와 가린다).
+        // 총관리자 범위를 이 처리가 바꾸는 동안(switching)에 오는 신호는 이 처리 자신의 것이라 무시한다.
         window.addEventListener("mi:rank-scope-changed", function () {
-          if (current && !current.switching && waiter) waiter(null);
+          var run = current;
+          if (!run || run.switching) return;
+          if (waiter) {
+            waiter(null);
+            return;
+          }
+          var scope = verifiedRankTrackerScope();
+          var scopeKey = scope ? String(scope.key || "") : "";
+          var knownKey = run.scopeKey || run.startScopeKey;
+          if (!knownKey) {
+            if (root.classList.contains("is-locked")) endRun(run, FILL_SCOPE_MESSAGE);
+            else run.startScopeKey = scopeKey;
+            return;
+          }
+          if (scopeKey !== knownKey) endRun(run, FILL_SCOPE_MESSAGE);
         });
         window.addEventListener("mi:rank-auth-ready", start);
         // 이미 열린 탭에 버튼 주소가 들어와도(같은 문서 해시 바뀜) 같은 순서로 받는다.

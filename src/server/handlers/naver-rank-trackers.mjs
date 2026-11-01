@@ -3234,8 +3234,11 @@ function optionGuardMessage(guard, primaryProductId) {
   return `이 목록에는 이 상품(대표 ${primaryProductId})도, 지금 저장된 번호도 하나도 없습니다. 다른 상품의 목록으로 보여 저장하지 않았습니다.`;
 }
 
-// 광고주 저장 빈도(명세 §2.2): 광고주 범위당 10분에 저장 결과 기록 20줄. 읽기·미리 보기는 세지 않는다. 결과 기록 기반 근사다
-// (51개 넘는 추적을 한 번에 저장하면 나눠 쓴 줄이 따로 세어진다). 운영팀·총관리자가 같은 광고주에 남긴 줄은 세지 않는다.
+// 광고주 저장 빈도(명세 §2.2·§7 v2): 광고주 범위당 10분에 저장 20회. 읽기·미리 보기는 세지 않는다.
+// 되돌림 기록(naver_rank_options_save_intent) 가운데 요청 대상 추적 줄(metadata.requestRow=true)만 센다 — 저장 요청 1건에 1줄이라
+// 함께 적용한 형제 추적이 몇 개든 1회다. 되돌림 기록은 쓰기 전에 남기고 못 남기면 저장하지 않으므로 빠지는 저장이 없다
+// (결과 기록은 실패해도 저장이 성공으로 끝나 빠질 수 있다). 되돌림 기록을 남긴 뒤 쓰기에서 막힌 시도(409 CHANGED·PARTIAL 등)도 1회로 센다.
+// 운영팀·총관리자가 같은 광고주에 남긴 줄(actorRole 이 client 아님 — 역할은 세션에서만 정해진다)은 세지 않는다.
 const OPTION_CLIENT_SAVE_LIMIT = 20;
 const OPTION_CLIENT_SAVE_WINDOW_MS = 10 * 60_000;
 
@@ -3244,9 +3247,10 @@ async function optionClientRecentSaveCount(ctx, clientId, nowMs = Date.now()) {
     const { count, error } = await ctx.supabaseAdmin
       .from("audit_logs")
       .select("id", { count: "exact", head: true })
-      .eq("action", "naver_rank_options_save_result")
+      .eq("action", "naver_rank_options_save_intent")
       .eq("client_id", clientId)
       .eq("metadata->>actorRole", "client")
+      .eq("metadata->>requestRow", "true")
       .gt("created_at", new Date(nowMs - OPTION_CLIENT_SAVE_WINDOW_MS).toISOString());
     if (error || !Number.isFinite(count)) return { ok: false, error: error || new Error("option_rate_count_missing") };
     return { ok: true, count };
@@ -3447,7 +3451,8 @@ function optionAuditFailedWarning(stage, error) {
 
 // 결과 기록: 실제로 저장된 추적(일부만 저장된 경우 포함)과 그중 확인일까지 쓴 추적, 저장됐는지 모르는 추적(H1, 있을 때만),
 // 광고주 저장으로 확인일을 비운 추적(있을 때만). 모든 목록을 50개씩 나눠 쓴다. 실패해도 저장은 그대로 두고 경고만 남긴다.
-// actor(2026-11-01): client_id 와 metadata 끝의 actorRole·claimedSource·sourcePageId — 광고주 저장 빈도도 이 줄로 센다.
+// actor(2026-11-01): client_id 와 metadata 끝의 actorRole·claimedSource·sourcePageId. 광고주 저장 빈도는 이 줄이 아니라
+// 되돌림 기록의 요청 줄(requestRow)로 센다 — 이 줄은 쓰기 뒤에 남기고 실패해도 저장이 그대로라 빈도에서 빠질 수 있다.
 async function recordOptionSaveResult(ctx, trackerId, result, actor = {}) {
   const ids = result.updatedTrackerIds.map((id) => String(id));
   const checkedIds = result.checkedTrackerIds.map((id) => String(id));
@@ -3819,6 +3824,8 @@ async function handleTrackerOptions(request, ctx, body, access) {
 
   // 되돌림 기록 먼저(B3): 바꿀 추적마다 저장 전·바꿀 목록 한 줄. 기록을 못 남기면 저장하지 않는다.
   // '확인만 기록'은 번호를 쓰지 않으므로 바꾼 뒤 목록도 저장값 그대로다.
+  // 요청 대상 추적(편집창의 추적) 줄에만 requestRow:true — 광고주 저장 빈도를 요청 1건에 1줄로 센다(형제 추적 줄에는 없다).
+  const requestTrackerId = String(plan.selfTarget.id);
   const intent = await recordOptionAuditLogs(ctx, plan.targets.map((target) => ({
     action: "naver_rank_options_save_intent",
     targetTable: "naver_rank_trackers",
@@ -3832,6 +3839,7 @@ async function handleTrackerOptions(request, ctx, body, access) {
       applyToSameProduct,
       primaryProductId: target.primaryProductId,
       keyword: target.keyword,
+      ...(String(target.id) === requestTrackerId ? { requestRow: true } : {}),
       ...auditActor.metadata,
     },
   })));

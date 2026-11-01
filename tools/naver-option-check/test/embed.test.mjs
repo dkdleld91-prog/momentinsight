@@ -200,6 +200,33 @@ test("명령: 모르는 파일·표식 없는 화면·겹친 파일이면 실패
   }
 });
 
+test("명령: 두 번째 화면 파일을 쓰다 실패하면(폴더 쓰기 막힘) 첫 화면 파일도 그대로이고 임시 파일이 남지 않는다", (t) => {
+  if (process.platform === "win32" || (typeof process.getuid === "function" && process.getuid() === 0)) {
+    t.skip("폴더 쓰기 막기를 흉내 낼 수 없는 환경");
+    return;
+  }
+  const rootA = fs.mkdtempSync(path.join(os.tmpdir(), "mi-option-check-embed-a-"));
+  const rootB = fs.mkdtempSync(path.join(os.tmpdir(), "mi-option-check-embed-b-"));
+  const lockedDir = path.join(rootB, "src", "pages");
+  try {
+    const admin = copyPage(rootA, "admin.html");
+    const client = copyPage(rootB, "client.html");
+    fs.chmodSync(lockedDir, 0o555);
+    const out = path.join(rootA, "dist");
+    const failed = spawnSync(process.execPath, [BUILD_SCRIPT, "--out", out, "--embed", admin.path, "--embed", client.path], { cwd: REPO_ROOT, encoding: "utf8" });
+    assert.equal(failed.status, 1);
+    assert.match(failed.stderr, /EACCES|permission/i);
+    assert.equal(fs.readFileSync(admin.path, "utf8"), admin.before, "관리자 사본 그대로");
+    assert.equal(fs.readFileSync(client.path, "utf8"), client.before, "광고주 사본 그대로");
+    assert.deepEqual(fs.readdirSync(path.dirname(admin.path)), ["admin.html"], "임시 파일 없음");
+    assert.deepEqual(fs.readdirSync(lockedDir), ["client.html"]);
+  } finally {
+    fs.chmodSync(lockedDir, 0o755);
+    fs.rmSync(rootA, { recursive: true, force: true });
+    fs.rmSync(rootB, { recursive: true, force: true });
+  }
+});
+
 test("전체 시험 목록(package.json scripts.test)에 이 폴더 시험이 들어 있다", () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"));
   assert.ok(packageJson.scripts.test.includes("tools/naver-option-check/test/*.test.mjs"));

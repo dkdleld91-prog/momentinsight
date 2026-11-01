@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import test from "node:test";
 
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
@@ -24,6 +25,8 @@ const OPTION_15 = "99900000002";
 // 기존 시험의 정상 저장은 첫 줄에 대표 번호를 넣는다 — 대표 번호는 빠지므로 저장 결과는 [OPTION_16PRO] 그대로다.
 const OPTION_16PRO_INPUT = `${PRIMARY}\n${OPTION_16PRO}`;
 const SELF_ID = "123e4567-e89b-42d3-a456-426614174000";
+// options-diag 범위 표식(HMAC)을 만드는 서버 세션 비밀값(시험용).
+const TEST_SESSION_SECRET = "test-session-secret-0123456789abcdef";
 
 function uuid(n) {
   return `123e4567-e89b-42d3-a456-${String(426614174000 + n).padStart(12, "0")}`;
@@ -239,10 +242,14 @@ function request(method, body, options = {}) {
 }
 
 async function withEnv(callback) {
-  const keys = ["MI_RANK_ADMIN_CODE", "MI_PRIMARY_AGENCY_CODE", "NAVER_SEARCHAD_API_KEY", "NAVER_SEARCHAD_SECRET_KEY", "NAVER_SEARCHAD_CUSTOMER_ID"];
+  const keys = [
+    "MI_RANK_ADMIN_CODE", "MI_PRIMARY_AGENCY_CODE", "MI_SESSION_SECRET",
+    "NAVER_SEARCHAD_API_KEY", "NAVER_SEARCHAD_SECRET_KEY", "NAVER_SEARCHAD_CUSTOMER_ID",
+  ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   process.env.MI_RANK_ADMIN_CODE = "owner-test-code";
   process.env.MI_PRIMARY_AGENCY_CODE = OWNER_CODE;
+  process.env.MI_SESSION_SECRET = TEST_SESSION_SECRET;
   delete process.env.NAVER_SEARCHAD_API_KEY;
   delete process.env.NAVER_SEARCHAD_SECRET_KEY;
   delete process.env.NAVER_SEARCHAD_CUSTOMER_ID;
@@ -2624,8 +2631,9 @@ test("S9 버튼 목록에 대표 번호가 없고 저장값이 모두 비었으�
       assert.equal(row.client_id, CLIENT_ID);
     }
 
-    // 모양이 틀린 sourcePageId 는 400(차단 규칙을 비껴가지 못하게).
-    for (const sourcePageId of ["1234", "12345x", { id: PRIMARY }, "1".repeat(21)]) {
+    // 모양이 틀린 sourcePageId 는 400(차단 규칙을 비껴가지 못하게). JSON 숫자는 2^53 을 넘으면 자릿수가 깨지므로 글자만 받는다.
+    // eslint-disable-next-line no-loss-of-precision
+    for (const sourcePageId of ["1234", "12345x", { id: PRIMARY }, "1".repeat(21), Number(PRIMARY), 12345678901234567890]) {
       // eslint-disable-next-line no-await-in-loop
       const bad = await post(ctx, { mode: "preview", optionInput: OPTION_16PRO, sourcePageId }, CLIENT_SESSION);
       assert.equal(bad.response.status, 400, JSON.stringify(sourcePageId));
@@ -2702,9 +2710,13 @@ test("S12 otherPrimaryHits: 같은 범위에서 입력 번호를 대표 번호�
       productTracker(uuid(42), "88800000017", { agency_code: ADVERTISER, status: "completed" }),
     );
     const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
-    const input = ["88800000016", "88800000017", OPTION_16PRO, ...others].join("\n");
+    // 55555555555 는 같은 범위의 원부(catalog) 추적 uuid(5) 의 대표 번호 — 옵션 편집 대상이 아니라 옮길 곳이 못 된다.
+    const input = ["55555555555", "88800000016", "88800000017", OPTION_16PRO, ...others].join("\n");
+    assert.equal(rowById(tables, uuid(5)).agency_code, ADVERTISER);
+    assert.equal(rowById(tables, uuid(5)).status, "active");
     const preview = await post(ctx, { mode: "preview", optionInput: input }, CLIENT_SESSION);
     assert.equal(preview.body.guard.blocked, true);
+    assert.equal(preview.body.guard.otherPrimaryHits.some((hit) => hit.trackerId === uuid(5)), false, "원부 추적은 빠진다");
     assert.deepEqual(preview.body.guard.otherPrimaryHits, [
       { productId: OPTION_16PRO, keyword: "아이폰16 프로 필름", trackerId: uuid(2) },
       { productId: "88800000011", keyword: "상품 88800000011", trackerId: uuid(30) },
@@ -2825,7 +2837,7 @@ test("S14 options-locate: 총관리자 세션만, 상품번호 1~52개 형식, �
   });
 });
 
-test("S15 options-diag: 정해진 형식으로 다시 만든 진단만 남긴다(이상한 칸·값 버림, 못 풀면 unparsed), 범위 코드는 남기지 않는다", async () => {
+test("S15 options-diag: 정해진 형식으로 다시 만든 진단만 남긴다(이상한 칸·값 버림, 못 풀면 unparsed), 범위 코드·되돌릴 수 있는 해시는 남기지 않는다", async () => {
   await withEnv(async () => {
     const tables = advertiserGroupTables();
     const { ctx } = fakeDatabase(tables, { clients: ADVERTISER_CLIENTS });
@@ -2846,10 +2858,10 @@ test("S15 options-diag: 정해진 형식으로 다시 만든 진단만 남긴다
     const [row] = auditRows(tables, "naver_rank_option_check_refused");
     assert.equal(row.client_id, CLIENT_ID);
     assert.equal(row.target_id, null);
-    assert.deepEqual(Object.keys(row.metadata), ["actorRole", "pageId", "scopeHash", "diag"]);
+    // 광고주 기록은 client_id 로만 센다 — 범위 표식(scopeHash)도 남기지 않는다.
+    assert.deepEqual(Object.keys(row.metadata), ["actorRole", "pageId", "diag"]);
     assert.equal(row.metadata.actorRole, "client");
     assert.equal(row.metadata.pageId, "13744370949");
-    assert.match(row.metadata.scopeHash, /^[0-9a-f]{16}$/u);
     assert.deepEqual(row.metadata.diag, {
       v: "2.1.0",
       reason: "ambiguous",
@@ -2875,7 +2887,21 @@ test("S15 options-diag: 정해진 형식으로 다시 만든 진단만 남긴다
       assert.equal(db.state.inserts[0].rows[0].metadata.actorRole, "owner", label);
     }
 
-    for (const pageId of [undefined, "1234", "abc12345", "1".repeat(21)]) {
+    // 광고주가 없는 범위(총관리자 본 범위)는 하루 상한을 셀 표식을 남기되, 서버 비밀값 HMAC 이라 비밀 없는 해시로는 코드를 되찾을 수 없다.
+    const ownerTables = groupTables();
+    const ownerDb = fakeDatabase(ownerTables);
+    await postAction(ownerDb.ctx, { action: "options-diag", pageId: PRIMARY, diag });
+    const [ownerRow] = auditRows(ownerTables, "naver_rank_option_check_refused");
+    assert.equal(ownerRow.client_id, null);
+    assert.deepEqual(Object.keys(ownerRow.metadata), ["actorRole", "pageId", "scopeHash", "diag"]);
+    const scopeInput = `naver-rank-option-diag:${OWNER_CODE}`;
+    assert.equal(ownerRow.metadata.scopeHash, crypto.createHmac("sha256", TEST_SESSION_SECRET).update(scopeInput).digest("hex").slice(0, 16));
+    assert.notEqual(ownerRow.metadata.scopeHash, crypto.createHash("sha256").update(scopeInput).digest("hex").slice(0, 16));
+    assert.equal(JSON.stringify(ownerTables.audit_logs).includes(OWNER_CODE), false, "범위 코드는 기록에 없다");
+
+    // 숫자로 보낸 pageId 는 받지 않는다(2^53 을 넘으면 자릿수가 깨진 채 통과하던 것).
+    // eslint-disable-next-line no-loss-of-precision
+    for (const pageId of [undefined, "1234", "abc12345", "1".repeat(21), Number(PRIMARY), 12345678901234567890]) {
       // eslint-disable-next-line no-await-in-loop
       const bad = await postAction(ctx, { action: "options-diag", ...(pageId === undefined ? {} : { pageId }), diag }, CLIENT_SESSION);
       assert.equal(bad.response.status, 400, String(pageId));
@@ -2922,6 +2948,18 @@ test("S16 options-diag 하루 상한: 같은 범위 30건이면 쓰지 않고 re
     // 같은 범위라도 역할이 다르면(세션 없는 관리자 코드) 따로 센다.
     const adminCode = await postAction(owner.ctx, body, { role: null, adminCode: true });
     assert.equal(adminCode.body.recorded, true);
+
+    // 서버 비밀값이 없으면 표식을 남기지 않고 역할로만 센다(코드는 남기지 않고 상한만 더 빡빡해진다).
+    delete process.env.MI_SESSION_SECRET;
+    const noSecret = fakeDatabase(groupTables(), { stampCreatedAt: true });
+    const noSecretResults = [];
+    for (let index = 0; index < 31; index += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      noSecretResults.push((await postAction(noSecret.ctx, body)).body.recorded);
+    }
+    assert.deepEqual(noSecretResults, [...Array(30).fill(true), false]);
+    assert.equal(noSecret.state.inserts.every((insert) => !Object.hasOwn(insert.rows[0].metadata, "scopeHash")), true);
+    assert.equal(JSON.stringify(noSecret.state.inserts).includes(OWNER_CODE), false, "범위 코드는 기록에 없다");
   });
 });
 

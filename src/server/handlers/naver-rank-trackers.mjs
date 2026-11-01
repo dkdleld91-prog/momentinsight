@@ -3161,11 +3161,12 @@ function clientOptionCommon(common) {
 }
 
 // 버튼에서 넘어온 상품번호(sourcePageId, 검증 안 된 주장). 없으면 빈 문자열, 모양이 틀리면 ok:false.
+// 글자로만 받는다(options-locate 와 같은 규칙) — JSON 숫자는 2^53 을 넘으면 자릿수가 깨진 채 정규식을 통과한다.
 const OPTION_PAGE_ID_PATTERN = /^[0-9]{5,20}$/u;
 
 function optionPageIdValue(value) {
   if (value === undefined || value === null || value === "") return { ok: true, value: "" };
-  if (typeof value !== "string" && typeof value !== "number") return { ok: false, value: "" };
+  if (typeof value !== "string") return { ok: false, value: "" };
   const text = String(value).trim();
   return OPTION_PAGE_ID_PATTERN.test(text) ? { ok: true, value: text } : { ok: false, value: "" };
 }
@@ -4308,10 +4309,18 @@ export function rebuildOptionCheckDiag(raw) {
   return diag;
 }
 
-// 대행사 코드는 접속 코드를 겸해 기록에 남기지 않는다(sanitizeAuditMetadata 도 agencyCode 칸을 지운다). 하루 상한을 셀
-// 범위 표식만 해시로 남긴다.
-function optionDiagScopeHash(agencyCode) {
-  return crypto.createHash("sha256").update(`naver-rank-option-diag:${canonicalAgencyCode(agencyCode)}`).digest("hex").slice(0, 16);
+// 대행사 코드는 접속 코드를 겸해 기록에 남기지 않는다(sanitizeAuditMetadata 도 agencyCode 칸을 지운다).
+// 광고주 범위는 client_id 로 세고, 광고주가 없는 범위(총관리자 본 범위·세션 없는 관리자 코드)만 하루 상한을 셀 표식을 남긴다.
+// 표식은 서버 세션 비밀값(MI_SESSION_SECRET)으로 만든 HMAC 앞 16자다 — 비밀 없는 해시는 짧은 코드가 금방 되돌려진다.
+// 비밀값이 없으면 표식을 남기지 않고 역할로만 센다(상한이 더 빡빡해질 뿐 코드는 남지 않는다).
+function optionDiagScopeHash(agencyCode, env = process.env) {
+  const secret = String(env.MI_SESSION_SECRET || "");
+  if (!secret) return "";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(`naver-rank-option-diag:${canonicalAgencyCode(agencyCode)}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 async function optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash }, nowMs = Date.now()) {
@@ -4321,9 +4330,11 @@ async function optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash }, no
       .select("id", { count: "exact", head: true })
       .eq("action", "naver_rank_option_check_refused")
       .gt("created_at", new Date(nowMs - OPTION_DIAG_WINDOW_MS).toISOString());
-    query = clientId
-      ? query.eq("client_id", clientId)
-      : query.eq("metadata->>actorRole", actorRole).eq("metadata->>scopeHash", scopeHash);
+    if (clientId) query = query.eq("client_id", clientId);
+    else {
+      query = query.eq("metadata->>actorRole", actorRole);
+      if (scopeHash) query = query.eq("metadata->>scopeHash", scopeHash);
+    }
     const { count, error } = await query;
     if (error || !Number.isFinite(count)) return { ok: false, error: error || new Error("option_diag_count_missing") };
     return { ok: true, count };
@@ -4342,7 +4353,7 @@ async function handleTrackerOptionsDiag(request, ctx, body, access) {
     return optionEditError(request, 400, "RANK_OPTION_DIAG_INVALID", "상품번호가 올바르지 않습니다.");
   }
   const clientId = access.clientId || null;
-  const scopeHash = optionDiagScopeHash(access.agencyCode);
+  const scopeHash = clientId ? "" : optionDiagScopeHash(access.agencyCode);
   const recent = await optionDiagRecentCount(ctx, { clientId, actorRole, scopeHash });
   if (!recent.ok || recent.count >= OPTION_DIAG_DAILY_LIMIT) {
     if (!recent.ok) optionAuditFailedWarning("diag-count", recent.error);
@@ -4353,7 +4364,7 @@ async function handleTrackerOptionsDiag(request, ctx, body, access) {
     targetTable: "naver_rank_trackers",
     targetId: null,
     clientId,
-    metadata: { actorRole, pageId: page.value, scopeHash, diag: rebuildOptionCheckDiag(body.diag) },
+    metadata: { actorRole, pageId: page.value, ...(scopeHash ? { scopeHash } : {}), diag: rebuildOptionCheckDiag(body.diag) },
   }]);
   if (!logged.logged) {
     optionAuditFailedWarning("diag", logged.error);

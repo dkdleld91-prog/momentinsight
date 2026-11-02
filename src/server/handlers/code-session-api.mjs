@@ -14,6 +14,7 @@ import {
   trialKeywordDailyLimit,
 } from "../code-session.mjs";
 import {
+  isReservedOwnerAgencyCode,
   ownerClaimsMatchPrimary,
   primaryAgencyConfiguration,
 } from "../owner-identity.mjs";
@@ -104,7 +105,7 @@ function normalizedIdentity(value) {
 
 // ilike 는 대소문자만 무시하는 '정확히 같음' 으로만 쓴다. 패턴 문자(* % _ \\)가 섞인 값은
 // 어떤 행과도 맞지 않게 빈 값으로 돌려 조회 자체를 하지 않는다(세션 복원 경로 포함).
-function exactIdentityPattern(value) {
+export function exactIdentityPattern(value) {
   const identity = normalizedIdentity(value);
   if (!identity || /[*%_\\]/.test(identity)) return "";
   return identity;
@@ -215,6 +216,9 @@ async function clearRateLimit(ctx, key) {
 
 export async function activeClientByCode(ctx, code) {
   if (!exactIdentityPattern(code)) return { data: null, error: null };
+  // 대표 코드·옛 대표 코드는 광고주로 열지 않는다(점검 2026-11-02 F00). 코드 로그인·구글 광고주 로그인·
+  // 세션 복원이 모두 여기를 지나므로 한 곳에서 막는다. 없는 코드와 똑같이 돌려줘 구분되지 않게 한다.
+  if (isReservedOwnerAgencyCode(code)) return { data: null, error: null };
   // 플랜·이용 기간 열(2026-09-07)까지 읽는다. 열이 없으면(마이그레이션 전) 한 단 아래 열로 폴백한다.
   const planQuery = await ctx.supabaseAdmin
     .from("clients")

@@ -732,3 +732,17 @@ test("홈 피드·키워드 조사·조사 노트는 apikey·authorization 이 �
     }
   }
 });
+
+// 점검 2026-11-02 F00: 대표 코드로는 광고주 로그인을 막았지만, 총관리자의 '광고주 미리보기'는
+// 총관리자 세션으로 같은 공개값을 읽으므로 대표 코드 광고주(브랜드 A)도 그대로 열린다.
+test("관리자 '광고주 미리보기'(총관리자 세션)는 대표 코드 광고주도 그대로 연다", async () => {
+  const recorder = adminRecorder({ "clients:single": { data: ACTIVE_CLIENT, error: null } });
+  const response = await handleClientPublicStateRequest(
+    sessionRequest("/api/client/public-state", { role: "owner", agencyCode: "mml93-a01" }),
+    recorder.ctx
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.publicState.client, "연결 광고주");
+});

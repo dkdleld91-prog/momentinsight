@@ -4824,7 +4824,7 @@
       if (!rows.length) table.appendChild(el("div", { className: "mi-coupang-rank-row", role: "row" }, [el("span", { role: "cell", text: "따로 정한 계정이 없습니다." })]));
       section.appendChild(table);
       var add = el("form", { className: "mi-coupang-rank-inline-form", "data-coupang-rank-limit-form": true, novalidate: true }, [
-        el("input", { className: "mi-input", type: "text", maxlength: "64", placeholder: "계정 코드(예: mml93-a01)", "aria-label": "한도를 정할 계정 코드", "data-coupang-rank-limit-new-code": true }),
+        el("input", { className: "mi-input", type: "text", maxlength: "64", placeholder: "계정 코드(예: 광고주 코드)", "aria-label": "한도를 정할 계정 코드", "data-coupang-rank-limit-new-code": true }),
         el("input", { className: "mi-input", type: "number", min: "0", max: "1000", step: "1", placeholder: "한도(0~1000)", "aria-label": "새 계정 한도", "data-coupang-rank-limit-new-value": true }),
         el("button", { className: "mi-button", type: "submit", text: "한도 추가", disabled: state.busy })
       ]);

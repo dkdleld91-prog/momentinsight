@@ -317,7 +317,7 @@
   // 일부러 옮기지 않은 것 — 개인 공간에는 계정 경계를 넘는 개념이 없어야 하기 때문이다.
   //   · 광고주 스코프 전환(parseOwnerAssistantScopeCommand · switchOwnerAssistantScope ·
   //     loadOwnerAssistantClients): 다른 계정 일정으로 갈아타는 기능이라 격리 보장 자체와 충돌한다.
-  //   · 광고주 범위 입력(data-work-owner-scope)과 owner 표식(owner canary · mml93-a01).
+  //   · 광고주 범위 입력(data-work-owner-scope)과 owner 표식(owner canary · 대표 계정 코드).
   //   · 비서실 조직도: 대표실의 #mi-admin .mi-assistant-office 규칙·동작은 .mi-cal-office
   //     네임스페이스로 옮겨 적었다. 옮기지 않은 것은 owner 전용 훅(data-owner-assistant-*)과
   //     범위 전환이다 — 계정 경계를 넘거나 여기 없는 서버 경로를 부른다.

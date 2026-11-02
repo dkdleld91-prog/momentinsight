@@ -12,6 +12,8 @@ import {
 } from "../account-plan.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import { siteSummary } from "./site-events.mjs";
+import { exactIdentityPattern } from "./code-session-api.mjs";
+import { isReservedOwnerAgencyCode } from "../owner-identity.mjs";
 import {
   DEFAULT_RANK_KEYWORD_LIMIT,
   isMissingRankKeywordLimitSchema,
@@ -750,6 +752,33 @@ async function listAuditLogs(request, ctx, url) {
   });
 }
 
+// 광고주 코드와 운영팀 코드는 같은 로그인 칸을 나눠 쓴다. 두 표에 같은 코드가 있으면 순위 추적 범위·홈·노트에서
+// 자료가 섞이고, 한쪽 만료 삭제가 상대 자료까지 지운다(점검 2026-11-02 N1). 그래서 코드를 새로 만들거나 다시 켤 때
+// 상대 표(상태와 상관없이)와 대표 코드·옛 대표 코드를 함께 본다. 비교는 로그인 조회와 같은 '대소문자만 무시하는
+// 정확 일치'다. 같은 표 안 중복 검사는 각 경로의 기존 조회가 맡는다.
+const CLIENT_CODE_COLUMN = { table: "clients", column: "agency_code", label: "광고주 코드" };
+const TEAM_CODE_COLUMN = { table: "operation_team_codes", column: "team_code", label: "운영팀 코드" };
+
+async function accountCodeConflict(ctx, code, other) {
+  if (isReservedOwnerAgencyCode(code)) return { conflict: "대표 계정 코드", error: null };
+  const pattern = exactIdentityPattern(code);
+  if (!pattern) return { conflict: other.label, error: null };
+  const { data, error } = await ctx.supabaseAdmin
+    .from(other.table)
+    .select("id")
+    .ilike(other.column, pattern)
+    .limit(1);
+  if (error) return { conflict: null, error };
+  return { conflict: Array.isArray(data) && data.length ? other.label : null, error: null };
+}
+
+function accountCodeConflictResponse(request, conflict, reactivating) {
+  const message = reactivating
+    ? `${conflict}와 겹쳐 다시 켤 수 없습니다. 새 코드로 발급해 주세요.`
+    : `${conflict}와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.`;
+  return json(request, { ok: false, message }, 409);
+}
+
 async function createClient(request, ctx, body) {
   const name = String(body.name || body.clientName || body.client_name || "").trim();
   const businessName = String(body.businessName || body.business_name || name).trim();
@@ -771,6 +800,9 @@ async function createClient(request, ctx, body) {
     if (existing.data.status === "active") {
       return json(request, { ok: false, message: "이미 활성화된 대행사 코드입니다.", client: clientPayload(existing.data) }, 409);
     }
+    const overlap = await accountCodeConflict(ctx, agencyCode, TEAM_CODE_COLUMN);
+    if (overlap.error) return json(request, { ok: false, message: "중복 코드 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+    if (overlap.conflict) return accountCodeConflictResponse(request, overlap.conflict, true);
     const { data, error } = await ctx.supabaseAdmin
       .from("clients")
       .update({
@@ -806,6 +838,10 @@ async function createClient(request, ctx, body) {
       });
       return json(request, { ok: true, reactivated: true, client: clientPayload(data), trackerRestore, auditLogged }, 200);
     }
+
+  const overlap = await accountCodeConflict(ctx, agencyCode, TEAM_CODE_COLUMN);
+  if (overlap.error) return json(request, { ok: false, message: "중복 코드 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+  if (overlap.conflict) return accountCodeConflictResponse(request, overlap.conflict, false);
 
   const { data, error } = await ctx.supabaseAdmin
     .from("clients")
@@ -852,6 +888,9 @@ async function createTeam(request, ctx, body) {
     if (existing.data.status === "active") {
       return json(request, { ok: false, message: "이미 활성화된 운영팀 코드입니다.", team: teamPayload(existing.data) }, 409);
     }
+    const overlap = await accountCodeConflict(ctx, code, CLIENT_CODE_COLUMN);
+    if (overlap.error) return json(request, { ok: false, message: "운영팀 코드 중복 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+    if (overlap.conflict) return accountCodeConflictResponse(request, overlap.conflict, true);
     const { data, error } = await ctx.supabaseAdmin
       .from("operation_team_codes")
       .update({
@@ -882,6 +921,10 @@ async function createTeam(request, ctx, body) {
       });
       return json(request, { ok: true, reactivated: true, team: teamPayload(data), trackerRestore, auditLogged }, 200);
     }
+
+  const overlap = await accountCodeConflict(ctx, code, CLIENT_CODE_COLUMN);
+  if (overlap.error) return json(request, { ok: false, message: "운영팀 코드 중복 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+  if (overlap.conflict) return accountCodeConflictResponse(request, overlap.conflict, false);
 
   const { data, error } = await ctx.supabaseAdmin
     .from("operation_team_codes")
@@ -966,6 +1009,14 @@ async function createClientForTeam(request, ctx, body) {
     // reassigning an existing row would transfer that client's reports and
     // files across tenants. Only the owner flow may recover existing access.
     return json(request, { ok: false, message: "사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요." }, 409);
+  }
+  const overlap = await accountCodeConflict(ctx, agencyCode, TEAM_CODE_COLUMN);
+  if (overlap.error) return json(request, { ok: false, message: "광고주 코드 중복 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+  if (overlap.conflict) {
+    // 운영팀 세션에는 위와 같은 문구만 준다. '운영팀 코드와 같다'고 알려 주면 남의 운영팀 로그인 코드를
+    // 맞혀 보는 데 쓰인다. 총관리자가 대신 만들 때만 겹친 이유를 알려 준다.
+    if (!access.ownerTarget) return json(request, { ok: false, message: "사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요." }, 409);
+    return accountCodeConflictResponse(request, overlap.conflict, false);
   }
 
   const clientMutation = ctx.supabaseAdmin
@@ -1327,7 +1378,11 @@ async function openTrial(request, ctx, body) {
     const candidate = normalizeAgencyCode(generateAgencyCode());
     const clash = await ctx.supabaseAdmin.from("clients").select("id").eq("agency_code", candidate).maybeSingle();
     if (clash.error) return json(request, { ok: false, message: "코드 중복 확인에 실패했습니다.", detail: clash.error.message }, 500);
-    if (!clash.data) agencyCode = candidate;
+    if (clash.data) continue;
+    // 서버가 만든 코드라 겹치면 거절하지 않고 새로 뽑는다(운영팀 코드·대표 코드와도 겹치지 않게).
+    const overlap = await accountCodeConflict(ctx, candidate, TEAM_CODE_COLUMN);
+    if (overlap.error) return json(request, { ok: false, message: "코드 중복 확인에 실패했습니다.", detail: overlap.error.message }, 500);
+    if (!overlap.conflict) agencyCode = candidate;
   }
   if (!agencyCode) return json(request, { ok: false, message: "코드 생성에 실패했습니다. 다시 시도해주세요." }, 500);
 

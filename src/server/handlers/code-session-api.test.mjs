@@ -14,7 +14,10 @@ import {
   sessionActivityState,
   sessionStillActive,
 } from "./code-session-api.mjs";
+import sessionApi from "./code-session-api.mjs";
+import { resolveGoogleLoginAccess } from "./google-calendar-api.mjs";
 import { SESSION_ACTIVITY_UNAVAILABLE } from "../session-gate.mjs";
+import { createSessionClaims, sealSession } from "../code-session.mjs";
 
 function contextWithRows(rows) {
   let index = 0;
@@ -268,4 +271,243 @@ test("패턴 문자(* % _ \\)가 섞인 코드는 조회 자체를 하지 않고
   await activeClientByCode(ctx, "  ALSTJ4492 ");
   await activeTeamByCode(ctx, "Team-01");
   assert.deepEqual(patterns, ["alstj4492", "team-01"]);
+});
+
+// ── 점검 2026-11-02 F00: 대표 코드·옛 대표 코드로는 광고주 화면을 열지 않는다 ──
+const RESERVED_TEST_ENV = {
+  SUPABASE_URL: "http://supabase.test",
+  SUPABASE_PUBLISHABLE_KEY: "pub-test",
+  SUPABASE_PUBLISHABLE_KEYS: undefined,
+  SUPABASE_SECRET_KEY: "secret-test",
+  SUPABASE_SECRET_KEYS: undefined,
+  MI_SESSION_SECRET: "session-secret-for-reserved-code-tests-0123456789",
+  MI_SESSION_SECRET_PREVIOUS: undefined,
+  MI_SESSION_TTL_SECONDS: undefined,
+  MI_PRIMARY_AGENCY_CODE: "mml93-a01",
+  MI_OWNER_LOGIN_CODE: "strong-owner-secret",
+  MI_OWNER_LOGIN_CODE_SHA256: undefined,
+  MI_LEGACY_AGENCY_CODES: "old-owner01, Older-Owner2",
+  MI_GOOGLE_LOGIN_ROLES: undefined,
+  NODE_ENV: undefined,
+  VERCEL_ENV: undefined,
+};
+const RESERVED_VARIANTS = ["mml93-a01", "  MML93-A01 ", "Mml93-A01", "ｍｍｌ９３－ａ０１", "old-owner01", "OLDER-OWNER2", " ｏｌｄ－ｏｗｎｅｒ０１ "];
+const OWNER_BRAND_ROW = { id: "client-owner-brand", name: "브랜드 A", business_name: "", agency_code: "mml93-a01", status: "active", disconnected_at: null };
+const LEGACY_BRAND_ROW = { id: "client-old-owner", name: "옛 대표", business_name: "", agency_code: "old-owner01", status: "active", disconnected_at: null };
+const NORMAL_BRAND_ROW = { id: "client-normal", name: "일반 광고주", business_name: "", agency_code: "brand-b02", status: "active", disconnected_at: null };
+const TEAM_ROW = { id: "team-1", team_name: "운영 1팀", team_code: "ops-team01", status: "active", client_id: "client-owner-brand", revoked_at: null };
+
+async function withEnv(overrides, run) {
+  const saved = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    saved.set(key, Object.prototype.hasOwnProperty.call(process.env, key) ? process.env[key] : undefined);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function rowMatches(row, searchParams) {
+  for (const [key, raw] of searchParams) {
+    if (["select", "limit"].includes(key)) continue;
+    const value = String(row[key] ?? "");
+    if (raw.startsWith("eq.")) {
+      if (value !== raw.slice(3)) return false;
+    } else if (raw.startsWith("ilike.")) {
+      if (value.toLowerCase() !== raw.slice(6).toLowerCase()) return false;
+    } else {
+      throw new Error(`unsupported filter ${key}=${raw}`);
+    }
+  }
+  return true;
+}
+
+// withSupabase 가 ctx 를 만들므로 PostgREST 로 나가는 요청을 가로챈다. 표 행은 DB 처럼 걸러 돌려준다.
+function sessionDbStub({ clients = [OWNER_BRAND_ROW, LEGACY_BRAND_ROW, NORMAL_BRAND_ROW], teams = [TEAM_ROW] } = {}) {
+  const calls = [];
+  const tables = { clients, operation_team_codes: teams };
+  const impl = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : String(input.url));
+    const method = String(init.method || "GET").toUpperCase();
+    const single = String(new Headers(init.headers || {}).get("accept") || "").includes("vnd.pgrst.object+json");
+    calls.push({ method, path: url.pathname, url });
+    if (url.pathname === "/rest/v1/rpc/consume_code_login_rate_limit") return Response.json([{ allowed: true, retry_after: 0 }]);
+    if (url.pathname.startsWith("/rest/v1/rpc/")) return Response.json(null);
+    if (url.pathname === "/rest/v1/code_login_rate_limits") return new Response(null, { status: 204 });
+    const table = tables[url.pathname.replace("/rest/v1/", "")];
+    if (!table || method !== "GET") throw new Error(`unexpected fetch: ${method} ${url}`);
+    const rows = table.filter((row) => rowMatches(row, url.searchParams));
+    return single ? Response.json(rows[0] ?? null) : Response.json(rows);
+  };
+  return { calls, impl };
+}
+
+async function callSessionApi(request, stub, env = {}) {
+  return withEnv({ ...RESERVED_TEST_ENV, ...env }, async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = stub.impl;
+    try {
+      const response = await sessionApi.fetch(typeof request === "function" ? request() : request);
+      return { response, payload: await response.json() };
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+}
+
+function loginRequest(mode, code) {
+  return new Request("http://localhost:8784/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-vercel-forwarded-for": "203.0.113.90" },
+    body: JSON.stringify({ mode, code }),
+  });
+}
+
+// 봉인 비밀값이 env 에서 오므로 callSessionApi 안에서 만든다.
+function restoreRequest(claims) {
+  return () => new Request("http://localhost:8784/api/session", {
+    headers: { cookie: `mi-session=${sealSession(createSessionClaims(claims, { ttlSeconds: 3600 }))}` },
+  });
+}
+
+function clientLookups(stub) {
+  return stub.calls.filter((call) => call.path === "/rest/v1/clients");
+}
+
+test("대표 코드·옛 대표 코드는 대소문자·공백·전각이 달라도 DB 를 보지 않고 없는 광고주로 돌려준다", async () => {
+  await withEnv({ MI_LEGACY_AGENCY_CODES: "old-owner01, Older-Owner2" }, async () => {
+    for (const code of RESERVED_VARIANTS) {
+      const ctx = { supabaseAdmin: { from() { throw new Error(`no lookup expected for ${code}`); } } };
+      assert.deepEqual(await activeClientByCode(ctx, code), { data: null, error: null }, code);
+    }
+    const normal = await activeClientByCode(contextWithRows([{ data: NORMAL_BRAND_ROW, error: null }]), "Brand-B02");
+    assert.equal(normal.data.id, "client-normal");
+  });
+});
+
+test("대표 코드로 남은 광고주 세션은 복원 판정에서 해지로 끝난다(장애로 보지 않는다)", async () => {
+  await withEnv({ MI_LEGACY_AGENCY_CODES: "old-owner01" }, async () => {
+    const untouched = { supabaseAdmin: { from() { throw new Error("no lookup expected"); } } };
+    for (const claims of [
+      { role: "client", agencyCode: "mml93-a01", clientId: "client-owner-brand" },
+      { role: "client", agencyCode: "MML93-A01", clientId: "client-owner-brand" },
+      { role: "client", agencyCode: "old-owner01", clientId: "client-old-owner" },
+    ]) {
+      const state = await sessionActivityState(untouched, claims);
+      assert.equal(state.state, "revoked", claims.agencyCode);
+      assert.equal(state.active, null);
+    }
+  });
+});
+
+test("광고주 코드 로그인: 대표 코드·옛 코드는 없는 코드와 같은 답으로 거절하고 일반 광고주는 그대로 들어간다", async () => {
+  const unknownStub = sessionDbStub();
+  const unknown = await callSessionApi(loginRequest("client", "no-such-brand"), unknownStub);
+  assert.equal(unknown.response.status, 401);
+
+  for (const code of ["mml93-a01", "  MML93-A01 ", "Mml93-A01", "old-owner01", "OLDER-OWNER2"]) {
+    const stub = sessionDbStub();
+    const { response, payload } = await callSessionApi(loginRequest("client", code), stub);
+    assert.equal(response.status, 401, code);
+    assert.deepEqual(payload, unknown.payload, `${code} 거절 문구는 없는 코드와 같아야 한다`);
+    assert.equal(response.headers.get("set-cookie"), null, `${code} 는 세션 쿠키를 받지 않는다`);
+    assert.equal(clientLookups(stub).length, 0, `${code} 는 광고주 표를 조회하지 않는다`);
+  }
+
+  // 전각 입력은 원래부터 접속 형식에서 걸러진다(어떤 코드든 같은 400).
+  const fullWidth = await callSessionApi(loginRequest("client", "ｍｍｌ９３－ａ０１"), sessionDbStub());
+  const fullWidthOther = await callSessionApi(loginRequest("client", "ｂｒａｎｄ－ｂ０２"), sessionDbStub());
+  assert.equal(fullWidth.response.status, 400);
+  assert.deepEqual(fullWidth.payload, fullWidthOther.payload);
+
+  const normal = await callSessionApi(loginRequest("client", "Brand-B02"), sessionDbStub());
+  assert.equal(normal.response.status, 200);
+  assert.equal(normal.payload.session.role, "client");
+  assert.equal(normal.payload.client.id, "client-normal");
+});
+
+test("총관리자 로그인과 운영팀 로그인은 대표 코드 차단의 영향을 받지 않는다", async () => {
+  const owner = await callSessionApi(loginRequest("admin", "strong-owner-secret"), sessionDbStub());
+  assert.equal(owner.response.status, 200);
+  assert.equal(owner.payload.session.role, "owner");
+
+  // 대표 광고주(브랜드 A)에 연결된 운영팀도 그대로 들어간다 — 운영팀 경로는 광고주 코드 조회를 쓰지 않는다.
+  const team = await callSessionApi(loginRequest("operator", "OPS-TEAM01"), sessionDbStub());
+  assert.equal(team.response.status, 200);
+  assert.equal(team.payload.session.role, "team");
+  assert.equal(team.payload.team.client.id, "client-owner-brand");
+  const teamByAdminMode = await callSessionApi(loginRequest("admin", "ops-team01"), sessionDbStub());
+  assert.equal(teamByAdminMode.response.status, 200);
+  assert.equal(teamByAdminMode.payload.session.role, "team");
+});
+
+test("세션 복원: 대표 코드·옛 코드 광고주 세션은 401 로 쿠키를 지우고, 일반 광고주·총관리자·운영팀 세션은 그대로다", async () => {
+  for (const claims of [
+    { role: "client", agencyCode: "mml93-a01", clientId: "client-owner-brand" },
+    { role: "client", agencyCode: "MML93-A01", clientId: "client-owner-brand" },
+    { role: "client", agencyCode: "old-owner01", clientId: "client-old-owner" },
+  ]) {
+    const stub = sessionDbStub();
+    const { response, payload } = await callSessionApi(restoreRequest(claims), stub);
+    assert.equal(response.status, 401, claims.agencyCode);
+    assert.equal(payload.ok, false);
+    assert.match(String(response.headers.get("set-cookie") || ""), /Max-Age=0/i, `${claims.agencyCode} 쿠키를 지운다`);
+    assert.equal(clientLookups(stub).length, 0);
+  }
+
+  const normal = await callSessionApi(restoreRequest({ role: "client", agencyCode: "brand-b02", clientId: "client-normal" }), sessionDbStub());
+  assert.equal(normal.response.status, 200);
+  assert.equal(normal.payload.client.id, "client-normal");
+
+  const owner = await callSessionApi(restoreRequest({ role: "owner", agencyCode: "mml93-a01" }), sessionDbStub());
+  assert.equal(owner.response.status, 200);
+  assert.equal(owner.payload.session.role, "owner");
+
+  const team = await callSessionApi(restoreRequest({
+    role: "team", teamCode: "ops-team01", teamId: "team-1", clientId: "client-owner-brand", agencyCode: "mml93-a01",
+  }), sessionDbStub());
+  assert.equal(team.response.status, 200);
+  assert.equal(team.payload.session.role, "team");
+});
+
+test("구글 광고주 로그인도 대표 코드·옛 코드 연결이면 '없는 계정'으로 끝나고, 일반 광고주와 총관리자는 그대로다", async () => {
+  const env = { MI_GOOGLE_LOGIN_ROLES: "owner,team,client", MI_PRIMARY_AGENCY_CODE: "mml93-a01" };
+  await withEnv({ MI_LEGACY_AGENCY_CODES: "old-owner01" }, async () => {
+    const untouched = { supabaseAdmin: { from() { throw new Error("no lookup expected"); } } };
+    for (const code of ["mml93-a01", "MML93-A01", "old-owner01"]) {
+      assert.deepEqual(await resolveGoogleLoginAccess({ role: "client", code }, untouched, env), { ok: false, reason: "inactive" }, code);
+    }
+    // 없는 코드와 같은 답이다.
+    assert.deepEqual(
+      await resolveGoogleLoginAccess({ role: "client", code: "no-such-brand" }, contextWithRows([{ data: null, error: null }]), env),
+      { ok: false, reason: "inactive" },
+    );
+    assert.deepEqual(
+      await resolveGoogleLoginAccess({ role: "client", code: "brand-b02" }, contextWithRows([{ data: NORMAL_BRAND_ROW, error: null }]), env),
+      { ok: true, access: { role: "client", clientId: "client-normal", agencyCode: "brand-b02" } },
+    );
+    assert.deepEqual(
+      await resolveGoogleLoginAccess({ role: "owner", code: "mml93-a01" }, untouched, env),
+      { ok: true, access: { role: "owner", agencyCode: "mml93-a01" } },
+    );
+  });
+});
+
+test("광고주 코드 조회(activeClientByCode)는 광고주 역할 경로에서만 쓴다 — 관리자 '광고주 미리보기' 경로는 쓰지 않는다", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const handlerDir = new URL("./", import.meta.url);
+  const users = [];
+  for (const name of await readdir(handlerDir)) {
+    if (!name.endsWith(".mjs") || name.endsWith(".test.mjs") || name === "code-session-api.mjs") continue;
+    if ((await readFile(new URL(name, handlerDir), "utf8")).includes("activeClientByCode")) users.push(name);
+  }
+  // 구글 광고주 로그인·연결(google-calendar-api), 광고주 개인 일정(personal-identity) 두 곳뿐이다.
+  assert.deepEqual(users.sort(), ["google-calendar-api.mjs", "personal-identity.mjs"]);
 });

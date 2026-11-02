@@ -1132,6 +1132,7 @@ function trackerLifecycleStub({
   productBusy = 0,
   productActive = 0,
   keywordLimit = null,
+  teamCodeRows = [],
 } = {}) {
   const calls = [];
   const impl = async (input, init = {}) => {
@@ -1163,6 +1164,8 @@ function trackerLifecycleStub({
     if (url.pathname === "/rest/v1/naver_rank_trackers") return Response.json(productRows);
     if (url.pathname === "/rest/v1/naver_place_rank_trackers") return Response.json(placeRows);
     if (url.pathname === "/rest/v1/audit_logs") return Response.json([], { status: 201 });
+    // 다시 켜기 전 운영팀 코드 겹침 확인(점검 2026-11-02 N1).
+    if (url.pathname === "/rest/v1/operation_team_codes" && method === "GET") return Response.json(teamCodeRows);
     throw new Error(`unexpected fetch: ${method} ${rawUrl}`);
   };
   return { calls, impl };
@@ -1312,6 +1315,7 @@ function planActionStub(routes) {
     const row = typeof route === "function" ? route(body) : route;
     if (row === null) return Response.json(null);
     if (row === "empty") return new Response(null, { status: 204 });
+    if (Array.isArray(row)) return Response.json(row);
     return accept.includes("object") ? Response.json(row) : Response.json([row]);
   };
   return { calls, impl };
@@ -1425,6 +1429,7 @@ test("open-trial with unlimited opens the client without an expiry date", async 
   const stub = planActionStub({
     "GET /rest/v1/login_identities": { google_sub: "sub-unlimited", google_email: "trial@example.com", role: "trial", code: null },
     "GET /rest/v1/clients": null,
+    "GET /rest/v1/operation_team_codes": [],
     "POST /rest/v1/clients": (body) => ({
       id: "client-unlimited-1",
       name: body.name,
@@ -1465,4 +1470,261 @@ test("새 코드 발급과 기존 계정 선택 규칙은 '*' 를 받지 않는�
   }
   assert.equal(normalizeAgencyCode("brand-01"), "brand-01");
   assert.equal(existingAccountCode("ofyou"), "ofyou");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 점검 2026-11-02 N1: 광고주 코드와 운영팀 코드가 서로 겹치지 않게 막는다.
+// 코드를 새로 만들거나 다시 켜는 다섯 경로(광고주 생성·재활성화, 운영팀 생성·재활성화,
+// 운영팀의 광고주 생성)와 체험 전환이 상대 표(상태 무관)·대표 코드·옛 대표 코드를 함께 본다.
+// ─────────────────────────────────────────────────────────────
+const TEAM_AGENCY_CODES_URL = "http://localhost:8784/api/team/agency-codes";
+const OWNER_CODE_HEADERS = {
+  "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+  "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+};
+
+function overlapRowMatches(row, searchParams) {
+  for (const [key, raw] of searchParams) {
+    if (["select", "limit", "order"].includes(key)) continue;
+    const value = row[key];
+    if (raw.startsWith("eq.")) {
+      if (String(value ?? "") !== raw.slice(3)) return false;
+    } else if (raw.startsWith("ilike.")) {
+      if (String(value ?? "").toLowerCase() !== raw.slice(6).toLowerCase()) return false;
+    } else if (raw === "is.null") {
+      if (value !== null && value !== undefined) return false;
+    } else {
+      throw new Error(`unsupported filter ${key}=${raw}`);
+    }
+  }
+  return true;
+}
+
+// 표 행을 DB 처럼 걸러 돌려주고 쓰기는 기록만 한다. 순위 추적 표는 늘 비어 있다(복구할 행 없음).
+function codeOverlapStub({ clients = [], teams = [], identities = [], intercept = null } = {}) {
+  const tables = {
+    clients: clients.map((row) => ({ ...row })),
+    operation_team_codes: teams.map((row) => ({ ...row })),
+    login_identities: identities.map((row) => ({ ...row })),
+  };
+  const calls = [];
+  const impl = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : String(input.url));
+    const method = String(init.method || "GET").toUpperCase();
+    const single = String(new Headers(init.headers || {}).get("accept") || "").includes("vnd.pgrst.object+json");
+    const body = init.body ? JSON.parse(String(init.body)) : null;
+    const table = url.pathname.replace("/rest/v1/", "");
+    calls.push({ method, table, url, body });
+    if (intercept) {
+      const intercepted = intercept({ method, table, url });
+      if (intercepted) return intercepted;
+    }
+    if (table === "audit_logs") return Response.json([], { status: 201 });
+    if (table.startsWith("naver_")) {
+      return method === "HEAD"
+        ? new Response(null, { status: 200, headers: { "content-range": "*/0" } })
+        : Response.json([]);
+    }
+    const rows = tables[table];
+    if (!rows) throw new Error(`unexpected fetch: ${method} ${url}`);
+    let result;
+    if (method === "GET") {
+      result = rows.filter((row) => overlapRowMatches(row, url.searchParams));
+    } else if (method === "POST") {
+      const row = { id: `${table}-new-${rows.length + 1}`, ...body };
+      rows.push(row);
+      result = [row];
+    } else if (method === "PATCH") {
+      result = rows.filter((row) => overlapRowMatches(row, url.searchParams));
+      result.forEach((row) => Object.assign(row, body));
+    } else {
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    }
+    return single ? Response.json(result[0] ?? null) : Response.json(result);
+  };
+  return { calls, impl, tables };
+}
+
+async function runCodeAction(url, body, headers, stub, env = {}) {
+  const request = new Request(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+  const response = await withEnv({ ...AUDIT_HANDLER_ENV, MI_LEGACY_AGENCY_CODES: undefined, ...env }, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(request),
+  ));
+  return { response, payload: await response.json() };
+}
+
+const writesTo = (stub, table) => stub.calls.filter((call) => call.table === table && ["POST", "PATCH"].includes(call.method));
+const overlapQueries = (stub, table) => stub.calls.filter((call) => call.table === table
+  && call.method === "GET"
+  && [...call.url.searchParams.values()].some((value) => value.startsWith("ilike.")));
+
+const OVERLAP_TEAM_ROW = {
+  id: "team-old", owner_agency_code: "mml93-a01", team_name: "옛 운영팀", team_code: "Shared-Code1",
+  status: "revoked", client_id: null, revoked_at: "2026-09-01T00:00:00.000Z",
+};
+const OVERLAP_CLIENT_ROW = {
+  id: "client-old", name: "옛 광고주", business_name: "옛 광고주", agency_code: "Shared-Code1",
+  status: "paused", issued_by_team_code: null, disconnected_at: "2026-09-01T00:00:00.000Z",
+};
+
+test("N1 광고주 새로 만들기: 운영팀 코드(꺼진 것 포함, 대소문자 무시)와 같으면 409, 아니면 그대로 만든다", async () => {
+  const blocked = codeOverlapStub({ teams: [OVERLAP_TEAM_ROW] });
+  const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "새 광고주", agencyCode: "shared-code1" }, OWNER_CODE_HEADERS, blocked);
+  assert.equal(response.status, 409);
+  assert.equal(payload.message, "운영팀 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+  assert.equal(writesTo(blocked, "clients").length, 0);
+  assert.equal(overlapQueries(blocked, "operation_team_codes")[0].url.searchParams.get("team_code"), "ilike.shared-code1");
+
+  const allowed = codeOverlapStub({ teams: [OVERLAP_TEAM_ROW] });
+  const ok = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "새 광고주", agencyCode: "fresh-brand1" }, OWNER_CODE_HEADERS, allowed);
+  assert.equal(ok.response.status, 201, JSON.stringify(ok.payload));
+  assert.equal(writesTo(allowed, "clients").length, 1);
+});
+
+test("N1 광고주 다시 켜기: 같은 코드의 운영팀이 있으면 409 로 막고, 없으면 다시 켠다", async () => {
+  const pausedClient = { ...OVERLAP_CLIENT_ROW, agency_code: "shared-code1" };
+  const blocked = codeOverlapStub({ clients: [pausedClient], teams: [OVERLAP_TEAM_ROW] });
+  const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "옛 광고주", agencyCode: "shared-code1" }, OWNER_CODE_HEADERS, blocked);
+  assert.equal(response.status, 409);
+  assert.equal(payload.message, "운영팀 코드와 겹쳐 다시 켤 수 없습니다. 새 코드로 발급해 주세요.");
+  assert.equal(writesTo(blocked, "clients").length, 0);
+  assert.equal(blocked.tables.clients[0].status, "paused");
+
+  const allowed = codeOverlapStub({ clients: [pausedClient] });
+  const ok = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "옛 광고주", agencyCode: "shared-code1" }, OWNER_CODE_HEADERS, allowed);
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.payload));
+  assert.equal(ok.payload.reactivated, true);
+  assert.equal(allowed.tables.clients[0].status, "active");
+});
+
+test("N1 운영팀 새로 만들기: 광고주 코드(꺼진 것 포함, 대소문자 무시)와 같으면 409, 아니면 그대로 만든다", async () => {
+  const blocked = codeOverlapStub({ clients: [OVERLAP_CLIENT_ROW] });
+  const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-team", teamName: "새 운영팀", teamCode: "shared-code1" }, OWNER_CODE_HEADERS, blocked);
+  assert.equal(response.status, 409);
+  assert.equal(payload.message, "광고주 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+  assert.equal(writesTo(blocked, "operation_team_codes").length, 0);
+  assert.equal(overlapQueries(blocked, "clients")[0].url.searchParams.get("agency_code"), "ilike.shared-code1");
+
+  const allowed = codeOverlapStub({ clients: [OVERLAP_CLIENT_ROW] });
+  const ok = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-team", teamName: "새 운영팀", teamCode: "fresh-team1" }, OWNER_CODE_HEADERS, allowed);
+  assert.equal(ok.response.status, 201, JSON.stringify(ok.payload));
+  assert.equal(writesTo(allowed, "operation_team_codes").length, 1);
+});
+
+test("N1 운영팀 다시 켜기: 같은 코드의 광고주가 있으면 409 로 막고, 없으면 다시 켠다", async () => {
+  const revokedTeam = { ...OVERLAP_TEAM_ROW, team_code: "shared-code1" };
+  const blocked = codeOverlapStub({ clients: [OVERLAP_CLIENT_ROW], teams: [revokedTeam] });
+  const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-team", teamName: "옛 운영팀", teamCode: "shared-code1" }, OWNER_CODE_HEADERS, blocked);
+  assert.equal(response.status, 409);
+  assert.equal(payload.message, "광고주 코드와 겹쳐 다시 켤 수 없습니다. 새 코드로 발급해 주세요.");
+  assert.equal(writesTo(blocked, "operation_team_codes").length, 0);
+  assert.equal(blocked.tables.operation_team_codes[0].status, "revoked");
+
+  const allowed = codeOverlapStub({ teams: [revokedTeam] });
+  const ok = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-team", teamName: "옛 운영팀", teamCode: "shared-code1" }, OWNER_CODE_HEADERS, allowed);
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.payload));
+  assert.equal(ok.payload.reactivated, true);
+  assert.equal(allowed.tables.operation_team_codes[0].status, "active");
+});
+
+test("N1 대표 코드·옛 대표 코드는 광고주·운영팀 어느 쪽으로도 새로 만들거나 다시 켤 수 없다", async () => {
+  const env = { MI_LEGACY_AGENCY_CODES: "old-owner01, Older-Owner2" };
+  for (const agencyCode of ["MML93-A01", "old-owner01", "older-owner2"]) {
+    const stub = codeOverlapStub();
+    const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "막힐 광고주", agencyCode }, OWNER_CODE_HEADERS, stub, env);
+    assert.equal(response.status, 409, agencyCode);
+    assert.equal(payload.message, "대표 계정 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+    assert.equal(writesTo(stub, "clients").length, 0);
+  }
+  const pausedLegacy = codeOverlapStub({ clients: [{ ...OVERLAP_CLIENT_ROW, agency_code: "old-owner01" }] });
+  const reactivate = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "옛 대표", agencyCode: "old-owner01" }, OWNER_CODE_HEADERS, pausedLegacy, env);
+  assert.equal(reactivate.response.status, 409);
+  assert.equal(reactivate.payload.message, "대표 계정 코드와 겹쳐 다시 켤 수 없습니다. 새 코드로 발급해 주세요.");
+  assert.equal(writesTo(pausedLegacy, "clients").length, 0);
+
+  for (const teamCode of ["mml93-a01", "OLD-OWNER01"]) {
+    const stub = codeOverlapStub();
+    const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-team", teamName: "막힐 운영팀", teamCode }, OWNER_CODE_HEADERS, stub, env);
+    assert.equal(response.status, 409, teamCode);
+    assert.equal(payload.message, "대표 계정 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+    assert.equal(writesTo(stub, "operation_team_codes").length, 0);
+  }
+});
+
+test("N1 운영팀의 광고주 만들기: 겹치면 409 — 운영팀에게는 이유를 알려 주지 않고, 총관리자가 대신 만들 때만 알려 준다", async () => {
+  const teams = [
+    { id: "team-a", owner_agency_code: "mml93-a01", team_name: "가 팀", team_code: "team-alpha1", status: "active", client_id: null, revoked_at: null },
+    { id: "team-b", owner_agency_code: "mml93-a01", team_name: "나 팀", team_code: "team-bravo1", status: "revoked", client_id: null, revoked_at: "2026-09-01T00:00:00.000Z" },
+  ];
+  const generic = "사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요.";
+
+  for (const agencyCode of ["TEAM-BRAVO1", "mml93-a01"]) {
+    const stub = codeOverlapStub({ teams });
+    const { response, payload } = await runCodeAction(TEAM_AGENCY_CODES_URL, { action: "create-client-for-team", clientName: "팀 광고주", agencyCode }, { "x-mi-team-code": "team-alpha1" }, stub);
+    assert.equal(response.status, 409, agencyCode);
+    assert.equal(payload.message, generic, `${agencyCode}: 운영팀 세션에는 겹친 이유를 알려 주지 않는다`);
+    assert.equal(writesTo(stub, "clients").length, 0);
+    assert.equal(writesTo(stub, "operation_team_codes").length, 0);
+  }
+
+  const ownerStub = codeOverlapStub({ teams });
+  const owner = await runCodeAction(TEAM_AGENCY_CODES_URL, { action: "create-client-for-team", clientName: "팀 광고주", agencyCode: "team-bravo1", targetTeamCode: "team-alpha1" }, OWNER_CODE_HEADERS, ownerStub);
+  assert.equal(owner.response.status, 409);
+  assert.equal(owner.payload.message, "운영팀 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+  assert.equal(writesTo(ownerStub, "clients").length, 0);
+
+  const allowed = codeOverlapStub({ teams });
+  const ok = await runCodeAction(TEAM_AGENCY_CODES_URL, { action: "create-client-for-team", clientName: "팀 광고주", agencyCode: "fresh-brand2" }, { "x-mi-team-code": "team-alpha1" }, allowed);
+  assert.equal(ok.response.status, 201, JSON.stringify(ok.payload));
+  assert.equal(allowed.tables.clients.length, 1);
+  assert.equal(allowed.tables.operation_team_codes[0].client_id, allowed.tables.clients[0].id);
+});
+
+test("N1 겹침 확인이 실패하면 코드를 쓰지 않고 500 으로 멈춘다", async () => {
+  const stub = codeOverlapStub({
+    intercept: ({ method, table, url }) => (table === "operation_team_codes" && method === "GET" && url.searchParams.has("team_code")
+      ? Response.json({ message: "temporary outage" }, { status: 500 })
+      : null),
+  });
+  const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, { action: "create-client", name: "새 광고주", agencyCode: "fresh-brand3" }, OWNER_CODE_HEADERS, stub);
+  assert.equal(response.status, 500);
+  assert.equal(payload.message, "중복 코드 확인에 실패했습니다.");
+  assert.equal(writesTo(stub, "clients").length, 0);
+});
+
+test("N1 체험 정식 전환: 서버가 뽑은 코드가 운영팀 코드와 겹치면 새로 뽑고, 세 번 다 겹치면 만들지 않는다", async () => {
+  const identities = [{ google_sub: "sub-overlap", google_email: "trial@example.com", role: "trial", code: null }];
+  const checked = [];
+  const firstClash = codeOverlapStub({
+    identities,
+    intercept: ({ method, table, url }) => {
+      const filter = url.searchParams.get("team_code") || "";
+      if (table !== "operation_team_codes" || method !== "GET" || !filter.startsWith("ilike.")) return null;
+      checked.push(filter.slice("ilike.".length));
+      return Response.json(checked.length === 1 ? [{ id: "team-clash" }] : []);
+    },
+  });
+  const ok = await runCodeAction(SUPER_ADMIN_API_URL, { action: "open-trial", googleSub: "sub-overlap", name: "전환 광고주", unlimited: true }, OWNER_CODE_HEADERS, firstClash);
+  assert.equal(ok.response.status, 200, JSON.stringify(ok.payload));
+  assert.equal(checked.length, 2);
+  const inserted = writesTo(firstClash, "clients").find((call) => call.method === "POST");
+  assert.notEqual(inserted.body.agency_code, checked[0], "겹친 코드는 쓰지 않는다");
+  assert.equal(inserted.body.agency_code, checked[1]);
+
+  const alwaysClash = codeOverlapStub({
+    identities,
+    intercept: ({ method, table, url }) => (table === "operation_team_codes" && method === "GET" && url.searchParams.has("team_code")
+      ? Response.json([{ id: "team-clash" }])
+      : null),
+  });
+  const failed = await runCodeAction(SUPER_ADMIN_API_URL, { action: "open-trial", googleSub: "sub-overlap", name: "전환 광고주", unlimited: true }, OWNER_CODE_HEADERS, alwaysClash);
+  assert.equal(failed.response.status, 500);
+  assert.equal(failed.payload.message, "코드 생성에 실패했습니다. 다시 시도해주세요.");
+  assert.equal(writesTo(alwaysClash, "clients").length, 0);
+  assert.equal(writesTo(alwaysClash, "login_identities").length, 0);
 });

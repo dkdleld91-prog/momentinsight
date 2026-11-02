@@ -348,7 +348,7 @@ const checks = {
   ])) && [adminProductRefresh, clientProductRefresh].every((block) => includesAll(block, [
     'rankSourceMode === "hybrid_local_worker"',
     'action: "queue-refresh-all"',
-    "완료된 순위부터 자동 반영됩니다.",
+    "rankRefreshRequestNotice(null)", // 2026-11-02 점검 F14: 중립 갱신 안내로 바뀜
     "var mobileFallback = rankSourceUsesMobileFallback()",
     "Math.min(mobileFallback ? 1 : 2, targets.length)",
     "if (mobileFallback && completedCount > 0)",

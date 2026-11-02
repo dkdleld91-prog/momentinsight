@@ -726,9 +726,15 @@ function placeRegisterHarness(source, options) {
     function setStatus(node, message, tone) { statuses.push({ message: message, tone: tone, disabled: placeRun.disabled }); }
     function verifiedRankTrackerScope() { return { key: "scope-a" }; }
     function sameRankTrackerScope(scope) { return Boolean(scope) && opts.scopeStillSame(); }
+    function scopedRankTrackerPayload(payload, scope) { return Boolean(payload && payload.ok === true && Array.isArray(payload.trackers) && scope); }
     function renderPlaceHistory() {}
     function upsertPlaceTracker(tracker) { placeTrackers = [tracker].concat(placeTrackers.filter(function (item) { return item.id !== tracker.id; })); }
-    async function requestPlaceTrackers(method, body) { return opts.request(method, body); }
+    var requestCalls = [];
+    async function requestPlaceTrackers(method, body, scope) {
+      requestCalls.push(method);
+      if (method === "GET") return opts.listed ? opts.listed() : { ok: false };
+      return opts.request(method, body);
+    }
     async function loadPlaceTrackers() {
       loadCalls.push(Array.from(arguments));
       if (opts.reloaded) placeTrackers = opts.reloaded.slice();
@@ -736,7 +742,7 @@ function placeRegisterHarness(source, options) {
     }
     ${namedFunctionSource(source, "findRegisteredPlaceTracker")}
     var handler = ${placeRunHandlerSource(source)};
-    return { run: handler, statuses: statuses, loadCalls: loadCalls, placeRun: placeRun };
+    return { run: handler, statuses: statuses, loadCalls: loadCalls, requestCalls: requestCalls, placeRun: placeRun, trackers: function () { return placeTrackers; } };
   `);
   return factory(options);
 }
@@ -745,18 +751,38 @@ const oldPlace = { id: "pl-1", keyword: "구월동 횟집", placeId: "1200000001
 const newPlace = { id: "pl-new", keyword: "부평 갈비", placeId: "1299999999", placeUrl: "https://map.naver.com/p/entry/place/1299999999" };
 const timeoutError = () => { throw new Error("API 요청 시간이 초과되었습니다."); };
 
-test("플레이스 등록은 1~3분 안내를 띄우고, 시간 초과여도 목록에 방금 등록한 장소가 있으면 등록됐다고 알린다", async () => {
+test("플레이스 등록은 1~3분 안내를 띄우고, 시간 초과여도 검증된 목록에 방금 등록한 장소가 있으면 등록됐다고 알린다", async () => {
   for (const [label, source] of placePages) {
     const harness = placeRegisterHarness(source, {
       initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
-      request: timeoutError, reloaded: [newPlace, oldPlace], scopeStillSame: () => true,
+      request: timeoutError, listed: () => ({ ok: true, trackers: [newPlace, oldPlace] }), scopeStillSame: () => true,
     });
     await harness.run();
     assert.deepEqual(harness.statuses[0], { message: "등록하고 첫 순위를 확인하는 중입니다. 1~3분 걸릴 수 있습니다.", tone: "", disabled: true }, label);
-    assert.deepEqual(harness.statuses.at(-1), { message: "등록됐습니다. 첫 순위 확인은 이어서 진행됩니다.", tone: "is-ok", disabled: true }, label);
-    // 목록만 한 번 다시 부른다(조용히 · 새로 · 자동 갱신 없이).
-    assert.deepEqual(harness.loadCalls, [[true, true, true]], label);
+    assert.deepEqual(harness.statuses.at(-1), { message: "등록됐습니다. 첫 순위가 아직 안 보이면 잠시 뒤 새로고침해 주세요.", tone: "is-ok", disabled: true }, label);
+    // 목록 불러오기(자동 갱신 포함)를 거치지 않고 목록을 한 번 직접 읽는다.
+    assert.deepEqual(harness.loadCalls, [], label);
+    assert.deepEqual(harness.requestCalls, ["POST", "GET"], label);
+    assert.equal(harness.trackers()[0].id, "pl-new", label);
     assert.equal(harness.placeRun.disabled, false, label);
+  }
+});
+
+test("플레이스 등록 시간 초과 뒤 목록 읽기가 실패하거나 같은 장소가 등록 전부터 있었으면 등록됐다고 단정하지 않는다", async () => {
+  for (const [label, source] of placePages) {
+    const listFailed = placeRegisterHarness(source, {
+      initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
+      request: timeoutError, listed: () => ({ ok: false, message: "fail" }), scopeStillSame: () => true,
+    });
+    await listFailed.run();
+    assert.deepEqual(listFailed.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
+
+    const already = placeRegisterHarness(source, {
+      initial: [newPlace, oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
+      request: timeoutError, listed: () => ({ ok: true, trackers: [newPlace, oldPlace] }), scopeStillSame: () => true,
+    });
+    await already.run();
+    assert.deepEqual(already.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
   }
 });
 
@@ -764,19 +790,19 @@ test("플레이스 등록 시간 초과 뒤 목록에 없거나 광고주 범위
   for (const [label, source] of placePages) {
     const missing = placeRegisterHarness(source, {
       initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
-      request: timeoutError, reloaded: [oldPlace], scopeStillSame: () => true,
+      request: timeoutError, listed: () => ({ ok: true, trackers: [oldPlace] }), scopeStillSame: () => true,
     });
     await missing.run();
     assert.deepEqual(missing.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
-    assert.equal(missing.loadCalls.length, 1, label);
+    assert.deepEqual(missing.requestCalls, ["POST", "GET"], label);
 
     const scopeChanged = placeRegisterHarness(source, {
       initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
-      request: () => { throw new Error("요청 중 광고주 조회 범위가 변경되었습니다."); }, reloaded: [newPlace, oldPlace], scopeStillSame: () => false,
+      request: () => { throw new Error("요청 중 광고주 조회 범위가 변경되었습니다."); }, listed: () => ({ ok: true, trackers: [newPlace, oldPlace] }), scopeStillSame: () => false,
     });
     await scopeChanged.run();
     assert.deepEqual(scopeChanged.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
-    assert.equal(scopeChanged.loadCalls.length, 0, label);
+    assert.deepEqual(scopeChanged.requestCalls, ["POST"], label);
     assert.equal(scopeChanged.placeRun.disabled, false, label);
   }
 });
@@ -807,5 +833,7 @@ test("방금 등록한 플레이스 찾기는 admin·client 가 같고 키워드
   // naver.me 짧은 주소는 번호를 알 수 없어 등록 전 목록에 없던 같은 키워드 항목만 인정한다.
   assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", known), shortLink);
   assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", new Set(["pl-1", "pl-short"])), null);
+  // 번호가 같아도 등록 전부터 있던 항목이면 방금 등록한 것으로 보지 않는다.
+  assert.equal(find([oldPlace, newPlace], "부평 갈비", "1299999999", new Set(["pl-1", "pl-new"])), null);
   assert.equal(find(null, "부평 갈비", "1299999999", known), null);
 });

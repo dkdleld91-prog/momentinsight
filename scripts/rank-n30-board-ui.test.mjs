@@ -862,10 +862,16 @@ for (const [label, source] of PAGES) {
   });
 
   test(`${label}: N30 상단 요약 — 확인 필요는 수집 실패만, next_check_at 대신 마지막 갱신 24시간 기준 '갱신 지연'`, () => {
-    const healthy = opsSummary(source, label, [n30.ranked, n30.first, n30.outside, n30.outsideSeen]);
+    // 아직 한 번도 확인되지 않은 추적(등록 24시간 안)은 정상·지연과 따로 센다(Codex 검토 반영: 시각을 모르면 '모두 24시간 안' 단정 금지).
+    const withFirst = opsSummary(source, label, [n30.ranked, n30.first, n30.outside, n30.outsideSeen]);
+    assert.equal(withFirst.pill, "정상 운영");
+    assert.equal(withFirst.small, "4개 운영 · 1개 첫 확인 대기 · 0개 갱신 지연 · 0개 확인");
+    assert.deepEqual([withFirst.metrics[1].value, withFirst.metrics[1].note], ["첫 확인 대기 1개", "첫 순위 확인 전 1개"]);
+
+    const healthy = opsSummary(source, label, [n30.ranked, n30.outside, n30.outsideSeen]);
     assert.equal(healthy.pill, "정상 운영");
     assert.equal(healthy.pillTone, "is-ok");
-    assert.equal(healthy.small, "4개 운영 · 0개 갱신 지연 · 0개 확인");
+    assert.equal(healthy.small, "3개 운영 · 0개 갱신 지연 · 0개 확인");
     assert.equal(healthy.metrics[0].label, "최근 갱신");
     assert.deepEqual(healthy.metrics.slice(1).map(({ label: name, value, tone }) => [name, value, tone]),
       [["갱신 상태", "정상", "is-ok"], ["확인 필요", "0개", "is-ok"]]);

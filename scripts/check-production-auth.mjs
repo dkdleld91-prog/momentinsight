@@ -211,9 +211,10 @@ const checks = [
     file: `${files.productRank}, ${files.placeRank}`,
   },
   {
-    name: "product rank history preserves up to 120 snapshots from the last 30 days",
+    // 2026-11-02 점검 F06(대표 승인): 화면 응답은 최근 30일 기록 전부(안전 상한 240 = 하루 8회 × 30일). 120건은 하루 약 4.2회 수집에서 앞쪽 1~2일을 잘랐다.
+    name: "product rank history preserves up to 240 snapshots from the last 30 days",
     ok: source.productRank.includes("const PRODUCT_RANK_HISTORY_DAYS = 30")
-      && source.productRank.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120")
+      && source.productRank.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 240")
       && source.productRank.includes("checkedAt >= historyCutoff")
       && source.productRank.includes(".slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)"),
     file: files.productRank,

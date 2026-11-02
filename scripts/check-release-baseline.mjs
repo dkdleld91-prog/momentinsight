@@ -1573,7 +1573,9 @@ const checks = {
   shoppingRankLookupQueueIsScopedAndNonBlocking: [adminSource, clientSource].every((source) =>
     source.includes("getShoppingRankJobsApiUrl")
       && source.includes("queueFullRankLookup")
-      && source.includes("순위 작업기에 300위 전체 조회를 요청했습니다."))
+      // 2026-11-02 점검 F14: 광고주 화면에 내부 용어('순위 작업기')를 보이지 않는다.
+      && source.includes("300위 전체 순위 확인을 요청했습니다.")
+      && !source.includes("순위 작업기"))
     && shoppingRankLookupJobs.includes("rankLookupScopeHash")
     && shoppingRankLookupJobs.includes('.eq("scope_hash", scopeHash)')
     && shoppingRankLookupMigration.includes("force row level security")

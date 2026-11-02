@@ -27769,7 +27769,7 @@
           }
           var jobId = enqueuePayload.jobId;
           var deadline = Date.now() + 10 * 60 * 1000;
-          setStatus(rankStatus, enqueuePayload.message || "순위 작업기에 300위 전체 조회를 요청했습니다.", "");
+          setStatus(rankStatus, enqueuePayload.message || "300위 전체 순위 확인을 요청했습니다.", "");
           while (Date.now() < deadline) {
             await new Promise(function (resolve) { window.setTimeout(resolve, 3000); });
             if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return null;
@@ -27781,7 +27781,7 @@
             var pollPayload = await pollResponse.json().catch(function () { return null; });
             if (!pollPayload) throw new Error("300위 조회 상태를 확인할 수 없습니다.");
             if (pollPayload.pending === true) {
-              setStatus(rankStatus, pollPayload.message || "순위 작업기가 오가닉 300위를 확인하고 있습니다.", "");
+              setStatus(rankStatus, pollPayload.message || "오가닉 300위를 확인하고 있습니다.", "");
               continue;
             }
             if (!pollResponse.ok || pollPayload.ok === false) {

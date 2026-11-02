@@ -925,7 +925,7 @@ for (const [label, source] of PAGES) {
     // 두 버튼 모두 이 안내를 쓴다(중앙 자동 순환 응답일 때만), 옛 초록 문구·개발 용어는 없다.
     assert.ok(body.includes("var queuedNotice = rankRefreshRequestNotice(null);"));
     assert.ok(body.includes("if (payload && payload.ok === true && payload.queuedForLocalWorker === true) {"));
-    for (const banned of ["개발 프로필", "약 1분 내 시작"]) assert.equal(source.includes(banned), false, `${label}: '${banned}' 문구 없음`);
+    for (const banned of ["개발 프로필", "약 1분 내 시작", "순위 작업기"]) assert.equal(source.includes(banned), false, `${label}: '${banned}' 문구 없음`);
     // 광고주 화면에는 수집기 내부 용어가 없다(관리자 수집기 운영 패널의 '원격 실행 신호'는 총관리자 전용이라 그대로).
     if (!isAdmin) assert.equal(source.includes("원격 실행"), false);
   });

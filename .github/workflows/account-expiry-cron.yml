@@ -52,10 +52,11 @@ jobs:
             due: (payload.due || []).length,
             deleted: payload.deleted || [],
             skipped: payload.skipped || [],
+            auditFailed: payload.auditFailed || [],
             failed: payload.failed || [],
           }));
           if ((payload.failed || []).length) {
-            console.error("some accounts could not be deleted; they stay for the next run");
+            console.error("some accounts were not fully deleted; see failed (a still-due account is retried next run, a changed one stays)");
             process.exit(1);
           }
           NODE

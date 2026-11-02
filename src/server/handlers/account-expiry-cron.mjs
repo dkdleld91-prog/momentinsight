@@ -10,7 +10,7 @@ import { withSupabase } from "@supabase/server";
 import { cronAuthorized } from "../cron-auth.mjs";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
-import { PRIMARY_AGENCY_CODE, primaryAgencyConfiguration } from "../owner-identity.mjs";
+import { PRIMARY_AGENCY_CODE, isReservedOwnerAgencyCode, primaryAgencyConfiguration } from "../owner-identity.mjs";
 import {
   GOOGLE_LINKED_PLAN_NOTE,
   GOOGLE_LINK_EXPIRY_NOTE,
@@ -75,8 +75,9 @@ export function clientPrincipalKey(clientId) {
   return CLIENT_ID_PATTERN.test(id) ? `client:${id}` : "";
 }
 
+// 감사 기록 실패는 삭제 결과를 바꾸지 않지만 응답(auditFailed)에 드러낸다(supabase-js 는 오류를 throw 하지 않고 {error}로 준다).
 async function auditDeletion(ctx, client, action, summary) {
-  await ctx.supabaseAdmin.from("audit_logs").insert({
+  const { error } = await ctx.supabaseAdmin.from("audit_logs").insert({
     actor_id: null,
     client_id: null,
     action,
@@ -102,6 +103,7 @@ async function auditDeletion(ctx, client, action, summary) {
       errors: summary.errors,
     }),
   });
+  summary.auditLogged = !error;
 }
 
 // 한 계정의 데이터를 지운다. 부분 실패면 계정 행은 남겨 다음 날 다시 시도하고, 지운 만큼을 감사 기록에 남긴다(중간 상태로 접속이
@@ -122,6 +124,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
     identities: null,
     quota: null,
     client: false,
+    auditLogged: null,
     errors: [],
   };
   const fail = (step, error) => summary.errors.push(`${step}: ${String(error?.message || error)}`);
@@ -151,7 +154,12 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
     return summary;
   }
   const currentCode = String(current.agency_code || "").trim().toLowerCase();
-  if (currentCode !== code || currentCode === protectedOwnerCode(env) || planStatus(current, nowMs).state !== "delete_due") {
+  if (
+    currentCode !== code
+    || currentCode === protectedOwnerCode(env)
+    || isReservedOwnerAgencyCode(currentCode, env)
+    || planStatus(current, nowMs).state !== "delete_due"
+  ) {
     summary.skipped = "not_due";
     await auditDeletion(ctx, current, "client.delete_skipped_not_due", summary);
     return summary;
@@ -191,17 +199,26 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
   if (notes.error) fail("keyword_research_notes", notes.error);
   else summary.notes = (notes.data || []).length;
 
-  const identities = await ctx.supabaseAdmin.from("login_identities").delete().eq("role", "client").eq("code", code).select("google_sub");
+  // 체험 한도는 로그인 연결의 google_sub 로 찾으므로, 한도를 먼저 지우고 성공했을 때만 로그인 연결을 지운다
+  // (반대 순서면 한도 삭제만 실패했을 때 다음 날 재시도가 google_sub 를 잃는다).
+  const identities = await ctx.supabaseAdmin.from("login_identities").select("google_sub").eq("role", "client").eq("code", code);
   if (identities.error) fail("login_identities", identities.error);
   else {
-    summary.identities = (identities.data || []).length;
     const subs = (identities.data || []).map((row) => row.google_sub).filter(Boolean);
+    let quotaOk = true;
     if (subs.length) {
       const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", subs).select("google_sub");
-      if (quota.error) fail("trial_keyword_quota", quota.error);
-      else summary.quota = (quota.data || []).length;
+      if (quota.error) {
+        quotaOk = false;
+        fail("trial_keyword_quota", quota.error);
+      } else summary.quota = (quota.data || []).length;
     } else {
       summary.quota = 0;
+    }
+    if (quotaOk) {
+      const removedIdentities = await ctx.supabaseAdmin.from("login_identities").delete().eq("role", "client").eq("code", code).select("google_sub");
+      if (removedIdentities.error) fail("login_identities", removedIdentities.error);
+      else summary.identities = (removedIdentities.data || []).length;
     }
   }
 
@@ -211,18 +228,28 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
   }
 
   // 광고주 행을 지우면 brands·reports·kpi 등 client_id FK 는 cascade, 운영팀 연결(client_id)은 set null 로 정리된다.
-  // 만료 조건(만료 시각 + 유예 ≤ 지금)을 붙여, 그 사이 연장된 계정은 0행으로 남긴다.
+  // 재확인한 그대로일 때만 지운다: 같은 코드·같은 메모(유예 일수를 정함)·만료 시각 + 유예 ≤ 지금. 그 사이 연장·수정된 계정은 0행으로 남는다.
   const graceCutoff = new Date(nowMs - planGraceDays(current) * DAY_MS).toISOString();
-  const removed = await ctx.supabaseAdmin
+  let finalDelete = ctx.supabaseAdmin
     .from("clients")
     .delete()
     .eq("id", client.id)
-    .lte("plan_expires_at", graceCutoff)
-    .select("id");
+    .eq("agency_code", current.agency_code)
+    .lte("plan_expires_at", graceCutoff);
+  finalDelete = current.plan_note == null ? finalDelete.is("plan_note", null) : finalDelete.eq("plan_note", current.plan_note);
+  const removed = await finalDelete.select("id");
   if (removed.error) fail("clients", removed.error);
   else {
     summary.client = (removed.data || []).length === 1;
-    if (!summary.client) fail("clients", "not deleted — plan changed during deletion");
+    if (!summary.client) {
+      // 0행: 다른 실행(03:30 Vercel · 03:40 Actions)이 먼저 지웠으면 건너뜀, 행이 남아 있으면 지우는 사이 연장·수정된 것.
+      const after = await ctx.supabaseAdmin.from("clients").select("id").eq("id", client.id).limit(1);
+      if (!after.error && !(after.data || []).length) {
+        summary.skipped = "missing";
+        return summary;
+      }
+      fail("clients", "not deleted — account changed during deletion");
+    }
   }
 
   await auditDeletion(ctx, current, summary.client ? "client.deleted_after_grace" : "client.delete_partial_failed", summary);
@@ -458,6 +485,7 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     due: due.map((row) => ({ agencyCode: row.agency_code, name: row.name || "", expiresAt: row.plan_expires_at || null })),
     deleted: results.filter((result) => result.client).map((result) => result.agencyCode),
     skipped: results.filter((result) => result.skipped).map((result) => ({ agencyCode: result.agencyCode, reason: result.skipped })),
+    auditFailed: results.filter((result) => result.auditLogged === false).map((result) => result.agencyCode),
     failed: results.filter((result) => result.errors.length).map((result) => ({ agencyCode: result.agencyCode, errors: result.errors })),
     results,
   };

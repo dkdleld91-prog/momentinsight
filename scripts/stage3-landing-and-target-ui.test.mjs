@@ -292,3 +292,47 @@ test("N 30일과 N 플레이스 30일이 같은 범위 계약을 쓴다", () => 
   assert.ok(block("async function requestPlaceTrackers(method, body, expectedScope) {", "function activatePlaceTrackerScope() {")
     .includes('"x-mi-agency-code": agencyCode'));
 });
+
+// 2026-11-02 점검(F08): 광고주 첫 화면 '내 순위 요약'의 'N 30일 순위 →'가 처리하는 코드가 없는 속성(data-mi-client-screen)과
+// 없는 해시(#mi-clean-…)를 써서 눌러도 뉴스 화면 그대로였다. 화면 전환은 광고주 data-mi-screen · 관리자 data-mi-admin-screen
+// 만 받으므로, 두 화면의 모든 화면 링크가 실제 화면(data-mi-view · data-mi-admin-view)을 가리키고 해시도 같은 화면으로 가는지 고정한다.
+const clientPageSource = fs.readFileSync(new URL("../src/pages/client.html", import.meta.url), "utf8");
+
+function markupAttributeValues(html, name) {
+  // 스크립트가 이어 붙이는 값(' + name + ')은 정적 화면 이름이 아니라서 뺀다.
+  return [...html.matchAll(new RegExp(`\\s${name}="([^"]*)"`, "g"))].map((match) => match[1]).filter((value) => !value.includes("'"));
+}
+
+for (const page of [
+  { label: "admin.html", html: source, screenAttr: "data-mi-admin-screen", viewAttr: "data-mi-admin-view", hashPrefix: "#mi-admin-" },
+  { label: "client.html", html: clientPageSource, screenAttr: "data-mi-screen", viewAttr: "data-mi-view", hashPrefix: "#mi-" },
+]) {
+  test(`${page.label}: 화면 링크는 모두 실제 화면을 가리키고 해시도 같은 화면으로 간다`, () => {
+    const views = new Set(markupAttributeValues(page.html, page.viewAttr));
+    const screens = markupAttributeValues(page.html, page.screenAttr);
+    assert.ok(screens.length >= 10, `${page.label} screen links not found`);
+    for (const screen of screens) {
+      assert.ok(views.has(screen), `${page.label}: ${page.screenAttr}="${screen}" 에 맞는 화면이 없습니다.`);
+    }
+    // 화면 링크의 href 해시도 hashchange → setScreen 으로 같은 화면을 연다.
+    for (const match of page.html.matchAll(new RegExp(`<a\\b[^>]*\\s${page.screenAttr}="([^"']+)"[^>]*>`, "g"))) {
+      const href = (match[0].match(/\shref="([^"]*)"/u) || [])[1];
+      assert.equal(href, page.hashPrefix + match[1], `${page.label}: ${match[0]}`);
+    }
+    // 페이지 안 해시 링크(href="#mi-…")도 모두 실제 화면으로 간다.
+    for (const match of page.html.matchAll(/\shref="(#mi-[^"]*)"/gu)) {
+      const target = match[1].startsWith(page.hashPrefix) ? match[1].slice(page.hashPrefix.length) : "";
+      assert.ok(views.has(target), `${page.label}: href="${match[1]}" 는 화면 전환이 받지 않는 해시입니다.`);
+    }
+    // 화면 전환이 받지 않는 비슷한 이름의 속성(예: data-mi-client-screen)이 남지 않았다.
+    const screenLikeAttributes = new Set([...page.html.matchAll(/\s(data-mi-[a-z-]*screen)=/gu)].map((match) => match[1]));
+    assert.deepEqual([...screenLikeAttributes], [page.screenAttr]);
+  });
+}
+
+test("광고주 첫 화면 'N 30일 순위 →'는 N 30일 순위 화면으로 간다", () => {
+  const strip = clientPageSource.slice(clientPageSource.indexOf("data-home-rank-strip"), clientPageSource.indexOf("data-home-feed-news"));
+  assert.ok(strip.includes('<a class="mi-home-more" href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위 →</a>'));
+  assert.ok(!clientPageSource.includes("data-mi-client-screen"));
+  assert.ok(!clientPageSource.includes("#mi-clean-naver-rank-tracking"));
+});

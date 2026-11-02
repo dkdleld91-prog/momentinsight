@@ -3057,7 +3057,7 @@ function fillEnv({
 
 const foundPending = (extra = {}) => ({ v: 2, kind: "f", pageId: PAGE_ID, ids: FILL_IDS, ...extra });
 
-test("U23 대기값 처리(운영팀): 로그인 전 한 줄 → 로그인 준비 뒤 순위 화면 전환·목록 받음 신호를 기다려 편집창, 미리 보기까지만(1회용)", async () => {
+test("U23 대기값 처리(운영팀): 로그인 전 한 줄 → 로그인 준비 뒤 순위 화면 전환·목록 받음 신호를 기다려 편집창(autoSave), 첫 입력이라 미리 보기까지만(1회용)", async () => {
   const env = fillEnv({ pending: foundPending() });
   assert.equal(env.waitNote(), "로그인하면 옵션 편집창이 열립니다.", "잠금 화면 로그인 상태 줄 아래");
   assert.equal(env.loginStatus.nextSibling, env.root.querySelector("[data-rank-option-fill-wait]"));
@@ -3078,12 +3078,12 @@ test("U23 대기값 처리(운영팀): 로그인 전 한 줄 → 로그인 준�
   env.loaded("team:client-1", true);
   await flush();
   assert.deepEqual(env.opened(), [{
-    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: FILL_IDS, sourcePageId: PAGE_ID, claimedSource: "button", opened: true,
+    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: FILL_IDS, sourcePageId: PAGE_ID, claimedSource: "button", autoSave: true, opened: true,
   }]);
   assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview"], "읽기 → 미리 보기, 저장·확인만 기록 없음");
   assert.equal(env.requests[1].body.sourcePageId, PAGE_ID);
   assert.equal(env.input().value, FILL_IDS.join("\n"));
-  assert.equal(env.source().textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${PAGE_ID}). 아직 저장 전입니다.`);
+  assert.equal(env.source().textContent, "자동 저장하지 않았습니다: 처음 넣는 번호는 직접 확인해야 합니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.", "첫 입력은 자동 저장하지 않는다");
   assert.equal(env.note(), "", "열면 안내 줄을 비운다");
   // 같은 탭에서 로그인 준비가 다시 와도(1회용) 다시 열지 않는다.
   env.fire("mi:rank-auth-ready");
@@ -3469,7 +3469,7 @@ test("U25 광고주 화면 해시 받기: 인라인 스크립트 맨 앞에서 �
   assert.ok(news > 0 && ready > news, "뉴스 이동 → 로그인 준비 신호 순서");
 });
 
-test("U26 광고주 화면 대기값 처리: 로그인 전 한 줄 → 로그인 뒤 순위 화면·자기 목록 받음 신호를 기다려 편집창, 찾기 요청·범위 머리글 없음, 미리 보기까지만", async () => {
+test("U26 광고주 화면 대기값 처리: 로그인 전 한 줄 → 로그인 뒤 순위 화면·자기 목록 받음 신호를 기다려 편집창(autoSave), 찾기 요청·범위 머리글 없음, 첫 입력이라 미리 보기까지만", async () => {
   const clientFill = (options = {}) => fillEnv({
     role: "client", scopeKey: CLIENT_SCOPE.key, source: clientSource, rankHash: CLIENT_RANK_HASH, pathname: "/client", rootId: "mi-clean", ...options,
   });
@@ -3492,12 +3492,12 @@ test("U26 광고주 화면 대기값 처리: 로그인 전 한 줄 → 로그인
   env.loaded(CLIENT_SCOPE.key, true);
   await flush();
   assert.deepEqual(env.opened(), [{
-    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: FILL_IDS, sourcePageId: PAGE_ID, claimedSource: "button", opened: true,
+    trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: FILL_IDS, sourcePageId: PAGE_ID, claimedSource: "button", autoSave: true, opened: true,
   }]);
   assert.deepEqual(env.requests.map((request) => request.body.action + ":" + request.body.mode), ["options:read", "options:preview"], "저장·확인만 기록 없음");
   for (const request of env.requests) assert.deepEqual(plain(request.options.headers), { "content-type": "application/json" }, "세션 범위만(머리글 없음)");
   assert.equal(env.input().value, FILL_IDS.join("\n"));
-  assert.equal(env.source().textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${PAGE_ID}). 아직 저장 전입니다.`);
+  assert.equal(env.source().textContent, "자동 저장하지 않았습니다: 처음 넣는 번호는 직접 확인해야 합니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.", "첫 입력은 자동 저장하지 않는다");
   assert.equal(env.root.querySelector("[data-rank-option-check-only]").hidden, true, "광고주 편집창에 확인만 기록 없음");
 
   // 확인 못 함(kind r): 진단을 보내고(실패 무시) 그 추적 편집창을 빈 손 입력 안내와 함께 연다.
@@ -3987,10 +3987,215 @@ test("U29 한 겹 더: 신호 없이 범위·목록이 바뀌었어도 고른 �
 });
 
 test("U29 편집창 사용법 순서 줄은 옵션 확인 버튼을 먼저 말한다(두 화면 같은 글자)", () => {
-  const line = "순서: 옵션 확인 버튼(또는 번호 붙여 넣기) → 미리 보기 → 저장.";
+  const line = "순서: 옵션 확인 버튼(새 번호만 늘면 바로 저장, 아니면 이유를 보여 줌) 또는 번호 붙여 넣기 → 미리 보기 → 저장.";
   for (const [label, source] of [["admin", adminSource], ["client", clientSource]]) {
     const editor = htmlFunction(source, "initRankOptionProductEditor", label);
     assert.ok(editor.includes(`"${line} 저장 뒤 다음 순위 확인부터 적용됩니다.`), label);
     assert.ok(!editor.includes("순서: 붙여 넣기 →"), `${label} 옛 문구 없음`);
   }
+});
+
+// ───── 버튼 목록 자동 저장(대표 결정 2026-11-02, Codex 검토 반영) ─────
+// 대기값 처리(initRankOptionFill)가 연 창(detail.autoSave)만, 첫 미리 보기가 안전할 때 사람 대신 저장한다.
+const OPTION_D = "99900000004";
+function openAuto(env, { ids = [PRIMARY, OPTION_A, OPTION_B], read, preview, autoSave = true } = {}) {
+  env.respond(read);
+  if (preview) env.respond(preview.payload || preview, preview.status || 200);
+  const detail = { trackerId: TRACKER_ID, keyword: "아이폰 17 필름", primary: PRIMARY, prefillIds: ids, sourcePageId: OPTION_A, claimedSource: "button" };
+  if (autoSave) detail.autoSave = true;
+  env.windowListeners["mi:rank-option-editor-open"].forEach((handler) => handler({ detail }));
+  assert.equal(detail.opened, true);
+  return detail;
+}
+const autoNote = (env) => env.q("[data-rank-option-source]");
+const autoActionsHidden = (env) => env.q("[data-rank-option-auto-actions]").hidden;
+const autoUndo = (env) => env.q("[data-rank-option-undo]");
+const STOP = (reason) => `자동 저장하지 않았습니다: ${reason}. 아래 내용을 확인한 뒤 저장을 눌러 주세요.`;
+const RATE_LIMITED = { ok: false, code: "RANK_OPTION_RATE_LIMITED", message: "저장이 너무 잦습니다. 10분 뒤 다시 해 주세요." };
+const safeRead = () => optionsPayload({ saved: [OPTION_A], siblings: [] });
+const safePreview = () => optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { inputTokenCount: 3, primaryRemoved: true }) });
+
+test("U30 버튼 목록 자동 저장: 새 번호만 늘고 경고가 없으면 첫 미리 보기 뒤 바로 저장(출처 button·형제 함께), 창은 열어 두고 되돌리기 → 미리 보기로 확인 뒤 되돌림", async () => {
+  const twin = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 1 });
+  const env = editorEnv();
+  openAuto(env, {
+    read: optionsPayload({ saved: [OPTION_A], siblings: [twin] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [twin], parsed: parsedOf([OPTION_A, OPTION_B], { inputTokenCount: 3, primaryRemoved: true }) }),
+  });
+  assert.equal(autoNote(env).textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${OPTION_A}). 저장된 번호와 비교해 새 번호만 늘었으면 바로 저장합니다.`);
+  env.respond({ ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A, OPTION_B], checkedAtRecorded: true, message: "그룹상품 번호 2개를 추적 2개에 저장했습니다." });
+  await flush();
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview", "save"]);
+  assert.deepEqual(plain(env.requests[2].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "save", optionInput: [PRIMARY, OPTION_A, OPTION_B].join("\n"), applyToSameProduct: true,
+    expectedTrackerIds: [TRACKER_ID, SIBLING_ID], expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A], [SIBLING_ID]: [OPTION_A] },
+    fullReview: true, claimedSource: "button", sourcePageId: OPTION_A,
+  });
+  assert.equal(autoNote(env).textContent, "자동으로 저장했습니다: 새 번호 1개 추가 · 추적 2개 · 지금 2개. 틀렸으면 되돌리기를 누르세요.");
+  assert.ok(autoNote(env).classList.contains("is-ok"));
+  assert.equal(autoActionsHidden(env), false, "되돌리기 줄이 보인다");
+  assert.equal(autoUndo(env).disabled, false);
+  assert.equal(env.modal().hidden, false, "자동 저장 뒤 창을 닫지 않는다");
+  assert.equal(env.timers.length, 0, "자동 닫기 없음");
+  assert.deepEqual(env.events.map((event) => plain(event.detail.trackerIds)), [[TRACKER_ID, SIBLING_ID]], "카드가 새 번호를 보이게 목록 다시 읽기");
+
+  // 되돌리기: 저장 전 번호로 미리 보기 → 빠지는 번호가 자동으로 넣은 번호 그대로일 때만 같은 저장 경로로 저장.
+  const twinAfter = sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_A, OPTION_B], afterOptionProductIds: [OPTION_A], addedCount: 0, removedCount: 1 });
+  env.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [twinAfter], removed: [OPTION_B], parsed: parsedOf([OPTION_A]) }));
+  env.respond({ ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A], checkedAtRecorded: true, message: "그룹상품 번호 1개를 추적 2개에 저장했습니다." });
+  click(autoUndo(env));
+  await flush();
+  assert.deepEqual(env.requests.slice(3).map((request) => request.body.mode), ["preview", "save"]);
+  assert.equal(env.requests[3].body.optionInput, OPTION_A);
+  assert.deepEqual(plain(env.requests[4].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "save", optionInput: OPTION_A, applyToSameProduct: true,
+    expectedTrackerIds: [TRACKER_ID, SIBLING_ID], expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A, OPTION_B], [SIBLING_ID]: [OPTION_A, OPTION_B] },
+    fullReview: true, claimedSource: "manual",
+  });
+  assert.equal(autoNote(env).textContent, "되돌렸습니다. 추적 2개의 그룹상품 번호가 자동 저장 전 1개로 돌아갔습니다.");
+  assert.equal(autoActionsHidden(env), true);
+  assert.equal(env.modal().hidden, false);
+  assert.equal(env.timers.length, 0);
+});
+
+test("U31 자동 저장 멈춤: 첫 입력·대표 번호 없음·다른 추적 대표 번호·빠지는 번호·형제 저장값 다름·두 배 넘게 늘어남·다른 목록 차단·받지 않은 칸·미리 보기 실패는 저장하지 않고 이유를 남긴다, 카드·옮기기로 연 창은 자동 저장 없음", async () => {
+  const cases = [
+    { reason: "처음 넣는 번호는 직접 확인해야 합니다", saved: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) },
+    { reason: `목록에 이 상품(대표 ${PRIMARY}) 번호가 없습니다`, ids: [OPTION_A, OPTION_B], saved: [OPTION_A], parsed: parsedOf([OPTION_A, OPTION_B]) },
+    {
+      reason: `다른 추적 상품의 번호(${FOREIGN_PRIMARY})가 들어 있습니다`, ids: [PRIMARY, OPTION_A, FOREIGN_PRIMARY], saved: [OPTION_A],
+      parsed: parsedOf([OPTION_A, FOREIGN_PRIMARY], { primaryRemoved: true }),
+      guard: guardOf({ otherPrimaryHits: [{ productId: FOREIGN_PRIMARY, keyword: "호텔수건", trackerId: OTHER_TRACKER_ID }] }),
+    },
+    { reason: "저장하면 빠지는 번호가 1개 있습니다", saved: [OPTION_A, OPTION_C], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }), removed: [OPTION_C] },
+    { reason: "같은 상품의 키워드 추적끼리 저장된 번호가 다릅니다", saved: [OPTION_A], siblings: [sibling()], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) },
+    { reason: "새 번호(2개)가 지금 개수의 두 배를 넘습니다", ids: [PRIMARY, OPTION_A, OPTION_B, OPTION_C], saved: [OPTION_A], parsed: parsedOf([OPTION_A, OPTION_B, OPTION_C], { primaryRemoved: true }) },
+    {
+      reason: "다른 상품의 목록일 수 있습니다", ids: [OPTION_B, OPTION_C], saved: [OPTION_A], parsed: parsedOf([OPTION_B, OPTION_C]),
+      guard: guardOf({ blocked: true, reason: "foreign_list", blockedTrackers: [{ trackerId: TRACKER_ID, keyword: "아이폰 17 필름" }] }),
+    },
+    {
+      reason: "받지 않은 칸이 있습니다", saved: [OPTION_A],
+      parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true, rejected: [{ token: "abc", reason: "not_product_number", label: "상품번호가 아닙니다" }] }),
+    },
+  ];
+  for (const item of cases) {
+    const env = editorEnv();
+    const siblings = item.siblings || [];
+    const preview = optionsPayload({ mode: "preview", saved: item.saved, siblings, parsed: item.parsed, removed: item.removed || [] });
+    if (item.guard) preview.guard = item.guard;
+    openAuto(env, { ids: item.ids, read: optionsPayload({ saved: item.saved, siblings }), preview });
+    await flush();
+    assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview"], item.reason);
+    assert.equal(autoNote(env).textContent, STOP(item.reason), item.reason);
+    assert.ok(autoNote(env).classList.contains("is-warn"), item.reason);
+    assert.equal(autoActionsHidden(env), true, item.reason);
+    assert.equal(env.modal().hidden, false, item.reason);
+  }
+  // 미리 보기 실패(개수 초과 400 등): 저장하지 않는다.
+  const failed = editorEnv();
+  openAuto(failed, { read: safeRead(), preview: { payload: { ok: false, code: "RANK_OPTION_TOO_MANY", message: "번호가 너무 많습니다." }, status: 400 } });
+  await flush();
+  assert.deepEqual(failed.requests.map((request) => request.body.mode), ["read", "preview"]);
+  assert.equal(autoNote(failed).textContent, STOP("미리 보기를 하지 못했습니다"));
+  // 저장값 읽기 실패: 미리 보기도 저장도 없다.
+  const unread = editorEnv();
+  openAuto(unread, { read: { ok: false, code: "RANK_OPTION_TRACKER_LOCKED", message: "이 추적은 지금 바꿀 수 없습니다." } });
+  await flush();
+  assert.deepEqual(unread.requests.map((request) => request.body.mode), ["read"]);
+  assert.equal(autoNote(unread).textContent, STOP("저장된 번호를 읽지 못했습니다"));
+  // 대기값이 아닌 창(카드 버튼·옮기기처럼 autoSave 없음)은 안전한 목록이어도 미리 보기까지만.
+  const manual = editorEnv();
+  openAuto(manual, { read: safeRead(), preview: safePreview(), autoSave: false });
+  await flush();
+  assert.deepEqual(manual.requests.map((request) => request.body.mode), ["read", "preview"]);
+  assert.equal(autoNote(manual).textContent, `옵션 확인 버튼에서 넘어온 번호입니다(상품 ${OPTION_A}). 아직 저장 전입니다.`);
+  assert.equal(manual.saveButton().disabled, false, "사람이 누르면 저장");
+});
+
+test("U32 자동 저장: 버튼 목록이 저장값과 같으면 번호는 다시 쓰지 않고, 운영팀은 확인일만 기록(확인만 기록 경로), 광고주 화면은 안내만", async () => {
+  const same = sibling({ optionProductCount: 2, beforeOptionProductIds: [OPTION_A, OPTION_B], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 0 });
+  const env = editorEnv({ now: NOW });
+  openAuto(env, {
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [same] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [same], parsed: parsedOf([OPTION_A, OPTION_B], { inputTokenCount: 3, primaryRemoved: true }) }),
+  });
+  env.respond({
+    ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A, OPTION_B],
+    checkedAtRecorded: true, optionCheckedAt: "2026-10-23T03:00:00.000Z", message: "저장",
+  });
+  env.respond(optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [same], checkedAt: "2026-10-23T03:00:00.000Z" }));
+  await flush();
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview", "save", "read"]);
+  assert.deepEqual(plain(env.requests[2].body), {
+    action: "options", trackerId: TRACKER_ID, mode: "save", checkOnly: true, optionInput: `${OPTION_A}\n${OPTION_B}`, applyToSameProduct: true,
+    expectedTrackerIds: [TRACKER_ID, SIBLING_ID], expectedOptionProductIds: { [TRACKER_ID]: [OPTION_A, OPTION_B], [SIBLING_ID]: [OPTION_A, OPTION_B] },
+    fullReview: true, claimedSource: "manual",
+  }, "번호는 그대로 두고 확인일만");
+  assert.equal(autoNote(env).textContent, "이미 저장된 번호와 같습니다(2개). 바꿀 것이 없어 옵션 확인일만 오늘로 기록했습니다.");
+  assert.ok(autoNote(env).classList.contains("is-ok"));
+  assert.equal(env.status(), "옵션 확인일을 기록했습니다(추적 2개 · 번호 2개 그대로).");
+  assert.equal(autoActionsHidden(env), true, "되돌릴 것이 없다");
+  assert.equal(env.modal().hidden, false);
+
+  // 확인일 기록이 거절되면(서버 번호 다름) 안내 줄도 주의 색.
+  const refused = editorEnv({ now: NOW });
+  openAuto(refused, {
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }),
+  });
+  refused.respond({ ok: false, code: "RANK_OPTION_CHECK_ONLY_MISMATCH", message: "그 사이 번호가 바뀌어 확인일을 기록하지 않았습니다." }, 409);
+  refused.respond(optionsPayload({ saved: [OPTION_A, OPTION_B, OPTION_C], siblings: [] }));
+  await flush();
+  assert.equal(autoNote(refused).textContent, "이미 저장된 번호와 같습니다(2개). 바꿀 것이 없습니다. 옵션 확인일은 기록하지 못했습니다(아래 안내).");
+  assert.ok(autoNote(refused).classList.contains("is-warn"));
+
+  const client = editorEnv({ hostSource: CLIENT_HOST_SOURCE });
+  openAuto(client, {
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }),
+  });
+  await flush();
+  assert.deepEqual(client.requests.map((request) => request.body.mode), ["read", "preview"], "광고주 화면은 확인만 기록이 없다");
+  assert.equal(autoNote(client).textContent, "이미 저장된 번호와 같습니다(2개). 바꿀 것이 없습니다.");
+  assert.ok(autoNote(client).classList.contains("is-ok"));
+});
+
+test("U33 자동 저장·되돌리기 거절: 빈도 제한(429)은 아무것도 바뀌지 않았다고 남기고 되돌리기를 감춘다, 그 사이 번호가 바뀌면 되돌리지 않는다", async () => {
+  const env = editorEnv({ hostSource: CLIENT_HOST_SOURCE });
+  openAuto(env, { read: safeRead(), preview: safePreview() });
+  env.respond(RATE_LIMITED, 429);
+  await flush();
+  assert.deepEqual(env.requests.map((request) => request.body.mode), ["read", "preview", "save"]);
+  assert.equal(autoNote(env).textContent, "자동 저장하지 못했습니다. 아무것도 바뀌지 않았습니다. 아래 안내를 확인해 주세요.");
+  assert.ok(autoNote(env).classList.contains("is-warn"));
+  assert.equal(autoActionsHidden(env), true);
+  assert.match(env.status(), /저장이 너무 잦습니다/u);
+  assert.equal(env.saveButton().disabled, false, "입력·미리 보기는 그대로라 나중에 사람이 다시 누를 수 있다");
+
+  // 되돌리기가 빈도 제한에 걸리면: 자동 저장한 번호가 그대로라고 알린다.
+  const undo = editorEnv({ hostSource: CLIENT_HOST_SOURCE });
+  openAuto(undo, { read: safeRead(), preview: safePreview() });
+  undo.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  await flush();
+  assert.equal(autoActionsHidden(undo), false);
+  undo.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_B], parsed: parsedOf([OPTION_A]) }));
+  undo.respond(RATE_LIMITED, 429);
+  click(autoUndo(undo));
+  await flush();
+  assert.deepEqual(undo.requests.slice(3).map((request) => request.body.mode), ["preview", "save"]);
+  assert.equal(autoNote(undo).textContent, "되돌리지 못했습니다. 자동 저장한 번호가 그대로 있습니다. 아래 안내를 확인해 주세요.");
+  assert.equal(autoActionsHidden(undo), true);
+
+  // 되돌리기 전에 다른 곳에서 번호가 더 바뀌었으면(빠지는 번호 ≠ 자동으로 넣은 번호) 저장하지 않는다.
+  const moved = editorEnv();
+  openAuto(moved, { read: safeRead(), preview: safePreview() });
+  moved.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  await flush();
+  moved.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B, OPTION_D], siblings: [], removed: [OPTION_B, OPTION_D], parsed: parsedOf([OPTION_A]) }));
+  click(autoUndo(moved));
+  await flush();
+  assert.deepEqual(moved.requests.slice(3).map((request) => request.body.mode), ["preview"], "저장 없음");
+  assert.equal(autoNote(moved).textContent, "되돌리지 않았습니다: 그 사이 저장된 번호가 바뀌었습니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.");
+  assert.equal(autoActionsHidden(moved), true);
 });

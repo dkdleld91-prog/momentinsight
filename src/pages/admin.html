@@ -8911,24 +8911,29 @@
         flex: 0 0 auto;
       }
 
-      /* 선택 항목 정리: 제목 아래에 동작 줄, 동작은 겹치지 않고 감긴다(위 이중 클래스 6칸 규칙보다 특이도가 높다). */
-      #mi-admin [data-rank-card] .mi-rank-bulk-bar {
+      /* 선택 항목 정리: 제목 아래에 동작 줄, 동작은 겹치지 않고 감긴다(위 이중 클래스 6칸 규칙보다 특이도가 높다).
+         N 플레이스 카드([data-place-rank-card])도 같은 공용 선택 줄을 써서 버튼이 22px 로 찌그러졌다(2026-11-02 점검). */
+      #mi-admin [data-rank-card] .mi-rank-bulk-bar,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-bar {
         grid-template-columns: minmax(0, 1fr);
         gap: 10px;
       }
 
-      #mi-admin [data-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions {
+      #mi-admin [data-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions {
         display: flex;
         flex-wrap: wrap;
         justify-content: flex-start;
       }
 
-      #mi-admin [data-rank-card] .mi-rank-bulk-actions > .mi-rank-group-combo {
+      #mi-admin [data-rank-card] .mi-rank-bulk-actions > .mi-rank-group-combo,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions > .mi-rank-group-combo {
         flex: 1 1 260px;
         min-width: 0;
       }
 
-      #mi-admin [data-rank-card] .mi-rank-bulk-actions > button {
+      #mi-admin [data-rank-card] .mi-rank-bulk-actions > button,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions > button {
         flex: 0 0 auto;
       }
 
@@ -9427,12 +9432,17 @@
         padding-left: 0;
       }
 
-      #mi-admin [data-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions {
+      /* 선택 항목 정리 줄은 N 플레이스 카드도 같은 2칸으로 접는다(2026-11-02 점검: 6칸 규칙이 남아 '전체 순위 갱신'·
+         '선택 이미지 저장'이 카드 밖으로 나갔다). 선택 줄만 잡고 플레이스 카드의 다른 모양은 그대로 둔다. */
+      #mi-admin [data-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions {
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       #mi-admin [data-rank-card] .mi-rank-bulk-actions .mi-rank-group-combo,
-      #mi-admin [data-rank-card] .mi-rank-bulk-actions .mi-rank-share-image {
+      #mi-admin [data-rank-card] .mi-rank-bulk-actions .mi-rank-share-image,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions .mi-rank-group-combo,
+      #mi-admin [data-place-rank-card] .mi-rank-bulk-actions .mi-rank-share-image {
         grid-column: 1 / -1;
       }
 
@@ -32429,11 +32439,12 @@
           if (!requestScope || (requestScope.role === "owner" && !agencyCode)) {
             return { ok: false, message: "플레이스 순위 추적 조회 범위를 확인할 수 없습니다. 다시 로그인해주세요." };
           }
+          // 등록(create)도 같은 요청 안에서 첫 순위를 확인해 20초를 넘길 수 있다(2026-11-02 점검). check·sync-due 와 같은 270초.
           var options = {
             method: method,
             cache: "no-store",
             headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {},
-            timeoutMs: method === "POST" && body && (body.action === "check" || body.action === "sync-due") ? 270000 : 20000
+            timeoutMs: method === "POST" && body && (body.action === "create" || body.action === "check" || body.action === "sync-due") ? 270000 : 20000
           };
           if (body) {
             options.headers["content-type"] = "application/json";
@@ -32941,6 +32952,24 @@
           renderPlaceHistory(placeHistory, placeTrackers);
         });
 
+        // 등록 요청이 시간 초과·연결 오류로 끝난 뒤 다시 불러온 목록에서 방금 등록한 플레이스를 찾는다(2026-11-02 점검).
+        // 키워드가 같고, 주소에서 플레이스 번호를 읽을 수 있으면 번호(또는 같은 주소)까지 같아야 한다. naver.me 짧은 주소처럼
+        // 번호를 화면에서 알 수 없으면 등록 전 목록에 없던 새 항목만 인정한다. 못 찾으면 null(연결 오류 안내 그대로).
+        function findRegisteredPlaceTracker(trackers, keyword, targetUrl, knownIds) {
+          var wantKeyword = String(keyword || "").normalize("NFKC").trim();
+          var wantUrl = String(targetUrl || "").trim();
+          var idMatch = /^\d{5,}$/.test(wantUrl)
+            ? [wantUrl, wantUrl]
+            : wantUrl.match(/\/(?:entry\/place|place|restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i) || wantUrl.match(/[?&]placeId=(\d+)/i);
+          var wantPlaceId = idMatch ? idMatch[1] : "";
+          return (Array.isArray(trackers) ? trackers : []).find(function (tracker) {
+            if (!tracker || !tracker.id) return false;
+            if (String(tracker.keyword || "").normalize("NFKC").trim() !== wantKeyword) return false;
+            if (wantPlaceId) return String(tracker.placeId || "") === wantPlaceId || tracker.placeUrl === wantUrl;
+            return tracker.placeUrl === wantUrl || !(knownIds && knownIds.has(tracker.id));
+          }) || null;
+        }
+
         placeRun.addEventListener("click", async function () {
           var keyword = (placeKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
           var targetUrl = placeUrl ? placeUrl.value.trim() : "";
@@ -32959,7 +32988,10 @@
             return;
           }
           placeRun.disabled = true;
-          setStatus(placeStatus, "플레이스 30일 순위 추적을 등록하고 첫 상태를 확인 중입니다.", "");
+          // 서버가 같은 요청 안에서 첫 순위까지 확인해 1~3분 걸릴 수 있다(시간 제한 270초, 2026-11-02 점검).
+          setStatus(placeStatus, "등록하고 첫 순위를 확인하는 중입니다. 1~3분 걸릴 수 있습니다.", "");
+          var registerScope = verifiedRankTrackerScope();
+          var knownPlaceIds = new Set(placeTrackers.map(function (item) { return item && item.id; }));
           try {
             var payload = await requestPlaceTrackers("POST", {
               action: "create",
@@ -32975,7 +33007,21 @@
             setStatus(placeStatus, payload.message || "플레이스 30일 순위 등록 완료", payload.ok ? "is-ok" : "is-warn");
             await loadPlaceTrackers(true, true);
           } catch (error) {
-            setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
+            // 시간 초과·연결 오류여도 서버는 추적을 먼저 저장했을 수 있다(첫 순위 확인은 그 뒤, 2026-11-02 점검). 같은 광고주
+            // 범위일 때만 목록을 한 번 다시 불러와(자동 갱신 없이) 방금 등록한 플레이스가 보이면 오류 대신 등록됐다고 알린다.
+            var registeredTracker = null;
+            if (registerScope && sameRankTrackerScope(registerScope)) {
+              try {
+                await loadPlaceTrackers(true, true, true);
+                if (sameRankTrackerScope(registerScope)) {
+                  registeredTracker = findRegisteredPlaceTracker(placeTrackers, keyword, targetUrl, knownPlaceIds);
+                }
+              } catch (reloadError) {
+                registeredTracker = null;
+              }
+            }
+            if (registeredTracker) setStatus(placeStatus, "등록됐습니다. 첫 순위 확인은 이어서 진행됩니다.", "is-ok");
+            else setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           } finally {
             placeRun.disabled = false;
           }
@@ -33029,6 +33075,15 @@
           var refreshAllButton = event.target.closest("[data-rank-refresh-all]");
           if (refreshAllButton) {
             await refreshAllPlaceTrackers(refreshAllButton);
+            return;
+          }
+
+          // 선택 해제: 공용 선택 줄의 버튼이 플레이스 카드에도 그려지지만 처리는 N 30일에만 있어 눌러도 그대로였다
+          // (2026-11-02 점검). N 30일과 같이 선택을 비우고 선택 줄·체크박스를 다시 그린다.
+          var selectClearButton = event.target.closest("[data-rank-select-clear]");
+          if (selectClearButton) {
+            setRankSelectedSet(card, new Set());
+            renderPlaceHistory(placeHistory, placeTrackers);
             return;
           }
 

@@ -565,3 +565,247 @@ test("pagehide during the remaining-time wait also cancels it", () => {
   assert.equal(harness.refreshCalls(), 2);
   assert.equal(harness.intervals().length, 1);
 });
+
+// ── 2026-11-02 점검: N 플레이스 30일 화면 3건(F16 선택 해제 · F15 휴대폰 선택 줄 · F23 등록 시간 제한) ──
+const clientPageSource = pageEntries.find((entry) => entry[0] === "src/pages/client.html")[1];
+const placePages = [["admin", adminSource], ["client", clientPageSource]];
+
+function balancedBlockFrom(source, start) {
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1;
+    if (source[index] === "}") depth -= 1;
+    if (depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error("block is incomplete");
+}
+
+function asyncFunctionSource(source, name) {
+  const start = source.indexOf(`async function ${name}(`);
+  assert.ok(start >= 0, `${name} must exist`);
+  return balancedBlockFrom(source, start);
+}
+
+function placeRunHandlerSource(source) {
+  const listen = source.indexOf('placeRun.addEventListener("click", async function () {');
+  assert.ok(listen >= 0, "place register handler must exist");
+  return balancedBlockFrom(source, source.indexOf("async function () {", listen));
+}
+
+function placeCardClickHandlerSource(source) {
+  const listen = source.indexOf('card.addEventListener("click", async function (event) {', source.indexOf('placeRun.addEventListener("click", async function () {'));
+  assert.ok(listen >= 0, "place card click handler must exist");
+  return balancedBlockFrom(source, source.indexOf("async function (event) {", listen));
+}
+
+function productCardClickHandlerSource(source) {
+  const marker = source.indexOf('event.target.closest("[data-rank-filter-status]")');
+  const listen = source.lastIndexOf('card.addEventListener("click", async function (event) {', marker);
+  assert.ok(marker >= 0 && listen >= 0, "N30 card click handler must exist");
+  return balancedBlockFrom(source, source.indexOf("async function (event) {", listen));
+}
+
+test("공용 선택 줄의 버튼은 N 30일과 플레이스 클릭 처리 모두에 있다(플레이스 '선택 해제' 무반응 재발 방지)", () => {
+  for (const [label, source] of placePages) {
+    const bulkBar = namedFunctionSource(source, "renderRankBulkBar");
+    const controls = [...new Set([...bulkBar.matchAll(/<button\b[^>]*\s(data-rank-[a-z-]+)/g)].map((match) => match[1]))];
+    assert.ok(controls.includes("data-rank-select-clear") && controls.length >= 5, `${label}: ${controls}`);
+    for (const [kind, handler] of [["N30", productCardClickHandlerSource(source)], ["place", placeCardClickHandlerSource(source)]]) {
+      for (const control of controls) {
+        assert.ok(handler.includes(`closest("[${control}]")`), `${label} ${kind} click handler misses ${control}`);
+      }
+    }
+  }
+});
+
+test("플레이스 '선택 해제'는 선택을 비우고 선택 줄·체크박스를 다시 그린다", () => {
+  for (const [label, source] of placePages) {
+    const handler = placeCardClickHandlerSource(source);
+    assert.ok(handler.includes([
+      '          var selectClearButton = event.target.closest("[data-rank-select-clear]");',
+      "          if (selectClearButton) {",
+      "            setRankSelectedSet(card, new Set());",
+      "            renderPlaceHistory(placeHistory, placeTrackers);",
+      "            return;",
+      "          }",
+    ].join("\n")), `${label}: place select-clear branch`);
+  }
+});
+
+function cssRuleBodies(source, selector) {
+  const bodies = [];
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf(selector, from);
+    if (at < 0) return bodies;
+    from = at + selector.length;
+    const media = source.lastIndexOf("@media", at);
+    let depth = 0;
+    for (let index = source.indexOf("{", media); index < at; index += 1) {
+      if (source[index] === "{") depth += 1;
+      if (source[index] === "}") depth -= 1;
+    }
+    const open = source.indexOf("{", at);
+    bodies.push({
+      media: depth > 0 ? source.slice(media, source.indexOf("{", media)).trim() : "",
+      body: source.slice(open + 1, source.indexOf("}", open)),
+    });
+  }
+}
+
+test("플레이스 선택 줄도 N 30일과 같은 좁은 화면 규칙을 받는다(901~1360px 감기 · 900px 이하 2칸)", () => {
+  const expectations = [
+    ["admin", adminSource, "#mi-admin", [
+      ["@media (min-width: 901px) and (max-width: 1360px)", ["display: flex;", "flex-wrap: wrap;"]],
+      ["@media (max-width: 900px)", ["grid-template-columns: repeat(2, minmax(0, 1fr));"]],
+    ]],
+    ["client", clientPageSource, "#mi-clean", [
+      ["@media (max-width: 900px)", ["grid-template-columns: repeat(2, minmax(0, 1fr));"]],
+    ]],
+  ];
+  for (const [label, source, rootId, rules] of expectations) {
+    const placeRules = cssRuleBodies(source, `${rootId} [data-place-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions`);
+    const productRules = cssRuleBodies(source, `${rootId} [data-rank-card] .mi-rank-bulk-actions.mi-rank-bulk-actions`);
+    assert.deepEqual(placeRules.map((rule) => rule.media), rules.map((rule) => rule[0]), `${label}: place bulk rules`);
+    for (const [media, declarations] of rules) {
+      const placeRule = placeRules.find((rule) => rule.media === media);
+      // N 30일 규칙과 같은 선언 묶음(같은 규칙에 선택자만 더했다).
+      assert.ok(productRules.some((rule) => rule.media === media && rule.body === placeRule.body), `${label} ${media}: same body as N30`);
+      for (const declaration of declarations) assert.ok(placeRule.body.includes(declaration), `${label} ${media}: ${declaration}`);
+    }
+    // 900px 이하에서는 그룹 입력·이미지 저장이 한 줄 전체를 쓴다.
+    const fullRow = cssRuleBodies(source, `${rootId} [data-place-rank-card] .mi-rank-bulk-actions .mi-rank-share-image`);
+    assert.ok(fullRow.some((rule) => rule.media === "@media (max-width: 900px)" && rule.body.includes("grid-column: 1 / -1;")), `${label}: share image full row`);
+  }
+});
+
+function placeRequestHarness(source) {
+  const factory = new Function(`
+    var calls = [];
+    var placeRequestGeneration = 1;
+    function verifiedRankTrackerScope() { return { key: "scope-a", role: "team", agencyCode: "a01" }; }
+    function sameRankTrackerScope() { return true; }
+    function canManageOwnerCodes() { return false; }
+    function rankAgencyCode() { return "a01"; }
+    function getPlaceRankTrackerApiUrl() { return "/api/naver-place-rank-trackers"; }
+    async function miFetch(url, options) {
+      calls.push({ method: options.method, timeoutMs: options.timeoutMs });
+      return { ok: true, json: async function () { return { ok: true }; } };
+    }
+    ${asyncFunctionSource(source, "requestPlaceTrackers")}
+    return { request: requestPlaceTrackers, calls: calls };
+  `);
+  return factory();
+}
+
+test("플레이스 등록(create)도 check·sync-due 와 같은 270초를 기다리고 나머지는 20초 그대로다", async () => {
+  for (const [label, source] of placePages) {
+    const harness = placeRequestHarness(source);
+    await harness.request("POST", { action: "create", keyword: "k", placeUrl: "123456" });
+    await harness.request("POST", { action: "check", id: "p" });
+    await harness.request("POST", { action: "sync-due", limit: "1" });
+    await harness.request("GET", null);
+    await harness.request("PATCH", { action: "update-group", ids: ["p"] });
+    assert.deepEqual(harness.calls.map((call) => call.timeoutMs), [270000, 270000, 270000, 20000, 20000], label);
+  }
+});
+
+function placeRegisterHarness(source, options) {
+  const factory = new Function("opts", `
+    var placeTrackers = opts.initial.slice();
+    var statuses = [];
+    var loadCalls = [];
+    var placeKeyword = { value: opts.keyword };
+    var linkedKeywordInput = null;
+    var placeUrl = { value: opts.url };
+    var placeRun = { disabled: false };
+    var placeStatus = {};
+    var placeHistory = {};
+    var RANK_DEFAULT_GROUP = "";
+    function setStatus(node, message, tone) { statuses.push({ message: message, tone: tone, disabled: placeRun.disabled }); }
+    function verifiedRankTrackerScope() { return { key: "scope-a" }; }
+    function sameRankTrackerScope(scope) { return Boolean(scope) && opts.scopeStillSame(); }
+    function renderPlaceHistory() {}
+    function upsertPlaceTracker(tracker) { placeTrackers = [tracker].concat(placeTrackers.filter(function (item) { return item.id !== tracker.id; })); }
+    async function requestPlaceTrackers(method, body) { return opts.request(method, body); }
+    async function loadPlaceTrackers() {
+      loadCalls.push(Array.from(arguments));
+      if (opts.reloaded) placeTrackers = opts.reloaded.slice();
+      return Boolean(opts.reloaded);
+    }
+    ${namedFunctionSource(source, "findRegisteredPlaceTracker")}
+    var handler = ${placeRunHandlerSource(source)};
+    return { run: handler, statuses: statuses, loadCalls: loadCalls, placeRun: placeRun };
+  `);
+  return factory(options);
+}
+
+const oldPlace = { id: "pl-1", keyword: "구월동 횟집", placeId: "1200000001", placeUrl: "https://map.naver.com/p/entry/place/1200000001" };
+const newPlace = { id: "pl-new", keyword: "부평 갈비", placeId: "1299999999", placeUrl: "https://map.naver.com/p/entry/place/1299999999" };
+const timeoutError = () => { throw new Error("API 요청 시간이 초과되었습니다."); };
+
+test("플레이스 등록은 1~3분 안내를 띄우고, 시간 초과여도 목록에 방금 등록한 장소가 있으면 등록됐다고 알린다", async () => {
+  for (const [label, source] of placePages) {
+    const harness = placeRegisterHarness(source, {
+      initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
+      request: timeoutError, reloaded: [newPlace, oldPlace], scopeStillSame: () => true,
+    });
+    await harness.run();
+    assert.deepEqual(harness.statuses[0], { message: "등록하고 첫 순위를 확인하는 중입니다. 1~3분 걸릴 수 있습니다.", tone: "", disabled: true }, label);
+    assert.deepEqual(harness.statuses.at(-1), { message: "등록됐습니다. 첫 순위 확인은 이어서 진행됩니다.", tone: "is-ok", disabled: true }, label);
+    // 목록만 한 번 다시 부른다(조용히 · 새로 · 자동 갱신 없이).
+    assert.deepEqual(harness.loadCalls, [[true, true, true]], label);
+    assert.equal(harness.placeRun.disabled, false, label);
+  }
+});
+
+test("플레이스 등록 시간 초과 뒤 목록에 없거나 광고주 범위가 바뀌었으면 연결 확인 안내 그대로다", async () => {
+  for (const [label, source] of placePages) {
+    const missing = placeRegisterHarness(source, {
+      initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
+      request: timeoutError, reloaded: [oldPlace], scopeStillSame: () => true,
+    });
+    await missing.run();
+    assert.deepEqual(missing.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
+    assert.equal(missing.loadCalls.length, 1, label);
+
+    const scopeChanged = placeRegisterHarness(source, {
+      initial: [oldPlace], keyword: "부평 갈비", url: "https://map.naver.com/p/entry/place/1299999999",
+      request: () => { throw new Error("요청 중 광고주 조회 범위가 변경되었습니다."); }, reloaded: [newPlace, oldPlace], scopeStillSame: () => false,
+    });
+    await scopeChanged.run();
+    assert.deepEqual(scopeChanged.statuses.at(-1), { message: "플레이스 순위 서비스 연결을 확인해주세요.", tone: "is-warn", disabled: true }, label);
+    assert.equal(scopeChanged.loadCalls.length, 0, label);
+    assert.equal(scopeChanged.placeRun.disabled, false, label);
+  }
+});
+
+test("플레이스 등록 성공 응답은 예전처럼 서버 문구를 보이고 목록을 새로 부른다", async () => {
+  for (const [label, source] of placePages) {
+    const harness = placeRegisterHarness(source, {
+      initial: [oldPlace], keyword: "부평 갈비", url: "1299999999",
+      request: async () => ({ ok: true, message: "플레이스 30일 순위 등록 완료", tracker: newPlace }), reloaded: [newPlace, oldPlace], scopeStillSame: () => true,
+    });
+    await harness.run();
+    assert.deepEqual(harness.statuses.at(-1), { message: "플레이스 30일 순위 등록 완료", tone: "is-ok", disabled: true }, label);
+    assert.deepEqual(harness.loadCalls, [[true, true]], label);
+  }
+});
+
+test("방금 등록한 플레이스 찾기는 admin·client 가 같고 키워드·플레이스 번호로만 맞춘다", () => {
+  assert.equal(namedFunctionSource(adminSource, "findRegisteredPlaceTracker"), namedFunctionSource(clientPageSource, "findRegisteredPlaceTracker"));
+  const find = new Function(`${namedFunctionSource(adminSource, "findRegisteredPlaceTracker")}; return findRegisteredPlaceTracker;`)();
+  const known = new Set(["pl-1"]);
+  const shortLink = { id: "pl-short", keyword: "부평 갈비", placeId: "1288888888", placeUrl: "https://map.naver.com/p/entry/place/1288888888" };
+  // 주소·숫자 ID 에서 번호를 읽으면 번호가 같아야 한다.
+  assert.equal(find([oldPlace, newPlace], " 부평 갈비 ", "https://map.naver.com/p/entry/place/1299999999?c=15", known), newPlace);
+  assert.equal(find([oldPlace, newPlace], "부평 갈비", "1299999999", known), newPlace);
+  assert.equal(find([oldPlace, newPlace], "부평 갈비", "https://m.place.naver.com/restaurant/1299999999/home", known), newPlace);
+  assert.equal(find([oldPlace, shortLink], "부평 갈비", "1299999999", known), null);
+  assert.equal(find([oldPlace, newPlace], "부평 맛집", "1299999999", known), null);
+  // naver.me 짧은 주소는 번호를 알 수 없어 등록 전 목록에 없던 같은 키워드 항목만 인정한다.
+  assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", known), shortLink);
+  assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", new Set(["pl-1", "pl-short"])), null);
+  assert.equal(find(null, "부평 갈비", "1299999999", known), null);
+});

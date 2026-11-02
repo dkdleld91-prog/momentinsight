@@ -218,7 +218,16 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
     if (quotaOk) {
       const removedIdentities = await ctx.supabaseAdmin.from("login_identities").delete().eq("role", "client").eq("code", code).select("google_sub");
       if (removedIdentities.error) fail("login_identities", removedIdentities.error);
-      else summary.identities = (removedIdentities.data || []).length;
+      else {
+        summary.identities = (removedIdentities.data || []).length;
+        // 읽은 뒤 지우기 전에 다른 구글 계정이 연결됐으면 그 계정의 체험 한도도 지운다(연결이 지워지면 다시 찾을 길이 없다).
+        const late = (removedIdentities.data || []).map((row) => row.google_sub).filter((sub) => sub && !subs.includes(sub));
+        if (late.length) {
+          const lateQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", late).select("google_sub");
+          if (lateQuota.error) fail("trial_keyword_quota", lateQuota.error);
+          else summary.quota += (lateQuota.data || []).length;
+        }
+      }
     }
   }
 
@@ -246,6 +255,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
       const after = await ctx.supabaseAdmin.from("clients").select("id").eq("id", client.id).limit(1);
       if (!after.error && !(after.data || []).length) {
         summary.skipped = "missing";
+        await auditDeletion(ctx, current, "client.deleted_by_other_run", summary);
         return summary;
       }
       fail("clients", "not deleted — account changed during deletion");

@@ -254,7 +254,26 @@ test("if another run already deleted the row before the final delete, it is skip
   assert.equal(summary.client, false);
   assert.equal(summary.skipped, "missing");
   assert.deepEqual(summary.errors, []);
-  assert.equal(calls.some((call) => call.table === "audit_logs"), false, "지운 쪽 실행이 감사 기록을 남긴다");
+  // 이 실행이 지운 하위 데이터도 남도록 따로 기록한다(광고주 행은 다른 실행이 지움).
+  const audit = calls.filter((call) => call.table === "audit_logs");
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].ops[0][1].action, "client.deleted_by_other_run");
+});
+
+test("a Google account linked between reading and deleting login identities also loses its trial quota", async () => {
+  const { ctx, calls } = fakeCtx({
+    ...EMPTY_CHILDREN,
+    // 읽을 때는 sub-1, 지울 때는 sub-1 + 새로 연결된 sub-2
+    login_identities: (record) => (record.ops.some(([op]) => op === "delete") ? [{ google_sub: "sub-1" }, { google_sub: "sub-2" }] : [{ google_sub: "sub-1" }]),
+    trial_keyword_quota: (record) => [{ google_sub: record.ops.find(([op]) => op === "in")[2][0] }],
+    clients: [DUE_CLIENT],
+  });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.deepEqual(summary.errors, []);
+  const quotaCalls = calls.filter((call) => call.table === "trial_keyword_quota");
+  assert.deepEqual(quotaCalls.map((call) => call.ops.find(([op]) => op === "in")[2]), [["sub-1"], ["sub-2"]]);
+  assert.equal(summary.quota, 2);
+  assert.equal(summary.identities, 2);
 });
 
 test("a note change between recheck and delete is caught by the final delete filter (eq plan_note)", async () => {

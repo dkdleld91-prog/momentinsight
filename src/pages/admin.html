@@ -29630,7 +29630,8 @@
 
         function handleRequestError(serial, error, message, block) {
           if (error && error.message === RANK_OPTION_SCOPE_CHANGED) {
-            closeEditor();
+            // 창을 닫고(다른 범위에서) 다시 연 뒤 늦게 돌아온 지난 요청이면 지금 창을 닫지 않는다.
+            if (isCurrent(serial)) closeEditor();
             return;
           }
           if (!isCurrent(serial)) return;
@@ -30177,8 +30178,12 @@
             stopAuto("다른 상품의 목록일 수 있습니다");
             return;
           }
-          if (checks.before.length && !checks.added.length && !checks.removedCount) {
-            // 이미 같음: 번호는 다시 쓰지 않는다. 확인만 기록이 되는 화면(운영팀)이면 확인일만 남긴다(서버가 같은 조건으로 최종 판단).
+          var unchanged = state.previewRows.every(function (row) {
+            return row.self || (row.before && optionSameSet(row.before, checks.after));
+          });
+          if (checks.before.length && !checks.added.length && !checks.removedCount && unchanged) {
+            // 이미 같음(함께 바뀌는 추적 전부): 번호는 다시 쓰지 않는다. 확인만 기록이 되는 화면(운영팀)이면 확인일만 남긴다(서버가
+            // 같은 조건으로 최종 판단). 이 추적만 같고 다른 추적이 다르면 아래 검사(형제 저장값 다름)로 사람에게 넘긴다.
             var current = state;
             current.auto.phase = "done";
             var same = "이미 저장된 번호와 같습니다(" + checks.before.length + "개). 바꿀 것이 없";
@@ -30224,7 +30229,12 @@
           }
           auto.phase = "saved";
           var complete = count === targetCount;
-          auto.undo = complete ? { before: auto.before.slice(), added: auto.added.slice() } : null;
+          auto.undo = complete ? {
+            before: auto.before.slice(),
+            added: auto.added.slice(),
+            after: state.savedIds.slice(),
+            targets: state.previewRows.map(function (row) { return row.id; })
+          } : null;
           nodes.autoActions.hidden = !complete;
           setAutoNote("자동으로 저장했습니다: 새 번호 " + auto.added.length + "개 추가 · 추적 " + count + "개 · 지금 " +
             state.savedIds.length + "개." + (complete ? " 틀렸으면 되돌리기를 누르세요." : ""), "is-ok");
@@ -30242,8 +30252,10 @@
             "아래 안내를 확인해 주세요.", "is-warn");
         }
 
-        // 되돌리기: 자동 저장 전 번호를 입력칸에 넣고 미리 보기로 '새 번호 0·빠지는 번호 = 자동으로 넣은 번호 그대로'인지 서버의
-        // 지금 값으로 확인한 뒤에만 같은 저장 경로(동시 변경 조건 그대로)로 저장한다. 다르면 저장하지 않고 미리 보기를 남긴다.
+        // 되돌리기: 자동 저장 전 번호를 입력칸에 넣고 미리 보기로 서버의 지금 값을 확인한 뒤에만 같은 저장 경로(동시 변경 조건
+        // 그대로)로 저장한다. 조건: 대상 추적이 자동 저장 때와 같고, 각 추적의 지금 번호가 자동 저장 직후 그대로이고(그 사이 다른
+        // 곳에서 바꾼 번호를 덮지 않게), 새 번호 0·빠지는 번호 = 자동으로 넣은 번호. 다르면 저장하지 않고 미리 보기를 남긴다.
+        // 미리 보기를 마치지 못했으면(연결 등) 되돌리기를 다시 누를 수 있게 둔다.
         async function runUndo() {
           var auto = state && state.auto;
           if (!auto || !auto.undo || state.busy) return;
@@ -30258,12 +30270,23 @@
           await runPreview("", "");
           if (state !== current || auto.phase !== "undoing") return;
           var checks = state.preview && state.previewKey === currentKey() ? state.previewChecks : null;
-          var exact = Boolean(checks) && !checks.added.length && checks.removedCount === undo.added.length &&
+          if (!checks) {
+            auto.phase = "saved";
+            auto.undo = undo;
+            nodes.autoActions.hidden = false;
+            setAutoNote("되돌리지 못했습니다: 미리 보기를 마치지 못했습니다. 자동 저장한 번호는 그대로입니다. 잠시 뒤 되돌리기를 다시 눌러 주세요.", "is-warn");
+            return;
+          }
+          var rows = state.previewRows;
+          var sameTargets = rows.length === undo.targets.length && rows.every(function (row) { return undo.targets.indexOf(row.id) >= 0; });
+          var untouched = optionSameSet(checks.before, undo.after) && rows.every(function (row) {
+            return row.self || (row.before && optionSameSet(row.before, undo.after));
+          });
+          var exact = sameTargets && untouched && !checks.added.length && checks.removedCount === undo.added.length &&
             optionSameSet(checks.removedAll, undo.added);
           if (!exact || !canSave()) {
             auto.phase = "done";
-            setAutoNote("되돌리지 않았습니다: " + (checks ? "그 사이 저장된 번호가 바뀌었습니다" : "미리 보기를 마치지 못했습니다") +
-              ". 아래 내용을 확인한 뒤 저장을 눌러 주세요.", "is-warn");
+            setAutoNote("되돌리지 않았습니다: 그 사이 저장된 번호가 바뀌었습니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.", "is-warn");
             return;
           }
           runSave("undo");

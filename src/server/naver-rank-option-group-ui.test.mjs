@@ -818,6 +818,7 @@ function editorEnv({
       requests.push({ url, options, body: JSON.parse(options.body) });
       const next = responses.shift();
       if (!next) throw new Error("준비한 응답이 없다");
+      if (next.wait) await next.wait; // 늦게 돌아오는 응답(respondAfter)
       if (next.throws) throw new Error(next.throws);
       return { ok: next.status < 300, status: next.status, json: async () => next.payload };
     },
@@ -839,7 +840,10 @@ function editorEnv({
   return {
     root, rankCard, editButton, requests, events, timers, confirms, windowListeners, documentRef, modal, q, installBlock,
     respond(payload, status = 200) { responses.push({ payload, status }); },
+    respondAfter(wait, payload, status = 200) { responses.push({ wait, payload, status }); },
     fail(message) { responses.push({ throws: message }); },
+    // 범위 바꾸기(관리자 광고주 전환·다시 로그인): 지난 요청의 범위 비교가 어긋나게 한다.
+    setScope(next) { scope = next; },
     saveButton: () => q("[data-rank-option-save]"),
     previewButton: () => q("[data-rank-option-preview-run]"),
     input: () => q("[data-rank-option-input]"),
@@ -4159,6 +4163,17 @@ test("U32 자동 저장: 버튼 목록이 저장값과 같으면 번호는 다�
   assert.deepEqual(client.requests.map((request) => request.body.mode), ["read", "preview"], "광고주 화면은 확인만 기록이 없다");
   assert.equal(autoNote(client).textContent, "이미 저장된 번호와 같습니다(2개). 바꿀 것이 없습니다.");
   assert.ok(autoNote(client).classList.contains("is-ok"));
+
+  // 이 추적만 같고 함께 바뀌는 다른 추적이 다르면(저장하면 그 추적에 번호가 더해진다) '같음'이 아니다(Codex 1차).
+  const lagging = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 1 });
+  const partly = editorEnv({ hostSource: CLIENT_HOST_SOURCE });
+  openAuto(partly, {
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [lagging] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [lagging], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }),
+  });
+  await flush();
+  assert.deepEqual(partly.requests.map((request) => request.body.mode), ["read", "preview"]);
+  assert.equal(autoNote(partly).textContent, STOP("같은 상품의 키워드 추적끼리 저장된 번호가 다릅니다"));
 });
 
 test("U33 자동 저장·되돌리기 거절: 빈도 제한(429)은 아무것도 바뀌지 않았다고 남기고 되돌리기를 감춘다, 그 사이 번호가 바뀌면 되돌리지 않는다", async () => {
@@ -4198,4 +4213,62 @@ test("U33 자동 저장·되돌리기 거절: 빈도 제한(429)은 아무것도
   assert.deepEqual(moved.requests.slice(3).map((request) => request.body.mode), ["preview"], "저장 없음");
   assert.equal(autoNote(moved).textContent, "되돌리지 않았습니다: 그 사이 저장된 번호가 바뀌었습니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.");
   assert.equal(autoActionsHidden(moved), true);
+
+  // 함께 저장한 다른 추적만 그 사이 다른 곳에서 바뀌었어도(빠지는 번호 수는 같아 보여도) 그 변경을 덮지 않는다(Codex 1차).
+  const twin = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 1 });
+  const sib = editorEnv();
+  openAuto(sib, {
+    read: optionsPayload({ saved: [OPTION_A], siblings: [twin] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A], siblings: [twin], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }),
+  });
+  sib.respond({ ok: true, mode: "save", updatedCount: 2, updatedTrackerIds: [TRACKER_ID, SIBLING_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  await flush();
+  const changedTwin = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_B], afterOptionProductIds: [OPTION_A], addedCount: 1, removedCount: 1 });
+  sib.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [changedTwin], removed: [OPTION_B], parsed: parsedOf([OPTION_A]) }));
+  click(autoUndo(sib));
+  await flush();
+  assert.deepEqual(sib.requests.slice(3).map((request) => request.body.mode), ["preview"], "형제가 바뀌었으면 저장 없음");
+  assert.equal(autoNote(sib).textContent, "되돌리지 않았습니다: 그 사이 저장된 번호가 바뀌었습니다. 아래 내용을 확인한 뒤 저장을 눌러 주세요.");
+
+  // 되돌리기 미리 보기가 연결 문제로 끝나지 못하면 되돌리기를 다시 누를 수 있다.
+  const flaky = editorEnv();
+  openAuto(flaky, { read: safeRead(), preview: safePreview() });
+  flaky.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], message: "저장" });
+  await flush();
+  flaky.fail("network down");
+  click(autoUndo(flaky));
+  await flush();
+  assert.equal(autoNote(flaky).textContent, "되돌리지 못했습니다: 미리 보기를 마치지 못했습니다. 자동 저장한 번호는 그대로입니다. 잠시 뒤 되돌리기를 다시 눌러 주세요.");
+  assert.equal(autoActionsHidden(flaky), false, "다시 누를 수 있다");
+  flaky.respond(optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], removed: [OPTION_B], parsed: parsedOf([OPTION_A]) }));
+  flaky.respond({ ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A], message: "저장" });
+  click(autoUndo(flaky));
+  await flush();
+  assert.deepEqual(flaky.requests.slice(3).map((request) => request.body.mode), ["preview", "preview", "save"]);
+  assert.equal(autoNote(flaky).textContent, "되돌렸습니다. 추적 1개의 그룹상품 번호가 자동 저장 전 1개로 돌아갔습니다.");
+});
+
+test("U34 자동 확인일 기록 중 창을 닫고 범위를 바꿔 새 창을 열면, 늦게 돌아온 지난 요청의 범위 오류가 새 창을 닫지 않는다(Codex 1차)", async () => {
+  const env = editorEnv({ now: NOW });
+  let release = null;
+  const gate = new Promise((resolve) => { release = resolve; });
+  openAuto(env, {
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B], { primaryRemoved: true }) }),
+  });
+  env.respondAfter(gate, { ok: true, mode: "save", updatedCount: 1, updatedTrackerIds: [TRACKER_ID], optionProductIds: [OPTION_A, OPTION_B], checkedAtRecorded: true, message: "저장" });
+  await flush();
+  assert.equal(env.requests.at(-1).body.checkOnly, true, "확인일 기록 요청이 나가 있다");
+  dispatch(env.q(".mi-rank-option-card"), "keydown", { key: "Escape" });
+  assert.equal(env.modal().hidden, true);
+  env.setScope({ key: "owner:other", role: "owner", agencyCode: "other" });
+  env.respond(optionsPayload({ saved: [OPTION_C], siblings: [] }));
+  click(env.editButton);
+  await flush();
+  assert.equal(env.modal().hidden, false);
+  assert.equal(env.input().value, OPTION_C);
+  release();
+  await flush();
+  assert.equal(env.modal().hidden, false, "지난 요청의 범위 오류가 새 창을 닫지 않는다");
+  assert.equal(env.input().value, OPTION_C);
 });

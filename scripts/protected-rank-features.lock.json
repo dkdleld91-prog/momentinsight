@@ -73,37 +73,37 @@
       "id": "operation-product-rank-check",
       "file": "src/pages/admin.html",
       "name": "initRankCheck",
-      "sha256": "54d8544a30732fcd86b183d3f22bb32370d274930ed862efcdde042dd1d3936c"
+      "sha256": "5d1649417382f1fef58a3916b8246730f1e654c98fa8086da48794a2aba39e1d"
     },
     {
       "id": "advertiser-product-rank-check",
       "file": "src/pages/client.html",
       "name": "initRankCheck",
-      "sha256": "33e6ed689ab3318fa31beefa1c600e9edac8770d79ae9ae697afcb5187c40b15"
+      "sha256": "69545d2690d136db021f196bf5f25dc2b023c3c07d1545af65a71f8180b25238"
     },
     {
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "9f489a0416a8b1bc1882e06b4f19473543fafb607e1bb182725fa83bca803f3a"
+      "sha256": "cbb30f710f1dbb6b22aeb6ad38ea0dfad4cedc6c0fa5829ef3a838ee52f12267"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "08a4330c4566dfd2ffb4c553f4194d91d9de05f1fcb8ee4982bd516e3e578065"
+      "sha256": "b3289684f29e0fab055fb9967d6835331aa8f1dfcc601184264b3a72b2aef538"
     },
     {
       "id": "operation-place-30-day",
       "file": "src/pages/admin.html",
       "name": "initPlaceRankTracking",
-      "sha256": "b38e8eab00d01d9c536574f1ce9f713a6a8bea12608d08f098f546856af2ff54"
+      "sha256": "916bdcc21aaece309e27c34fc0308313b9343de034c7e386e20cbc9beffba409"
     },
     {
       "id": "advertiser-place-30-day",
       "file": "src/pages/client.html",
       "name": "initPlaceRankTracking",
-      "sha256": "13ffe3d1ba62f5b1b1d988278e2f328bb8ec4bbc09a8e56c299fd27a03744697"
+      "sha256": "ab77a3501b943610d734d913faf3e0894f21da4a35c5c01413e2a73172977399"
     },
     {
       "id": "keyword-hub-provider-config",
@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "a00235a0b04d2d42227affc0aeb3d109bcb6c915adb714bbb3c6df63399c3664"
+      "sha256": "2c7edb6bc36aab5fe6c58241335a5b63e440a1310067e0a41fcef19a1f031bd1"
     },
     {
       "id": "product-organic-rank-server",

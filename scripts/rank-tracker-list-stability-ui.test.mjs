@@ -830,8 +830,9 @@ test("방금 등록한 플레이스 찾기는 admin·client 가 같고 키워드
   assert.equal(find([oldPlace, newPlace], "부평 갈비", "https://m.place.naver.com/restaurant/1299999999/home", known), newPlace);
   assert.equal(find([oldPlace, shortLink], "부평 갈비", "1299999999", known), null);
   assert.equal(find([oldPlace, newPlace], "부평 맛집", "1299999999", known), null);
-  // naver.me 짧은 주소는 번호를 알 수 없어 등록 전 목록에 없던 같은 키워드 항목만 인정한다.
-  assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", known), shortLink);
+  // naver.me 짧은 주소는 번호를 알 수 없어 다른 장소와 구분할 수 없으므로, 주소가 그대로 같을 때만 인정한다(Codex 2차 반영).
+  assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", known), null);
+  assert.equal(find([oldPlace, { ...shortLink, placeUrl: "https://naver.me/AbCdEf" }], "부평 갈비", "https://naver.me/AbCdEf", known).id, "pl-short");
   assert.equal(find([oldPlace, shortLink], "부평 갈비", "https://naver.me/AbCdEf", new Set(["pl-1", "pl-short"])), null);
   // 번호가 같아도 등록 전부터 있던 항목이면 방금 등록한 것으로 보지 않는다.
   assert.equal(find([oldPlace, newPlace], "부평 갈비", "1299999999", new Set(["pl-1", "pl-new"])), null);

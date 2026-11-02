@@ -1905,9 +1905,11 @@ check(
     && /to service_role/.test(shoppingRankLookupLeasePrecisionMigration)
     && /requestShoppingWorkerWake\(ctx, "tracker-refresh-all"\)/.test(productTrackers)
     && /requestShoppingWorkerWake\(ctx, "rank-lookup"\)/.test(shoppingRankLookupJobs)
+    // 2026-11-02 점검 F14: 서버는 그대로 작업기를 깨우고, 화면은 '약 1분 내 시작'·내부 용어 대신 중립 안내만 보인다.
     && [adminPage, clientPage].every((source) =>
-      /queuedPayload\.remoteWakeRequested === true/.test(source)
-        && /개발 프로필에 원격 실행을 요청했습니다\./.test(source)),
+      /var queuedNotice = rankRefreshRequestNotice\(null\);/.test(source)
+        && /N 30일 순위는 정해진 순서대로 돌아가며 확인하므로 바로 바뀌지 않을 수 있습니다\./.test(source)
+        && !/개발 프로필/.test(source)),
   `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingRankLookupLeasePrecisionMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingChromePopup}, ${files.shoppingChromePopupHtml}, ${files.adminPage}, ${files.clientPage}`,
 );
 check(

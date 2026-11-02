@@ -97,13 +97,13 @@
       "id": "operation-place-30-day",
       "file": "src/pages/admin.html",
       "name": "initPlaceRankTracking",
-      "sha256": "ed277cc16117126c438f092b06e910293b8f32b043c6c3a0f0eded5673d12f21"
+      "sha256": "9edd547eb18467fca021833a641edd8e070747999bc8e10289f8722db44221fb"
     },
     {
       "id": "advertiser-place-30-day",
       "file": "src/pages/client.html",
       "name": "initPlaceRankTracking",
-      "sha256": "cfe9eea7007662b650679c03d65be966503dc6e8fa9a9719b3e4db19edd52c69"
+      "sha256": "23e3d1284810f8f4889b690e0cab4ddfa6ef6bd1da7961aa82d4534ba2eb7b10"
     },
     {
       "id": "keyword-hub-provider-config",

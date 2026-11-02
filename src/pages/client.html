@@ -15565,17 +15565,23 @@
           setAutoNote("자동 저장하지 않았습니다: " + reason + ". 아래 내용을 확인한 뒤 저장을 눌러 주세요.", "is-warn");
         }
 
-        function autoBlocker(payload, checks) {
+        // 버튼 목록이 이 상품의 그룹 목록이라는 근거: 대표 번호가 들어 있고 다른 추적의 대표 번호는 없다. 저장값과 같아 보여도
+        // 이 근거가 없으면 확인일도 남기지 않는다(예전에 잘못 저장된 번호가 다른 상품 페이지 목록과 같을 수 있다, Codex 2차).
+        function autoEvidenceGap(payload) {
           var parsed = payload.parsed && typeof payload.parsed === "object" ? payload.parsed : {};
           var guard = previewGuard(payload);
           var hits = (guard && Array.isArray(guard.otherPrimaryHits) ? guard.otherPrimaryHits : []).filter(function (hit) {
             return hit && String(hit.trackerId || "") !== state.trackerId && String(hit.productId || "") !== state.primary;
           });
-          if (!checks.before.length) return "처음 넣는 번호는 직접 확인해야 합니다";
           if (parsed.primaryRemoved !== true && parsed.primaryIncluded !== true) {
             return "목록에 이 상품" + (state.primary ? "(대표 " + state.primary + ")" : "") + " 번호가 없습니다";
           }
           if (hits.length) return "다른 추적 상품의 번호(" + String(hits[0].productId || "") + ")가 들어 있습니다";
+          return "";
+        }
+
+        function autoBlocker(checks) {
+          if (!checks.before.length) return "처음 넣는 번호는 직접 확인해야 합니다";
           if (checks.removedCount > 0) return "저장하면 빠지는 번호가 " + checks.removedCount + "개 있습니다";
           if (checks.primaryMissing) return "대표 상품번호 경고가 있습니다";
           var differs = state.previewRows.some(function (row) {
@@ -15606,6 +15612,11 @@
             stopAuto("다른 상품의 목록일 수 있습니다");
             return;
           }
+          var evidenceGap = autoEvidenceGap(payload);
+          if (evidenceGap) {
+            stopAuto(evidenceGap);
+            return;
+          }
           var unchanged = state.previewRows.every(function (row) {
             return row.self || (row.before && optionSameSet(row.before, checks.after));
           });
@@ -15627,7 +15638,7 @@
               recorded ? "is-ok" : "is-warn");
             return;
           }
-          var blocker = autoBlocker(payload, checks);
+          var blocker = autoBlocker(checks);
           if (blocker) {
             stopAuto(blocker);
             return;

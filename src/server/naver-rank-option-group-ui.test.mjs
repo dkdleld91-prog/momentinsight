@@ -4164,6 +4164,18 @@ test("U32 자동 저장: 버튼 목록이 저장값과 같으면 번호는 다�
   assert.equal(autoNote(client).textContent, "이미 저장된 번호와 같습니다(2개). 바꿀 것이 없습니다.");
   assert.ok(autoNote(client).classList.contains("is-ok"));
 
+  // 저장값과 같아 보여도 대표 번호가 없는 목록이면 확인일을 남기지 않는다 — 예전에 잘못 저장된 번호가 다른 상품 페이지 목록과
+  // 같을 수 있다(Codex 2차).
+  const noPrimary = editorEnv({ now: NOW });
+  openAuto(noPrimary, {
+    ids: [OPTION_A, OPTION_B],
+    read: optionsPayload({ saved: [OPTION_A, OPTION_B], siblings: [] }),
+    preview: optionsPayload({ mode: "preview", saved: [OPTION_A, OPTION_B], siblings: [], parsed: parsedOf([OPTION_A, OPTION_B]) }),
+  });
+  await flush();
+  assert.deepEqual(noPrimary.requests.map((request) => request.body.mode), ["read", "preview"], "확인일 기록 없음");
+  assert.equal(autoNote(noPrimary).textContent, STOP(`목록에 이 상품(대표 ${PRIMARY}) 번호가 없습니다`));
+
   // 이 추적만 같고 함께 바뀌는 다른 추적이 다르면(저장하면 그 추적에 번호가 더해진다) '같음'이 아니다(Codex 1차).
   const lagging = sibling({ optionProductCount: 1, beforeOptionProductIds: [OPTION_A], afterOptionProductIds: [OPTION_A, OPTION_B], addedCount: 1 });
   const partly = editorEnv({ hostSource: CLIENT_HOST_SOURCE });

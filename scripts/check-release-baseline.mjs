@@ -1511,7 +1511,10 @@ const checks = {
     && rankServer.includes("totalCount: count")
     && rankServer.includes("complete: !hasMore && rows.length === count"),
   rankTrackerRolling30Days: rankServer.includes("const PRODUCT_RANK_HISTORY_DAYS = 30")
-    && rankServer.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120")
+    // 2026-11-02 점검 F06: 화면 응답은 최근 30일 기록 전부(안전 상한 240), 수집 쪽 원부 되짚기 조회는 예전 120 그대로.
+    && rankServer.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 240")
+    && rankServer.includes("const RELATED_CATALOG_HISTORY_MAX_SNAPSHOTS = 120")
+    && rankServer.includes(".limit(RELATED_CATALOG_HISTORY_MAX_SNAPSHOTS)")
     && rankServer.includes("checkedAt >= historyCutoff")
     && rankServer.includes("slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)")
     && rankServer.includes("addDays(now, 3650)")
@@ -2109,8 +2112,10 @@ const checks = {
     && rankServer.includes('loadShoppingWorkerStatus')
     && rankServer.includes('"naver_shopping_worker_coordination"')
     && [adminSource, clientSource].every((source) =>
-      source.includes('queuedPayload.remoteWakeRequested === true')
-        && source.includes('개발 프로필에 원격 실행을 요청했습니다.')
+      // 2026-11-02 점검 F14: 갱신 요청은 작업기를 깨울 뿐이라 초록 '약 1분 내 시작'·내부 용어 대신 중립 안내를 쓴다.
+      source.includes('var queuedNotice = rankRefreshRequestNotice(null);')
+        && source.includes('N 30일 순위는 정해진 순서대로 돌아가며 확인하므로 바로 바뀌지 않을 수 있습니다.')
+        && !source.includes('개발 프로필')
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
@@ -3001,7 +3006,7 @@ const checks = {
     && source.includes("키워드, 상품명, 상품번호 검색")),
   rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes('rankSourceMode === "hybrid_local_worker"')
     && source.includes('action: "queue-refresh-all"')
-    && source.includes("완료된 순위부터 자동 반영됩니다.")
+    && source.includes("rankRefreshRequestNotice(null)")
     && source.includes("var mobileFallback = rankSourceUsesMobileFallback()")
     && source.includes("Math.min(mobileFallback ? 1 : 2, targets.length)")
     && source.includes("if (mobileFallback && completedCount > 0)")

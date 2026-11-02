@@ -320,6 +320,8 @@ function insightSandbox(name, needsAttentionName, trendName, latestName) {
     `function ${needsAttentionName}() { return __needsAttention === true; }`,
     `function ${trendName}() { return "dropped"; }`,
     `function ${latestName}() { return 1; }`,
+    // N30 배지가 부르는 순위 없는 상태 판정(2026-11-02 점검 F04). 순위 스텁이 1이라 늘 ""다.
+    pageFunction("rankTrackerNoRankState"),
   ].join("\n\n"), context);
   return context;
 }
@@ -427,6 +429,8 @@ function opsSummarySandbox() {
     pageFunction("rankTrackerRankValue"),
     pageFunction("rankTrackerLatestRank"),
     pageFunction("placeTrackerLatestRank"),
+    // N30 '확인 필요'는 카드 '점검 필요'와 같은 기준이다(2026-11-02 점검 F04).
+    pageFunction("rankTrackerNeedsAttention"),
   ].join("\n\n"), context);
   return context;
 }

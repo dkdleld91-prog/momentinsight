@@ -11380,6 +11380,19 @@
         return Math.ceil(hours / 24) + "일";
       }
 
+      // 지난 시각을 'n분 전'·'n시간 전'·'n일 전'으로 쓴다(2026-11-02 N30 '마지막 갱신'·'마지막 발견'). 시각을 모르면 "".
+      // 기기 시계가 조금 늦어 미래 시각이 오면 '방금 전'으로 본다.
+      function formatRankAgo(iso) {
+        var at = iso ? new Date(iso).getTime() : NaN;
+        if (!Number.isFinite(at)) return "";
+        var minutes = Math.floor((Date.now() - at) / 60000);
+        if (minutes < 1) return "방금 전";
+        if (minutes < 60) return minutes + "분 전";
+        var hours = Math.floor(minutes / 60);
+        if (hours < 24) return hours + "시간 전";
+        return Math.floor(hours / 24) + "일 전";
+      }
+
       function rankText(value) {
         return value ? value + "위" : "-";
       }
@@ -11423,20 +11436,41 @@
         };
       }
 
+      // N30 '갱신 지연' 기준 시간(2026-11-02 점검 F05, 대표 승인). 최근 실측 평균 갱신 간격이 추적당 약 6시간(하루 약
+      // 4.2회)이라 24시간이면 네 바퀴를 놓친 것이다. 마지막 갱신이 이보다 오래된 운영 중 추적만 '갱신 지연'으로 센다.
+      var RANK_N30_UPDATE_DELAY_HOURS = 24;
+
+      // 운영 중 N30 추적의 마지막 갱신(아직 첫 확인 전이면 등록 시각)이 기준 시간을 넘었는지. 시각을 모르면 지연으로 단정하지 않는다.
+      function rankTrackerUpdateDelayed(tracker, now) {
+        if (!tracker || tracker.status === "paused" || tracker.status === "completed") return false;
+        var base = new Date(tracker.lastCheckedAt || tracker.createdAt || "").getTime();
+        if (!Number.isFinite(base)) return false;
+        return (Number(now) || Date.now()) - base > RANK_N30_UPDATE_DELAY_HOURS * 60 * 60 * 1000;
+      }
+
       function rankTrackerOpsSummary(trackers, latestRankResolver, workerStatus) {
         var list = trackers || [];
         var resolveLatestRank = latestRankResolver || rankTrackerLatestRank;
+        // 상품 순위(N30, 2번째 인자 null)와 플레이스(placeTrackerLatestRank) 양쪽에서 부른다. 레인은 기존 인자로 가린다.
+        var isPlaceLane = latestRankResolver === placeTrackerLatestRank;
         var now = Date.now();
         var retryAt = workerStatus && workerStatus.retryAt ? new Date(workerStatus.retryAt).getTime() : 0;
         var workerCoolingDown = workerStatus && workerStatus.state === "cooldown" && Number.isFinite(retryAt) && retryAt > now;
         var workerStopped = workerStatus && workerStatus.state === "stopped";
         var workerVerifying = workerStatus && workerStatus.state === "verification";
         var active = list.filter(function (tracker) { return tracker.status !== "paused" && tracker.status !== "completed"; }).length;
-        var due = list.filter(function (tracker) {
+        // N30(상품) 레인은 next_check_at 이 실제 수집 순서와 상관없다(2026-11-02 점검 F05, 대표 승인: 작업기가 저장할 때
+        // 다음 09시·15시를 넣지만 수집은 순환 순서로 돈다). 그래서 N30 은 '대기 N개'·'다음 갱신 시각'을 쓰지 않고 마지막 갱신
+        // 기준 '갱신 지연'(rankTrackerUpdateDelayed)으로 정상 운영을 판정한다. 플레이스는 하루 정기 시각이라 그대로다.
+        var due = isPlaceLane ? list.filter(function (tracker) {
           var next = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
           return tracker.status !== "paused" && tracker.status !== "completed" && (!next || next <= now);
-        }).length;
+        }).length : 0;
+        var delayed = isPlaceLane ? 0 : list.filter(function (tracker) { return rankTrackerUpdateDelayed(tracker, now); }).length;
+        // '확인 필요'는 N30 이면 카드 '점검 필요'와 같은 기준(수집 실패만, rankTrackerNeedsAttention)이다(2026-11-02 점검 F04).
+        // 첫 확인 전·300위 밖은 세지 않는다. 플레이스는 예전 기준 그대로.
         var errors = list.filter(function (tracker) {
+          if (!isPlaceLane) return rankTrackerNeedsAttention(tracker);
           var message = String(tracker.lastMessage || tracker.lastError || "");
           return tracker.status === "failed" || !resolveLatestRank(tracker) || /실패|오류|환경변수|연결|미노출/.test(message);
         }).length;
@@ -11450,24 +11484,32 @@
           if (!value || !Number.isFinite(value)) return next;
           return !next || value < next ? value : next;
         }, 0);
-        var statusLabel = workerStopped ? "안전 정지" : (workerVerifying ? "1건 검증" : (workerCoolingDown ? "접속 제한" : (errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기")))));
-        var statusClass = workerStopped ? " is-error" : (workerVerifying || workerCoolingDown ? " is-warn" : (errors ? " is-error" : (due ? " is-warn" : " is-ok")));
+        var statusLabel = workerStopped ? "안전 정지" : (workerVerifying ? "1건 검증" : (workerCoolingDown ? "접속 제한" : (errors ? "확인 필요" : (due ? "갱신 대기" : (delayed ? "갱신 지연 " + delayed + "개" : (active ? "정상 운영" : "대기"))))));
+        var statusClass = workerStopped ? " is-error" : (workerVerifying || workerCoolingDown ? " is-warn" : (errors ? " is-error" : (due || delayed ? " is-warn" : " is-ok")));
         var latestText = latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-";
-        var nextText = workerStopped ? "정지" : (workerVerifying ? "검증 중" : (workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기")));
+        var scheduleText = isPlaceLane
+          ? (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기")
+          : (delayed ? "지연 " + delayed + "개" : (active ? "정상" : "-"));
+        var nextText = workerStopped ? "정지" : (workerVerifying ? "검증 중" : (workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : scheduleText));
         var summaryText = workerStopped
           ? "자동 요청 안전 정지 · 기존 정상 순위와 30일 기록 보존"
           : (workerVerifying
             ? "고정 1건 안전 검증 · 성공 확인 전 전체 요청 중단"
             : (workerCoolingDown
               ? "네이버 요청 일시정지 · 기존 정상 순위와 30일 기록 보존"
-              : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인"));
-        var nextNote = workerStopped ? "총관리자 검증 후 재개" : (workerVerifying ? "오가닉 300개 검증 중" : (workerCoolingDown ? "이후 대기 1건 자동 재시도" : "하루 2~3회 자동 갱신"));
+              : (isPlaceLane
+                ? active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인"
+                : active + "개 운영 · " + delayed + "개 갱신 지연 · " + errors + "개 확인")));
+        var scheduleNote = isPlaceLane
+          ? "하루 2~3회 자동 갱신"
+          : (delayed ? RANK_N30_UPDATE_DELAY_HOURS + "시간 넘게 갱신 안 됨" : "모두 " + RANK_N30_UPDATE_DELAY_HOURS + "시간 안에 갱신");
+        var nextNote = workerStopped ? "총관리자 검증 후 재개" : (workerVerifying ? "오가닉 300개 검증 중" : (workerCoolingDown ? "이후 대기 1건 자동 재시도" : scheduleNote));
         return '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
           '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
           '<div class="mi-rank-auto-metrics">' +
           '<div class="mi-rank-auto-metric"><span>최근 갱신</span><strong>' + escapeHtml(latestText) + '</strong><small>수동/자동</small></div>' +
-          '<div class="mi-rank-auto-metric' + (workerStopped ? " is-error" : (workerVerifying || workerCoolingDown || due ? " is-warn" : " is-ok")) + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
+          '<div class="mi-rank-auto-metric' + (workerStopped ? " is-error" : (workerVerifying || workerCoolingDown || due || delayed ? " is-warn" : " is-ok")) + '"><span>' + escapeHtml(isPlaceLane ? "다음 갱신" : "갱신 상태") + '</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
           '<div class="mi-rank-auto-metric' + (errors ? " is-error" : " is-ok") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>광고주 코드 기준</small></div>' +
           '</div></div>';
       }
@@ -11648,10 +11690,11 @@
       }
 
       // 받은 N 30일 측정 목록이 잘렸을 수 있는지: 마지막 정상 순위 캐시가 개수를 줄여 저장했거나(snapshotsTruncated),
-      // 서버가 상한(120개, src/server/handlers/naver-rank-trackers.mjs PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)만큼 꽉 채워
+      // 서버가 안전 상한(240개, src/server/handlers/naver-rank-trackers.mjs PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)만큼 꽉 채워
       // 보냈을 때. 잘렸으면 가장 오래된 측정 날보다 앞의 날은 실제로 순위가 있었는지 화면이 알 수 없다.
+      // 2026-11-02 점검 F06: 서버는 최근 30일 기록 전부를 보내고 240개(하루 8회 × 30일)는 안전 상한일 뿐이다.
       function rankTrackerSnapshotsMaybeTruncated(tracker) {
-        return Boolean(tracker && (tracker.snapshotsTruncated === true || (tracker.snapshots || []).length >= 120));
+        return Boolean(tracker && (tracker.snapshotsTruncated === true || (tracker.snapshots || []).length >= 240));
       }
 
       // 날짜 줄 칸 범위(대표 결정 2026-10-17): 오늘(KST)부터 거꾸로 최대 30일, 등록한 날(createdAt 의 KST 날짜)보다
@@ -11968,13 +12011,58 @@
         return latest < previous ? "improved" : "dropped";
       }
 
+      // N30 '점검 필요'는 수집 실패만이다(2026-11-02 점검 F04·F54, 대표 승인): 오류 상태·재시도 중·실패 문구.
+      // 순위가 없다는 것만으로는 켜지 않는다 — 아직 첫 확인 전('첫 확인 대기')과 300위 안에서 못 찾은 정상 결과('300위 밖')는
+      // rankTrackerNoRankState 가 중립으로 따로 나눈다. 카드 배지·권고·'점검 필요' 필터·상단 '확인 필요' 개수가 이 한 기준을 쓴다.
       function rankTrackerNeedsAttention(tracker) {
         var message = String(tracker.lastMessage || tracker.lastError || "");
         var retryCount = Number(tracker.retryCount || 0);
-        return tracker.status === "failed" || retryCount > 0 || !rankTrackerLatestRank(tracker) || /실패|오류|환경변수|연결/.test(message);
+        return tracker.status === "failed" || retryCount > 0 || /실패|오류|환경변수|연결/.test(message);
+      }
+
+      // 순위가 없는 N30 추적의 중립 상태(2026-11-02 점검 F04). 수집 실패(rankTrackerNeedsAttention)를 먼저 본 뒤에 쓴다.
+      // "first" = 아직 확인 기록이 없음(30일 기록도 마지막 확인 시각도 없음) → '첫 확인 대기'.
+      // "outside" = 확인은 끝났는데 확인 범위(300위) 안에서 찾지 못함 → '300위 밖'. 지금 순위가 있으면 "".
+      function rankTrackerNoRankState(tracker) {
+        if (!tracker || rankTrackerLatestRank(tracker)) return "";
+        if (!(tracker.snapshots || []).length && !tracker.lastCheckedAt) return "first";
+        return "outside";
+      }
+
+      // '300위 밖' 배지 문구. 받은 30일 기록 안에 순위가 있던 측정이 있으면 가장 최근 것을
+      // '마지막 발견 n일 전 · n위'로 덧붙인다(기록이 없으면 붙이지 않는다).
+      function rankTrackerOutsideLabel(tracker) {
+        var label = (rankTrackerRankValue(tracker && tracker.maxRank) || 300) + "위 밖";
+        var found = ((tracker && tracker.snapshots) || []).filter(function (snapshot) {
+          return Boolean(snapshot && snapshot.checkedAt && rankTrackerRankValue(snapshot.rank));
+        })[0];
+        var ago = found ? formatRankAgo(found.checkedAt) : "";
+        return ago ? label + " · 마지막 발견 " + ago + " · " + rankTrackerRankValue(found.rank) + "위" : label;
+      }
+
+      // N30 카드 갱신 줄(2026-11-02 점검 F05, 대표 승인). N30 은 정해진 순서대로 돌아가며 확인하므로 next_check_at 이
+      // 실제 수집 순서와 상관없다. 그래서 '다음 갱신'을 쓰지 않고 마지막 갱신 경과와, 받은 기록 중 최근 7일 측정 시각으로
+      // 계산한 실제 평균 간격(지나간 기록의 관측값이지 약속한 주기가 아니다)을 보인다. 최근 7일 기록이 3건 미만이면 평균은 뺀다.
+      function rankTrackerCadenceParts(tracker) {
+        var ago = formatRankAgo(tracker && tracker.lastCheckedAt);
+        var parts = ["마지막 갱신 " + (ago || "아직 없음")];
+        var since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+        var times = ((tracker && tracker.snapshots) || []).map(function (snapshot) {
+          return snapshot && snapshot.checkedAt ? new Date(snapshot.checkedAt).getTime() : NaN;
+        }).filter(function (time) {
+          return Number.isFinite(time) && time >= since;
+        });
+        if (times.length < 3) return parts;
+        var minutes = Math.round((Math.max.apply(null, times) - Math.min.apply(null, times)) / (times.length - 1) / 60000);
+        if (minutes > 0) parts.push("최근 7일 평균 약 " + (minutes < 60 ? minutes + "분" : Math.round(minutes / 60) + "시간") + " 간격");
+        return parts;
       }
 
       function rankTrackerInsight(tracker) {
+        // 상품에는 자동 재큐 배지를 두지 않는다. 자동 재큐는 플레이스 전용이고,
+        // 상품 payload 의 lastMessage 는 신뢰 snapshot 이 있으면 snapshot 메시지로
+        // 대체되므로 표식이 화면까지 도달하지 못한다(표시되지 않는 배지 금지).
+        // 만성 격리는 표식이 아니라 lastError·retryCount 로 판정하므로 상품에도 붙는다.
         // 만성 격리는 점검 필요보다 뒤다. 둘 다면 "점검 필요 · 수집 방식 점검 중"이고,
         // 격리만이면 경고 배지로 낸다(조치 대상이지만 원인은 수집 방식이다).
         var chronic = rankTrackerChronicIsolated(tracker, Date.now());
@@ -11982,6 +12070,10 @@
           return { label: chronic ? "점검 필요 · " + RANK_CHRONIC_ISOLATION_LABEL : "점검 필요", className: "is-error" };
         }
         if (chronic) return { label: RANK_CHRONIC_ISOLATION_LABEL, className: "is-warn" };
+        // 순위가 없어도 수집 실패가 아니면 중립이다(2026-11-02 점검 F04): 첫 확인 전·300위 밖은 오류가 아니다.
+        var noRankState = rankTrackerNoRankState(tracker);
+        if (noRankState === "first") return { label: "첫 확인 대기", className: "is-neutral" };
+        if (noRankState === "outside") return { label: rankTrackerOutsideLabel(tracker), className: "is-neutral" };
         var trend = rankTrackerTrend(tracker);
         if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
         if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
@@ -11991,14 +12083,20 @@
       }
 
       function rankTrackerActionNote(tracker) {
-        var message = String(tracker.lastMessage || tracker.lastError || "");
+        // 2026-11-02 점검 F04·F54(대표 승인): 수집 실패면 순위 흐름 문구('상승 흐름 유지' 등) 대신 실패를 알린다(응답의
+        // retryCount 만 쓴다). 순위가 없는데 실패가 아니면 첫 확인 전은 권고가 없고, 300위 밖의 '상품명/카테고리 확인'은
+        // 운영 조치라 관리자 화면(총관리자·운영팀 세션)에서만 보인다. 화면 구분은 그룹상품 관리자 표시와 같은
+        // rankOptionEditAvailable 을 쓴다(광고주 화면은 늘 false). 권고가 없으면 null.
         var latest = rankTrackerLatestRank(tracker);
         var trend = rankTrackerTrend(tracker);
-        if (tracker.status === "failed" || /실패|오류|환경변수|연결/.test(message)) {
-          return { label: "연결 상태 확인", className: "is-error" };
+        if (rankTrackerNeedsAttention(tracker)) {
+          var retryCount = Math.floor(Number(tracker.retryCount || 0));
+          if (retryCount > 0) return { label: "최근 확인이 실패해 다시 시도 중입니다(" + retryCount + "회)", className: "is-error" };
+          return { label: rankOptionEditAvailable() ? "연결 상태 확인" : "최근 확인이 실패했습니다", className: "is-error" };
         }
         if (!latest) {
-          return { label: "300위 이내 없음 · 상품명/카테고리 확인", className: "is-error" };
+          if (rankTrackerNoRankState(tracker) !== "outside" || !rankOptionEditAvailable()) return null;
+          return { label: "300위 이내 없음 · 상품명/카테고리 확인", className: "is-warn" };
         }
         if (trend === "dropped") {
           return { label: "하락 감지 · 가격/소재 점검", className: "is-warn" };
@@ -12462,6 +12560,12 @@
         var insight = rankTrackerInsight(tracker);
         var catalogHint = rankTrackerCatalogHint(tracker);
         var actionNote = rankTrackerActionNote(tracker);
+        // N30 은 정해진 순서대로 돌아가며 확인해 next_check_at 이 실제 순서와 상관없다(2026-11-02 점검 F05). '다음 갱신' 대신
+        // 마지막 갱신 경과와 최근 7일 실제 평균 간격을 보이고, 상태 알약도 next_check_at 으로 '대기'(파랑)를 칠하지 않는다.
+        var cadenceHtml = rankTrackerCadenceParts(tracker).map(function (part) {
+          return '<span data-rank-export-omit>' + escapeHtml(part) + '</span>';
+        }).join("");
+        var statusClass = tracker.status === "failed" ? " is-error" : "";
         var currentSource = rankTrackerCurrentSourceLabel(tracker);
         var optionState = rankTrackerOptionState(tracker);
         // 그룹상품 기록 문장의 관리자용 꼬리(서버 GROUP_OPTION_UNVERIFIED_TAIL)는 관리자 세션 화면에서만 보인다. 광고주
@@ -12483,16 +12587,16 @@
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
           escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span data-rank-export-omit class="' +
-          rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span data-rank-export-omit class="mi-rank-insight-pill ' +
+          statusClass + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span data-rank-export-omit class="mi-rank-insight-pill ' +
           escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span>' +
           (catalogHint ? '<span data-rank-export-omit class="mi-rank-insight-pill ' + escapeHtml(catalogHint.className) + '">' + escapeHtml(catalogHint.label) + '</span>' : '') + '<span>' +
           escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
           escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span data-rank-export-omit>그룹 ' +
           escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
           escapeHtml(tracker.id) + '">그룹 변경</button>' + renderRankOptionOpsPills(tracker, optionState) + '<span data-rank-export-omit>최근 ' +
-          escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span data-rank-export-omit>다음 ' +
-          escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span data-rank-export-omit class="mi-rank-action-note ' +
-          escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span data-rank-export-omit class="mi-rank-ops-message" title="' +
+          escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span>' + cadenceHtml +
+          (actionNote ? '<span data-rank-export-omit class="mi-rank-action-note ' + escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span>' : '') +
+          '<span data-rank-export-omit class="mi-rank-ops-message" title="' +
           escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
           (catalogHint ? '<div class="mi-rank-catalog-hint" data-rank-catalog-hint data-rank-export-omit>' + escapeHtml(catalogHint.note) + '</div>' : '') +
           renderRankOptionHitLine(optionState) +
@@ -12570,13 +12674,18 @@
           escapeHtml(nowLabel) + '</span></header>';
         var list = document.createElement("div");
         list.className = "mi-rank-export-list";
+        // 지금 화면에 그려진 카드만 복제된다(검색·필터로 가려진 선택은 빠진다). 실제로 담은 추적을 돌려줘
+        // 완료 문구·파일 이름의 개수를 그린 카드 수로 맞춘다(2026-11-02 점검 F19).
+        var drawn = [];
         trackers.forEach(function (tracker) {
           var source = card.querySelector('.mi-rank-tracker-card[data-rank-tracker-id="' + rankExportCssEscape(tracker.id) + '"]');
-          if (source) list.appendChild(cloneRankTrackerCardForShare(source));
+          if (!source) return;
+          list.appendChild(cloneRankTrackerCardForShare(source));
+          drawn.push(tracker);
         });
         sheet.appendChild(list);
         stage.replaceChildren(sheet);
-        return { stage: stage, sheet: sheet };
+        return { stage: stage, sheet: sheet, trackers: drawn };
       }
 
       function rankExportStyleText() {
@@ -12752,6 +12861,11 @@
           setStatus(statusNode, "선택 항목이 너무 많습니다. 20개 이하로 나눠 저장해주세요.", "is-warn");
           return;
         }
+        // 선택했지만 검색·필터로 화면에 없어 이미지에 못 담은 항목이 있으면 함께 알린다(2026-11-02 점검 F19).
+        var drawnTrackers = rendered.trackers || [];
+        var missedNote = drawnTrackers.length < selectedTrackers.length
+          ? " 선택 " + selectedTrackers.length + "개 중 화면에 보이는 " + drawnTrackers.length + "개만 담았습니다. 전부 담으려면 필터를 풀어 주세요."
+          : "";
         var rootId = card.closest("#mi-admin") ? "mi-admin" : "mi-clean";
         var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '">' +
           '<foreignObject width="100%" height="100%">' +
@@ -12759,16 +12873,16 @@
           '</foreignObject></svg>';
         try {
           var exported = await rankExportImageBlob(rendered, svg, width, height);
-          var fileName = rankExportFileName(selectedTrackers).replace(/\.png$/i, "." + exported.ext);
-          var readyLink = showRankDownloadReady(card, exported.blob, fileName, selectedTrackers.length);
+          var fileName = rankExportFileName(drawnTrackers).replace(/\.png$/i, "." + exported.ext);
+          var readyLink = showRankDownloadReady(card, exported.blob, fileName, drawnTrackers.length);
           if (readyLink) readyLink.click();
-          setStatus(statusNode, selectedTrackers.length + "개 순위 항목의 공유 이미지(" + exported.ext.toUpperCase() + ")가 준비되었습니다.", "is-ok");
+          setStatus(statusNode, drawnTrackers.length + "개 순위 항목의 공유 이미지(" + exported.ext.toUpperCase() + ")가 준비되었습니다." + missedNote, missedNote ? "is-warn" : "is-ok");
         } catch (error) {
           var svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-          var fallbackName = rankExportFileName(selectedTrackers).replace(/\.png$/i, ".svg");
-          var fallbackLink = showRankDownloadReady(card, svgBlob, fallbackName, selectedTrackers.length);
+          var fallbackName = rankExportFileName(drawnTrackers).replace(/\.png$/i, ".svg");
+          var fallbackLink = showRankDownloadReady(card, svgBlob, fallbackName, drawnTrackers.length);
           if (fallbackLink) fallbackLink.click();
-          setStatus(statusNode, "이미지 변환이 막혀 SVG 파일로 준비했습니다. 크롬 브라우저에서 다시 시도해주세요.", "is-warn");
+          setStatus(statusNode, "이미지 변환이 막혀 SVG 파일로 준비했습니다. 크롬 브라우저에서 다시 시도해주세요." + missedNote, "is-warn");
         } finally {
           rendered.stage.replaceChildren();
         }
@@ -13382,6 +13496,24 @@
           return "네이버 쇼핑 접속 제한으로 일시정지했습니다. " + formatRankShortAt(status.retryAt) + " 이후 대기 중인 1건부터 자동 재시도하며, 기존 정상 순위와 30일 기록은 유지합니다.";
         }
 
+        // N30 '갱신'·'전체 순위 갱신' 요청 뒤 안내(2026-11-02 점검 F14, 대표 승인). 중앙 자동 순환 방식에서 이 요청은
+        // 작업기를 한 번 깨울 뿐 순서·처리 시각을 앞당기지 않으므로(서버 checkOne·queueRefreshAllTrackers) 성공(초록)으로
+        // 알리지 않는다. 일시중지된 추적이거나 화면이 이미 아는 수집기 상태(접속 제한·안전 정지·검증)면 주황으로 그 사실만
+        // 알린다. 화면이 모르는 상태는 추측하지 않는다.
+        function rankRefreshRequestNotice(tracker) {
+          if (tracker && tracker.status === "paused") return { message: "일시중지된 추적은 갱신되지 않습니다.", className: "is-warn" };
+          var cooldownMessage = rankWorkerCooldownMessage();
+          if (cooldownMessage) return { message: cooldownMessage, className: "is-warn" };
+          var workerState = rankWorkerStatusFromCard(card).state;
+          if (workerState === "stopped") {
+            return { message: "지금은 자동 순위 확인이 안전 정지 상태라 갱신되지 않습니다. 기존 순위와 30일 기록은 그대로 유지합니다.", className: "is-warn" };
+          }
+          if (workerState === "verification") {
+            return { message: "지금은 자동 순위 확인을 1건씩 검증하는 중이라 갱신이 늦어질 수 있습니다. 기존 순위와 30일 기록은 그대로 유지합니다.", className: "is-warn" };
+          }
+          return { message: "갱신을 요청했습니다. N 30일 순위는 정해진 순서대로 돌아가며 확인하므로 바로 바뀌지 않을 수 있습니다.", className: "" };
+        }
+
         function applyRankSourceState(payload) {
           if (payload && typeof payload.rankSourceReady === "boolean") rankSourceReady = payload.rankSourceReady;
           if (payload && typeof payload.mode === "string") rankSourceMode = payload.mode;
@@ -13707,12 +13839,12 @@
               }
               await loadRankTrackers(true, true);
               var queuedSummary = queuedPayload.summary || {};
-              var cooldownMessage = rankWorkerCooldownMessage();
-              setStatus(rankStatus, cooldownMessage || (Number(queuedSummary.total || 0) > 0
-                ? (queuedPayload.remoteWakeRequested === true
-                  ? "전체 " + Number(queuedSummary.total || 0) + "개를 등록하고 개발 프로필에 원격 실행을 요청했습니다. 첫 작업은 약 1분 내 시작되며 나머지는 안전 간격으로 반영됩니다."
-                  : "전체 " + Number(queuedSummary.total || 0) + "개를 중앙 자동 갱신에 등록했습니다. 완료된 순위부터 자동 반영됩니다.")
-                : "갱신할 운영 중 순위 추적 항목이 없습니다."), cooldownMessage ? "is-warn" : (Number(queuedSummary.total || 0) > 0 ? "is-ok" : "is-warn"));
+              if (Number(queuedSummary.total || 0) > 0) {
+                var queuedNotice = rankRefreshRequestNotice(null);
+                setStatus(rankStatus, queuedNotice.message, queuedNotice.className);
+              } else {
+                setStatus(rankStatus, rankWorkerCooldownMessage() || "갱신할 운영 중 순위 추적 항목이 없습니다.", "is-warn");
+              }
               return;
             }
             var nextIndex = 0;
@@ -14306,12 +14438,21 @@
           resetDeleteConfirm();
           refreshButton.disabled = true;
           setStatus(rankStatus, "선택한 상품 순위를 수동 갱신 중입니다.", "");
+          var refreshTrackerId = refreshButton.getAttribute("data-rank-refresh");
           try {
             var payload = await requestRankTrackers("POST", {
               action: "check",
-              trackerId: refreshButton.getAttribute("data-rank-refresh")
+              trackerId: refreshTrackerId
             });
-            setStatus(rankStatus, payload.message || "수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
+            // 중앙 자동 순환 응답(queuedForLocalWorker)은 작업기를 깨운 신호일 뿐이라 서버 문장 대신 중립 안내를 쓴다(F14).
+            if (payload && payload.ok === true && payload.queuedForLocalWorker === true) {
+              var refreshNotice = rankRefreshRequestNotice(payload.tracker || rankTrackers.find(function (tracker) {
+                return tracker && tracker.id === refreshTrackerId;
+              }));
+              setStatus(rankStatus, refreshNotice.message, refreshNotice.className);
+            } else {
+              setStatus(rankStatus, payload.message || "수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
+            }
             await loadRankTrackers(true, true);
           } catch (error) {
             setStatus(rankStatus, "수동 갱신 연결을 확인해주세요.", "is-warn");

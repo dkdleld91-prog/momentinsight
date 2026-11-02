@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import handler, {
   RANK_TRACKER_TABLES,
+  clientPrincipalKey,
   deleteExpiredClient,
   expireUnlinkedClients,
   googleLinkTransitionClosed,
@@ -35,7 +36,8 @@ function fakeCtx(rowsByTable) {
     from(table) {
       const record = { table, ops: [] };
       calls.push(record);
-      const rows = rowsByTable[table] || [];
+      // 표 값이 함수면 그 호출의 ops 를 보고 응답 줄을 고른다(재확인 select 와 delete 를 다르게 답할 때).
+      const spec = rowsByTable[table] || [];
       const query = {
         select(columns) { record.ops.push(["select", columns]); return query; },
         delete() { record.ops.push(["delete"]); return query; },
@@ -43,6 +45,7 @@ function fakeCtx(rowsByTable) {
         insert(values) { record.ops.push(["insert", values]); return Promise.resolve({ data: null, error: null }); },
         not(column, op, value) { record.ops.push(["not", column, op, value]); return query; },
         lt(column, value) { record.ops.push(["lt", column, value]); return query; },
+        lte(column, value) { record.ops.push(["lte", column, value]); return query; },
         eq(column, value) { record.ops.push(["eq", column, value]); return query; },
         in(column, values) { record.ops.push(["in", column, values]); return query; },
         order(column, options) { record.ops.push(["order", column, options]); return query; },
@@ -50,7 +53,7 @@ function fakeCtx(rowsByTable) {
         then(resolve, reject) {
           const response = rowsByTable[`${table}:error`]
             ? { data: null, error: rowsByTable[`${table}:error`] }
-            : { data: rows, error: null };
+            : { data: typeof spec === "function" ? spec(record) : spec, error: null };
           return Promise.resolve(response).then(resolve, reject);
         },
       };
@@ -81,51 +84,166 @@ test("delete-due selection keeps only accounts past the grace period and never t
   assert.ok(query.ops.some(([op, columns]) => op === "select" && /plan_note/.test(columns)), "유예 판정에 plan_note 가 필요하다");
 });
 
-test("deleting an expired client removes rank trackers, notes, identities, quota and the client row, then audits", async () => {
+const CLIENT_ID = "0b6f3a52-6c1e-4d7a-9e2f-1a2b3c4d5e6f";
+const DUE_CLIENT = { id: CLIENT_ID, name: "지난 계정", agency_code: "ABC123", status: "active", plan_name: "basic", plan_expires_at: iso(-6), plan_note: null };
+const isDelete = (call) => call.ops.some(([op]) => op === "delete");
+
+test("deleting an expired client rechecks the row, removes Google link, personal schedules, rank trackers, notes, identities, quota and the client row, then audits", async () => {
   const { ctx, calls } = fakeCtx({
+    owner_google_calendar_sync: [{ owner_agency_code: `client:${CLIENT_ID}` }, { owner_agency_code: `client:${CLIENT_ID}` }],
+    owner_google_integrations: [{ owner_agency_code: `client:${CLIENT_ID}` }],
+    schedule_items: [{ id: "s1" }, { id: "s2" }, { id: "s3" }],
+    schedule_calendar_memberships: [],
     naver_rank_trackers: [{ id: "t1" }, { id: "t2" }],
     naver_place_rank_trackers: [{ id: "p1" }],
     keyword_research_notes: [{ id: "n1" }],
     login_identities: [{ google_sub: "sub-1" }],
     trial_keyword_quota: [{ google_sub: "sub-1" }, { google_sub: "sub-1" }],
-    clients: [{ id: "c-1" }],
+    clients: [DUE_CLIENT],
   });
-  const summary = await deleteExpiredClient(ctx, { id: "c-1", name: "지난 계정", agency_code: "ABC123", plan_name: "basic", plan_expires_at: iso(-6) });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
   assert.deepEqual(summary.errors, []);
+  assert.equal(summary.skipped, "");
+  assert.equal(summary.googleSync, 2);
+  assert.equal(summary.google, 1);
+  assert.equal(summary.schedules, 3);
+  assert.equal(summary.memberships, 0);
   assert.deepEqual(summary.trackers, { naver_rank_trackers: 2, naver_place_rank_trackers: 1 });
   assert.equal(summary.notes, 1);
   assert.equal(summary.identities, 1);
   assert.equal(summary.quota, 2);
   assert.equal(summary.client, true);
   const tables = calls.map((call) => call.table);
-  assert.deepEqual(tables, [...RANK_TRACKER_TABLES, "keyword_research_notes", "login_identities", "trial_keyword_quota", "clients", "audit_logs"]);
-  for (const call of calls.filter((entry) => entry.table !== "audit_logs")) {
+  assert.deepEqual(tables, [
+    "clients",
+    "owner_google_calendar_sync",
+    "owner_google_integrations",
+    "schedule_items",
+    "schedule_calendar_memberships",
+    ...RANK_TRACKER_TABLES,
+    "keyword_research_notes",
+    "login_identities",
+    "trial_keyword_quota",
+    "clients",
+    "audit_logs",
+  ]);
+  // 첫 clients 호출은 지우기 직전 재확인(select)이고 delete 가 아니다.
+  assert.equal(isDelete(calls[0]), false);
+  assert.deepEqual(calls[0].ops.find(([op]) => op === "eq"), ["eq", "id", CLIENT_ID]);
+  for (const call of calls.slice(1).filter((entry) => entry.table !== "audit_logs")) {
     assert.equal(call.ops[0][0], "delete", `${call.table} 는 delete 로 시작한다`);
   }
-  const trackerCall = calls.find((call) => call.table === "naver_rank_trackers");
-  assert.deepEqual(trackerCall.ops.find(([op]) => op === "eq"), ["eq", "agency_code", "abc123"]);
+  const eqs = (table) => calls.find((call) => call.table === table).ops.filter(([op]) => op === "eq");
+  assert.deepEqual(eqs("owner_google_calendar_sync"), [["eq", "owner_agency_code", `client:${CLIENT_ID}`]]);
+  assert.deepEqual(eqs("owner_google_integrations"), [["eq", "owner_agency_code", `client:${CLIENT_ID}`]]);
+  assert.deepEqual(eqs("schedule_items"), [["eq", "personal_role", "client"], ["eq", "personal_code", CLIENT_ID]]);
+  assert.deepEqual(eqs("schedule_calendar_memberships"), [["eq", "principal_key", `client:${CLIENT_ID}`]]);
+  assert.deepEqual(eqs("naver_rank_trackers"), [["eq", "agency_code", "abc123"]]);
+  // 광고주 행 삭제에는 만료 조건(만료 + 유예 5일 ≤ 지금)이 붙는다.
+  const clientDelete = calls.filter((call) => call.table === "clients")[1];
+  assert.ok(isDelete(clientDelete));
+  assert.deepEqual(clientDelete.ops.find(([op]) => op === "lte"), ["lte", "plan_expires_at", iso(-5)]);
   const audit = calls.find((call) => call.table === "audit_logs");
   assert.equal(audit.ops[0][1].action, "client.deleted_after_grace");
   // 감사 메타데이터는 sanitizeAuditMetadata 를 거친다(코드류 값은 가려질 수 있음) — 출처와 결과만 확인한다.
   assert.equal(audit.ops[0][1].metadata.source, "account-expiry-cron");
   assert.equal(audit.ops[0][1].metadata.clientDeleted, true);
-  assert.equal(audit.ops[0][1].target_id, "c-1");
+  assert.equal(audit.ops[0][1].target_id, CLIENT_ID);
 });
 
-test("a partial failure keeps the client row so the next run can retry, and reports the error", async () => {
+test("deletion never builds a key that reaches the owner or an operation team (client:<uuid> only)", async () => {
+  assert.equal(clientPrincipalKey(CLIENT_ID.toUpperCase()), `client:${CLIENT_ID}`);
+  for (const bad of ["", null, undefined, "mml93-a01", "team:" + CLIENT_ID, "client:" + CLIENT_ID, "c-1", "*", "%", CLIENT_ID + " or 1=1"]) {
+    assert.equal(clientPrincipalKey(bad), "", `${String(bad)} 로는 키를 만들지 않는다`);
+  }
+  const { ctx, calls } = fakeCtx({ clients: [{ ...DUE_CLIENT, id: "c-1" }] });
+  const summary = await deleteExpiredClient(ctx, { ...DUE_CLIENT, id: "c-1" }, { nowMs: NOW, env: ENV });
+  assert.equal(summary.client, false);
+  assert.match(summary.errors[0], /id is not a uuid/);
+  assert.equal(calls.length, 0, "uuid 가 아니면 아무 표도 읽거나 지우지 않는다");
+});
+
+test("a partial failure keeps the client row so the next run can retry, reports the error and audits what was removed", async () => {
   const { ctx, calls } = fakeCtx({
+    owner_google_calendar_sync: [],
+    owner_google_integrations: [],
+    schedule_items: [],
+    schedule_calendar_memberships: [],
     naver_rank_trackers: [],
     "naver_place_rank_trackers:error": { message: "place table down" },
     keyword_research_notes: [],
     login_identities: [],
-    clients: [{ id: "c-1" }],
+    clients: [DUE_CLIENT],
   });
-  const summary = await deleteExpiredClient(ctx, { id: "c-1", agency_code: "abc123" });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
   assert.equal(summary.client, false);
   assert.equal(summary.errors.length, 1);
   assert.match(summary.errors[0], /naver_place_rank_trackers: place table down/);
-  assert.equal(calls.some((call) => call.table === "clients"), false, "부분 실패면 광고주 행은 지우지 않는다");
-  assert.equal(calls.some((call) => call.table === "audit_logs"), false);
+  assert.equal(calls.some((call) => call.table === "clients" && isDelete(call)), false, "부분 실패면 광고주 행은 지우지 않는다");
+  const audit = calls.filter((call) => call.table === "audit_logs");
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].ops[0][1].action, "client.delete_partial_failed");
+  assert.equal(audit[0].ops[0][1].metadata.clientDeleted, false);
+});
+
+test("an account extended after selection is skipped before anything is deleted", async () => {
+  const extended = { ...DUE_CLIENT, plan_expires_at: iso(29) };
+  const { ctx, calls } = fakeCtx({ clients: [extended] });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.equal(summary.skipped, "not_due");
+  assert.equal(summary.client, false);
+  assert.deepEqual(summary.errors, []);
+  assert.deepEqual(calls.map((call) => call.table), ["clients", "audit_logs"]);
+  assert.equal(calls.some(isDelete), false);
+  assert.equal(calls[1].ops[0][1].action, "client.delete_skipped_not_due");
+});
+
+test("a row whose code changed, that became the owner code, or that is already gone is not deleted", async () => {
+  for (const current of [{ ...DUE_CLIENT, agency_code: "other1" }, { ...DUE_CLIENT, agency_code: "mml93-a01" }]) {
+    const { ctx, calls } = fakeCtx({ clients: [current] });
+    const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+    assert.equal(summary.skipped, "not_due");
+    assert.equal(calls.some(isDelete), false);
+  }
+  const { ctx, calls } = fakeCtx({ clients: [] });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.equal(summary.skipped, "missing");
+  assert.deepEqual(calls.map((call) => call.table), ["clients"]);
+});
+
+test("if the client row is extended between the recheck and the final delete, it stays and the run reports a failure", async () => {
+  const { ctx, calls } = fakeCtx({
+    owner_google_calendar_sync: [],
+    owner_google_integrations: [],
+    schedule_items: [],
+    schedule_calendar_memberships: [],
+    naver_rank_trackers: [],
+    naver_place_rank_trackers: [],
+    keyword_research_notes: [],
+    login_identities: [],
+    // 재확인 select 는 아직 삭제 대상, 마지막 delete 는 만료 조건에 걸려 0행.
+    clients: (record) => (record.ops.some(([op]) => op === "delete") ? [] : [DUE_CLIENT]),
+  });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.equal(summary.client, false);
+  assert.match(summary.errors[0], /plan changed during deletion/);
+  const audit = calls.find((call) => call.table === "audit_logs");
+  assert.equal(audit.ops[0][1].action, "client.delete_partial_failed");
+});
+
+test("the run lists skipped accounts separately from deleted and failed ones", async () => {
+  const selected = { ...DUE_CLIENT, agency_code: "abc123" };
+  const { ctx } = fakeCtx({
+    // 고를 때는 삭제 대상, 지우기 직전 재확인에서는 연장된 상태.
+    clients: (record) => (record.ops.some(([op, column]) => op === "eq" && column === "id") ? [{ ...selected, plan_expires_at: iso(29) }] : [selected]),
+    login_identities: [],
+    operation_team_codes: [],
+  });
+  const summary = await runAccountExpiry(ctx, { nowMs: NOW, env: ENV });
+  assert.deepEqual(summary.due.map((row) => row.agencyCode), ["abc123"]);
+  assert.deepEqual(summary.deleted, []);
+  assert.deepEqual(summary.failed, []);
+  assert.deepEqual(summary.skipped, [{ agencyCode: "abc123", reason: "not_due" }]);
 });
 
 test("dry run and the disable switch report due accounts without deleting anything", async () => {

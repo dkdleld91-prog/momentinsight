@@ -52,6 +52,8 @@ export const DEFAULT_TABLES = [
   "dashboard_snapshots",
   "meta_ad_research_items",
   "audit_logs",
+  // 운영 공지(한 줄짜리 표, 대표 SQL 20260918050000). 점검 2026-11-02 F03 에서 백업 누락 확인.
+  "site_notices",
   // C 30일 순위(쿠팡, 명세 v3 §10.1). 대표 SQL(20261017090000_coupang_rank_tracking) 실행 전에는 표가 없어 건너뛴다.
   "coupang_rank_settings",
   "coupang_rank_account_limits",

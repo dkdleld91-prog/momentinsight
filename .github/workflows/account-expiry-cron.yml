@@ -51,6 +51,7 @@ jobs:
             dryRun: payload.dryRun,
             due: (payload.due || []).length,
             deleted: payload.deleted || [],
+            skipped: payload.skipped || [],
             failed: payload.failed || [],
           }));
           if ((payload.failed || []).length) {

@@ -1,8 +1,9 @@
 // 이용 기간 만료 + 유예(일반 5일 · 구글 미연동 자동 만료는 3일)가 지난 광고주 계정을 매일 한 번 정리한다.
 // 대표 결정 2026-09-07: "만료 뒤 5일 안에 연장 없으면 해당 계정 데이터 삭제 — 살릴 필요 없음, 서버·저장공간만 무거워짐".
 // 대표 결정 2026-09-08: "구글 연동 안 된 사람은 읽기 전용에서 3일 뒤 삭제, 연동한 사람은 기한 뒤부터 30일 카운팅".
-// 순위 추적 표(naver_rank_trackers · naver_place_rank_trackers, 스냅샷은 FK cascade)까지 지운다. 순위 수집 코드·워커는
-// 건드리지 않고 행만 지우며, 총관리자 코드는 어떤 경우에도 대상이 아니다. 삭제 전에 감사 로그를 남긴다.
+// 순위 추적 표(naver_rank_trackers · naver_place_rank_trackers, 스냅샷은 FK cascade)와 그 광고주의 서비스 일정·구글 연결
+// ('client:<id>' 키, 점검 2026-11-02 F02)까지 지운다. 순위 수집 코드·워커는 건드리지 않고 행만 지우며, 총관리자 코드는 어떤 경우에도
+// 대상이 아니다. 삭제(또는 부분 실패·건너뜀) 뒤 감사 로그를 남긴다.
 // 호출: Vercel cron(vercel.json) → GET /api/account-expiry-cron (Authorization: Bearer CRON_SECRET).
 // 확인용: ?dryRun=1 은 대상만 보여 주고 지우지 않는다. 환경변수 MI_ACCOUNT_EXPIRY_DELETE_DISABLED=true 면 항상 dryRun.
 import { withSupabase } from "@supabase/server";
@@ -64,16 +65,121 @@ export async function selectDeleteDueClients(ctx, nowMs = Date.now(), limit = EX
   });
 }
 
-// 한 계정의 데이터를 지운다. 부분 실패면 계정 행은 남겨 다음 날 다시 시도한다(중간 상태로 접속이 살아나지는 않는다 —
-// 게이트가 delete_due 를 읽기 전용으로 막는다).
-export async function deleteExpiredClient(ctx, client) {
+// 광고주 개인 공간 키(personal-identity.mjs 키 스킴): 'client:' || clients.id(uuid). 일정·구글 연결은 외래키가 아니라
+// 이 글자 키로 묶여 있어 광고주 행을 지워도 cascade 되지 않는다(점검 2026-11-02 F02). uuid 형식일 때만 키를 만든다 —
+// 대표 키(콜론 없는 코드)·운영팀 키('team:')에는 절대 닿지 않는다.
+const CLIENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+export function clientPrincipalKey(clientId) {
+  const id = String(clientId ?? "").trim().toLowerCase();
+  return CLIENT_ID_PATTERN.test(id) ? `client:${id}` : "";
+}
+
+async function auditDeletion(ctx, client, action, summary) {
+  await ctx.supabaseAdmin.from("audit_logs").insert({
+    actor_id: null,
+    client_id: null,
+    action,
+    target_table: "clients",
+    target_id: client.id,
+    metadata: sanitizeAuditMetadata({
+      source: "account-expiry-cron",
+      agencyCode: summary.agencyCode,
+      name: client.name || "",
+      planName: client.plan_name || "",
+      expiresAt: client.plan_expires_at || "",
+      graceDays: String(planGraceDays(client)),
+      skipped: summary.skipped,
+      google: summary.google,
+      googleSync: summary.googleSync,
+      schedules: summary.schedules,
+      memberships: summary.memberships,
+      trackers: summary.trackers,
+      notes: summary.notes,
+      identities: summary.identities,
+      quota: summary.quota,
+      clientDeleted: summary.client,
+      errors: summary.errors,
+    }),
+  });
+}
+
+// 한 계정의 데이터를 지운다. 부분 실패면 계정 행은 남겨 다음 날 다시 시도하고, 지운 만큼을 감사 기록에 남긴다(중간 상태로 접속이
+// 살아나지는 않는다 — 게이트가 delete_due 를 읽기 전용으로 막는다).
+// 지우기 직전에 계정 행을 다시 읽어 아직 삭제 대상인지 확인하고, 광고주 행 삭제에도 만료 조건을 붙인다 — 대상을 고른 뒤 총관리자가
+// 연장한 계정은 지우지 않는다(점검 2026-11-02 N3).
+export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env = process.env } = {}) {
   const code = String(client?.agency_code || "").trim().toLowerCase();
-  const summary = { agencyCode: code, trackers: {}, notes: null, identities: null, quota: null, client: false, errors: [] };
+  const summary = {
+    agencyCode: code,
+    skipped: "",
+    google: null,
+    googleSync: null,
+    schedules: null,
+    memberships: null,
+    trackers: {},
+    notes: null,
+    identities: null,
+    quota: null,
+    client: false,
+    errors: [],
+  };
   const fail = (step, error) => summary.errors.push(`${step}: ${String(error?.message || error)}`);
   if (!code || !client?.id) {
     fail("client", "missing agency code or id");
     return summary;
   }
+  const clientId = String(client.id).trim().toLowerCase();
+  const principalKey = clientPrincipalKey(clientId);
+  if (!principalKey) {
+    fail("client", "id is not a uuid");
+    return summary;
+  }
+
+  const fresh = await ctx.supabaseAdmin
+    .from("clients")
+    .select("id, name, agency_code, status, plan_name, plan_expires_at, plan_note")
+    .eq("id", client.id)
+    .limit(1);
+  if (fresh.error) {
+    fail("clients recheck", fresh.error);
+    return summary;
+  }
+  const current = (fresh.data || [])[0];
+  if (!current) {
+    summary.skipped = "missing";
+    return summary;
+  }
+  const currentCode = String(current.agency_code || "").trim().toLowerCase();
+  if (currentCode !== code || currentCode === protectedOwnerCode(env) || planStatus(current, nowMs).state !== "delete_due") {
+    summary.skipped = "not_due";
+    await auditDeletion(ctx, current, "client.delete_skipped_not_due", summary);
+    return summary;
+  }
+
+  // 구글 연결을 먼저 끊는다(갱신 토큰). 동기화 행은 FK cascade 로도 지워지지만 몇 줄인지 남기려고 따로 지운다.
+  // 서비스에 저장된 사본만 지우고, 구글 캘린더에 있는 원본 일정에는 요청하지 않는다.
+  const sync = await ctx.supabaseAdmin.from("owner_google_calendar_sync").delete().eq("owner_agency_code", principalKey).select("owner_agency_code");
+  if (sync.error) fail("owner_google_calendar_sync", sync.error);
+  else summary.googleSync = (sync.data || []).length;
+
+  const google = await ctx.supabaseAdmin.from("owner_google_integrations").delete().eq("owner_agency_code", principalKey).select("owner_agency_code");
+  if (google.error) fail("owner_google_integrations", google.error);
+  else summary.google = (google.data || []).length;
+
+  const schedules = await ctx.supabaseAdmin
+    .from("schedule_items")
+    .delete()
+    .eq("personal_role", "client")
+    .eq("personal_code", clientId)
+    .select("id");
+  if (schedules.error) fail("schedule_items", schedules.error);
+  else summary.schedules = (schedules.data || []).length;
+
+  // 공유 캘린더는 그 광고주의 구성원 줄만 지운다(캘린더·다른 구성원의 일정은 그대로).
+  const memberships = await ctx.supabaseAdmin.from("schedule_calendar_memberships").delete().eq("principal_key", principalKey).select("calendar_id");
+  if (memberships.error) fail("schedule_calendar_memberships", memberships.error);
+  else summary.memberships = (memberships.data || []).length;
 
   for (const table of RANK_TRACKER_TABLES) {
     const result = await ctx.supabaseAdmin.from(table).delete().eq("agency_code", code).select("id");
@@ -99,34 +205,27 @@ export async function deleteExpiredClient(ctx, client) {
     }
   }
 
-  if (summary.errors.length) return summary;
+  if (summary.errors.length) {
+    await auditDeletion(ctx, current, "client.delete_partial_failed", summary);
+    return summary;
+  }
 
   // 광고주 행을 지우면 brands·reports·kpi 등 client_id FK 는 cascade, 운영팀 연결(client_id)은 set null 로 정리된다.
-  const removed = await ctx.supabaseAdmin.from("clients").delete().eq("id", client.id).select("id");
+  // 만료 조건(만료 시각 + 유예 ≤ 지금)을 붙여, 그 사이 연장된 계정은 0행으로 남긴다.
+  const graceCutoff = new Date(nowMs - planGraceDays(current) * DAY_MS).toISOString();
+  const removed = await ctx.supabaseAdmin
+    .from("clients")
+    .delete()
+    .eq("id", client.id)
+    .lte("plan_expires_at", graceCutoff)
+    .select("id");
   if (removed.error) fail("clients", removed.error);
-  else summary.client = (removed.data || []).length === 1;
+  else {
+    summary.client = (removed.data || []).length === 1;
+    if (!summary.client) fail("clients", "not deleted — plan changed during deletion");
+  }
 
-  await ctx.supabaseAdmin.from("audit_logs").insert({
-    actor_id: null,
-    client_id: null,
-    action: "client.deleted_after_grace",
-    target_table: "clients",
-    target_id: client.id,
-    metadata: sanitizeAuditMetadata({
-      source: "account-expiry-cron",
-      agencyCode: code,
-      name: client.name || "",
-      planName: client.plan_name || "",
-      expiresAt: client.plan_expires_at || "",
-      graceDays: String(planGraceDays(client)),
-      trackers: summary.trackers,
-      notes: summary.notes,
-      identities: summary.identities,
-      quota: summary.quota,
-      clientDeleted: summary.client,
-      errors: summary.errors,
-    }),
-  });
+  await auditDeletion(ctx, current, summary.client ? "client.deleted_after_grace" : "client.delete_partial_failed", summary);
   return summary;
 }
 
@@ -337,7 +436,7 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
   const due = await selectDeleteDueClients(ctx, nowMs, EXPIRY_DELETE_BATCH, env);
   const results = [];
   if (!effectiveDryRun) {
-    for (const client of due) results.push(await deleteExpiredClient(ctx, client));
+    for (const client of due) results.push(await deleteExpiredClient(ctx, client, { nowMs, env }));
   }
   return {
     ok: true,
@@ -358,6 +457,7 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     checkedAt: new Date(nowMs).toISOString(),
     due: due.map((row) => ({ agencyCode: row.agency_code, name: row.name || "", expiresAt: row.plan_expires_at || null })),
     deleted: results.filter((result) => result.client).map((result) => result.agencyCode),
+    skipped: results.filter((result) => result.skipped).map((result) => ({ agencyCode: result.agencyCode, reason: result.skipped })),
     failed: results.filter((result) => result.errors.length).map((result) => ({ agencyCode: result.agencyCode, errors: result.errors })),
     results,
   };

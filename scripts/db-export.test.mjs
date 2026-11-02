@@ -695,6 +695,12 @@ test("C 표 목록: 기본 목록 끝에 백업할 4개, 백업하지 않는 5�
   assert.ok(DEFAULT_TABLES.filter((table) => !table.startsWith("coupang_")).every((table) => !OPTIONAL_TABLES.has(table)));
 });
 
+test("운영 공지(site_notices)도 매일 백업한다 — 점검 2026-11-02 F03, 선택 표가 아니라 없으면 실패", () => {
+  assert.ok(DEFAULT_TABLES.includes("site_notices"));
+  assert.equal(OPTIONAL_TABLES.has("site_notices"), false);
+  assert.ok(!INCREMENTAL_TABLES.includes("site_notices"), "한 줄 표는 통째로 받는다");
+});
+
 test("표 없음 판정: 404 또는 본문의 PGRST205·42P01 만 — 5xx·열 없음(42703)·연결 끊김은 아니다", () => {
   const httpError = (status, body) => Object.assign(new Error(`HTTP ${status}`), { status, body });
   assert.equal(isMissingTableError(httpError(404, '{"code":"PGRST205"}')), true);

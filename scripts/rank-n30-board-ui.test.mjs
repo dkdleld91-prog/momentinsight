@@ -212,6 +212,11 @@ const CARD_FUNCTIONS = [
   "rankTrackerPreviousRank",
   "rankTrackerTrend",
   "rankTrackerNeedsAttention",
+  // 2026-11-02 점검 F04·F05: 순위 없는 중립 상태·'300위 밖' 문구·카드 갱신 줄.
+  "formatRankAgo",
+  "rankTrackerNoRankState",
+  "rankTrackerOutsideLabel",
+  "rankTrackerCadenceParts",
   "rankTrackerInsight",
   "rankTrackerCatalogHint",
   "rankTrackerActionNote",
@@ -401,7 +406,7 @@ for (const [label, source] of PAGES) {
 // 1-b) 측정 목록이 잘렸을 수 있으면(캐시가 줄여 저장·서버 상한) 가장 오래된 측정 날까지만 칸을 만든다
 // ─────────────────────────────────────────────────────────────
 for (const [label, source] of PAGES) {
-  test(`${label}: 잘린 측정 목록(캐시 30·62개, 서버 120개)으로 그리면 실제로 순위가 있던 앞쪽 날을 '-'로 만들지 않는다`, () => {
+  test(`${label}: 잘린 측정 목록(캐시 30·62개, 서버 상한 240개)으로 그리면 실제로 순위가 있던 앞쪽 날을 '-'로 만들지 않는다`, () => {
     const context = sandbox(source, label);
     // 하루 2회씩 30일 내내 순위가 있던 추적의 최근 15일분(30개)만 남은 캐시.
     const full = [];
@@ -424,16 +429,16 @@ for (const [label, source] of PAGES) {
     assert.equal(sparse.length, 30);
     assert.equal(sparse.filter((cell) => cell.value === "-").length, 15);
 
-    // 서버 상한(120개)을 꽉 채운 목록도 잘렸을 수 있다고 본다. 오늘 측정 전이면 오늘 칸 '-'는 그대로.
+    // 서버 안전 상한(240개, 2026-11-02 점검 F06)을 꽉 채운 목록도 잘렸을 수 있다고 본다. 오늘 측정 전이면 오늘 칸 '-'는 그대로.
     const dense = [];
     for (let back = 1; back <= 12; back += 1) {
       const day = new Date(Date.parse("2026-10-17T00:00:00Z") - back * DAY).toISOString().slice(0, 10);
-      for (let n = 0; n < 10; n += 1) dense.push(snapshot(kst(day, 23 - n, 0), 7));
+      for (let n = 0; n < 20; n += 1) dense.push(snapshot(kst(day, 23 - n, 0), 7));
     }
-    assert.equal(dense.length, 120);
+    assert.equal(dense.length, 240);
     const denseCells = boardCells(run(context, "renderTrackerDailyBoard(__tracker)", { __tracker: { createdAt, snapshots: dense } }));
     assert.deepEqual([denseCells.length, denseCells[0].label + "=" + denseCells[0].value, denseCells[denseCells.length - 1].label], [13, "10-17(토)=-", "10-05(월)"]);
-    const under = boardCells(run(context, "renderTrackerDailyBoard(__tracker)", { __tracker: { createdAt, snapshots: dense.slice(0, 119) } }));
+    const under = boardCells(run(context, "renderTrackerDailyBoard(__tracker)", { __tracker: { createdAt, snapshots: dense.slice(0, 239) } }));
     assert.equal(under.length, 30, "상한보다 적으면 등록일까지");
 
     // 잘린 목록이어도 가장 오래된 측정 날이 등록일이면 등록일까지(하한을 더 올리지 않는다).
@@ -460,11 +465,11 @@ for (const [label, source] of PAGES) {
   });
 }
 
-test("화면이 보는 서버 측정 상한(120개)이 서버 상수와 같다", () => {
+test("화면이 보는 서버 측정 상한(240개)이 서버 상수와 같다", () => {
   const server = readRepoFile("src/server/handlers/naver-rank-trackers.mjs");
-  assert.ok(/const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120;/.test(server), "서버 상한이 바뀌면 rankTrackerSnapshotsMaybeTruncated 의 120 도 같이 바꾼다");
+  assert.ok(/const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 240;/.test(server), "서버 상한이 바뀌면 rankTrackerSnapshotsMaybeTruncated 의 240 도 같이 바꾼다");
   for (const [label, source] of PAGES) {
-    assert.ok(htmlFunction(source, "rankTrackerSnapshotsMaybeTruncated", label).includes(".length >= 120"), label);
+    assert.ok(htmlFunction(source, "rankTrackerSnapshotsMaybeTruncated", label).includes(".length >= 240"), label);
   }
 });
 
@@ -511,7 +516,8 @@ for (const [label, source] of PAGES) {
 // ─────────────────────────────────────────────────────────────
 // 3) 공유 이미지 복제본
 // ─────────────────────────────────────────────────────────────
-const INTERNAL_PILL_PREFIXES = ["상태 ", "그룹 ", "최근 ", "다음 ", "권고 ", "메시지 "];
+// 2026-11-02 점검 F05: N30 카드는 '다음 갱신' 대신 '마지막 갱신'을 보인다. F04: '300위 밖'의 운영 권고는 관리자 화면에만 있다.
+const INTERNAL_PILL_PREFIXES = ["상태 ", "그룹 ", "최근 ", "마지막 갱신 ", "메시지 "];
 
 for (const [label, source] of PAGES) {
   test(`${label}: 이미지 복제본에서는 운영줄 내부 알약이 빠지고, 화면 카드는 그대로`, () => {
@@ -527,6 +533,7 @@ for (const [label, source] of PAGES) {
       neverFound: true,
       groupName: "필름",
       lastMessage: "네이버쇼핑 오가닉 상위 300개 결과에서 대상 상품을 찾지 못했습니다.",
+      lastCheckedAt: kst("2026-10-16", 9, 12),
       snapshots: [snapshot(kst("2026-10-16", 9, 12), null), snapshot(kst("2026-10-14", 9, 12), 14)],
       createdAt: kst("2026-10-13", 8, 0),
     };
@@ -537,7 +544,14 @@ for (const [label, source] of PAGES) {
     // 화면 카드: 전부 보인다.
     const screenOps = opsText(screenCard);
     for (const prefix of INTERNAL_PILL_PREFIXES) assert.ok(screenOps.some((text) => text.startsWith(prefix)), `${label} 화면 카드에 '${prefix}' 알약이 있어야 한다`);
-    assert.ok(screenOps.includes("점검 필요"));
+    // 300위 안에서 못 찾은 정상 결과는 '점검 필요'가 아니라 중립 '300위 밖'(마지막 발견 덧붙임)이다(2026-11-02 점검 F04).
+    assert.ok(screenOps.includes("300위 밖 · 마지막 발견 3일 전 · 14위"), screenOps.join(" | "));
+    assert.ok(!screenOps.includes("점검 필요"));
+    assert.ok(screenOps.includes("마지막 갱신 1일 전"));
+    assert.equal(screenOps.some((text) => text.startsWith("다음 ")), false, "N30 카드에 next_check_at 기반 '다음' 알약이 없다");
+    // 운영 조치 권고는 관리자 화면(총관리자 세션)에만 있다.
+    assert.deepEqual(screenOps.filter((text) => text.startsWith("권고 ")),
+      label === "admin.html" ? ["권고 300위 이내 없음 · 상품명/카테고리 확인"] : []);
     assert.ok(screenOps.includes("원부 확인 필요"));
     assert.ok(screenCard.querySelector(".mi-rank-catalog-hint"));
 
@@ -700,4 +714,298 @@ test("admin.html·client.html 의 N 30일 날짜 줄·7일 평균·이미지 함
   ]) {
     assert.equal(htmlFunction(adminSource, name, "admin"), htmlFunction(clientSource, name, "client"), name);
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 5) N30 화면 신뢰(2026-11-02 점검 F04·F54·F05·F14·F19, 대표 승인)
+//   - '점검 필요'·'확인 필요'는 수집 실패만. 첫 확인 전은 '첫 확인 대기', 300위 안에 없으면 '300위 밖'(둘 다 중립).
+//   - 운영 권고('상품명/카테고리 확인')는 관리자 화면에만. 실패면 권고가 순위 흐름 문구가 아니라 실패 안내.
+//   - N30 카드·요약은 next_check_at('다음 갱신'·'대기 N개'·'갱신 대기')을 쓰지 않고 마지막 갱신 기준.
+//   - 갱신 요청은 초록 성공 문구가 아니라 중립 안내, 알려진 수집기 상태·일시중지는 주황.
+//   - 공유 이미지 개수는 실제로 그린 카드 수, 빠진 선택이 있으면 함께 알린다.
+// ─────────────────────────────────────────────────────────────
+const SUMMARY_HELPERS = ["escapeHtml", "formatRankShortAt", "rankTrackerRankValue", "rankTrackerLatestRank", "placeTrackerLatestRank", "rankTrackerNeedsAttention"];
+
+function opsSummary(source, label, trackers, { place = false, workerStatus = null } = {}) {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(`Date.now = function () { return ${NOW}; };`, context);
+  let prelude;
+  if (source === adminSource) {
+    // 관리자 화면 요약은 정체 배너 상수·함수 묶음(갱신 지연 기준 포함)을 함께 쓴다.
+    const from = source.indexOf("      var RANK_OVERDUE_THRESHOLD_MS = 21600000;");
+    const to = source.indexOf("\n      function rankTrackerOpsSummary(", from);
+    assert.ok(from >= 0 && to > from, "admin 요약 상수 묶음");
+    prelude = source.slice(from, to);
+  } else {
+    const constant = /\n {6}var RANK_N30_UPDATE_DELAY_HOURS = \d+;\n/u.exec(source);
+    assert.ok(constant, `${label}: 갱신 지연 기준 상수`);
+    prelude = constant[0] + htmlFunction(source, "rankTrackerUpdateDelayed", label);
+  }
+  vm.runInContext([prelude, htmlFunction(source, "rankTrackerOpsSummary", label)]
+    .concat(SUMMARY_HELPERS.map((name) => htmlFunction(source, name, label))).join("\n\n"), context);
+  context.__trackers = trackers;
+  context.__workerStatus = workerStatus;
+  const html = vm.runInContext(place
+    ? "rankTrackerOpsSummary(__trackers, placeTrackerLatestRank, __workerStatus)"
+    : "rankTrackerOpsSummary(__trackers, null, __workerStatus)", context);
+  const root = parseHtml(html);
+  const head = root.querySelectorAll(".mi-rank-auto-head").at(-1);
+  const metrics = root.querySelectorAll(".mi-rank-auto-metric").slice(-3).map((metric) => ({
+    label: metric.querySelector("span").textContent,
+    value: metric.querySelector("strong").textContent,
+    note: metric.querySelector("small").textContent,
+    tone: metric.classList.find((name) => name.startsWith("is-")) || "",
+  }));
+  return {
+    html,
+    pill: head.querySelector(".mi-rank-auto-status").textContent,
+    pillTone: head.querySelector(".mi-rank-auto-status").classList.find((name) => name.startsWith("is-")) || "",
+    small: head.querySelector("small").textContent,
+    metrics,
+  };
+}
+
+const iso = (offsetMs) => new Date(NOW + offsetMs).toISOString();
+// 옛 일정(09시·15시)이 이미 지난 next_check_at — N30 화면은 이 값을 보지 않는다.
+const PAST_SLOT = iso(-3 * HOUR);
+const n30 = {
+  ranked: { id: "r", status: "active", currentRank: 12, lastCheckedAt: iso(-2 * HOUR), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "네이버쇼핑 오가닉 300위 중 12위", snapshots: [{ checkedAt: iso(-2 * HOUR), rank: 12 }, { checkedAt: iso(-8 * HOUR), rank: 15 }] },
+  first: { id: "f", status: "active", currentRank: null, lastCheckedAt: null, nextCheckAt: PAST_SLOT, createdAt: iso(-HOUR), retryCount: 0, lastMessage: null, snapshots: [] },
+  outside: { id: "o", status: "active", currentRank: null, lastCheckedAt: iso(-3 * HOUR), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "네이버쇼핑 오가닉 상위 300개 결과에서 대상 상품을 찾지 못했습니다.", snapshots: [{ checkedAt: iso(-3 * HOUR), rank: null }] },
+  outsideSeen: { id: "os", status: "active", currentRank: null, lastCheckedAt: iso(-3 * HOUR), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "네이버쇼핑 오가닉 상위 300개 결과에서 대상 상품을 찾지 못했습니다.",
+    snapshots: [{ checkedAt: iso(-3 * HOUR), rank: null }, { checkedAt: iso(-(2 * DAY + 5 * HOUR)), rank: 41 }, { checkedAt: iso(-4 * DAY), rank: 37 }] },
+  retrying: { id: "x", status: "active", currentRank: 12, lastCheckedAt: iso(-2 * HOUR), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 3,
+    lastError: "네이버 쇼핑 응답 시간 초과", lastMessage: "네이버쇼핑 오가닉 300위 중 12위",
+    snapshots: [{ checkedAt: iso(-2 * HOUR), rank: 12 }, { checkedAt: iso(-8 * HOUR), rank: 20 }] },
+  failed: { id: "e", status: "failed", currentRank: 12, lastCheckedAt: iso(-2 * HOUR), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "네이버쇼핑 오가닉 300위 중 12위", snapshots: [{ checkedAt: iso(-2 * HOUR), rank: 12 }] },
+  stale: { id: "s", status: "active", currentRank: 9, lastCheckedAt: iso(-30 * HOUR), nextCheckAt: iso(3 * HOUR), createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "ok", snapshots: [{ checkedAt: iso(-30 * HOUR), rank: 9 }] },
+  pausedStale: { id: "p", status: "paused", currentRank: 9, lastCheckedAt: iso(-5 * DAY), nextCheckAt: PAST_SLOT, createdAt: iso(-20 * DAY), retryCount: 0,
+    lastMessage: "ok", snapshots: [{ checkedAt: iso(-5 * DAY), rank: 9 }] },
+};
+
+for (const [label, source] of PAGES) {
+  const isAdmin = label === "admin.html";
+
+  test(`${label}: N30 세 상태 — 첫 확인 대기·300위 밖은 중립, 수집 실패만 점검 필요(권고도 실패 안내)`, () => {
+    const context = sandbox(source, label, { card: true });
+    const call = (expression, tracker) => JSON.parse(JSON.stringify(run(context, expression, { __tracker: tracker })));
+    // ① 첫 확인 대기
+    assert.equal(call("rankTrackerNeedsAttention(__tracker)", n30.first), false);
+    assert.deepEqual(call("rankTrackerInsight(__tracker)", n30.first), { label: "첫 확인 대기", className: "is-neutral" });
+    assert.equal(call("rankTrackerActionNote(__tracker)", n30.first), null, "첫 확인 전에는 권고가 없다");
+    // ② 300위 밖 — 마지막 발견은 기록이 있을 때만
+    assert.equal(call("rankTrackerNeedsAttention(__tracker)", n30.outside), false);
+    assert.deepEqual(call("rankTrackerInsight(__tracker)", n30.outside), { label: "300위 밖", className: "is-neutral" });
+    assert.deepEqual(call("rankTrackerInsight(__tracker)", n30.outsideSeen), { label: "300위 밖 · 마지막 발견 2일 전 · 41위", className: "is-neutral" });
+    // 30일 기록 없이 마지막 확인 시각만 있어도 확인은 끝난 것이다.
+    assert.equal(call("rankTrackerNoRankState(__tracker)", { ...n30.outside, snapshots: [] }), "outside");
+    assert.equal(call("rankTrackerNoRankState(__tracker)", n30.ranked), "");
+    // 운영 조치 권고는 관리자 화면(총관리자 세션)에만, 빨강이 아니라 주황.
+    assert.deepEqual(call("rankTrackerActionNote(__tracker)", n30.outside),
+      isAdmin ? { label: "300위 이내 없음 · 상품명/카테고리 확인", className: "is-warn" } : null);
+    // ③ 수집 실패 — 재시도 중이면 순위 흐름('상승 흐름 유지') 대신 실패 안내
+    assert.equal(call("rankTrackerNeedsAttention(__tracker)", n30.retrying), true);
+    assert.deepEqual(call("rankTrackerInsight(__tracker)", n30.retrying), { label: "점검 필요", className: "is-error" });
+    assert.deepEqual(call("rankTrackerActionNote(__tracker)", n30.retrying), { label: "최근 확인이 실패해 다시 시도 중입니다(3회)", className: "is-error" });
+    assert.deepEqual(call("rankTrackerActionNote(__tracker)", n30.failed),
+      { label: isAdmin ? "연결 상태 확인" : "최근 확인이 실패했습니다", className: "is-error" });
+    // 정상 순위는 예전 그대로.
+    assert.deepEqual(call("rankTrackerInsight(__tracker)", n30.ranked), { label: "상승 흐름", className: "is-ok" });
+    assert.deepEqual(call("rankTrackerActionNote(__tracker)", n30.ranked), { label: "상승 흐름 유지", className: "is-ok" });
+  });
+
+  test(`${label}: N30 카드 — 첫 확인 대기 카드에 빨간 표시·권고가 없고 '다음' 대신 '마지막 갱신'`, () => {
+    const context = sandbox(source, label, { card: true });
+    const opsOf = (tracker) => {
+      const html = run(context, "renderRankTrackerCard(__tracker, null)", { __tracker: { keyword: "손난로", productId: "1", ...tracker } });
+      const ops = parseHtml(html).querySelector(".mi-rank-ops-row");
+      return { html, texts: ops.children.filter((child) => child instanceof MiniElement).map((child) => child.textContent), errors: ops.querySelectorAll(".is-error").length };
+    };
+    const first = opsOf(n30.first);
+    assert.ok(first.texts.includes("첫 확인 대기"));
+    assert.ok(first.texts.includes("마지막 갱신 아직 없음"));
+    assert.equal(first.errors, 0, "첫 확인 대기 카드에는 빨간 알약이 없다");
+    assert.equal(first.texts.some((text) => text.startsWith("권고 ") || text === "점검 필요" || text.startsWith("다음 ")), false);
+    assert.ok(first.html.includes("첫 오가닉 순위 확인 후"), "기록판 안내는 그대로(중립 회색 안내)");
+
+    const outside = opsOf(n30.outsideSeen);
+    assert.ok(outside.texts.includes("300위 밖 · 마지막 발견 2일 전 · 41위"));
+    assert.equal(outside.errors, 0);
+    assert.ok(outside.texts.includes("마지막 갱신 3시간 전"));
+
+    const retrying = opsOf(n30.retrying);
+    assert.ok(retrying.texts.includes("점검 필요"));
+    assert.ok(retrying.texts.includes("권고 최근 확인이 실패해 다시 시도 중입니다(3회)"));
+    assert.equal(retrying.texts.some((text) => text.includes("상승 흐름 유지")), false);
+    // 지난 next_check_at 으로 상태 알약을 '대기'(파랑)로 칠하지 않는다.
+    assert.ok(!opsOf(n30.ranked).html.includes("is-wait"));
+    assert.ok(opsOf(n30.failed).html.includes('class=" is-error">상태 '), "오류 상태만 빨강");
+  });
+
+  test(`${label}: N30 카드 갱신 줄 — 마지막 갱신 경과와 최근 7일 실제 평균 간격(기록 3건 미만이면 생략)`, () => {
+    const context = sandbox(source, label, { card: true });
+    const parts = (tracker) => JSON.parse(JSON.stringify(run(context, "rankTrackerCadenceParts(__tracker)", { __tracker: tracker })));
+    const every = (hours, count, offset = 0) => Array.from({ length: count }, (_, index) => ({ checkedAt: iso(-(offset + index * hours) * HOUR), rank: 5 }));
+    assert.deepEqual(parts({ lastCheckedAt: iso(-3 * HOUR), snapshots: every(6, 5, 3) }), ["마지막 갱신 3시간 전", "최근 7일 평균 약 6시간 간격"]);
+    assert.deepEqual(parts({ lastCheckedAt: iso(-45 * 60 * 1000), snapshots: every(6, 2) }), ["마지막 갱신 45분 전"], "최근 7일 기록 2건이면 평균 생략");
+    // 7일보다 오래된 기록은 평균에 넣지 않는다(최근 7일 안 2건 + 오래된 5건 → 생략).
+    assert.deepEqual(parts({ lastCheckedAt: iso(-HOUR), snapshots: every(6, 2, 1).concat(every(6, 5, 8 * 24)) }), ["마지막 갱신 1시간 전"]);
+    assert.deepEqual(parts({ lastCheckedAt: iso(-26 * HOUR), snapshots: [] }), ["마지막 갱신 1일 전"]);
+    assert.deepEqual(parts({ lastCheckedAt: iso(30 * 1000), snapshots: [] }), ["마지막 갱신 방금 전"], "기기 시계가 조금 늦어도 음수를 쓰지 않는다");
+    assert.deepEqual(parts({ snapshots: [] }), ["마지막 갱신 아직 없음"]);
+  });
+
+  test(`${label}: N30 상단 요약 — 확인 필요는 수집 실패만, next_check_at 대신 마지막 갱신 24시간 기준 '갱신 지연'`, () => {
+    const healthy = opsSummary(source, label, [n30.ranked, n30.first, n30.outside, n30.outsideSeen]);
+    assert.equal(healthy.pill, "정상 운영");
+    assert.equal(healthy.pillTone, "is-ok");
+    assert.equal(healthy.small, "4개 운영 · 0개 갱신 지연 · 0개 확인");
+    assert.equal(healthy.metrics[0].label, "최근 갱신");
+    assert.deepEqual(healthy.metrics.slice(1).map(({ label: name, value, tone }) => [name, value, tone]),
+      [["갱신 상태", "정상", "is-ok"], ["확인 필요", "0개", "is-ok"]]);
+    assert.equal(healthy.metrics[1].note, "모두 24시간 안에 갱신");
+    for (const banned of ["갱신 대기", "다음 갱신", "개 대기"]) assert.equal(healthy.html.includes(banned), false, `N30 요약에 '${banned}' 없음`);
+
+    const delayed = opsSummary(source, label, [n30.ranked, n30.stale, n30.pausedStale, { ...n30.first, createdAt: iso(-2 * DAY) }]);
+    assert.equal(delayed.pill, "갱신 지연 2개", "운영 중 추적만 센다(일시중지 제외, 첫 확인 전은 등록 시각 기준)");
+    assert.equal(delayed.pillTone, "is-warn");
+    assert.equal(delayed.small, "3개 운영 · 2개 갱신 지연 · 0개 확인");
+    assert.deepEqual([delayed.metrics[1].value, delayed.metrics[1].note, delayed.metrics[1].tone], ["지연 2개", "24시간 넘게 갱신 안 됨", "is-warn"]);
+
+    const failing = opsSummary(source, label, [n30.ranked, n30.outside, n30.retrying, n30.failed]);
+    assert.equal(failing.pill, "확인 필요");
+    assert.equal(failing.pillTone, "is-error");
+    assert.equal(failing.small, "4개 운영 · 0개 갱신 지연 · 2개 확인");
+    assert.equal(failing.metrics[2].value, "2개");
+
+    // 화면이 아는 수집기 상태는 예전처럼 먼저 보인다.
+    const stopped = opsSummary(source, label, [n30.ranked], { workerStatus: { state: "stopped" } });
+    assert.deepEqual([stopped.pill, stopped.metrics[1].label, stopped.metrics[1].value, stopped.metrics[1].tone], ["안전 정지", "갱신 상태", "정지", "is-error"]);
+  });
+
+  test(`${label}: N 플레이스 상단 요약은 예전 그대로(next_check_at·다음 갱신·대기 N개)`, () => {
+    const placeTracker = (overrides) => ({ status: "active", nextCheckAt: PAST_SLOT, lastCheckedAt: iso(-HOUR), snapshots: [{ checkedAt: iso(-HOUR), rank: 4 }], ...overrides });
+    const due = opsSummary(source, label, [placeTracker({})], { place: true });
+    assert.deepEqual([due.pill, due.pillTone, due.small], ["갱신 대기", "is-warn", "1개 운영 · 1개 대기 · 0개 확인"]);
+    assert.deepEqual([due.metrics[1].label, due.metrics[1].note], ["다음 갱신", "하루 2~3회 자동 갱신"]);
+    // 플레이스는 순위가 없으면 예전처럼 확인 필요로 센다(이번 변경 범위 밖).
+    const noRank = opsSummary(source, label, [placeTracker({ nextCheckAt: iso(2 * HOUR), snapshots: [], currentRank: null })], { place: true });
+    assert.deepEqual([noRank.pill, noRank.small], ["확인 필요", "1개 운영 · 0개 대기 · 1개 확인"]);
+  });
+
+  test(`${label}: 갱신 요청 안내 — 초록 성공 대신 중립 안내, 일시중지·알려진 수집기 상태는 주황(개발 용어 없음)`, () => {
+    const body = lockedFunction(source, "initRankTracking");
+    const start = body.indexOf("        function rankRefreshRequestNotice(");
+    assert.ok(start >= 0, "안내 함수");
+    const fn = body.slice(start, body.indexOf("\n        }\n", start) + "\n        }".length);
+    const context = { __cooldown: "", __state: "unknown", card: {} };
+    vm.createContext(context);
+    vm.runInContext(`function rankWorkerCooldownMessage() { return __cooldown; }
+      function rankWorkerStatusFromCard() { return { state: __state }; }
+      ${fn}`, context);
+    const notice = (tracker, state = "unknown", cooldown = "") => {
+      context.__state = state;
+      context.__cooldown = cooldown;
+      context.__tracker = tracker;
+      return JSON.parse(JSON.stringify(vm.runInContext("rankRefreshRequestNotice(__tracker)", context)));
+    };
+    assert.deepEqual(notice(null), { message: "갱신을 요청했습니다. N 30일 순위는 정해진 순서대로 돌아가며 확인하므로 바로 바뀌지 않을 수 있습니다.", className: "" });
+    assert.deepEqual(notice({ status: "active" }, "running").className, "", "화면이 모르는 상태를 추측하지 않는다");
+    assert.deepEqual(notice({ status: "paused" }), { message: "일시중지된 추적은 갱신되지 않습니다.", className: "is-warn" });
+    assert.deepEqual(notice(null, "cooldown", "네이버 쇼핑 접속 제한으로 일시정지했습니다."), { message: "네이버 쇼핑 접속 제한으로 일시정지했습니다.", className: "is-warn" });
+    assert.equal(notice(null, "stopped").className, "is-warn");
+    assert.match(notice(null, "stopped").message, /안전 정지 상태라 갱신되지 않습니다/u);
+    assert.equal(notice(null, "verification").className, "is-warn");
+    // 두 버튼 모두 이 안내를 쓴다(중앙 자동 순환 응답일 때만), 옛 초록 문구·개발 용어는 없다.
+    assert.ok(body.includes("var queuedNotice = rankRefreshRequestNotice(null);"));
+    assert.ok(body.includes("if (payload && payload.ok === true && payload.queuedForLocalWorker === true) {"));
+    for (const banned of ["개발 프로필", "약 1분 내 시작", "순위 작업기"]) assert.equal(source.includes(banned), false, `${label}: '${banned}' 문구 없음`);
+    // 광고주 화면에는 수집기 내부 용어가 없다(관리자 수집기 운영 패널의 '원격 실행 신호'는 총관리자 전용이라 그대로).
+    if (!isAdmin) assert.equal(source.includes("원격 실행"), false);
+  });
+
+  test(`${label}: 공유 이미지 — 개수·파일 이름은 실제로 그린 카드 수, 필터로 빠진 선택이 있으면 함께 알린다`, async () => {
+    const runDownload = async (selectedIds, visibleIds) => {
+      const statuses = [];
+      const ready = [];
+      const makeNode = (tag) => ({
+        tag,
+        children: [],
+        className: "",
+        appendChild(child) { this.children.push(child); return child; },
+        replaceChildren(...nodes) { this.children = nodes; },
+        querySelector(selector) {
+          if (selector !== ".mi-rank-tracker-card") return null;
+          const walk = (node) => (node.isCard ? node : (node.children || []).map(walk).find(Boolean) || null);
+          return walk(this);
+        },
+      });
+      const card = {
+        querySelector(selector) {
+          if (selector === "[data-rank-status]") return { status: true };
+          const match = /data-rank-tracker-id="([^"]+)"/u.exec(selector);
+          return match && visibleIds.includes(match[1]) ? { id: match[1] } : null;
+        },
+        closest() { return {}; },
+      };
+      const context = {
+        document: { createElement: makeNode },
+        window: { requestAnimationFrame: (resolve) => resolve() },
+        Blob: function Blob() {},
+        __card: card,
+        __trackers: ["a", "b", "c"].map((id) => ({ id, keyword: "키워드 " + id })),
+      };
+      vm.createContext(context);
+      vm.runInContext([
+        htmlFunction(source, "escapeHtml", label),
+        htmlFunction(source, "rankExportCssEscape", label),
+        htmlFunction(source, "rankExportFileName", label),
+        htmlFunction(source, "renderRankExportSheet", label),
+        htmlFunction(source, "downloadSelectedRankTrackers", label),
+        `function ensureRankExportStage() { return document.createElement("div"); }
+         function cloneRankTrackerCardForShare(source) { return { isCard: true, id: source.id, children: [] }; }
+         function serializeRankExportSheet() { return ""; }
+         function rankSelectedSet() { return new Set(${JSON.stringify(selectedIds)}); }
+         async function rankExportImageBlob() { return { blob: {}, ext: "png" }; }
+         function showRankDownloadReady(card, blob, fileName, count) { __ready.push([fileName, count]); return null; }
+         function setStatus(node, message, type) { __statuses.push([message, type]); }`,
+      ].join("\n\n"), context);
+      context.__statuses = statuses;
+      context.__ready = ready;
+      await vm.runInContext("downloadSelectedRankTrackers(__card, __trackers)", context);
+      return { status: statuses.at(-1), ready: ready.at(-1) };
+    };
+    const partial = await runDownload(["a", "b", "c"], ["b"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(partial.status)), ["1개 순위 항목의 공유 이미지(PNG)가 준비되었습니다. 선택 3개 중 화면에 보이는 1개만 담았습니다. 전부 담으려면 필터를 풀어 주세요.", "is-warn"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(partial.ready)), ["키워드-b-30일순위.png", 1], "파일 이름·완료 칸 개수도 그린 카드 기준");
+    const all = await runDownload(["a", "b", "c"], ["a", "b", "c"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(all.status)), ["3개 순위 항목의 공유 이미지(PNG)가 준비되었습니다.", "is-ok"]);
+    assert.deepEqual(JSON.parse(JSON.stringify(all.ready)), ["키워드-a-외-2개-30일순위.png", 3]);
+    const none = await runDownload(["a"], []);
+    assert.deepEqual(JSON.parse(JSON.stringify(none.status)), ["현재 화면에서 선택 항목을 찾지 못했습니다. 그룹을 펼친 뒤 다시 저장해주세요.", "is-warn"]);
+  });
+}
+
+test("admin.html·client.html 의 N30 화면 신뢰 함수(2026-11-02)는 글자 하나까지 같다", () => {
+  for (const name of [
+    "formatRankAgo", "rankTrackerNeedsAttention", "rankTrackerNoRankState", "rankTrackerOutsideLabel", "rankTrackerCadenceParts",
+    "rankTrackerInsight", "rankTrackerActionNote", "rankTrackerUpdateDelayed", "downloadSelectedRankTrackers",
+  ]) {
+    assert.equal(htmlFunction(adminSource, name, "admin"), htmlFunction(clientSource, name, "client"), name);
+  }
+  const constant = (source) => /\n {6}var RANK_N30_UPDATE_DELAY_HOURS = (\d+);\n/u.exec(source)?.[1];
+  assert.equal(constant(adminSource), "24");
+  assert.equal(constant(clientSource), "24");
+  const notice = (source) => {
+    const body = lockedFunction(source, "initRankTracking");
+    const start = body.indexOf("        function rankRefreshRequestNotice(");
+    return body.slice(start, body.indexOf("\n        }\n", start));
+  };
+  assert.equal(notice(adminSource), notice(clientSource));
 });

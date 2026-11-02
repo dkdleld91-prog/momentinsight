@@ -3488,9 +3488,9 @@ test("tracker payload hides inferred parent history and falls back to the last d
   assert.deepEqual(untrustedOnly.snapshots, []);
 });
 
-test("product rank history keeps up to 120 snapshots from the most recent 30 days", () => {
+test("product rank history keeps up to the 240 safety cap from the most recent 30 days, newest first", () => {
   const now = Date.now();
-  const recent = Array.from({ length: 121 }, (_, index) => ({
+  const recent = Array.from({ length: 241 }, (_, index) => ({
     id: `recent-${index}`,
     tracker_id: "tracker-1",
     checked_at: new Date(now - index * 60 * 60 * 1000).toISOString(),
@@ -3510,17 +3510,51 @@ test("product rank history keeps up to 120 snapshots from the most recent 30 day
   };
 
   const payload = trackerPayload(trackerRow(), [...recent, older]);
-  assert.equal(payload.snapshots.length, 120);
+  assert.equal(payload.snapshots.length, 240);
   assert.equal(payload.snapshots[0].id, "recent-0");
-  assert.equal(payload.snapshots.at(-1).id, "recent-119");
+  assert.equal(payload.snapshots.at(-1).id, "recent-239");
   assert.equal(payload.snapshots.some((snapshot) => snapshot.id === "older-than-30-days"), false);
+});
+
+// 2026-11-02 점검 F06: 하루 4.5회 × 30일 = 135건이면 예전 120건 상한이 앞쪽 날을 잘랐다. 30일 안의 기록은 모두 응답에 들어간다.
+test("product rank history keeps every snapshot of the last 30 days at 4.5 checks a day (135 rows)", async () => {
+  const now = Date.now();
+  const stepMs = Math.floor((24 * 60 * 60 * 1000) / 4.5);
+  const rows = Array.from({ length: 135 }, (_, index) => ({
+    id: `day-${String(index).padStart(3, "0")}`,
+    tracker_id: "tracker-1",
+    checked_at: new Date(now - 60_000 - index * stepMs).toISOString(),
+    rank: (index % 40) + 1,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: {},
+    message: "ok",
+    source: "test",
+    created_at: new Date(now).toISOString(),
+  }));
+  const older = { ...rows[0], id: "older-than-30-days", checked_at: new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString() };
+  // 가장 오래된 기록이 29일 넘게 전이다(앞쪽 날까지 담겨야 한다).
+  assert.ok(now - Date.parse(rows.at(-1).checked_at) > 29 * 24 * 60 * 60 * 1000);
+
+  const payload = trackerPayload(trackerRow(), [...rows, older]);
+  assert.equal(payload.snapshots.length, 135);
+  assert.equal(payload.snapshots[0].id, "day-000");
+  assert.equal(payload.snapshots.at(-1).id, "day-134");
+  assert.equal(payload.snapshots.some((snapshot) => snapshot.id === "older-than-30-days"), false);
+
+  // 목록 조회(loadSnapshots 기본 상한)도 135건을 모두 읽는다.
+  const { ctx } = pagedProductSnapshotContext([...rows, older].map(({ id, tracker_id, checked_at }) => ({ id, tracker_id, checked_at })), { serverCap: 100 });
+  const grouped = await loadProductSnapshots(ctx, ["tracker-1"]);
+  assert.equal(grouped.get("tracker-1").length, 135);
+  assert.equal(grouped.get("tracker-1").at(-1).id, "day-134");
 });
 
 test("product snapshot loading paginates beyond 5000 rows without truncating tracker histories", async () => {
   const now = Date.now();
   const trackerIds = Array.from({ length: 60 }, (_, index) => `tracker-${index}`);
   const rows = trackerIds.flatMap((trackerId, trackerIndex) => {
-    const count = trackerIndex === 0 ? 130 : 100;
+    const count = trackerIndex === 0 ? 250 : 100;
     const recent = Array.from({ length: count }, (_, snapshotIndex) => ({
       id: `${trackerId}-recent-${snapshotIndex}`,
       tracker_id: trackerId,
@@ -3535,9 +3569,9 @@ test("product snapshot loading paginates beyond 5000 rows without truncating tra
   const { ctx, state } = pagedProductSnapshotContext(rows, { serverCap: 250 });
 
   const grouped = await loadProductSnapshots(ctx, trackerIds);
-  assert.equal(grouped.get("tracker-0").length, 120);
+  assert.equal(grouped.get("tracker-0").length, 240);
   trackerIds.slice(1).forEach((trackerId) => assert.equal(grouped.get(trackerId).length, 100));
-  assert.equal(Array.from(grouped.values()).reduce((sum, snapshots) => sum + snapshots.length, 0), 6020);
+  assert.equal(Array.from(grouped.values()).reduce((sum, snapshots) => sum + snapshots.length, 0), 6140);
   assert.ok(state.queries.length > 20);
   assert.equal(state.queries.every(({ columns }) => !columns.includes("top_items")), true);
   assert.equal(Array.from(grouped.values()).flat().some((snapshot) => snapshot.id.endsWith("-old")), false);
@@ -3558,9 +3592,9 @@ test("product snapshot keyset preserves same-time ties and sub-millisecond order
   const { ctx, state } = pagedProductSnapshotContext([...dominantRows, laterRow], { serverCap: 251 });
 
   const grouped = await loadProductSnapshots(ctx, ["tracker-dominant", "tracker-later"]);
-  assert.equal(grouped.get("tracker-dominant").length, 120);
+  assert.equal(grouped.get("tracker-dominant").length, 240);
   assert.deepEqual(grouped.get("tracker-later").map(({ id }) => id), ["later-row"]);
-  assert.equal(new Set(Array.from(grouped.values()).flat().map(({ id }) => id)).size, 121);
+  assert.equal(new Set(Array.from(grouped.values()).flat().map(({ id }) => id)).size, 241);
   assert.ok(state.queries.length <= 3);
   assert.equal(state.queries.slice(1).every(({ trackerIds }) => (
     trackerIds.length === 1 && trackerIds[0] === "tracker-later"
@@ -3592,7 +3626,7 @@ test("product snapshot keyset ignores a live head insert without shifting or los
   });
 
   const grouped = await loadProductSnapshots(ctx, ["tracker-dominant", "tracker-sparse"]);
-  assert.equal(grouped.get("tracker-dominant").length, 120);
+  assert.equal(grouped.get("tracker-dominant").length, 240);
   assert.deepEqual(grouped.get("tracker-sparse").map(({ id }) => id), ["older-sparse-row"]);
   assert.equal(Array.from(grouped.values()).flat().some(({ id }) => id === liveInsert.id), false);
   assert.ok(state.queries.slice(1).every(({ cursor }) => cursor));

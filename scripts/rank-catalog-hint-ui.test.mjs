@@ -133,6 +133,11 @@ function cardSandbox(source, label) {
     htmlFunction(source, "rankTrackerPreviousRank", label),
     htmlFunction(source, "rankTrackerTrend", label),
     htmlFunction(source, "rankTrackerNeedsAttention", label),
+    // 2026-11-02 점검 F04·F05: 순위 없는 중립 상태·'300위 밖' 문구·카드 갱신 줄.
+    htmlFunction(source, "formatRankAgo", label),
+    htmlFunction(source, "rankTrackerNoRankState", label),
+    htmlFunction(source, "rankTrackerOutsideLabel", label),
+    htmlFunction(source, "rankTrackerCadenceParts", label),
     htmlFunction(source, "rankTrackerInsight", label),
     htmlFunction(source, "rankTrackerCatalogHint", label),
     // N 30일 그룹상품(2026-10-23): 카드가 부르는 공통 도우미와 화면별 편집 가능 여부(2026-11-01 편집 버튼 함수 추가).
@@ -175,6 +180,8 @@ function opsSummarySandbox(health) {
     htmlFunction(adminSource, "rankTrackerRankValue"),
     htmlFunction(adminSource, "rankTrackerLatestRank"),
     htmlFunction(adminSource, "placeTrackerLatestRank"),
+    // N30 '확인 필요'는 카드 '점검 필요'와 같은 기준이다(2026-11-02 점검 F04).
+    htmlFunction(adminSource, "rankTrackerNeedsAttention"),
   ].join("\n\n"), context);
   applyHealth(context, health);
   return context;
@@ -300,7 +307,7 @@ test("C5a: rankTrackerCatalogHint 는 neverFound === true 에서만 배지·안�
   }
 });
 
-test("C5a: 카드 렌더는 배지와 안내문을 싣고 기존 점검 필요 배지는 그대로 병기한다", () => {
+test("C5a: 카드 렌더는 배지와 안내문을 싣고 300위 밖 중립 배지와 병기한다", () => {
   for (const [label, source] of PAGES) {
     const html = cardHtml(source, label, neverFoundTracker({}));
     assert.ok(html.includes('data-rank-catalog-hint'), `${label}: 안내 요소 표식이 있어야 한다`);
@@ -308,8 +315,9 @@ test("C5a: 카드 렌더는 배지와 안내문을 싣고 기존 점검 필요 �
     assert.ok(html.includes(CATALOG_NOTE), `${label}: 안내문이 있어야 한다`);
     // URL 은 escapeHtml 을 거쳐도 그대로 읽혀야 한다(슬래시·콜론은 이스케이프 대상이 아니다).
     assert.ok(html.includes("https://search.shopping.naver.com/catalog/"), `${label}: 원부 URL 형태가 보여야 한다`);
-    // 기존 로직: 300위 이내 미노출(latest 없음) → "점검 필요" 는 그대로 남는다.
-    assert.ok(html.includes(">점검 필요<"), `${label}: 기존 점검 필요 배지가 유지돼야 한다`);
+    // 2026-11-02 점검 F04: 확인이 끝났는데 300위 안에 없는 결과는 '점검 필요'(빨강)가 아니라 중립 '300위 밖'이다.
+    assert.ok(html.includes(">300위 밖<"), `${label}: 300위 밖 중립 배지가 있어야 한다`);
+    assert.equal(html.includes("점검 필요"), false, `${label}: 수집 실패가 아니면 점검 필요가 아니다`);
     assert.equal((html.match(new RegExp(CATALOG_BADGE, "g")) || []).length, 1, `${label}: 배지는 한 번만 나온다`);
   }
 });

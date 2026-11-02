@@ -83,7 +83,12 @@ const RANK_TRACKER_LEASE_MS = Number.isFinite(configuredRankTrackerLeaseMs)
   ? Math.max(MIN_RANK_TRACKER_LEASE_MS, configuredRankTrackerLeaseMs)
   : MIN_RANK_TRACKER_LEASE_MS;
 const PRODUCT_RANK_HISTORY_DAYS = 30;
-const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120;
+// 화면에 보내는 N30 기록은 '최근 30일 안의 기록 전부'다(2026-11-02 점검 F06, 대표 승인). 건수는 안전 상한일 뿐이고
+// (하루 8회 × 30일 = 240), 상한에 걸리면 지금처럼 최신 기록부터 남긴다. 예전 120건 상한은 하루 약 4.2회 수집에서
+// 앞쪽 1~2일을 잘랐다(실측 최대 117건, 하루 4.5회면 135건). 읽는 칸(SNAPSHOT_LIST_SELECT)은 그대로다.
+const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 240;
+// 수집 결과 저장 때 원부 기준을 되짚는 조회(loadVerifiedRelatedCatalogId)는 수집 쪽 판정이라 예전 상한을 그대로 둔다.
+const RELATED_CATALOG_HISTORY_MAX_SNAPSHOTS = 120;
 const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
 // Keyset pagination normally finishes after a handful of pages. Keep an
 // explicit ceiling so a malformed/continuously backfilled result set can never
@@ -1862,7 +1867,7 @@ async function loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt) {
     .gte("checked_at", checkedAfter)
     .lte("checked_at", checkedAt)
     .order("checked_at", { ascending: false })
-    .limit(PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
+    .limit(RELATED_CATALOG_HISTORY_MAX_SNAPSHOTS);
 
   if (error) throw error;
   return verifiedRelatedCatalogIdFromSnapshots(data || [], tracker.product_id);

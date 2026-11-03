@@ -13,6 +13,9 @@ const pages = {
   admin: "admin.html",
   client: "client.html",
   privacy: "privacy.html",
+  // 이용약관(2026-11-03 신설)과 개인정보처리방침 이전 버전(v1.0, 개정 공고 때 열람용).
+  terms: "terms.html",
+  "privacy-v1-0": "privacy-v1-0.html",
   // 없는 주소는 Vercel 기본 문자열 대신 이 안내 페이지(홈·뉴스·가입·로그인 링크)로 답한다(2026-09-07).
   "404": "404.html",
 };

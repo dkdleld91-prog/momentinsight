@@ -165,7 +165,7 @@ try {
   process.exit(1);
 }
 
-for (const required of ["index.html", "home.html", "admin.html", "client.html", "privacy.html", "robots.txt", "sitemap.xml", ...GUIDE_PAGES.map((page) => `guide/${page.slug}.html`)]) {
+for (const required of ["index.html", "home.html", "admin.html", "client.html", "privacy.html", "terms.html", "privacy-v1-0.html", "robots.txt", "sitemap.xml", ...GUIDE_PAGES.map((page) => `guide/${page.slug}.html`)]) {
   if (!files.some((filePath) => relative(filePath) === required)) {
     failures.push(`${required}: required public artifact is missing`);
   }

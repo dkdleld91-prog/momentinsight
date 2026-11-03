@@ -190,6 +190,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
     <div class="shell foot-inner">
       <span>Moment Insight · 네이버·쿠팡 셀러의 시장 뉴스 · 키워드 조사 · 30일 순위 추적</span>
       <a href="/">홈</a>
+      <a href="/terms">이용약관</a>
       <a href="/privacy">개인정보처리방침</a>
       <a href="mailto:mml93@naver.com">이메일 문의</a>
     </div>

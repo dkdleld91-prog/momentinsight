@@ -139,6 +139,14 @@
     {
       "source": "/privacy",
       "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/privacy-v1-0",
+      "destination": "/privacy-v1-0.html"
     }
   ]
 }

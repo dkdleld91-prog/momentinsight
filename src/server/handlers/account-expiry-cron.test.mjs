@@ -30,10 +30,24 @@ function iso(offsetDays) {
 }
 
 // 표별 응답을 정하고, 모든 호출(from·delete·eq·in·select…)을 순서대로 기록하는 가짜 Supabase.
-// Storage 는 storageCalls 에 따로 기록한다: "storage:list" 는 (폴더 경로, 옵션) → 항목 배열, "storage:listError"·"storage:removeError" 는 오류.
+// Storage 는 storageCalls 에 따로 기록한다. "storage:objects"(경로 Set)를 주면 실제 storage-js 처럼 동작한다: list 는 그 폴더 바로 아래
+// 항목(폴더는 id null)을 이름순·limit/offset 으로, remove 는 있는 경로만 지우고 지운 것만 돌려준다. "storage:list"(함수)는 목록을 직접 정하고,
+// 함수가 { error } 를 돌려주면 그 호출만 실패한다. "storage:removeErrorAt" 은 n번째 remove 호출만 실패시킨다.
 function fakeCtx(rowsByTable) {
   const calls = [];
   const storageCalls = [];
+  const objects = rowsByTable["storage:objects"] || null;
+  let removeCount = 0;
+  const childrenOf = (path) => {
+    const entries = new Map();
+    for (const full of [...objects].sort()) {
+      if (!full.startsWith(`${path}/`)) continue;
+      const rest = full.slice(path.length + 1);
+      const name = rest.split("/")[0];
+      if (!entries.has(name)) entries.set(name, rest.includes("/") ? { name, id: null } : { name, id: `obj-${full}` });
+    }
+    return [...entries.values()];
+  };
   const supabaseAdmin = {
     storage: {
       from(bucket) {
@@ -42,12 +56,21 @@ function fakeCtx(rowsByTable) {
             storageCalls.push(["list", bucket, path, options]);
             if (rowsByTable["storage:listError"]) return Promise.resolve({ data: null, error: rowsByTable["storage:listError"] });
             const spec = rowsByTable["storage:list"];
-            return Promise.resolve({ data: typeof spec === "function" ? spec(path, options) : [], error: null });
+            const answer = objects
+              ? childrenOf(path).slice(options.offset, options.offset + options.limit)
+              : typeof spec === "function" ? spec(path, options) : [];
+            if (answer && !Array.isArray(answer) && answer.error) return Promise.resolve({ data: null, error: answer.error });
+            return Promise.resolve({ data: answer, error: null });
           },
           remove(paths) {
             storageCalls.push(["remove", bucket, paths]);
-            if (rowsByTable["storage:removeError"]) return Promise.resolve({ data: null, error: rowsByTable["storage:removeError"] });
-            return Promise.resolve({ data: paths.map((name) => ({ name })), error: null });
+            removeCount += 1;
+            if (rowsByTable["storage:removeError"] || rowsByTable["storage:removeErrorAt"] === removeCount) {
+              return Promise.resolve({ data: null, error: rowsByTable["storage:removeError"] || { message: `remove ${removeCount} failed` } });
+            }
+            if (!objects) return Promise.resolve({ data: paths.map((name) => ({ name })), error: null });
+            const deleted = paths.filter((path) => objects.delete(path)).map((name) => ({ name }));
+            return Promise.resolve({ data: deleted, error: null });
           },
         };
       },
@@ -342,33 +365,30 @@ test("an audit insert error does not change the deletion but is reported as audi
   assert.deepEqual(summary.auditFailed, ["abc123"]);
 });
 
-// moment-reports 의 가짜 폴더 구조: clients/<id>/sources/2026-10/a.pdf · reports/2026-11/1000개+5개(쪽 넘김)
-function reportTree(clientId, bigCount = 0) {
+// moment-reports 의 가짜 실물: clients/<id>/sources/2026-10/(a.pdf · report..final.pdf · 자리 표시 파일) · reports/2026-11/r0..r{n-1}.pptx
+function reportObjects(clientId, bigCount = 0) {
   const base = `clients/${clientId}`;
-  const file = (name) => ({ name, id: `obj-${name}` });
-  const folder = (name) => ({ name, id: null });
-  const big = Array.from({ length: bigCount }, (_, index) => file(`r${index}.pptx`));
-  return (path, options) => {
-    if (path === base) return [folder("sources"), folder("reports")];
-    if (path === `${base}/sources`) return [folder("2026-10")];
-    if (path === `${base}/sources/2026-10`) return [file("a.pdf"), file("report..final.pdf"), file(".emptyFolderPlaceholder")];
-    if (path === `${base}/reports`) return [folder("2026-11")];
-    if (path === `${base}/reports/2026-11`) return big.slice(options.offset, options.offset + options.limit);
-    return [];
-  };
+  return new Set([
+    `${base}/sources/2026-10/a.pdf`,
+    `${base}/sources/2026-10/report..final.pdf`,
+    `${base}/sources/2026-10/.emptyFolderPlaceholder`,
+    ...Array.from({ length: bigCount }, (_, index) => `${base}/reports/2026-11/r${String(index).padStart(4, "0")}.pptx`),
+    "clients/11111111-2222-3333-4444-555555555555/reports/2026-11/other.pdf", // 다른 광고주
+  ]);
 }
 
 test("report files under the client's own Storage folder are removed in batches; other buckets and paths are never touched", async () => {
+  const objects = reportObjects(CLIENT_ID, 1005);
   const { ctx, storageCalls } = fakeCtx({
     ...EMPTY_CHILDREN,
     files: [
-      { storage_bucket: "moment-reports", storage_path: `clients/${CLIENT_ID}/reports/2026-09/old.pdf` }, // 목록에 없지만 행이 가리키는 실물
-      { storage_bucket: "moment-reports", storage_path: "clients/11111111-2222-3333-4444-555555555555/reports/x.pdf" }, // 다른 광고주
+      { storage_bucket: "moment-reports", storage_path: `clients/${CLIENT_ID}/reports/2026-09/old.pdf` }, // 행만 있고 실물 없음
+      { storage_bucket: "moment-reports", storage_path: "clients/11111111-2222-3333-4444-555555555555/reports/2026-11/other.pdf" }, // 다른 광고주
       { storage_bucket: "moment-assets", storage_path: `clients/${CLIENT_ID}/logo.png` }, // 공용 버킷
       { storage_bucket: "moment-reports", storage_path: `clients/${CLIENT_ID}/../escape.pdf` }, // 경로 탈출
       { storage_bucket: null, storage_path: null }, // 외부 링크
     ],
-    "storage:list": reportTree(CLIENT_ID, 1005),
+    "storage:objects": objects,
     clients: [DUE_CLIENT],
   });
   const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
@@ -376,47 +396,52 @@ test("report files under the client's own Storage folder are removed in batches;
   assert.equal(summary.client, true);
   const lists = storageCalls.filter(([op]) => op === "list");
   assert.ok(lists.every(([, bucket, path]) => bucket === "moment-reports" && path.startsWith(`clients/${CLIENT_ID}`)));
-  // 1000개 꽉 찬 쪽 다음에 offset 1000 으로 한 번 더 읽는다(삭제 전·후 두 번 훑기라 두 번씩).
-  assert.deepEqual(lists.filter(([, , path]) => path.endsWith("2026-11")).map(([, , , options]) => options.offset), [0, 1000, 0, 1000]);
+  // 1000개 꽉 찬 쪽 다음에 offset 1000 으로 한 번 더 읽는다. 두 번째 훑기 때는 이미 비어 폴더 목록만 읽는다.
+  assert.deepEqual(lists.filter(([, , path]) => path.endsWith("2026-11")).map(([, , , options]) => options.offset), [0, 1000]);
   const removed = storageCalls.filter(([op]) => op === "remove");
   assert.ok(removed.every(([, bucket, paths]) => bucket === "moment-reports" && paths.length <= 100));
-  const all = removed.flatMap(([, , paths]) => paths);
-  // 같은 광고주 폴더를 두 번 훑는다(광고주 행 삭제 전·후). 가짜 Storage 는 지워도 목록이 그대로라 두 번째에도 같은 파일이 나온다.
-  const firstPass = 1 + 1 + 1 + 1005 + 1; // a.pdf · report..final.pdf · 자리 표시 파일 · 1005개 · 행이 가리키는 old.pdf
-  const secondPass = 1 + 1 + 1 + 1005; // 광고주 행이 지워져 files 행은 없다
-  assert.equal(all.length, firstPass + secondPass);
-  assert.ok(all.every((path) => path.startsWith(`clients/${CLIENT_ID}/`) && path.split("/").every((part) => part && part !== "..")));
-  assert.ok(all.includes(`clients/${CLIENT_ID}/sources/2026-10/report..final.pdf`), "파일 이름 안의 '..' 는 지운다");
-  assert.ok(all.includes(`clients/${CLIENT_ID}/reports/2026-09/old.pdf`));
-  assert.equal(summary.storageObjects, all.length);
+  const requested = removed.flatMap(([, , paths]) => paths);
+  assert.ok(requested.every((path) => path.startsWith(`clients/${CLIENT_ID}/`) && path.split("/").every((part) => part && part !== "..")));
+  assert.ok(requested.includes(`clients/${CLIENT_ID}/reports/2026-09/old.pdf`), "행이 가리키는 경로도 지우기를 요청한다");
+  assert.ok(requested.includes(`clients/${CLIENT_ID}/sources/2026-10/report..final.pdf`), "파일 이름 안의 '..' 는 지운다");
+  // 실제로 지운 수만 센다(행만 있고 실물이 없는 old.pdf 는 0) — 3 + 1005
+  assert.equal(summary.storageObjects, 1008);
+  assert.deepEqual([...objects], ["clients/11111111-2222-3333-4444-555555555555/reports/2026-11/other.pdf"], "다른 광고주 실물은 그대로");
 });
 
-test("files uploaded between the first sweep and the client row delete are removed by a second sweep", async () => {
-  let sweeps = 0;
-  const late = `clients/${CLIENT_ID}/reports/2026-11/late.pdf`;
-  const { ctx, storageCalls } = fakeCtx({
+test("when a later remove batch fails, the files already removed are still counted in the audit", async () => {
+  const objects = reportObjects(CLIENT_ID, 247); // 3 + 247 = 250 → 100 · 100 · 50
+  const { ctx, calls } = fakeCtx({ ...EMPTY_CHILDREN, "storage:objects": objects, "storage:removeErrorAt": 3, clients: [DUE_CLIENT] });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.match(summary.errors[0], /^storage: remove 3 failed/);
+  assert.equal(summary.storageObjects, 200);
+  assert.equal(calls.some((call) => call.table === "clients" && isDelete(call)), false, "광고주 행은 남겨 다음 날 나머지를 지운다");
+  const audit = calls.find((call) => call.table === "audit_logs").ops[0][1];
+  assert.equal(audit.action, "client.delete_partial_failed");
+  assert.equal(audit.metadata.storageObjects, 200);
+});
+
+test("a failure in the second sweep (after the client row is gone) is reported as failed, since there is no retry", async () => {
+  let baseLists = 0;
+  const { ctx } = fakeCtx({
     ...EMPTY_CHILDREN,
     "storage:list": (path) => {
-      if (path === `clients/${CLIENT_ID}`) sweeps += 1;
-      if (path === `clients/${CLIENT_ID}`) return sweeps === 1 ? [] : [{ name: "reports", id: null }];
-      if (path === `clients/${CLIENT_ID}/reports`) return [{ name: "2026-11", id: null }];
-      if (path === `clients/${CLIENT_ID}/reports/2026-11`) return [{ name: "late.pdf", id: "o1" }];
-      return [];
+      if (path === `clients/${CLIENT_ID}`) baseLists += 1;
+      return baseLists >= 2 ? { error: { message: "list down" } } : [];
     },
     clients: [DUE_CLIENT],
+    operation_team_codes: [],
   });
-  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
-  assert.equal(summary.client, true);
-  assert.deepEqual(summary.errors, []);
-  assert.equal(sweeps, 2);
-  assert.deepEqual(storageCalls.filter(([op]) => op === "remove").map(([, , paths]) => paths), [[late]]);
-  assert.equal(summary.storageObjects, 1);
+  const summary = await runAccountExpiry(ctx, { nowMs: NOW, env: ENV });
+  assert.deepEqual(summary.deleted, [DUE_CLIENT.agency_code.toLowerCase()]);
+  assert.equal(summary.failed.length, 1);
+  assert.match(summary.failed[0].errors[0], /storage after delete: list down/);
 });
 
 test("a Storage error keeps the client row for tomorrow's retry and is audited as a partial failure", async () => {
   const { ctx, calls } = fakeCtx({
     ...EMPTY_CHILDREN,
-    "storage:list": reportTree(CLIENT_ID),
+    "storage:objects": reportObjects(CLIENT_ID),
     "storage:removeError": { message: "storage down" },
     clients: [DUE_CLIENT],
   });

@@ -137,7 +137,12 @@ async function removeClientReportObjects(ctx, clientId, { withFileRows = true } 
   let removed = 0;
   for (let index = 0; index < paths.length; index += STORAGE_REMOVE_BATCH) {
     const { data, error } = await ctx.supabaseAdmin.storage.from(REPORT_BUCKET).remove(paths.slice(index, index + STORAGE_REMOVE_BATCH));
-    if (error) throw error;
+    if (error) {
+      // 앞 묶음에서 이미 지운 수도 감사 기록에 남도록 오류에 붙여 넘긴다.
+      const failure = new Error(String(error?.message || error));
+      failure.removed = removed;
+      throw failure;
+    }
     removed += (data || []).length;
   }
   return removed;
@@ -261,6 +266,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
   try {
     summary.storageObjects = await removeClientReportObjects(ctx, clientId);
   } catch (error) {
+    summary.storageObjects = Number(error?.removed) || 0;
     fail("storage", error);
   }
 
@@ -330,6 +336,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
       try {
         summary.storageObjects += await removeClientReportObjects(ctx, clientId, { withFileRows: false });
       } catch (error) {
+        summary.storageObjects += Number(error?.removed) || 0;
         fail("storage after delete", error);
       }
     }

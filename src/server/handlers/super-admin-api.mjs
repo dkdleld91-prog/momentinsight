@@ -1207,7 +1207,8 @@ async function revokeTeam(request, ctx, body) {
         source: "super-admin-api",
         teamCode: team.team_code,
         revokedClientIds: revokedClients.map((client) => client.id),
-        revokedAgencyCodes: revokedClients.map((client) => client.agency_code),
+        // 광고주 접속 코드 원문은 남기지 않는다(재활성화하면 다시 로그인에 쓰인다) — 건수만.
+        revokedClientCount: String(revokedClients.length),
         pausedTrackers: String(trackerSuspension.paused),
         busyTrackers: String(trackerSuspension.busySkipped),
       },

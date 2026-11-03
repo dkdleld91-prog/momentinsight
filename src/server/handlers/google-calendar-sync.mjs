@@ -1258,11 +1258,10 @@ async function applyEvents(ctx, ownerCode, calendarRow, events, window, counters
     if (eventIsCancelled(event)) {
       if (!row) { counters.skipped += 1; continue; }
       await ctx.supabaseAdmin.from("schedule_items").delete().eq("id", row.id).then(() => {}, () => {});
+      // 감사 기록에는 구글 일정 내용(제목·일시·캘린더 ID=이메일)을 남기지 않는다 — 운영 이력 화면에서 다른 이용자의
+      // 구글 일정을 사람이 읽게 되므로(구글 API 제한적 사용 · 개인정보처리방침 v1.1 제10조, 2026-11-03).
       await recordSyncAudit(ctx, "google_calendar_item_deleted", row.id, {
-        calendarId,
         eventId: cleanText(event.id, 200),
-        title: cleanText(row.title, 200),
-        startsAt: row.starts_at,
         status: row.status,
         googleSource: row.google_source,
       });

@@ -17,7 +17,7 @@ const privacyV10 = read("src/pages/privacy-v1-0.html");
 const terms = read("src/pages/terms.html");
 
 const NOTICE_DATE = "2026-11-03";
-const EFFECTIVE_DATE = "2026-11-10";
+const EFFECTIVE_DATE = "2026-12-03"; // 불리·중대 변경 30일 전 공지(v1.0 제13조, 약관 제3조)
 
 function inlineScripts(html) {
   return [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>/g)];
@@ -59,7 +59,8 @@ test("개인정보처리방침 v1.1 은 코드의 실제 값과 같은 숫자를
   assert.match(read("src/server/handlers/site-events.mjs"), /p_keep_days: 120/);
   assert.ok(privacy.includes("120일이 지난 기록"));
   // 위탁·보관 위치
-  for (const word of ["Vercel Inc.", "Supabase Inc.", "Google LLC", "Anthropic PBC", "OpenAI", "AWS ap-northeast-2"]) {
+  for (const word of ["Vercel Inc.", "Supabase Inc.", "Google LLC", "Anthropic PBC", "OpenAI OpCo, LLC", "AWS ap-northeast-2",
+    "privacy@vercel.com", "privacy@supabase.com", "privacy@anthropic.com", "dsar@openai.com"]) {
     assert.ok(privacy.includes(word), word);
   }
 });
@@ -70,6 +71,7 @@ test("이전 버전 v1.0 은 원문을 그대로 두고 맨 위에 개정 안내
   assert.ok(privacyV10.includes('canonical" href="https://insight.momentlabs.co.kr/privacy-v1-0"'));
   assert.ok(!privacyV10.includes("mi-analytics.js"), "이전 버전 페이지에는 방문 통계를 싣지 않는다");
   assert.ok(privacyV10.includes("본 개인정보처리방침은 2026-08-24부터 적용됩니다."));
+  assert.ok(privacyV10.includes(`${EFFECTIVE_DATE}부터는 개정된`));
 });
 
 test("이용약관: 공고일·시행일, 만료 뒤 유예·삭제, 체험 한도가 코드 값과 같다", () => {

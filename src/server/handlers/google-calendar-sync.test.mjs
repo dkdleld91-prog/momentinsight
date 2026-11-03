@@ -478,8 +478,9 @@ test("a cancelled event deletes the matched row and writes an audit trail", asyn
     .map((op) => op.values)
     .find((values) => values.action === "google_calendar_item_deleted");
   assert.ok(audit, "취소 반영은 google_calendar_item_deleted 로 남는다");
-  assert.equal(audit.metadata.title, "지울 일정");
   assert.equal(audit.metadata.eventId, "gev-1");
+  // 일정 내용(제목·일시·캘린더 ID)은 감사 기록에 남기지 않는다(개인정보처리방침 v1.1 제10조).
+  for (const key of ["title", "startsAt", "calendarId"]) assert.equal(key in audit.metadata, false, key);
 });
 
 test("a 410 clears the token and falls back to a full sync inside the same run", async () => {

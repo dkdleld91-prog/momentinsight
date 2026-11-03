@@ -47,13 +47,14 @@ jobs:
             console.error(`account-expiry-cron failed: HTTP ${response.status} ${text.slice(0, 400)}`);
             process.exit(1);
           }
+          // 실행 기록(GitHub)에는 광고주 접속 코드를 남기지 않는다 — 건수와 실패 사유만(개인정보처리방침 v1.1 제5조).
           console.log(JSON.stringify({
             dryRun: payload.dryRun,
             due: (payload.due || []).length,
-            deleted: payload.deleted || [],
-            skipped: payload.skipped || [],
-            auditFailed: payload.auditFailed || [],
-            failed: payload.failed || [],
+            deleted: (payload.deleted || []).length,
+            skipped: (payload.skipped || []).length,
+            auditFailed: (payload.auditFailed || []).length,
+            failed: (payload.failed || []).map((entry) => (entry.errors || []).join("; ")),
           }));
           if ((payload.failed || []).length) {
             console.error("some accounts were not fully deleted; see failed (a still-due account is retried next run, a changed one stays)");

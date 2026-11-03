@@ -112,18 +112,28 @@ async function listClientReportObjects(ctx, prefix) {
   return objects;
 }
 
+// 경로가 그 광고주 폴더 안인지: 접두어가 같고, 조각마다 비어 있거나 '.'·'..' 가 아니어야 한다(파일 이름 안의 '..' 는 허용 — report..final.pdf).
+function insideClientFolder(path, prefix) {
+  if (!path.startsWith(`${prefix}/`)) return false;
+  return path.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
 // 보고서 파일 실물을 지운다. files 행은 광고주 행을 지울 때 FK cascade 로 사라지지만 Storage 실물은 남아, 화면에서 다시 찾을 수도
 // 지울 수도 없게 된다(대표 결정 2026-11-03 "삭제 때 보고서 파일 실물도 지움"). 그 광고주 전용 경로(clients/<uuid>/) 안만 지운다 —
 // 다른 광고주·공용 자료(moment-assets)·경로 밖을 가리키는 files 행에는 닿지 않는다. files 행이 가리키는 실물도 같은 조건으로 함께 지운다.
-async function removeClientReportObjects(ctx, clientId) {
+// withFileRows=false: 광고주 행을 지운 뒤라 files 행이 이미 cascade 로 없어 폴더만 훑는다.
+async function removeClientReportObjects(ctx, clientId, { withFileRows = true } = {}) {
   const prefix = `clients/${clientId}`;
-  const files = await ctx.supabaseAdmin.from("files").select("storage_bucket, storage_path").eq("client_id", clientId);
-  if (files.error) throw files.error;
-  const linked = (files.data || [])
-    .filter((row) => row.storage_bucket === REPORT_BUCKET)
-    .map((row) => String(row.storage_path || ""));
+  let linked = [];
+  if (withFileRows) {
+    const files = await ctx.supabaseAdmin.from("files").select("storage_bucket, storage_path").eq("client_id", clientId);
+    if (files.error) throw files.error;
+    linked = (files.data || [])
+      .filter((row) => row.storage_bucket === REPORT_BUCKET)
+      .map((row) => String(row.storage_path || ""));
+  }
   const listed = await listClientReportObjects(ctx, prefix);
-  const paths = [...new Set([...listed, ...linked])].filter((path) => path.startsWith(`${prefix}/`) && !path.includes(".."));
+  const paths = [...new Set([...listed, ...linked])].filter((path) => insideClientFolder(path, prefix));
   let removed = 0;
   for (let index = 0; index < paths.length; index += STORAGE_REMOVE_BATCH) {
     const { data, error } = await ctx.supabaseAdmin.storage.from(REPORT_BUCKET).remove(paths.slice(index, index + STORAGE_REMOVE_BATCH));
@@ -315,6 +325,14 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
   if (removed.error) fail("clients", removed.error);
   else {
     summary.client = (removed.data || []).length === 1;
+    if (summary.client) {
+      // 처음 훑은 뒤 광고주 행을 지우기 전 사이에 올라온 파일을 한 번 더 지운다(광고주 행이 없어 다음 날 재시도는 없으므로 실패는 failed 로 드러낸다).
+      try {
+        summary.storageObjects += await removeClientReportObjects(ctx, clientId, { withFileRows: false });
+      } catch (error) {
+        fail("storage after delete", error);
+      }
+    }
     if (!summary.client) {
       // 0행: 다른 실행(03:30 Vercel · 03:40 Actions)이 먼저 지웠으면 건너뜀, 행이 남아 있으면 지우는 사이 연장·수정된 것.
       const after = await ctx.supabaseAdmin.from("clients").select("id").eq("id", client.id).limit(1);

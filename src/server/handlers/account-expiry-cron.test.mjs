@@ -177,7 +177,9 @@ test("deleting an expired client rechecks the row, removes Google link, personal
   assert.deepEqual(clientDelete.ops.find(([op]) => op === "lte"), ["lte", "plan_expires_at", iso(-5)]);
   assert.deepEqual(clientDelete.ops.find(([op]) => op === "is"), ["is", "plan_note", null]);
   assert.equal(summary.auditLogged, true);
-  assert.deepEqual(storageCalls, [["list", "moment-reports", `clients/${CLIENT_ID}`, { limit: 1000, offset: 0 }]]);
+  // 광고주 행 삭제 전·후 두 번 훑는다(두 번째는 그 사이 올라온 파일용, files 행은 이미 없어 읽지 않는다).
+  const sweep = ["list", "moment-reports", `clients/${CLIENT_ID}`, { limit: 1000, offset: 0 }];
+  assert.deepEqual(storageCalls, [sweep, sweep]);
   const audit = calls.find((call) => call.table === "audit_logs");
   assert.equal(audit.ops[0][1].action, "client.deleted_after_grace");
   // 감사 메타데이터는 sanitizeAuditMetadata 를 거친다(코드류 값은 가려질 수 있음) — 출처와 결과만 확인한다.
@@ -349,7 +351,7 @@ function reportTree(clientId, bigCount = 0) {
   return (path, options) => {
     if (path === base) return [folder("sources"), folder("reports")];
     if (path === `${base}/sources`) return [folder("2026-10")];
-    if (path === `${base}/sources/2026-10`) return [file("a.pdf"), file(".emptyFolderPlaceholder")];
+    if (path === `${base}/sources/2026-10`) return [file("a.pdf"), file("report..final.pdf"), file(".emptyFolderPlaceholder")];
     if (path === `${base}/reports`) return [folder("2026-11")];
     if (path === `${base}/reports/2026-11`) return big.slice(options.offset, options.offset + options.limit);
     return [];
@@ -374,15 +376,41 @@ test("report files under the client's own Storage folder are removed in batches;
   assert.equal(summary.client, true);
   const lists = storageCalls.filter(([op]) => op === "list");
   assert.ok(lists.every(([, bucket, path]) => bucket === "moment-reports" && path.startsWith(`clients/${CLIENT_ID}`)));
-  // 1000개 꽉 찬 쪽 다음에 offset 1000 으로 한 번 더 읽는다.
-  assert.deepEqual(lists.filter(([, , path]) => path.endsWith("2026-11")).map(([, , , options]) => options.offset), [0, 1000]);
+  // 1000개 꽉 찬 쪽 다음에 offset 1000 으로 한 번 더 읽는다(삭제 전·후 두 번 훑기라 두 번씩).
+  assert.deepEqual(lists.filter(([, , path]) => path.endsWith("2026-11")).map(([, , , options]) => options.offset), [0, 1000, 0, 1000]);
   const removed = storageCalls.filter(([op]) => op === "remove");
   assert.ok(removed.every(([, bucket, paths]) => bucket === "moment-reports" && paths.length <= 100));
   const all = removed.flatMap(([, , paths]) => paths);
-  assert.equal(all.length, 1 + 1 + 1005 + 1, "a.pdf · 자리 표시 파일 · 1005개 · 행이 가리키는 old.pdf");
-  assert.ok(all.every((path) => path.startsWith(`clients/${CLIENT_ID}/`) && !path.includes("..")));
+  // 같은 광고주 폴더를 두 번 훑는다(광고주 행 삭제 전·후). 가짜 Storage 는 지워도 목록이 그대로라 두 번째에도 같은 파일이 나온다.
+  const firstPass = 1 + 1 + 1 + 1005 + 1; // a.pdf · report..final.pdf · 자리 표시 파일 · 1005개 · 행이 가리키는 old.pdf
+  const secondPass = 1 + 1 + 1 + 1005; // 광고주 행이 지워져 files 행은 없다
+  assert.equal(all.length, firstPass + secondPass);
+  assert.ok(all.every((path) => path.startsWith(`clients/${CLIENT_ID}/`) && path.split("/").every((part) => part && part !== "..")));
+  assert.ok(all.includes(`clients/${CLIENT_ID}/sources/2026-10/report..final.pdf`), "파일 이름 안의 '..' 는 지운다");
   assert.ok(all.includes(`clients/${CLIENT_ID}/reports/2026-09/old.pdf`));
   assert.equal(summary.storageObjects, all.length);
+});
+
+test("files uploaded between the first sweep and the client row delete are removed by a second sweep", async () => {
+  let sweeps = 0;
+  const late = `clients/${CLIENT_ID}/reports/2026-11/late.pdf`;
+  const { ctx, storageCalls } = fakeCtx({
+    ...EMPTY_CHILDREN,
+    "storage:list": (path) => {
+      if (path === `clients/${CLIENT_ID}`) sweeps += 1;
+      if (path === `clients/${CLIENT_ID}`) return sweeps === 1 ? [] : [{ name: "reports", id: null }];
+      if (path === `clients/${CLIENT_ID}/reports`) return [{ name: "2026-11", id: null }];
+      if (path === `clients/${CLIENT_ID}/reports/2026-11`) return [{ name: "late.pdf", id: "o1" }];
+      return [];
+    },
+    clients: [DUE_CLIENT],
+  });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.equal(summary.client, true);
+  assert.deepEqual(summary.errors, []);
+  assert.equal(sweeps, 2);
+  assert.deepEqual(storageCalls.filter(([op]) => op === "remove").map(([, , paths]) => paths), [[late]]);
+  assert.equal(summary.storageObjects, 1);
 });
 
 test("a Storage error keeps the client row for tomorrow's retry and is audited as a partial failure", async () => {

@@ -2,8 +2,8 @@
 // 대표 결정 2026-09-07: "만료 뒤 5일 안에 연장 없으면 해당 계정 데이터 삭제 — 살릴 필요 없음, 서버·저장공간만 무거워짐".
 // 대표 결정 2026-09-08: "구글 연동 안 된 사람은 읽기 전용에서 3일 뒤 삭제, 연동한 사람은 기한 뒤부터 30일 카운팅".
 // 순위 추적 표(naver_rank_trackers · naver_place_rank_trackers, 스냅샷은 FK cascade)와 그 광고주의 서비스 일정·구글 연결
-// ('client:<id>' 키, 점검 2026-11-02 F02)까지 지운다. 순위 수집 코드·워커는 건드리지 않고 행만 지우며, 총관리자 코드는 어떤 경우에도
-// 대상이 아니다. 삭제(또는 부분 실패·건너뜀) 뒤 감사 로그를 남긴다.
+// ('client:<id>' 키, 점검 2026-11-02 F02), 보고서 파일 실물(Storage, 대표 결정 2026-11-03)까지 지운다. 순위 수집 코드·워커는 건드리지
+// 않고 행만 지우며, 총관리자 코드는 어떤 경우에도 대상이 아니다. 삭제(또는 부분 실패·건너뜀) 뒤 감사 로그를 남긴다.
 // 호출: Vercel cron(vercel.json) → GET /api/account-expiry-cron (Authorization: Bearer CRON_SECRET).
 // 확인용: ?dryRun=1 은 대상만 보여 주고 지우지 않는다. 환경변수 MI_ACCOUNT_EXPIRY_DELETE_DISABLED=true 면 항상 dryRun.
 import { withSupabase } from "@supabase/server";
@@ -27,6 +27,12 @@ import {
 export const EXPIRY_DELETE_BATCH = 20;
 export const RANK_TRACKER_TABLES = ["naver_rank_trackers", "naver_place_rank_trackers"];
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 보고서 파일 실물(report-center.mjs 업로드 경로: moment-reports/clients/<id>/<sources|reports>/<YYYY-MM>/<파일>).
+export const REPORT_BUCKET = "moment-reports";
+const STORAGE_LIST_LIMIT = 1000;
+const STORAGE_MAX_DEPTH = 4;
+const STORAGE_MAX_OBJECTS = 5000;
+const STORAGE_REMOVE_BATCH = 100;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -76,6 +82,57 @@ export function clientPrincipalKey(clientId) {
 }
 
 // 감사 기록 실패는 삭제 결과를 바꾸지 않지만 응답(auditFailed)에 드러낸다(supabase-js 는 오류를 throw 하지 않고 {error}로 준다).
+// 광고주 전용 경로 아래 파일을 폴더째 훑는다(Storage list 는 한 단계씩만 돌려준다 — 폴더는 id 가 null).
+// 깊이·개수에 상한을 두고 넘으면 오류로 멈춘다(조용히 일부만 지우지 않는다).
+async function listClientReportObjects(ctx, prefix) {
+  const storage = ctx.supabaseAdmin.storage.from(REPORT_BUCKET);
+  const objects = [];
+  const folders = [{ path: prefix, depth: 0 }];
+  while (folders.length) {
+    const folder = folders.shift();
+    for (let offset = 0; ; offset += STORAGE_LIST_LIMIT) {
+      const { data, error } = await storage.list(folder.path, { limit: STORAGE_LIST_LIMIT, offset });
+      if (error) throw error;
+      const entries = data || [];
+      for (const entry of entries) {
+        const name = String(entry?.name || "");
+        if (!name || name.includes("/") || name === "." || name === "..") continue;
+        const path = `${folder.path}/${name}`;
+        if (entry.id == null) {
+          if (folder.depth + 1 > STORAGE_MAX_DEPTH) throw new Error(`report folder too deep: ${path}`);
+          folders.push({ path, depth: folder.depth + 1 });
+        } else {
+          objects.push(path);
+          if (objects.length > STORAGE_MAX_OBJECTS) throw new Error(`more than ${STORAGE_MAX_OBJECTS} report files`);
+        }
+      }
+      if (entries.length < STORAGE_LIST_LIMIT) break;
+    }
+  }
+  return objects;
+}
+
+// 보고서 파일 실물을 지운다. files 행은 광고주 행을 지울 때 FK cascade 로 사라지지만 Storage 실물은 남아, 화면에서 다시 찾을 수도
+// 지울 수도 없게 된다(대표 결정 2026-11-03 "삭제 때 보고서 파일 실물도 지움"). 그 광고주 전용 경로(clients/<uuid>/) 안만 지운다 —
+// 다른 광고주·공용 자료(moment-assets)·경로 밖을 가리키는 files 행에는 닿지 않는다. files 행이 가리키는 실물도 같은 조건으로 함께 지운다.
+async function removeClientReportObjects(ctx, clientId) {
+  const prefix = `clients/${clientId}`;
+  const files = await ctx.supabaseAdmin.from("files").select("storage_bucket, storage_path").eq("client_id", clientId);
+  if (files.error) throw files.error;
+  const linked = (files.data || [])
+    .filter((row) => row.storage_bucket === REPORT_BUCKET)
+    .map((row) => String(row.storage_path || ""));
+  const listed = await listClientReportObjects(ctx, prefix);
+  const paths = [...new Set([...listed, ...linked])].filter((path) => path.startsWith(`${prefix}/`) && !path.includes(".."));
+  let removed = 0;
+  for (let index = 0; index < paths.length; index += STORAGE_REMOVE_BATCH) {
+    const { data, error } = await ctx.supabaseAdmin.storage.from(REPORT_BUCKET).remove(paths.slice(index, index + STORAGE_REMOVE_BATCH));
+    if (error) throw error;
+    removed += (data || []).length;
+  }
+  return removed;
+}
+
 async function auditDeletion(ctx, client, action, summary) {
   const { error } = await ctx.supabaseAdmin.from("audit_logs").insert({
     actor_id: null,
@@ -95,6 +152,7 @@ async function auditDeletion(ctx, client, action, summary) {
       googleSync: summary.googleSync,
       schedules: summary.schedules,
       memberships: summary.memberships,
+      storageObjects: summary.storageObjects,
       trackers: summary.trackers,
       notes: summary.notes,
       identities: summary.identities,
@@ -119,6 +177,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
     googleSync: null,
     schedules: null,
     memberships: null,
+    storageObjects: null,
     trackers: {},
     notes: null,
     identities: null,
@@ -188,6 +247,12 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
   const memberships = await ctx.supabaseAdmin.from("schedule_calendar_memberships").delete().eq("principal_key", principalKey).select("calendar_id");
   if (memberships.error) fail("schedule_calendar_memberships", memberships.error);
   else summary.memberships = (memberships.data || []).length;
+
+  try {
+    summary.storageObjects = await removeClientReportObjects(ctx, clientId);
+  } catch (error) {
+    fail("storage", error);
+  }
 
   for (const table of RANK_TRACKER_TABLES) {
     const result = await ctx.supabaseAdmin.from(table).delete().eq("agency_code", code).select("id");

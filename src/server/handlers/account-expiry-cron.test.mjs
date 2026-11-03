@@ -30,9 +30,28 @@ function iso(offsetDays) {
 }
 
 // 표별 응답을 정하고, 모든 호출(from·delete·eq·in·select…)을 순서대로 기록하는 가짜 Supabase.
+// Storage 는 storageCalls 에 따로 기록한다: "storage:list" 는 (폴더 경로, 옵션) → 항목 배열, "storage:listError"·"storage:removeError" 는 오류.
 function fakeCtx(rowsByTable) {
   const calls = [];
+  const storageCalls = [];
   const supabaseAdmin = {
+    storage: {
+      from(bucket) {
+        return {
+          list(path, options) {
+            storageCalls.push(["list", bucket, path, options]);
+            if (rowsByTable["storage:listError"]) return Promise.resolve({ data: null, error: rowsByTable["storage:listError"] });
+            const spec = rowsByTable["storage:list"];
+            return Promise.resolve({ data: typeof spec === "function" ? spec(path, options) : [], error: null });
+          },
+          remove(paths) {
+            storageCalls.push(["remove", bucket, paths]);
+            if (rowsByTable["storage:removeError"]) return Promise.resolve({ data: null, error: rowsByTable["storage:removeError"] });
+            return Promise.resolve({ data: paths.map((name) => ({ name })), error: null });
+          },
+        };
+      },
+    },
     from(table) {
       const record = { table, ops: [] };
       calls.push(record);
@@ -64,7 +83,7 @@ function fakeCtx(rowsByTable) {
       return query;
     },
   };
-  return { ctx: { supabaseAdmin }, calls };
+  return { ctx: { supabaseAdmin }, calls, storageCalls };
 }
 
 test("delete-due selection keeps only accounts past the grace period and never the owner code", async () => {
@@ -93,7 +112,7 @@ const DUE_CLIENT = { id: CLIENT_ID, name: "지난 계정", agency_code: "ABC123"
 const isDelete = (call) => call.ops.some(([op]) => op === "delete");
 
 test("deleting an expired client rechecks the row, removes Google link, personal schedules, rank trackers, notes, identities, quota and the client row, then audits", async () => {
-  const { ctx, calls } = fakeCtx({
+  const { ctx, calls, storageCalls } = fakeCtx({
     owner_google_calendar_sync: [{ owner_agency_code: `client:${CLIENT_ID}` }, { owner_agency_code: `client:${CLIENT_ID}` }],
     owner_google_integrations: [{ owner_agency_code: `client:${CLIENT_ID}` }],
     schedule_items: [{ id: "s1" }, { id: "s2" }, { id: "s3" }],
@@ -124,6 +143,7 @@ test("deleting an expired client rechecks the row, removes Google link, personal
     "owner_google_integrations",
     "schedule_items",
     "schedule_calendar_memberships",
+    "files",
     ...RANK_TRACKER_TABLES,
     "keyword_research_notes",
     "login_identities",
@@ -137,7 +157,11 @@ test("deleting an expired client rechecks the row, removes Google link, personal
   assert.deepEqual(calls[0].ops.find(([op]) => op === "eq"), ["eq", "id", CLIENT_ID]);
   const identityCalls = calls.filter((call) => call.table === "login_identities");
   assert.deepEqual(identityCalls.map(isDelete), [false, true]);
-  for (const call of calls.slice(1).filter((entry) => entry.table !== "audit_logs" && entry !== identityCalls[0])) {
+  // 보고서 파일 실물: files 행을 읽고(select) 그 광고주 경로를 훑는다. 실물이 없으면 지우는 요청도 없다.
+  assert.equal(isDelete(calls.find((call) => call.table === "files")), false);
+  assert.deepEqual(calls.find((call) => call.table === "files").ops.find(([op]) => op === "eq"), ["eq", "client_id", CLIENT_ID]);
+  assert.equal(summary.storageObjects, 0);
+  for (const call of calls.slice(1).filter((entry) => !["audit_logs", "files"].includes(entry.table) && entry !== identityCalls[0])) {
     assert.equal(call.ops[0][0], "delete", `${call.table} 는 delete 로 시작한다`);
   }
   const eqs = (table) => calls.find((call) => call.table === table).ops.filter(([op]) => op === "eq");
@@ -153,6 +177,7 @@ test("deleting an expired client rechecks the row, removes Google link, personal
   assert.deepEqual(clientDelete.ops.find(([op]) => op === "lte"), ["lte", "plan_expires_at", iso(-5)]);
   assert.deepEqual(clientDelete.ops.find(([op]) => op === "is"), ["is", "plan_note", null]);
   assert.equal(summary.auditLogged, true);
+  assert.deepEqual(storageCalls, [["list", "moment-reports", `clients/${CLIENT_ID}`, { limit: 1000, offset: 0 }]]);
   const audit = calls.find((call) => call.table === "audit_logs");
   assert.equal(audit.ops[0][1].action, "client.deleted_after_grace");
   // 감사 메타데이터는 sanitizeAuditMetadata 를 거친다(코드류 값은 가려질 수 있음) — 출처와 결과만 확인한다.
@@ -313,6 +338,72 @@ test("an audit insert error does not change the deletion but is reported as audi
   assert.deepEqual(summary.deleted, ["abc123"]);
   assert.deepEqual(summary.failed, []);
   assert.deepEqual(summary.auditFailed, ["abc123"]);
+});
+
+// moment-reports 의 가짜 폴더 구조: clients/<id>/sources/2026-10/a.pdf · reports/2026-11/1000개+5개(쪽 넘김)
+function reportTree(clientId, bigCount = 0) {
+  const base = `clients/${clientId}`;
+  const file = (name) => ({ name, id: `obj-${name}` });
+  const folder = (name) => ({ name, id: null });
+  const big = Array.from({ length: bigCount }, (_, index) => file(`r${index}.pptx`));
+  return (path, options) => {
+    if (path === base) return [folder("sources"), folder("reports")];
+    if (path === `${base}/sources`) return [folder("2026-10")];
+    if (path === `${base}/sources/2026-10`) return [file("a.pdf"), file(".emptyFolderPlaceholder")];
+    if (path === `${base}/reports`) return [folder("2026-11")];
+    if (path === `${base}/reports/2026-11`) return big.slice(options.offset, options.offset + options.limit);
+    return [];
+  };
+}
+
+test("report files under the client's own Storage folder are removed in batches; other buckets and paths are never touched", async () => {
+  const { ctx, storageCalls } = fakeCtx({
+    ...EMPTY_CHILDREN,
+    files: [
+      { storage_bucket: "moment-reports", storage_path: `clients/${CLIENT_ID}/reports/2026-09/old.pdf` }, // 목록에 없지만 행이 가리키는 실물
+      { storage_bucket: "moment-reports", storage_path: "clients/11111111-2222-3333-4444-555555555555/reports/x.pdf" }, // 다른 광고주
+      { storage_bucket: "moment-assets", storage_path: `clients/${CLIENT_ID}/logo.png` }, // 공용 버킷
+      { storage_bucket: "moment-reports", storage_path: `clients/${CLIENT_ID}/../escape.pdf` }, // 경로 탈출
+      { storage_bucket: null, storage_path: null }, // 외부 링크
+    ],
+    "storage:list": reportTree(CLIENT_ID, 1005),
+    clients: [DUE_CLIENT],
+  });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.deepEqual(summary.errors, []);
+  assert.equal(summary.client, true);
+  const lists = storageCalls.filter(([op]) => op === "list");
+  assert.ok(lists.every(([, bucket, path]) => bucket === "moment-reports" && path.startsWith(`clients/${CLIENT_ID}`)));
+  // 1000개 꽉 찬 쪽 다음에 offset 1000 으로 한 번 더 읽는다.
+  assert.deepEqual(lists.filter(([, , path]) => path.endsWith("2026-11")).map(([, , , options]) => options.offset), [0, 1000]);
+  const removed = storageCalls.filter(([op]) => op === "remove");
+  assert.ok(removed.every(([, bucket, paths]) => bucket === "moment-reports" && paths.length <= 100));
+  const all = removed.flatMap(([, , paths]) => paths);
+  assert.equal(all.length, 1 + 1 + 1005 + 1, "a.pdf · 자리 표시 파일 · 1005개 · 행이 가리키는 old.pdf");
+  assert.ok(all.every((path) => path.startsWith(`clients/${CLIENT_ID}/`) && !path.includes("..")));
+  assert.ok(all.includes(`clients/${CLIENT_ID}/reports/2026-09/old.pdf`));
+  assert.equal(summary.storageObjects, all.length);
+});
+
+test("a Storage error keeps the client row for tomorrow's retry and is audited as a partial failure", async () => {
+  const { ctx, calls } = fakeCtx({
+    ...EMPTY_CHILDREN,
+    "storage:list": reportTree(CLIENT_ID),
+    "storage:removeError": { message: "storage down" },
+    clients: [DUE_CLIENT],
+  });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.match(summary.errors[0], /storage: storage down/);
+  assert.equal(calls.some((call) => call.table === "clients" && isDelete(call)), false);
+  assert.equal(calls.find((call) => call.table === "audit_logs").ops[0][1].action, "client.delete_partial_failed");
+});
+
+test("Storage listing refuses folders deeper than expected instead of deleting a partial set", async () => {
+  const deep = (path) => (path.split("/").length < 8 ? [{ name: "d", id: null }] : []);
+  const { ctx, storageCalls } = fakeCtx({ ...EMPTY_CHILDREN, "storage:list": deep, clients: [DUE_CLIENT] });
+  const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
+  assert.match(summary.errors[0], /storage: report folder too deep/);
+  assert.equal(storageCalls.some(([op]) => op === "remove"), false);
 });
 
 test("a former owner code (MI_LEGACY_AGENCY_CODES) is never deleted even if it looks due", async () => {

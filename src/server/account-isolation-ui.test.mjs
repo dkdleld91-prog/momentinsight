@@ -27,15 +27,17 @@ test("keyword notes code is identical on both pages and follows sign-in, scope c
   assert.match(clientNotes, /if \(generation !== keywordNotesGeneration\) return;/, "늦게 온 앞 계정 응답은 버린다");
   assert.match(clientNotes, /function loadKeywordNotes\(\) \{\n\s*if \(!keywordNotesSignedIn\(\)\) return;/, "로그인 상태가 아니면 어떤 경로로도 불러오지 않는다(저장·삭제 뒤 포함)");
   assert.match(clientNotes, /if \(scope && scope === keywordNotesScope && keywordNotesState\.ready\) return;/, "같은 범위면 다시 받지 않는다");
-  assert.doesNotMatch(clientNotes, /setTimeout\(/, "페이지 연 뒤 한 번만 부르던 타이머는 없앤다");
+  assert.equal((clientNotes.match(/setTimeout\(/g) || []).length, 1, "타이머는 실패했을 때 한 번 다시 시도하는 것 하나뿐");
+  assert.match(clientNotes, /if \(keywordNotesRetryGeneration === generation\) return;/, "같은 세대에 재시도는 한 번만");
   assert.match(between(client, "function applyClientSession(payload) {", "return session;"), /refreshKeywordNotes\(\)/);
   assert.match(between(admin, "function applySecureSession(payload) {", "return session;"), /refreshKeywordNotes\(\)/);
   for (const body of [between(client, "function clearClientAuth() {", "unmountPersonalCalendar();"), between(admin, "function clearAdminAuthCode() {", "resetAdminAsyncControls({ clearSensitiveInputs: true });")]) {
     for (const reset of ["resetKeywordNotes", "resetKeywordCompare", "resetHomeFeed"]) assert.match(body, new RegExp(`${reset}\\(\\)`), reset);
   }
   for (const page of [client, admin]) {
-    const home = between(page, "function resetHomeFeed() {", "renderHomeFeedFailure();");
+    const home = between(page, "function resetHomeFeed() {", "node.replaceWith(slot.clone.cloneNode(true));");
     assert.match(home, /homeFeedRequest \+= 1;[\s\S]*homeFeedStartedAt = 0;[\s\S]*homeFeedLastPayload = null;/, "앞 계정 홈 피드를 지우고 10초 막기를 푼다");
+    assert.doesNotMatch(home, /renderHomeFeedFailure/, "지울 때 '불러오지 못했습니다'로 그리지 않는다(처음 모양으로 되돌림)");
     assert.match(between(page, "function resetKeywordCompare() {", "renderKeywordCompare([]);"), /keywordCompareRequest \+= 1;[\s\S]*keywordCompareItems = \[\];/);
   }
   assert.match(between(admin, "async function refreshHomeFeed() {", "var requestId = ++homeFeedRequest;"), /homeFeedKey === homeFeedStartedKey/, "총관리자 대상이 바뀌면 10초 막기에 걸리지 않는다");
@@ -49,6 +51,7 @@ test("signing out removes only the client dashboard copies from this device", ()
     ["miAgencyPublicState:v2:abc-def_ghijklmnopqrst12", "{}"],
     ["miAgencyPublicState:v2:0b6f3a52-6c1e-4d7a-9e2f-1a2b3c4d5e6f", "{}"],
     ["miAgencyPublicState:v2:owner-unresolved", "{}"],
+    ["miAgencyPublicState:v2:ofyou", "{}"],
     ["miAgencyPublicState:v20", "{}"],
     ["miSiteNoticeHide:1:x", "1"],
     ["mi-personal-assistant-ai-consent:v1", "yes"],
@@ -58,7 +61,7 @@ test("signing out removes only the client dashboard copies from this device", ()
     key(index) { return [...store.keys()][index] ?? null; },
     removeItem(key) { store.delete(key); },
   };
-  const pattern = between(client, "var CLIENT_PUBLIC_STATE_SCOPE_PATTERN = ", ";");
+  const pattern = between(client, "var ADMIN_PUBLIC_STATE_SCOPE_PATTERN = ", "$/;");
   const sandbox = { window: { localStorage }, storageKey: "miAgencyPublicState:v2" };
   vm.runInNewContext(`${pattern}\n${fn}\nremoveStoredPublicStates();`, sandbox);
   assert.deepEqual([...store.keys()], [
@@ -67,5 +70,5 @@ test("signing out removes only the client dashboard copies from this device", ()
     "miAgencyPublicState:v20",
     "miSiteNoticeHide:1:x",
     "mi-personal-assistant-ai-consent:v1",
-  ], "관리자 화면 편집값(광고주 id·owner-unresolved)과 다른 저장값은 남긴다");
+  ], "관리자 화면 편집값(광고주 id·owner-unresolved)과 다른 저장값은 남기고, 세션 범위·옛 광고주 코드 사본은 지운다");
 });

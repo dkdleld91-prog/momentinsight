@@ -21543,7 +21543,7 @@
       // 새 계정이 바로 불러오게 한다(점검 2026-11-02 F41 묶음).
       // 지울 때는 '불러오지 못했습니다'가 아니라 페이지를 처음 열었을 때의 '불러오는 중' 모양으로 되돌린다 — 다음 로그인 직후
       // 응답이 올 때까지 오류처럼 보이지 않게. 처음 모양은 이 스크립트가 시작될 때 복제해 둔다(정적 마크업, 이용자 데이터 없음).
-      var HOME_FEED_SLOTS = ["[data-home-news-naver]", "[data-home-news-naver-count]", "[data-home-news-coupang]", "[data-home-news-coupang-count]", "[data-home-news-openmarket]", "[data-home-news-openmarket-count]", "[data-home-scope]", "[data-home-volume-rows]", "[data-home-keyword-news]", "[data-home-rank-items]", "[data-home-rank-count]"];
+      var HOME_FEED_SLOTS = ["[data-home-news-naver]", "[data-home-news-naver-count]", "[data-home-news-coupang]", "[data-home-news-coupang-count]", "[data-home-news-openmarket]", "[data-home-news-openmarket-count]", "[data-home-scope]", "[data-home-volume-rows]", "[data-home-keyword-news]", "[data-home-swing-items]", "[data-home-swing-count]"];
       var homeFeedInitialSlots = HOME_FEED_SLOTS.map(function (selector) {
         var node = root.querySelector(selector);
         return { selector: selector, clone: node ? node.cloneNode(true) : null };

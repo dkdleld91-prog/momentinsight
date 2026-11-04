@@ -52,6 +52,7 @@ test("signing out removes only the client dashboard copies from this device", ()
     ["miAgencyPublicState:v2:0b6f3a52-6c1e-4d7a-9e2f-1a2b3c4d5e6f", "{}"],
     ["miAgencyPublicState:v2:owner-unresolved", "{}"],
     ["miAgencyPublicState:v2:ofyou", "{}"],
+    ["miAgencyPublicState:v2:owner-self", "{}"],
     ["miAgencyPublicState:v20", "{}"],
     ["miSiteNoticeHide:1:x", "1"],
     ["mi-personal-assistant-ai-consent:v1", "yes"],
@@ -61,14 +62,26 @@ test("signing out removes only the client dashboard copies from this device", ()
     key(index) { return [...store.keys()][index] ?? null; },
     removeItem(key) { store.delete(key); },
   };
-  const pattern = between(client, "var ADMIN_PUBLIC_STATE_SCOPE_PATTERN = ", "$/;");
+  const pattern = between(client, "var CLIENT_PUBLIC_STATE_SCOPE_PATTERN = ", "$/;");
   const sandbox = { window: { localStorage }, storageKey: "miAgencyPublicState:v2" };
   vm.runInNewContext(`${pattern}\n${fn}\nremoveStoredPublicStates();`, sandbox);
   assert.deepEqual([...store.keys()], [
     "miAgencyPublicState:v2:0b6f3a52-6c1e-4d7a-9e2f-1a2b3c4d5e6f",
     "miAgencyPublicState:v2:owner-unresolved",
+    "miAgencyPublicState:v2:ofyou",
+    "miAgencyPublicState:v2:owner-self",
     "miAgencyPublicState:v20",
     "miSiteNoticeHide:1:x",
     "mi-personal-assistant-ai-consent:v1",
-  ], "관리자 화면 편집값(광고주 id·owner-unresolved)과 다른 저장값은 남기고, 세션 범위·옛 광고주 코드 사본은 지운다");
+  ], "광고주 세션 범위(24자) 사본만 지운다 — 관리자 편집값(광고주 id·owner-self·owner-unresolved)과 구분 못 하는 이름은 남긴다");
+});
+
+test("each page resets exactly the home feed slots it renders (admin has rank swings, client has rank summary)", () => {
+  for (const page of [client, admin]) {
+    const slots = JSON.parse(between(page, "var HOME_FEED_SLOTS = ", "];").replace("var HOME_FEED_SLOTS = ", "").slice(0, -1));
+    const failure = between(page, "function renderHomeFeedFailure() {", "} catch (error) {");
+    const rendered = [...new Set(failure.match(/\[data-home-[a-z-]+\]/g))].sort();
+    assert.deepEqual([...slots].sort(), rendered, "실패 화면이 그리는 칸 = 지울 때 되돌리는 칸");
+    for (const selector of slots) assert.ok(page.includes(selector.slice(1, -1)), `${selector} 가 마크업에 있다`);
+  }
 });

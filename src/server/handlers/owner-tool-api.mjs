@@ -502,12 +502,12 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
   </div>
   <div class="mi-assistant-grid">
     <article class="mi-assistant-panel">
-      <div class="mi-assistant-panel-head"><div><h2>실장 명령 · 대화</h2><p>등록·완료·브리핑·광고주 전환을 말하거나 입력하세요. 날짜가 확인되는 문장만 초안으로 만들고, 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.</p></div><div class="mi-assistant-panel-tools"><button class="mi-link-button" type="button" data-owner-assistant-refresh>새로고침</button><span class="mi-badge">대화만 외부 AI</span></div></div>
+      <div class="mi-assistant-panel-head"><div><h2>실장 명령 · 대화</h2><p>등록·완료·브리핑·광고주 전환을 말하거나 입력하세요. 날짜가 확인되는 문장만 초안으로 만들고, 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.</p></div><div class="mi-assistant-panel-tools"><button class="mi-link-button" type="button" data-owner-assistant-refresh>새로고침</button><span class="mi-badge">대화·일정 요약 → 외부 AI</span></div></div>
       <div class="mi-assistant-chips"><button class="mi-assistant-chip" type="button" data-owner-assistant-example="내일 오후 2시 광고주 미팅 1시간 등록해줘">미팅 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="다음 주 월요일 오전 10시 월간 보고서 최종 검수">보고서 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="회의 메모&#10;- 8월 21일 오후 3시 소재 시안 검토&#10;- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅">회의 메모 예시</button></div>
       <div class="mi-assistant-voice" data-owner-assistant-voice><button type="button" data-owner-assistant-mic>🎤 말하기</button><button type="button" data-owner-assistant-wake>🎙 실장 상시 호출</button><button type="button" data-owner-assistant-read>🔊 브리핑 읽기</button><span class="mi-assistant-voice-status" data-owner-assistant-voice-status aria-live="polite">마이크 버튼을 누르면 한국어 음성을 일정 문장으로 입력합니다. Chrome 음성 서비스가 음성을 처리할 수 있습니다.</span></div>
       <textarea class="mi-textarea mi-assistant-input" data-owner-assistant-input maxlength="6000" placeholder="예: 내일 오후 2시 광고주 미팅 1시간 등록해줘&#10;여러 일정은 줄을 나눠 입력할 수 있습니다."></textarea>
       <div class="mi-assistant-actions"><small>초안은 모두 내부 비공개입니다. 광고주 공개는 기존 일정 편집에서 별도로 확인합니다.</small><button class="mi-button" type="button" data-owner-assistant-draft>초안 만들기</button></div>
-      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">일정 초안 해석은 서버 규칙으로 처리합니다. 실장과의 자유 대화만 Anthropic API로 전송되며 학습에 사용되지 않습니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>
+      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">일정 초안 해석은 서버 규칙으로 처리합니다. 자유 대화를 하면 질문·직전 대화와 이 화면의 업무 일정 요약(제목·시작 일시·상태)이 외부 AI(Anthropic)로 전달되며, 처음 대화할 때 한 번 확인합니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>
       <div class="mi-assistant-results" data-owner-assistant-results><div class="mi-assistant-empty">만든 초안을 확인한 뒤 항목별로 일정표에 등록할 수 있습니다.</div></div>
     </article>
   </div>

@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import handler, {
+  AUDIT_LOG_KEEP_DAYS,
   RANK_TRACKER_TABLES,
+  TRIAL_INACTIVE_DAYS,
   clientPrincipalKey,
   deleteExpiredClient,
   expireUnlinkedClients,
   googleLinkTransitionClosed,
   revokeUnlinkedTeams,
   runAccountExpiry,
+  pruneAuditLogs,
+  pruneInactiveTrials,
   selectDeleteDueClients,
   startLinkedClientPlans,
 } from "./account-expiry-cron.mjs";
@@ -91,6 +95,7 @@ function fakeCtx(rowsByTable) {
         not(column, op, value) { record.ops.push(["not", column, op, value]); return query; },
         lt(column, value) { record.ops.push(["lt", column, value]); return query; },
         lte(column, value) { record.ops.push(["lte", column, value]); return query; },
+        gte(column, value) { record.ops.push(["gte", column, value]); return query; },
         is(column, value) { record.ops.push(["is", column, value]); return query; },
         eq(column, value) { record.ops.push(["eq", column, value]); return query; },
         in(column, values) { record.ops.push(["in", column, values]); return query; },
@@ -490,7 +495,8 @@ test("dry run and the disable switch report due accounts without deleting anythi
   assert.equal(dry.dryRun, true);
   assert.deepEqual(dry.due.map((row) => row.agencyCode), ["abc123"]);
   assert.deepEqual(dry.deleted, []);
-  assert.equal(calls.filter((call) => call.table !== "clients").length, 0);
+  // 감사 로그·체험 계정 정리도 dryRun 이면 읽기만 한다.
+  assert.equal(calls.some((call) => call.ops.some(([op]) => ["delete", "update", "insert", "upsert"].includes(op))), false);
 
   const disabled = await runAccountExpiry(ctx, { nowMs: NOW, env: { ...ENV, MI_ACCOUNT_EXPIRY_DELETE_DISABLED: "true" } });
   assert.equal(disabled.dryRun, true);
@@ -605,7 +611,7 @@ test("dryRun 이면 미연동 대상만 보고하고 갱신·감사는 없다 ·
   assert.equal(summary.googleLinkGraceDays, GOOGLE_LINK_GRACE_DAYS);
   assert.equal(summary.linkedPlanExpiresAt, googleLinkPlanExpiryIso());
   assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
-  assert.equal(calls.some((call) => call.table === "audit_logs"), false);
+  assert.equal(calls.some((call) => call.table === "audit_logs" && call.ops.some(([op]) => op === "insert" || op === "delete")), false);
 });
 
 // ── 연동한 계정(대표 결정 2026-09-08 "30일 지난 후부터 30일 카운팅"): 기한 뒤 구글 연결 + 무기한 광고주에 10/08~11/06 이용 기간을 찍는다 ──
@@ -671,7 +677,7 @@ test("연동 계정 이용 기간 시작도 dryRun 이면 대상만 보고하고
   assert.equal(summary.linkedPlanStarted[0].dryRun, true);
   assert.equal(summary.googleLinkPlanDays, 30);
   assert.equal(calls.some((call) => call.ops.some(([op]) => op === "update")), false);
-  assert.equal(calls.some((call) => call.table === "audit_logs"), false);
+  assert.equal(calls.some((call) => call.table === "audit_logs" && call.ops.some(([op]) => op === "insert" || op === "delete")), false);
 });
 
 // ── 운영팀도 포함(대표 지시 2026-09-08): 기한 + 유예 3일이 지난 날부터 구글 미연동 활성 운영팀 코드를 해제한다 ──
@@ -790,4 +796,99 @@ test("전환 기간(기한+유예 3일+2일)이 지나면 세 단계 모두 DB �
     assert.deepEqual(revoked.revoked, []);
     assert.equal(calls.length, 0, "전환이 끝난 뒤에는 표를 읽지도 쓰지도 않는다");
   }
+});
+
+// ─── 감사 로그 1년·체험 계정 1년 미이용 정리(대표 결정 2026-11-04) ───
+
+test("audit logs older than one year are deleted; dry run only counts them", async () => {
+  assert.equal(AUDIT_LOG_KEEP_DAYS, 365);
+  const { ctx, calls } = fakeCtx({ audit_logs: [{ id: "a1" }, { id: "a2" }] });
+  const result = await pruneAuditLogs(ctx, { nowMs: NOW });
+  assert.equal(result.pruned, 2);
+  assert.ok(isDelete(calls[0]));
+  assert.deepEqual(calls[0].ops.find(([op]) => op === "lt"), ["lt", "created_at", iso(-365)]);
+  const dry = fakeCtx({ audit_logs: [{ id: "a1" }] });
+  const counted = await pruneAuditLogs(dry.ctx, { nowMs: NOW, dryRun: true });
+  assert.equal(counted.pruned, 1);
+  assert.equal(dry.calls.some(isDelete), false);
+});
+
+const OLD_SUB = "104111111111111111111";
+const ACTIVE_SUB = "107222222222222222222";
+
+function trialRows(extra = []) {
+  return [
+    { google_sub: OLD_SUB, linked_at: iso(-500), updated_at: iso(-400) },
+    { google_sub: ACTIVE_SUB, linked_at: iso(-500), updated_at: iso(-10) },
+    ...extra,
+  ];
+}
+
+test("a trial account unused for a year loses its quota rows, notes and login identity; recent ones stay", async () => {
+  assert.equal(TRIAL_INACTIVE_DAYS, 365);
+  const { ctx, calls } = fakeCtx({
+    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows()),
+    trial_keyword_quota: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }, { google_sub: OLD_SUB }] : []),
+    keyword_research_notes: [{ id: "n1" }],
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.failed, []);
+  assert.deepEqual(result.deleted, [{ quota: 2, notes: 1 }]);
+  const deletes = calls.filter(isDelete);
+  assert.deepEqual(deletes.map((call) => call.table), ["trial_keyword_quota", "keyword_research_notes", "login_identities"]);
+  for (const call of deletes) {
+    assert.ok(call.ops.every(([op, , value]) => op !== "eq" || value !== ACTIVE_SUB), "최근에 쓴 체험 계정은 건드리지 않는다");
+  }
+  assert.deepEqual(deletes[1].ops.find(([op]) => op === "eq"), ["eq", "agency_code", "trial-10411111"]);
+  const identityDelete = deletes[2];
+  assert.deepEqual(identityDelete.ops.filter(([op]) => op === "eq"), [["eq", "google_sub", OLD_SUB], ["eq", "role", "trial"]]);
+  assert.deepEqual(identityDelete.ops.find(([op]) => op === "lt"), ["lt", "updated_at", iso(-365)], "지우는 사이 다시 로그인했으면 남긴다");
+  const audit = calls.find((call) => call.table === "audit_logs").ops[0][1];
+  assert.equal(audit.action, "trial.deleted_inactive");
+  assert.equal(JSON.stringify(audit).includes(OLD_SUB), false, "감사 기록에 구글 식별자를 남기지 않는다");
+});
+
+test("a trial account that looked up keywords within the year is kept even if its login is old", async () => {
+  const { ctx, calls } = fakeCtx({
+    login_identities: trialRows(),
+    trial_keyword_quota: (record) => (record.ops.some(([op]) => op === "gte") ? [{ google_sub: OLD_SUB }] : []),
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.deleted, []);
+  assert.equal(calls.some(isDelete), false);
+});
+
+test("notes are kept when another trial account shares the same 8-character notes code", async () => {
+  const twin = { google_sub: "104111119999999999999", linked_at: iso(-20), updated_at: iso(-5) };
+  const { ctx, calls } = fakeCtx({
+    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows([twin])),
+    trial_keyword_quota: (record) => (isDelete(record) ? [] : []),
+    keyword_research_notes: [{ id: "n1" }],
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }]);
+  assert.equal(calls.some((call) => call.table === "keyword_research_notes"), false);
+});
+
+test("inactive trial cleanup in a dry run only reports", async () => {
+  const { ctx, calls } = fakeCtx({ login_identities: trialRows(), trial_keyword_quota: [] });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW, dryRun: true });
+  assert.deepEqual(result.deleted, [{ dryRun: true }]);
+  assert.equal(calls.some(isDelete), false);
+});
+
+test("the nightly run reports trial and audit-log cleanup counts", async () => {
+  const { ctx } = fakeCtx({
+    clients: [],
+    operation_team_codes: [],
+    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows()),
+    trial_keyword_quota: [],
+    keyword_research_notes: [],
+    audit_logs: [{ id: "old-1" }],
+  });
+  const summary = await runAccountExpiry(ctx, { nowMs: NOW, env: ENV });
+  assert.equal(summary.trialsDeleted, 1);
+  assert.deepEqual(summary.trialsFailed, []);
+  assert.equal(summary.auditLogsPruned, 1);
+  assert.equal(summary.auditLogsPruneError, null);
 });

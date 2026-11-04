@@ -432,6 +432,20 @@ export async function upsertLoginIdentity(ctx, identity) {
   return !error;
 }
 
+// 체험 계정의 마지막 이용 시각(2026-11-04): 로그인할 때마다 updated_at 을 새로 찍는다. 1년 동안 이용하지 않은
+// 체험 계정을 지우는 새벽 정리(account-expiry-cron 의 pruneInactiveTrials)가 이 값을 본다. 실패해도 로그인은 막지 않는다.
+export async function touchTrialIdentity(ctx, googleSub) {
+  try {
+    await ctx.supabaseAdmin
+      .from("login_identities")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("google_sub", cleanText(googleSub, 128))
+      .eq("role", "trial");
+  } catch (error) {
+    // 마지막 이용 시각 기록 실패는 로그인 결과를 바꾸지 않는다
+  }
+}
+
 export async function findLinkTargetIdentity(ctx, linkTarget) {
   const { data, error } = await ctx.supabaseAdmin
     .from("login_identities")
@@ -1068,6 +1082,7 @@ async function handleLoginCallback(request, ctx, code, state) {
     role: resolved.access.trial === true ? "trial" : resolved.access.role,
     code: resolved.access.teamCode || resolved.access.agencyCode || resolved.access.clientId || "",
   });
+  if (resolved.access.trial === true) await touchTrialIdentity(ctx, profile.sub);
   // 로그인 목적의 state 는 시작 시점에 누가 누를지 모르므로 owner 로 서명된다.
   // 목적지는 그 state 가 아니라 방금 확정된 계정 역할이 정한다 — 그러지 않으면
   // 구글로 로그인한 광고주가 자기 화면이 아닌 /admin 으로 떨어진다.

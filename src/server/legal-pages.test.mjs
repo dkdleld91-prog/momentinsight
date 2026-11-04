@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { PLAN_GRACE_DAYS, PLAN_WARN_DAYS } from "./account-plan.mjs";
 import { PERSISTENT_SESSION_SECONDS, TRIAL_KEYWORD_DAILY_LIMIT } from "./code-session.mjs";
+import { AUDIT_LOG_KEEP_DAYS, TRIAL_INACTIVE_DAYS } from "./handlers/account-expiry-cron.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -58,6 +59,12 @@ test("개인정보처리방침 v1.1 은 코드의 실제 값과 같은 숫자를
   assert.ok(privacy.includes("최근 <b>14회분</b>"));
   assert.match(read("src/server/handlers/site-events.mjs"), /p_keep_days: 120/);
   assert.ok(privacy.includes("120일이 지난 기록"));
+  // 감사 로그 1년·체험 계정 1년 미이용 삭제(2026-11-04 대표 결정)
+  assert.equal(AUDIT_LOG_KEEP_DAYS, 365);
+  assert.ok(privacy.includes("<b>1년</b> 동안 보관한 뒤 매일 새벽 정리 작업에서 자동 삭제"));
+  assert.equal(TRIAL_INACTIVE_DAYS, 365);
+  assert.ok(privacy.includes("마지막 로그인 또는 키워드 조회 뒤 <b>1년</b> 동안 이용하지 않으면"));
+  assert.ok(privacy.includes("처음 대화할 때 이 전달 내용을 안내하고 확인을 받습니다"));
   // 위탁·보관 위치
   for (const word of ["Vercel Inc.", "Supabase Inc.", "Google LLC", "Anthropic PBC", "OpenAI OpCo, LLC", "AWS ap-northeast-2",
     "privacy@vercel.com", "privacy@supabase.com", "privacy@anthropic.com", "dsar@openai.com"]) {
@@ -85,6 +92,7 @@ test("이용약관: 공고일·시행일, 만료 뒤 유예·삭제, 체험 한�
   assert.equal(TRIAL_KEYWORD_DAILY_LIMIT, 5);
   assert.ok(terms.includes(`키워드 조회(하루 ${TRIAL_KEYWORD_DAILY_LIMIT}회`));
   assert.ok(terms.includes("최대 30일 동안 로그인이 유지됩니다"));
+  assert.ok(terms.includes("마지막 로그인 또는 키워드 조회 뒤 1년 동안 이용하지 않으면 체험 계정"));
   assert.ok(terms.includes('href="/privacy"'));
   tocTargetsExist(terms);
 });

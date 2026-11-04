@@ -18277,7 +18277,20 @@
         while (results.children.length > 6) results.removeChild(results.lastElementChild);
       }
 
+      // 외부 AI 전달 확인(2026-11-04, 개인정보처리방침 v1.1 제2조 6): 이 브라우저에서 처음 대화할 때 한 번 묻는다.
+      var OWNER_ASSISTANT_AI_CONSENT_KEY = "mi-assistant-ai-consent:v1";
+      function ownerAssistantAiConsent() {
+        try { if (window.localStorage.getItem(OWNER_ASSISTANT_AI_CONSENT_KEY) === "yes") return true; } catch (error) { /* 저장소를 못 쓰면 매번 묻는다 */ }
+        var ok = window.confirm("실장 대화는 답을 만들기 위해 질문, 직전 대화, 이 화면의 업무 일정 요약(최대 60건: 제목·시작 일시·상태·종일 여부)을 외부 AI(Anthropic, 미국)로 보냅니다. 대화 내용은 서비스에 저장하지 않습니다.\n\n보내고 대화할까요? 이 브라우저에서는 한 번만 묻습니다.");
+        if (ok) { try { window.localStorage.setItem(OWNER_ASSISTANT_AI_CONSENT_KEY, "yes"); } catch (error) { /* 다음에 다시 묻는다 */ } }
+        return ok;
+      }
+
       async function askOwnerAssistant(view, message, generation) {
+        if (!ownerAssistantAiConsent()) {
+          setOwnerAssistantStatus(view, "외부 AI로 보내지 않았습니다. 등록·완료·브리핑 명령은 그대로 쓸 수 있습니다.", "warn");
+          return;
+        }
         setOwnerAssistantStatus(view, "실장이 생각 중입니다…", "");
         try {
           var response = await miFetch(getOwnerToolApiUrl(), {

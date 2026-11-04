@@ -267,9 +267,10 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /data-owner-assistant-wake/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-read/);
   assert.match(payload.tool.viewHtml, /확인하기 전에는 저장하거나 공개하지 않습니다/);
-  assert.match(payload.tool.viewHtml, /대화만 외부 AI/);
+  assert.match(payload.tool.viewHtml, /대화·일정 요약 → 외부 AI/);
   assert.match(payload.tool.viewHtml, /일정 초안 해석은 서버 규칙으로 처리합니다/);
-  assert.match(payload.tool.viewHtml, /실장과의 자유 대화만 Anthropic API로 전송되며 학습에 사용되지 않습니다/);
+  assert.match(payload.tool.viewHtml, /업무 일정 요약\(제목·시작 일시·상태\)이 외부 AI\(Anthropic\)로 전달되며, 처음 대화할 때 한 번 확인합니다/);
+  assert.doesNotMatch(payload.tool.viewHtml, /자유 대화만/);
   assert.doesNotMatch(payload.tool.viewHtml, /외부 전송 없음/);
   assert.match(payload.tool.viewHtml, /부가세 포함 금액/);
   assert.match(payload.tool.viewHtml, /최종 합계금액을 입력/);

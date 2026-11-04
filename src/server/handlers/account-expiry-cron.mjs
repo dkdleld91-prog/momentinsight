@@ -27,6 +27,10 @@ import {
 export const EXPIRY_DELETE_BATCH = 20;
 export const RANK_TRACKER_TABLES = ["naver_rank_trackers", "naver_place_rank_trackers"];
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 감사 로그는 1년 보관 뒤, 체험 계정은 마지막 이용(로그인·키워드 조회) 뒤 1년 동안 쓰지 않으면 지운다
+// (대표 결정 2026-11-04, 개인정보처리방침 v1.1 제3조). 체험 정리는 한 번에 최대 EXPIRY_DELETE_BATCH 개.
+export const AUDIT_LOG_KEEP_DAYS = 365;
+export const TRIAL_INACTIVE_DAYS = 365;
 // 보고서 파일 실물(report-center.mjs 업로드 경로: moment-reports/clients/<id>/<sources|reports>/<YYYY-MM>/<파일>).
 export const REPORT_BUCKET = "moment-reports";
 const STORAGE_LIST_LIMIT = 1000;
@@ -554,6 +558,103 @@ export async function revokeUnlinkedTeams(ctx, { nowMs = Date.now(), dryRun = fa
   return { active: true, revokeFrom: new Date(revokeFromMs).toISOString(), revoked, failed };
 }
 
+// 1년 넘은 감사 로그를 지운다. dryRun 이면 지울 줄 수만 센다(최대 1000까지 표시).
+export async function pruneAuditLogs(ctx, { nowMs = Date.now(), dryRun = false } = {}) {
+  const cutoff = new Date(nowMs - AUDIT_LOG_KEEP_DAYS * DAY_MS).toISOString();
+  const query = ctx.supabaseAdmin.from("audit_logs");
+  const result = dryRun
+    ? await query.select("id").lt("created_at", cutoff).limit(1000)
+    : await query.delete().lt("created_at", cutoff).select("id");
+  if (result.error) return { cutoff, pruned: 0, error: String(result.error.message || result.error) };
+  return { cutoff, pruned: (result.data || []).length, dryRun };
+}
+
+function trialNotesCode(googleSub) {
+  return `trial-${String(googleSub || "").toLowerCase().slice(0, 8)}`;
+}
+
+// 마지막 이용 뒤 1년 동안 쓰지 않은 체험 계정(login_identities role=trial)을 지운다. 마지막 이용 = 연결·로그인 시각
+// (updated_at, 로그인 때마다 갱신)과 키워드 조회 기록(trial_keyword_quota.updated_at) 중 늦은 것. 정식 전환된 계정은
+// role 이 client 라 대상이 아니다. 조사 노트는 'trial-<sub 앞 8자>' 코드로 묶여 있어, 같은 앞 8자를 쓰는 다른 체험
+// 계정이 남아 있으면 노트는 지우지 않는다(남의 노트를 지우지 않게). 체험 한도 → 노트 → 계정 순서로 지운다.
+export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = false, limit = EXPIRY_DELETE_BATCH } = {}) {
+  const cutoff = new Date(nowMs - TRIAL_INACTIVE_DAYS * DAY_MS).toISOString();
+  const cutoffMs = Date.parse(cutoff);
+  const deleted = [];
+  const failed = [];
+  const trials = await ctx.supabaseAdmin.from("login_identities").select("google_sub, linked_at, updated_at").eq("role", "trial");
+  if (trials.error) return { cutoff, deleted, failed: [{ error: String(trials.error.message || trials.error) }] };
+  const rows = (trials.data || []).filter((row) => row && row.google_sub);
+  const lastSeen = (row) => Math.max(Date.parse(String(row.updated_at || "")) || 0, Date.parse(String(row.linked_at || "")) || 0);
+  const candidates = rows.filter((row) => lastSeen(row) > 0 && lastSeen(row) < cutoffMs).slice(0, limit);
+  for (const row of candidates) {
+    const sub = String(row.google_sub);
+    const recent = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").eq("google_sub", sub).gte("updated_at", cutoff).limit(1);
+    if (recent.error) {
+      failed.push({ error: `trial_keyword_quota: ${String(recent.error.message || recent.error)}` });
+      continue;
+    }
+    if ((recent.data || []).length) continue; // 1년 안에 키워드 조회를 했다 — 아직 쓰는 계정
+    if (dryRun) {
+      deleted.push({ dryRun: true });
+      continue;
+    }
+    const summary = { quota: null, notes: null, identity: false };
+    const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().eq("google_sub", sub).select("google_sub");
+    if (quota.error) {
+      failed.push({ error: `trial_keyword_quota: ${String(quota.error.message || quota.error)}` });
+      continue;
+    }
+    summary.quota = (quota.data || []).length;
+    const notesCode = trialNotesCode(sub);
+    const shared = rows.some((other) => String(other.google_sub) !== sub && trialNotesCode(other.google_sub) === notesCode);
+    if (shared) {
+      summary.notes = "kept-shared-prefix";
+    } else {
+      const notes = await ctx.supabaseAdmin.from("keyword_research_notes").delete().eq("agency_code", notesCode).select("id");
+      if (notes.error) {
+        failed.push({ error: `keyword_research_notes: ${String(notes.error.message || notes.error)}` });
+        continue;
+      }
+      summary.notes = (notes.data || []).length;
+    }
+    // 지우는 사이 다시 로그인했으면(updated_at 이 새로 찍힘) 계정은 남긴다.
+    const identity = await ctx.supabaseAdmin
+      .from("login_identities")
+      .delete()
+      .eq("google_sub", sub)
+      .eq("role", "trial")
+      .lt("updated_at", cutoff)
+      .select("google_sub");
+    if (identity.error) {
+      failed.push({ error: `login_identities: ${String(identity.error.message || identity.error)}` });
+      continue;
+    }
+    summary.identity = (identity.data || []).length === 1;
+    try {
+      await ctx.supabaseAdmin.from("audit_logs").insert({
+        actor_id: null,
+        client_id: null,
+        action: "trial.deleted_inactive",
+        target_table: "login_identities",
+        target_id: null,
+        metadata: sanitizeAuditMetadata({
+          source: "account-expiry-cron",
+          inactiveDays: String(TRIAL_INACTIVE_DAYS),
+          lastSeenAt: new Date(lastSeen(row)).toISOString(),
+          quota: summary.quota,
+          notes: summary.notes,
+          identityDeleted: summary.identity,
+        }),
+      });
+    } catch (error) {
+      // 감사 기록 실패는 정리 결과를 바꾸지 않는다
+    }
+    if (summary.identity) deleted.push({ quota: summary.quota, notes: summary.notes });
+  }
+  return { cutoff, deleted, failed };
+}
+
 export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
   const disabled = deletionDisabled(env);
   const effectiveDryRun = dryRun || disabled;
@@ -565,6 +666,9 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
   if (!effectiveDryRun) {
     for (const client of due) results.push(await deleteExpiredClient(ctx, client, { nowMs, env }));
   }
+  const trials = await pruneInactiveTrials(ctx, { nowMs, dryRun: effectiveDryRun });
+  // 감사 로그 정리는 맨 끝에: 오늘 남긴 기록은 1년 기준에 걸리지 않는다.
+  const auditLogs = await pruneAuditLogs(ctx, { nowMs, dryRun: effectiveDryRun });
   return {
     ok: true,
     dryRun: effectiveDryRun,
@@ -586,6 +690,10 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     deleted: results.filter((result) => result.client).map((result) => result.agencyCode),
     skipped: results.filter((result) => result.skipped).map((result) => ({ agencyCode: result.agencyCode, reason: result.skipped })),
     auditFailed: results.filter((result) => result.auditLogged === false).map((result) => result.agencyCode),
+    trialsDeleted: trials.deleted.length,
+    trialsFailed: trials.failed,
+    auditLogsPruned: auditLogs.pruned,
+    auditLogsPruneError: auditLogs.error || null,
     failed: results.filter((result) => result.errors.length).map((result) => ({ agencyCode: result.agencyCode, errors: result.errors })),
     results,
   };

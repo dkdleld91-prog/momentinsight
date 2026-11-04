@@ -54,8 +54,16 @@ jobs:
             deleted: (payload.deleted || []).length,
             skipped: (payload.skipped || []).length,
             auditFailed: (payload.auditFailed || []).length,
+            trialsDeleted: payload.trialsDeleted || 0,
+            trialsFailed: (payload.trialsFailed || []).map((entry) => entry.error || ""),
+            auditLogsPruned: payload.auditLogsPruned || 0,
+            auditLogsPruneError: payload.auditLogsPruneError || null,
             failed: (payload.failed || []).map((entry) => (entry.errors || []).join("; ")),
           }));
+          if ((payload.trialsFailed || []).length || payload.auditLogsPruneError) {
+            console.error("trial or audit-log cleanup failed; it is retried next run");
+            process.exit(1);
+          }
           if ((payload.failed || []).length) {
             console.error("some accounts were not fully deleted; see failed (a still-due account is retried next run, a changed one stays)");
             process.exit(1);

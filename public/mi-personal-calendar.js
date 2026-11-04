@@ -696,7 +696,7 @@
       '<article class="mi-cal-panel-card mi-cal-assistant" data-cal-assistant aria-label="실장 비서">',
       '<div class="mi-cal-panel-head">',
       '<div><h2>' + escapeHtml(ASSISTANT_PANEL_TITLE) + '</h2><p>' + escapeHtml(ASSISTANT_PANEL_NOTE) + '</p></div>',
-      '<div class="mi-cal-panel-tools"><button class="mi-cal-link-button" type="button" data-cal-assistant-refresh>새로고침</button><span class="mi-cal-badge">대화만 외부 AI</span></div>',
+      '<div class="mi-cal-panel-tools"><button class="mi-cal-link-button" type="button" data-cal-assistant-refresh>새로고침</button><span class="mi-cal-badge">대화·일정 요약 → 외부 AI</span></div>',
       '</div>',
       '<div class="mi-cal-assistant-chips">',
       ASSISTANT_EXAMPLE_CHIPS.map(function (chip) {
@@ -717,7 +717,7 @@
       // 개념이 없으므로, 대신 이 화면의 유일한 약속(내 계정 일정만 본다)을 적는다.
       '<div class="mi-cal-assistant-actions"><small>초안은 모두 내 계정 안에서만 만들어집니다. 다른 계정의 일정은 보지 않습니다.</small>',
       '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-draft>' + escapeHtml(ASSISTANT_DRAFT_BUTTON) + '</button></div>',
-      '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">일정 초안 해석은 이 화면의 규칙으로 처리합니다. 실장과의 자유 대화만 실장 AI로 전달되며 학습에 사용되지 않습니다.</div>',
+      '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">일정 초안 해석은 이 화면의 규칙으로 처리합니다. 자유 대화를 하면 질문·직전 대화와 내 일정 요약(제목·시작 일시·상태)이 외부 AI(Anthropic)로 전달되며, 처음 대화할 때 한 번 확인합니다.</div>',
       '<div class="mi-cal-assistant-results" data-cal-assistant-results><div class="mi-cal-assistant-empty">' +
         escapeHtml(ASSISTANT_RESULTS_EMPTY) + '</div></div>',
       '<div class="mi-cal-assistant-briefing" data-cal-assistant-briefing><div class="mi-cal-assistant-agenda" data-cal-assistant-agenda></div></div>',
@@ -3481,7 +3481,20 @@
       while (results.children.length > 6) results.removeChild(results.lastElementChild);
     }
 
+    // 외부 AI 전달 확인(2026-11-04, 개인정보처리방침 v1.1 제2조 6): 이 브라우저에서 처음 대화할 때 한 번 묻는다.
+    var ASSISTANT_AI_CONSENT_KEY = "mi-personal-assistant-ai-consent:v1";
+    function assistantAiConsent() {
+      try { if (window.localStorage.getItem(ASSISTANT_AI_CONSENT_KEY) === "yes") return true; } catch (error) { /* 저장소를 못 쓰면 매번 묻는다 */ }
+      var ok = window.confirm("실장 대화는 답을 만들기 위해 질문, 직전 대화, 내 일정 요약(최대 60건: 제목·시작 일시·상태·종일 여부, 구글에서 가져온 일정 포함)을 외부 AI(Anthropic, 미국)로 보냅니다. 대화 내용은 서비스에 저장하지 않습니다.\n\n보내고 대화할까요? 이 브라우저에서는 한 번만 묻습니다.");
+      if (ok) { try { window.localStorage.setItem(ASSISTANT_AI_CONSENT_KEY, "yes"); } catch (error) { /* 다음에 다시 묻는다 */ } }
+      return ok;
+    }
+
     async function askAssistant(message) {
+      if (!assistantAiConsent()) {
+        setAssistantStatus("외부 AI로 보내지 않았습니다. 등록·완료·브리핑 명령은 그대로 쓸 수 있습니다.", "warn");
+        return;
+      }
       var sendButton = el("[data-cal-assistant-draft]");
       setAssistantStatus("실장이 생각 중입니다…", "");
       if (sendButton) sendButton.disabled = true;

@@ -62,18 +62,21 @@ test("signing out removes only the client dashboard copies from this device", ()
     key(index) { return [...store.keys()][index] ?? null; },
     removeItem(key) { store.delete(key); },
   };
-  const pattern = between(client, "var CLIENT_PUBLIC_STATE_SCOPE_PATTERN = ", "$/;");
+  const pattern = between(client, "var ADMIN_PUBLIC_STATE_SCOPE_PATTERN = ", "$/;");
   const sandbox = { window: { localStorage }, storageKey: "miAgencyPublicState:v2" };
   vm.runInNewContext(`${pattern}\n${fn}\nremoveStoredPublicStates();`, sandbox);
   assert.deepEqual([...store.keys()], [
     "miAgencyPublicState:v2:0b6f3a52-6c1e-4d7a-9e2f-1a2b3c4d5e6f",
     "miAgencyPublicState:v2:owner-unresolved",
-    "miAgencyPublicState:v2:ofyou",
     "miAgencyPublicState:v2:owner-self",
     "miAgencyPublicState:v20",
     "miSiteNoticeHide:1:x",
     "mi-personal-assistant-ai-consent:v1",
-  ], "광고주 세션 범위(24자) 사본만 지운다 — 관리자 편집값(광고주 id·owner-self·owner-unresolved)과 구분 못 하는 이름은 남긴다");
+  ], "관리자 편집값 이름(uuid·owner-self·owner-unresolved)과 다른 저장값은 남기고, 광고주 세션 사본·옛 광고주 코드 사본(ofyou)은 지운다");
+  // 관리자 화면이 실제로 만드는 이름이 이 목록 밖으로 나가면 이 시험이 알려 준다.
+  const adminNames = between(admin, "function scopedStorageKey(baseKey, code) {", "return baseKey + \":\" + (normalized || \"unauthed\");");
+  for (const name of ["owner-unresolved", "session", "unauthed"]) assert.ok(adminNames.includes(`"${name}"`), name);
+  assert.ok(between(admin, "function ownerTargetClientId() {", "return normalizeStorageCode(match && match.id);").includes('"owner-self"'));
 });
 
 test("each page resets exactly the home feed slots it renders (admin has rank swings, client has rank summary)", () => {
@@ -83,5 +86,10 @@ test("each page resets exactly the home feed slots it renders (admin has rank sw
     const rendered = [...new Set(failure.match(/\[data-home-[a-z-]+\]/g))].sort();
     assert.deepEqual([...slots].sort(), rendered, "실패 화면이 그리는 칸 = 지울 때 되돌리는 칸");
     for (const selector of slots) assert.ok(page.includes(selector.slice(1, -1)), `${selector} 가 마크업에 있다`);
+  }
+  const scheduleReset = between(admin, "var HOME_SCHEDULE_SLOTS = ", "homeFeedInitialSlots.forEach(function (slot) {");
+  assert.match(scheduleReset, /homeScheduleStripRequest \+= 1;/, "관리자 '오늘 일정' 응답도 버린다");
+  for (const selector of ["[data-home-schedule-count]", "[data-home-schedule-items]", "[data-home-schedule-link]"]) {
+    assert.ok(scheduleReset.includes(selector) && admin.includes(selector.slice(1, -1)), selector);
   }
 });

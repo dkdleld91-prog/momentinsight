@@ -21548,8 +21548,16 @@
         var node = root.querySelector(selector);
         return { selector: selector, clone: node ? node.cloneNode(true) : null };
       });
+      // 관리자 홈 '오늘 일정' 띠도 처음 모양으로 되돌리고 진행 중인 일정 응답을 버린다 — 총관리자에서 운영팀으로 바뀔 때
+      // 앞 계정의 전체 광고주 일정이 잠시라도 보이지 않게.
+      var HOME_SCHEDULE_SLOTS = ["[data-home-schedule-count]", "[data-home-schedule-items]", "[data-home-schedule-link]"];
+      homeFeedInitialSlots = homeFeedInitialSlots.concat(HOME_SCHEDULE_SLOTS.map(function (selector) {
+        var node = root.querySelector(selector);
+        return { selector: selector, clone: node ? node.cloneNode(true) : null };
+      }));
       function resetHomeFeed() {
         homeFeedRequest += 1;
+        homeScheduleStripRequest += 1;
         homeFeedStartedAt = 0;
         homeFeedStartedKey = "";
         homeFeedLastPayload = null;

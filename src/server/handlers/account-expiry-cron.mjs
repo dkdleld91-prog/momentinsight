@@ -575,19 +575,35 @@ function trialNotesCode(googleSub) {
 
 // 마지막 이용 뒤 1년 동안 쓰지 않은 체험 계정(login_identities role=trial)을 지운다. 마지막 이용 = 연결·로그인 시각
 // (updated_at, 로그인 때마다 갱신)과 키워드 조회 기록(trial_keyword_quota.updated_at) 중 늦은 것. 정식 전환된 계정은
-// role 이 client 라 대상이 아니다. 조사 노트는 'trial-<sub 앞 8자>' 코드로 묶여 있어, 같은 앞 8자를 쓰는 다른 체험
-// 계정이 남아 있으면 노트는 지우지 않는다(남의 노트를 지우지 않게). 체험 한도 → 노트 → 계정 순서로 지운다.
+// role 이 client 라 대상이 아니다.
+// 순서: 계정을 먼저 조건부로 지운다(role=trial 이고 updated_at 이 기준보다 오래된 경우만) — 그 사이 다시 로그인했거나 정식
+// 전환된 계정은 0행이 되어 그 뒤의 한도·노트도 건드리지 않는다. 그다음 체험 한도, 마지막으로 조사 노트. 노트는
+// 'trial-<sub 앞 8자>' 코드로 묶여 있어, 같은 앞 8자를 쓰는 다른 계정(정식 전환된 계정 포함, 이번 실행에서 지운 계정 제외)이
+// 남아 있으면 지우지 않는다. 계정 표가 PAGE 한도(1000)에 닿으면 전체를 못 본 채 판단하지 않도록 정리하지 않는다.
+const TRIAL_IDENTITY_SCAN_LIMIT = 1000;
+
 export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = false, limit = EXPIRY_DELETE_BATCH } = {}) {
   const cutoff = new Date(nowMs - TRIAL_INACTIVE_DAYS * DAY_MS).toISOString();
   const cutoffMs = Date.parse(cutoff);
   const deleted = [];
   const failed = [];
-  const trials = await ctx.supabaseAdmin.from("login_identities").select("google_sub, linked_at, updated_at").eq("role", "trial");
-  if (trials.error) return { cutoff, deleted, failed: [{ error: String(trials.error.message || trials.error) }] };
-  const rows = (trials.data || []).filter((row) => row && row.google_sub);
+  const identities = await ctx.supabaseAdmin
+    .from("login_identities")
+    .select("google_sub, role, linked_at, updated_at")
+    .limit(TRIAL_IDENTITY_SCAN_LIMIT);
+  if (identities.error) return { cutoff, deleted, failed: [{ error: String(identities.error.message || identities.error) }] };
+  const all = (identities.data || []).filter((row) => row && row.google_sub);
+  if (all.length >= TRIAL_IDENTITY_SCAN_LIMIT) {
+    return { cutoff, deleted, failed: [{ error: `login_identities: ${TRIAL_IDENTITY_SCAN_LIMIT}줄 이상 — 전체를 확인할 수 없어 체험 정리를 건너뜀` }] };
+  }
   const lastSeen = (row) => Math.max(Date.parse(String(row.updated_at || "")) || 0, Date.parse(String(row.linked_at || "")) || 0);
-  const candidates = rows.filter((row) => lastSeen(row) > 0 && lastSeen(row) < cutoffMs).slice(0, limit);
+  const candidates = all
+    .filter((row) => row.role === "trial" && lastSeen(row) > 0 && lastSeen(row) < cutoffMs)
+    .sort((a, b) => lastSeen(a) - lastSeen(b));
+  const deletedSubs = new Set();
+  let processed = 0;
   for (const row of candidates) {
+    if (processed >= limit) break;
     const sub = String(row.google_sub);
     const recent = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").eq("google_sub", sub).gte("updated_at", cutoff).limit(1);
     if (recent.error) {
@@ -595,30 +611,11 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
       continue;
     }
     if ((recent.data || []).length) continue; // 1년 안에 키워드 조회를 했다 — 아직 쓰는 계정
+    processed += 1;
     if (dryRun) {
       deleted.push({ dryRun: true });
       continue;
     }
-    const summary = { quota: null, notes: null, identity: false };
-    const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().eq("google_sub", sub).select("google_sub");
-    if (quota.error) {
-      failed.push({ error: `trial_keyword_quota: ${String(quota.error.message || quota.error)}` });
-      continue;
-    }
-    summary.quota = (quota.data || []).length;
-    const notesCode = trialNotesCode(sub);
-    const shared = rows.some((other) => String(other.google_sub) !== sub && trialNotesCode(other.google_sub) === notesCode);
-    if (shared) {
-      summary.notes = "kept-shared-prefix";
-    } else {
-      const notes = await ctx.supabaseAdmin.from("keyword_research_notes").delete().eq("agency_code", notesCode).select("id");
-      if (notes.error) {
-        failed.push({ error: `keyword_research_notes: ${String(notes.error.message || notes.error)}` });
-        continue;
-      }
-      summary.notes = (notes.data || []).length;
-    }
-    // 지우는 사이 다시 로그인했으면(updated_at 이 새로 찍힘) 계정은 남긴다.
     const identity = await ctx.supabaseAdmin
       .from("login_identities")
       .delete()
@@ -630,7 +627,24 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
       failed.push({ error: `login_identities: ${String(identity.error.message || identity.error)}` });
       continue;
     }
-    summary.identity = (identity.data || []).length === 1;
+    if ((identity.data || []).length !== 1) continue; // 그 사이 다시 로그인했거나 정식 전환됨 — 아무것도 지우지 않는다
+    deletedSubs.add(sub);
+    const summary = { quota: null, notes: null };
+    const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().eq("google_sub", sub).select("google_sub");
+    if (quota.error) failed.push({ error: `trial_keyword_quota: ${String(quota.error.message || quota.error)}` });
+    else summary.quota = (quota.data || []).length;
+    const notesCode = trialNotesCode(sub);
+    const shared = all.some((other) => {
+      const otherSub = String(other.google_sub);
+      return otherSub !== sub && !deletedSubs.has(otherSub) && trialNotesCode(otherSub) === notesCode;
+    });
+    if (shared) {
+      summary.notes = "kept-shared-prefix";
+    } else {
+      const notes = await ctx.supabaseAdmin.from("keyword_research_notes").delete().eq("agency_code", notesCode).select("id");
+      if (notes.error) failed.push({ error: `keyword_research_notes: ${String(notes.error.message || notes.error)}` });
+      else summary.notes = (notes.data || []).length;
+    }
     try {
       await ctx.supabaseAdmin.from("audit_logs").insert({
         actor_id: null,
@@ -644,13 +658,12 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
           lastSeenAt: new Date(lastSeen(row)).toISOString(),
           quota: summary.quota,
           notes: summary.notes,
-          identityDeleted: summary.identity,
         }),
       });
     } catch (error) {
       // 감사 기록 실패는 정리 결과를 바꾸지 않는다
     }
-    if (summary.identity) deleted.push({ quota: summary.quota, notes: summary.notes });
+    deleted.push(summary);
   }
   return { cutoff, deleted, failed };
 }

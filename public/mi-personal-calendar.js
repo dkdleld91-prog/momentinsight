@@ -3651,6 +3651,8 @@
       // 날짜가 하나도 안 잡힌 한 문장은 명령이 아니라 말이다 — 대표실처럼 대화로 넘긴다.
       if (!parsed.drafts.length && !parsed.completions.length && parsed.unresolved.length === 1 && prompt.length >= 4) {
         if (!assistantChatReady) return setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");
+        // 확인을 먼저 받는다 — 거절하면 입력한 문장을 그대로 둔다.
+        if (!assistantAiConsent()) return setAssistantStatus("외부 AI로 보내지 않았습니다. 입력한 문장은 그대로 두었습니다.", "warn");
         setValue("[data-cal-assistant-input]", "");
         syncAssistantControls();
         return askAssistant(prompt);

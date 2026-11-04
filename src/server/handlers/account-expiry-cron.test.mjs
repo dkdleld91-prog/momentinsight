@@ -818,16 +818,25 @@ const ACTIVE_SUB = "107222222222222222222";
 
 function trialRows(extra = []) {
   return [
-    { google_sub: OLD_SUB, linked_at: iso(-500), updated_at: iso(-400) },
-    { google_sub: ACTIVE_SUB, linked_at: iso(-500), updated_at: iso(-10) },
+    { google_sub: OLD_SUB, role: "trial", linked_at: iso(-500), updated_at: iso(-400) },
+    { google_sub: ACTIVE_SUB, role: "trial", linked_at: iso(-500), updated_at: iso(-10) },
     ...extra,
   ];
 }
 
-test("a trial account unused for a year loses its quota rows, notes and login identity; recent ones stay", async () => {
+// login_identities 가짜: select 는 rows, delete 는 eq google_sub 로 고른 그 계정 한 줄(남기려면 keep 에 넣는다).
+function identitiesSpec(rows, keep = new Set()) {
+  return (record) => {
+    if (!isDelete(record)) return rows;
+    const sub = (record.ops.find(([op, column]) => op === "eq" && column === "google_sub") || [])[2];
+    return keep.has(sub) ? [] : [{ google_sub: sub }];
+  };
+}
+
+test("a trial account unused for a year is deleted account-first, then its quota rows and notes; recent ones stay", async () => {
   assert.equal(TRIAL_INACTIVE_DAYS, 365);
   const { ctx, calls } = fakeCtx({
-    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows()),
+    login_identities: identitiesSpec(trialRows()),
     trial_keyword_quota: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }, { google_sub: OLD_SUB }] : []),
     keyword_research_notes: [{ id: "n1" }],
   });
@@ -835,22 +844,33 @@ test("a trial account unused for a year loses its quota rows, notes and login id
   assert.deepEqual(result.failed, []);
   assert.deepEqual(result.deleted, [{ quota: 2, notes: 1 }]);
   const deletes = calls.filter(isDelete);
-  assert.deepEqual(deletes.map((call) => call.table), ["trial_keyword_quota", "keyword_research_notes", "login_identities"]);
+  assert.deepEqual(deletes.map((call) => call.table), ["login_identities", "trial_keyword_quota", "keyword_research_notes"]);
   for (const call of deletes) {
     assert.ok(call.ops.every(([op, , value]) => op !== "eq" || value !== ACTIVE_SUB), "최근에 쓴 체험 계정은 건드리지 않는다");
   }
-  assert.deepEqual(deletes[1].ops.find(([op]) => op === "eq"), ["eq", "agency_code", "trial-10411111"]);
-  const identityDelete = deletes[2];
+  const identityDelete = deletes[0];
   assert.deepEqual(identityDelete.ops.filter(([op]) => op === "eq"), [["eq", "google_sub", OLD_SUB], ["eq", "role", "trial"]]);
   assert.deepEqual(identityDelete.ops.find(([op]) => op === "lt"), ["lt", "updated_at", iso(-365)], "지우는 사이 다시 로그인했으면 남긴다");
+  assert.deepEqual(deletes[2].ops.find(([op]) => op === "eq"), ["eq", "agency_code", "trial-10411111"]);
   const audit = calls.find((call) => call.table === "audit_logs").ops[0][1];
   assert.equal(audit.action, "trial.deleted_inactive");
   assert.equal(JSON.stringify(audit).includes(OLD_SUB), false, "감사 기록에 구글 식별자를 남기지 않는다");
 });
 
+test("if the account was touched (re-login) or converted before the delete, its quota and notes are not touched", async () => {
+  const { ctx, calls } = fakeCtx({
+    login_identities: identitiesSpec(trialRows(), new Set([OLD_SUB])),
+    trial_keyword_quota: [],
+    keyword_research_notes: [{ id: "n1" }],
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.deleted, []);
+  assert.deepEqual(calls.filter(isDelete).map((call) => call.table), ["login_identities"]);
+});
+
 test("a trial account that looked up keywords within the year is kept even if its login is old", async () => {
   const { ctx, calls } = fakeCtx({
-    login_identities: trialRows(),
+    login_identities: identitiesSpec(trialRows()),
     trial_keyword_quota: (record) => (record.ops.some(([op]) => op === "gte") ? [{ google_sub: OLD_SUB }] : []),
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
@@ -858,16 +878,56 @@ test("a trial account that looked up keywords within the year is kept even if it
   assert.equal(calls.some(isDelete), false);
 });
 
-test("notes are kept when another trial account shares the same 8-character notes code", async () => {
-  const twin = { google_sub: "104111119999999999999", linked_at: iso(-20), updated_at: iso(-5) };
+test("notes are kept when another account — trial or already converted to a client — shares the 8-character notes code", async () => {
+  for (const twin of [
+    { google_sub: "104111119999999999999", role: "trial", linked_at: iso(-20), updated_at: iso(-5) },
+    { google_sub: "104111118888888888888", role: "client", linked_at: iso(-600), updated_at: iso(-600) },
+  ]) {
+    const { ctx, calls } = fakeCtx({
+      login_identities: identitiesSpec(trialRows([twin])),
+      trial_keyword_quota: [],
+      keyword_research_notes: [{ id: "n1" }],
+    });
+    const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+    assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }], twin.role);
+    assert.equal(calls.some((call) => call.table === "keyword_research_notes"), false, twin.role);
+  }
+});
+
+test("two inactive trials with the same notes code: the last one deleted in the run also deletes the notes", async () => {
+  const twin = { google_sub: "104111117777777777777", role: "trial", linked_at: iso(-700), updated_at: iso(-600) };
   const { ctx, calls } = fakeCtx({
-    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows([twin])),
-    trial_keyword_quota: (record) => (isDelete(record) ? [] : []),
+    login_identities: identitiesSpec(trialRows([twin])),
+    trial_keyword_quota: [],
     keyword_research_notes: [{ id: "n1" }],
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
-  assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }]);
-  assert.equal(calls.some((call) => call.table === "keyword_research_notes"), false);
+  assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }, { quota: 0, notes: 1 }]);
+  assert.equal(calls.filter((call) => call.table === "keyword_research_notes").length, 1);
+});
+
+test("the batch limit counts only accounts that are really unused, so recently used ones never block the queue", async () => {
+  const busy = Array.from({ length: 3 }, (_, index) => ({ google_sub: `20000000000000000000${index}`, role: "trial", linked_at: iso(-900), updated_at: iso(-800) }));
+  const { ctx } = fakeCtx({
+    login_identities: identitiesSpec([...busy, ...trialRows()]),
+    trial_keyword_quota: (record) => {
+      if (isDelete(record)) return [];
+      const sub = (record.ops.find(([op, column]) => op === "eq" && column === "google_sub") || [])[2];
+      return String(sub).startsWith("2000") ? [{ google_sub: sub }] : [];
+    },
+    keyword_research_notes: [],
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW, limit: 1 });
+  assert.deepEqual(result.deleted, [{ quota: 0, notes: 0 }], "최근 조회한 3개를 건너뛰고 실제 미이용 1개를 지운다");
+});
+
+test("trial cleanup refuses to judge when the identity table reaches the scan limit", async () => {
+  const many = Array.from({ length: 1000 }, (_, index) => ({ google_sub: `3${String(index).padStart(20, "0")}`, role: "client", linked_at: iso(-10), updated_at: iso(-10) }));
+  const { ctx, calls } = fakeCtx({ login_identities: many });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.deleted, []);
+  assert.match(result.failed[0].error, /1000줄 이상/);
+  assert.equal(calls.some(isDelete), false);
 });
 
 test("inactive trial cleanup in a dry run only reports", async () => {
@@ -881,7 +941,7 @@ test("the nightly run reports trial and audit-log cleanup counts", async () => {
   const { ctx } = fakeCtx({
     clients: [],
     operation_team_codes: [],
-    login_identities: (record) => (isDelete(record) ? [{ google_sub: OLD_SUB }] : trialRows()),
+    login_identities: identitiesSpec(trialRows()),
     trial_keyword_quota: [],
     keyword_research_notes: [],
     audit_logs: [{ id: "old-1" }],

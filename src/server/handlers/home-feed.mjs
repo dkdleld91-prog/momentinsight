@@ -661,18 +661,29 @@ async function loadMetrics(config, env, accountCode, trackers, nowMs, deadlineMs
   }
 }
 
-async function loadKeywordNews(config, keywords, trackers, nowMs, deadlineMs) {
-  const cacheKey = `keyword-news:${keywords.join("|")}`;
+// '내 순위'는 캐시에 넣지 않고 요청마다 그 계정의 추적에서 붙인다(점검 2026-11-02 F33: 캐시 열쇠에 계정이 없어
+// 키워드 목록이 같은 다른 계정의 순위가 섞일 수 있었고, 24시간 늦은 순위가 보였다). 캐시된 기사는 바꾸지 않는다.
+export function keywordNewsWithRanks(articles, trackers) {
+  const rankByKeyword = new Map();
+  for (const tracker of trackers || []) {
+    const keyword = String(tracker?.keyword || "").trim();
+    const rank = Number(tracker?.current_rank);
+    // current_rank 0 은 미발견(순위 아님) → null 로 두어 화면이 "순위 미확인"을 보이게 한다.
+    if (keyword && Number.isFinite(rank) && rank >= 1 && !rankByKeyword.has(keyword)) rankByKeyword.set(keyword, rank);
+  }
+  if (!articles?.ok) return articles;
+  return {
+    ...articles,
+    items: (articles.items || []).map((item) => ({ ...item, myRank: rankByKeyword.has(item.keyword) ? rankByKeyword.get(item.keyword) : null })),
+  };
+}
+
+// 키워드별 기사 찾기 결과만 키워드 기준으로 캐시한다(계정 정보 없음).
+async function loadKeywordArticles(config, keywords, nowMs, deadlineMs) {
+  const cacheKey = `keyword-news:v2:${keywords.join("|")}`;
   const cached = cacheRead(metricCache, cacheKey, METRIC_CACHE_TTL_MS, nowMs);
   if (cached.fresh) return cached.fresh;
   try {
-    const rankByKeyword = new Map();
-    for (const tracker of trackers) {
-      const keyword = String(tracker?.keyword || "").trim();
-      const rank = Number(tracker?.current_rank);
-      // current_rank 0 은 미발견(순위 아님) → null 로 두어 화면이 "순위 미확인"을 보이게 한다.
-      if (keyword && Number.isFinite(rank) && rank >= 1 && !rankByKeyword.has(keyword)) rankByKeyword.set(keyword, rank);
-    }
     const items = [];
     for (const keyword of keywords) {
       if (Date.now() > deadlineMs) break;
@@ -694,7 +705,6 @@ async function loadKeywordNews(config, keywords, trackers, nowMs, deadlineMs) {
         link: match.link,
         source: sourceHost(match.link),
         publishedAt: new Date(match.publishedMs).toISOString(),
-        myRank: rankByKeyword.has(keyword) ? rankByKeyword.get(keyword) : null,
       });
     }
     return cacheWrite(metricCache, cacheKey, { ok: true, items }, nowMs);
@@ -702,6 +712,10 @@ async function loadKeywordNews(config, keywords, trackers, nowMs, deadlineMs) {
     if (cached.stale) return cached.stale;
     return { ok: false, reason: String(error?.message || "keyword_news_unavailable") };
   }
+}
+
+async function loadKeywordNews(config, keywords, trackers, nowMs, deadlineMs) {
+  return keywordNewsWithRanks(await loadKeywordArticles(config, keywords, nowMs, deadlineMs), trackers);
 }
 
 function json(request, body, status = 200) {

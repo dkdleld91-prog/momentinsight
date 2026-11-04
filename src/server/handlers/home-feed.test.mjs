@@ -25,6 +25,7 @@ import {
   weekIsComplete,
   weeklyChangePct,
   withoutFullNews,
+  keywordNewsWithRanks,
 } from "./home-feed.mjs";
 import { trialSampleRankRows } from "../trial-sample-trackers.mjs";
 
@@ -395,4 +396,18 @@ test("trial sample rank rows feed the news-screen summary with the same three ex
   assert.equal(summary.unmatched, 0);
   assert.equal(summary.up + summary.down + summary.unchanged, 3);
   assert.ok(summary.lastCollectedAt);
+});
+
+test("keyword news: the same cached articles get each account's own rank, and the cache is never changed (F33)", () => {
+  const articles = { ok: true, items: [{ keyword: "전기매트", title: "기사", link: "https://n.example/a", source: "n.example", publishedAt: "2026-11-01T00:00:00.000Z" }] };
+  const snapshot = JSON.stringify(articles);
+  const a = keywordNewsWithRanks(articles, [{ keyword: "전기매트", current_rank: 3 }]);
+  const b = keywordNewsWithRanks(articles, [{ keyword: "전기매트", current_rank: 41 }]);
+  const none = keywordNewsWithRanks(articles, [{ keyword: "전기매트", current_rank: 0 }]);
+  assert.equal(a.items[0].myRank, 3);
+  assert.equal(b.items[0].myRank, 41);
+  assert.equal(none.items[0].myRank, null, "미발견(0)은 순위가 아니다");
+  assert.equal(JSON.stringify(articles), snapshot, "캐시된 기사에 계정 순위를 써 넣지 않는다");
+  assert.equal("myRank" in articles.items[0], false);
+  assert.deepEqual(keywordNewsWithRanks({ ok: false, reason: "x" }, []), { ok: false, reason: "x" });
 });

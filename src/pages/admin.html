@@ -18286,8 +18286,8 @@
         return ok;
       }
 
-      async function askOwnerAssistant(view, message, generation) {
-        if (!ownerAssistantAiConsent()) {
+      async function askOwnerAssistant(view, message, generation, consented) {
+        if (consented !== true && !ownerAssistantAiConsent()) {
           setOwnerAssistantStatus(view, "외부 AI로 보내지 않았습니다. 등록·완료·브리핑 명령은 그대로 쓸 수 있습니다.", "warn");
           return;
         }
@@ -18958,7 +18958,7 @@
                 return;
               }
               input.value = "";
-              await askOwnerAssistant(view, prompt, generation);
+              await askOwnerAssistant(view, prompt, generation, true);
               return;
             }
             renderOwnerAssistantDrafts(view, payload, generation);

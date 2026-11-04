@@ -55,6 +55,7 @@ jobs:
             skipped: (payload.skipped || []).length,
             auditFailed: (payload.auditFailed || []).length,
             trialsDeleted: payload.trialsDeleted || 0,
+            trialOrphansRemoved: payload.trialOrphansRemoved || 0,
             trialsFailed: (payload.trialsFailed || []).map((entry) => entry.error || ""),
             auditLogsPruned: payload.auditLogsPruned || 0,
             auditLogsPruneError: payload.auditLogsPruneError || null,

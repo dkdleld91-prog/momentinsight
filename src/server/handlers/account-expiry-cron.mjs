@@ -665,7 +665,49 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
     }
     deleted.push(summary);
   }
-  return { cutoff, deleted, failed };
+  const orphans = dryRun ? { quota: 0, notes: 0 } : await sweepTrialOrphans(ctx, { cutoff, identities: all, deletedSubs, failed });
+  return { cutoff, deleted, failed, orphans };
+}
+
+// 계정을 먼저 지운 뒤 한도·노트 삭제가 실패했거나, 정식 전환 뒤 삭제된 광고주가 체험 때 남긴 노트처럼 주인 계정이 없어진
+// 체험 기록을 1년이 지나면 지운다(다음 날 자동 재시도 역할). 주인 판단: 남아 있는 로그인 연결(역할 무관)의 구글 식별자와 그
+// 노트 코드, 그리고 'trial-' 로 시작하는 광고주 코드. 1년 기준(updated_at·created_at)보다 새 줄은 지우지 않는다.
+async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, failed }) {
+  const result = { quota: 0, notes: 0 };
+  const knownSubs = new Set(identities.map((row) => String(row.google_sub)).filter((sub) => !deletedSubs.has(sub)));
+  const oldQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").lt("updated_at", cutoff).limit(TRIAL_IDENTITY_SCAN_LIMIT);
+  if (oldQuota.error) failed.push({ error: `trial_keyword_quota sweep: ${String(oldQuota.error.message || oldQuota.error)}` });
+  else {
+    const orphanSubs = [...new Set((oldQuota.data || []).map((row) => String(row.google_sub || "")))].filter((sub) => sub && !knownSubs.has(sub));
+    if (orphanSubs.length) {
+      const removed = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", orphanSubs).lt("updated_at", cutoff).select("google_sub");
+      if (removed.error) failed.push({ error: `trial_keyword_quota sweep: ${String(removed.error.message || removed.error)}` });
+      else result.quota = (removed.data || []).length;
+    }
+  }
+  const trialCodedClients = await ctx.supabaseAdmin.from("clients").select("agency_code").like("agency_code", "trial-%");
+  if (trialCodedClients.error) {
+    failed.push({ error: `clients sweep check: ${String(trialCodedClients.error.message || trialCodedClients.error)}` });
+    return result;
+  }
+  const knownCodes = new Set([...knownSubs].map(trialNotesCode));
+  for (const row of trialCodedClients.data || []) knownCodes.add(String(row.agency_code || "").toLowerCase());
+  const oldNotes = await ctx.supabaseAdmin
+    .from("keyword_research_notes")
+    .select("agency_code")
+    .like("agency_code", "trial-%")
+    .lt("created_at", cutoff)
+    .limit(TRIAL_IDENTITY_SCAN_LIMIT);
+  if (oldNotes.error) failed.push({ error: `keyword_research_notes sweep: ${String(oldNotes.error.message || oldNotes.error)}` });
+  else {
+    const orphanCodes = [...new Set((oldNotes.data || []).map((row) => String(row.agency_code || "").toLowerCase()))].filter((code) => code && !knownCodes.has(code));
+    if (orphanCodes.length) {
+      const removed = await ctx.supabaseAdmin.from("keyword_research_notes").delete().in("agency_code", orphanCodes).lt("created_at", cutoff).select("id");
+      if (removed.error) failed.push({ error: `keyword_research_notes sweep: ${String(removed.error.message || removed.error)}` });
+      else result.notes = (removed.data || []).length;
+    }
+  }
+  return result;
 }
 
 export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false, env = process.env } = {}) {
@@ -704,6 +746,7 @@ export async function runAccountExpiry(ctx, { nowMs = Date.now(), dryRun = false
     skipped: results.filter((result) => result.skipped).map((result) => ({ agencyCode: result.agencyCode, reason: result.skipped })),
     auditFailed: results.filter((result) => result.auditLogged === false).map((result) => result.agencyCode),
     trialsDeleted: trials.deleted.length,
+    trialOrphansRemoved: trials.orphans ? trials.orphans.quota + trials.orphans.notes : 0,
     trialsFailed: trials.failed,
     auditLogsPruned: auditLogs.pruned,
     auditLogsPruneError: auditLogs.error || null,

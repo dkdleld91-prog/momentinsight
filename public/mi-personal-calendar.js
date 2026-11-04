@@ -3490,8 +3490,8 @@
       return ok;
     }
 
-    async function askAssistant(message) {
-      if (!assistantAiConsent()) {
+    async function askAssistant(message, consented) {
+      if (consented !== true && !assistantAiConsent()) {
         setAssistantStatus("외부 AI로 보내지 않았습니다. 등록·완료·브리핑 명령은 그대로 쓸 수 있습니다.", "warn");
         return;
       }
@@ -3655,7 +3655,7 @@
         if (!assistantAiConsent()) return setAssistantStatus("외부 AI로 보내지 않았습니다. 입력한 문장은 그대로 두었습니다.", "warn");
         setValue("[data-cal-assistant-input]", "");
         syncAssistantControls();
-        return askAssistant(prompt);
+        return askAssistant(prompt, true);
       }
       setValue("[data-cal-assistant-input]", "");
       syncAssistantControls();

@@ -96,6 +96,7 @@ function fakeCtx(rowsByTable) {
         lt(column, value) { record.ops.push(["lt", column, value]); return query; },
         lte(column, value) { record.ops.push(["lte", column, value]); return query; },
         gte(column, value) { record.ops.push(["gte", column, value]); return query; },
+        like(column, value) { record.ops.push(["like", column, value]); return query; },
         is(column, value) { record.ops.push(["is", column, value]); return query; },
         eq(column, value) { record.ops.push(["eq", column, value]); return query; },
         in(column, values) { record.ops.push(["in", column, values]); return query; },
@@ -890,7 +891,7 @@ test("notes are kept when another account — trial or already converted to a cl
     });
     const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
     assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }], twin.role);
-    assert.equal(calls.some((call) => call.table === "keyword_research_notes"), false, twin.role);
+    assert.equal(calls.some((call) => call.table === "keyword_research_notes" && isDelete(call)), false, twin.role);
   }
 });
 
@@ -903,7 +904,7 @@ test("two inactive trials with the same notes code: the last one deleted in the 
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
   assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }, { quota: 0, notes: 1 }]);
-  assert.equal(calls.filter((call) => call.table === "keyword_research_notes").length, 1);
+  assert.equal(calls.filter((call) => call.table === "keyword_research_notes" && isDelete(call)).length, 1);
 });
 
 test("the batch limit counts only accounts that are really unused, so recently used ones never block the queue", async () => {
@@ -928,6 +929,37 @@ test("trial cleanup refuses to judge when the identity table reaches the scan li
   assert.deepEqual(result.deleted, []);
   assert.match(result.failed[0].error, /1000줄 이상/);
   assert.equal(calls.some(isDelete), false);
+});
+
+test("orphaned trial quota rows and notes older than a year are swept; ones with a living owner stay", async () => {
+  const KNOWN_CLIENT_SUB = "105333333333333333333";
+  const rows = [
+    { google_sub: ACTIVE_SUB, role: "trial", linked_at: iso(-30), updated_at: iso(-3) },
+    { google_sub: KNOWN_CLIENT_SUB, role: "client", linked_at: iso(-600), updated_at: iso(-600) },
+  ];
+  const deletedBy = (call, column) => (call.ops.find(([op, col]) => op === "in" && col === column) || [])[2];
+  const { ctx, calls } = fakeCtx({
+    login_identities: rows,
+    trial_keyword_quota: (record) => {
+      if (isDelete(record)) return deletedBy(record, "google_sub").map((sub) => ({ google_sub: sub }));
+      if (record.ops.some(([op]) => op === "gte")) return [];
+      return [{ google_sub: "109999999999999999999" }, { google_sub: KNOWN_CLIENT_SUB }, { google_sub: ACTIVE_SUB }];
+    },
+    clients: [{ agency_code: "trial-55555555" }],
+    keyword_research_notes: (record) => {
+      if (isDelete(record)) return deletedBy(record, "agency_code").map((code) => ({ id: code }));
+      return [{ agency_code: "trial-10999999" }, { agency_code: "trial-10533333" }, { agency_code: "trial-55555555" }, { agency_code: "trial-10722222" }];
+    },
+  });
+  const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(result.failed, []);
+  const quotaDelete = calls.find((call) => call.table === "trial_keyword_quota" && isDelete(call));
+  assert.deepEqual(deletedBy(quotaDelete, "google_sub"), ["109999999999999999999"], "주인 계정이 없는 한도 줄만");
+  assert.deepEqual(quotaDelete.ops.find(([op]) => op === "lt"), ["lt", "updated_at", iso(-365)]);
+  const notesDelete = calls.find((call) => call.table === "keyword_research_notes" && isDelete(call));
+  assert.deepEqual(deletedBy(notesDelete, "agency_code"), ["trial-10999999"], "정식 전환 계정·체험 계정·'trial-' 광고주 코드의 노트는 남긴다");
+  assert.deepEqual(notesDelete.ops.find(([op]) => op === "lt"), ["lt", "created_at", iso(-365)]);
+  assert.deepEqual(result.orphans, { quota: 1, notes: 1 });
 });
 
 test("inactive trial cleanup in a dry run only reports", async () => {

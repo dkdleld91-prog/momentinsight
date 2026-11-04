@@ -71,8 +71,9 @@ const PLACE_SAMPLES = [
   },
 ];
 
+// 예시 id 태그 = 체험 구분값('trial-' 뒤). 순위 화면(게이트)과 홈 피드가 같은 예시를 가리키도록 둘 다 구분값에서 만든다.
 function trialTag(claims) {
-  return String(claims?.gsub || "").slice(0, 8) || "sample";
+  return String(claims?.agencyCode || claims?.clientId || "").replace(/^trial-/, "") || "sample";
 }
 
 // 매일 09:00(KST) 수집 시각. day=0 이 오늘, day=29 가 29일 전.
@@ -288,10 +289,10 @@ export function trialSampleTrackersPayload(path, claims, nowMs = Date.now()) {
 }
 
 // 홈 피드(뉴스 화면)의 "내 순위 요약"·내 키워드 지표용 DB 행 모양. 순위 화면 예시(productTracker)와 같은
-// id·키워드·순위를 쓰므로 두 화면이 같은 예시를 가리킨다. accountCode 는 게이트가 심은 trial-<sub8> 이고,
-// 게이트의 예시 id(trial-<sub8>-p1…)와 같은 태그가 나온다.
+// id·키워드·순위를 쓰므로 두 화면이 같은 예시를 가리킨다. accountCode 는 게이트가 심은 체험 구분값(trial-…)이고,
+// 게이트의 예시 id(trial-<태그>-p1…)와 같은 태그가 나온다.
 export function trialSampleRankRows(accountCode, nowMs = Date.now()) {
-  const tag = String(accountCode || "").replace(/^trial-/, "").slice(0, 8) || "sample";
+  const tag = String(accountCode || "").replace(/^trial-/, "") || "sample";
   const claims = { gsub: tag, agencyCode: `trial-${tag}`, clientId: `trial-${tag}` };
   const trackers = [];
   const snapshots = [];

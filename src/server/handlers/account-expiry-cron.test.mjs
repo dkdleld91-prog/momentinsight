@@ -24,6 +24,7 @@ import {
   googleLinkPlanExpiryIso,
 } from "../account-plan.mjs";
 import { requiresCodeSession } from "../session-gate.mjs";
+import { trialAccountCode } from "../trial-account-code.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse("2026-09-20T18:30:00Z");
@@ -843,16 +844,17 @@ test("a trial account unused for a year is deleted account-first, then its quota
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
   assert.deepEqual(result.failed, []);
-  assert.deepEqual(result.deleted, [{ quota: 2, notes: 1 }]);
+  assert.deepEqual(result.deleted, [{ quota: 2, notes: 2 }], "새 형식·옛 형식 노트 코드 각각 1줄");
   const deletes = calls.filter(isDelete);
-  assert.deepEqual(deletes.map((call) => call.table), ["login_identities", "trial_keyword_quota", "keyword_research_notes"]);
+  assert.deepEqual(deletes.map((call) => call.table), ["login_identities", "trial_keyword_quota", "keyword_research_notes", "keyword_research_notes"]);
   for (const call of deletes) {
     assert.ok(call.ops.every(([op, , value]) => op !== "eq" || value !== ACTIVE_SUB), "최근에 쓴 체험 계정은 건드리지 않는다");
   }
   const identityDelete = deletes[0];
   assert.deepEqual(identityDelete.ops.filter(([op]) => op === "eq"), [["eq", "google_sub", OLD_SUB], ["eq", "role", "trial"]]);
   assert.deepEqual(identityDelete.ops.find(([op]) => op === "lt"), ["lt", "updated_at", iso(-365)], "지우는 사이 다시 로그인했으면 남긴다");
-  assert.deepEqual(deletes[2].ops.find(([op]) => op === "eq"), ["eq", "agency_code", "trial-10411111"]);
+  assert.deepEqual(deletes[2].ops.find(([op]) => op === "eq"), ["eq", "agency_code", trialAccountCode(OLD_SUB)]);
+  assert.deepEqual(deletes[3].ops.find(([op]) => op === "eq"), ["eq", "agency_code", "trial-10411111"], "2026-11-04 전 형식(앞 8자)");
   const audit = calls.find((call) => call.table === "audit_logs").ops[0][1];
   assert.equal(audit.action, "trial.deleted_inactive");
   assert.equal(JSON.stringify(audit).includes(OLD_SUB), false, "감사 기록에 구글 식별자를 남기지 않는다");
@@ -879,6 +881,10 @@ test("a trial account that looked up keywords within the year is kept even if it
   assert.equal(calls.some(isDelete), false);
 });
 
+const deletedNotesCodes = (calls) => calls
+  .filter((call) => call.table === "keyword_research_notes" && isDelete(call))
+  .map((call) => (call.ops.find(([op, column]) => op === "eq" && column === "agency_code") || [])[2]);
+
 test("notes are kept when another account — trial or already converted to a client — shares the 8-character notes code", async () => {
   for (const twin of [
     { google_sub: "104111119999999999999", role: "trial", linked_at: iso(-20), updated_at: iso(-5) },
@@ -890,8 +896,8 @@ test("notes are kept when another account — trial or already converted to a cl
       keyword_research_notes: [{ id: "n1" }],
     });
     const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
-    assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }], twin.role);
-    assert.equal(calls.some((call) => call.table === "keyword_research_notes" && isDelete(call)), false, twin.role);
+    assert.deepEqual(result.deleted, [{ quota: 0, notes: 1, notesKept: ["shared-prefix"] }], twin.role);
+    assert.deepEqual(deletedNotesCodes(calls), [trialAccountCode(OLD_SUB)], `${twin.role}: 겹치는 옛 형식 코드는 남기고 새 형식만 지운다`);
   }
 });
 
@@ -903,8 +909,8 @@ test("two inactive trials with the same notes code: the last one deleted in the 
     keyword_research_notes: [{ id: "n1" }],
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
-  assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-shared-prefix" }, { quota: 0, notes: 1 }]);
-  assert.equal(calls.filter((call) => call.table === "keyword_research_notes" && isDelete(call)).length, 1);
+  assert.deepEqual(result.deleted, [{ quota: 0, notes: 1, notesKept: ["shared-prefix"] }, { quota: 0, notes: 2 }]);
+  assert.equal(deletedNotesCodes(calls).filter((code) => code === "trial-10411111").length, 1, "옛 형식 코드는 마지막 주인을 지울 때 한 번");
 });
 
 test("the batch limit counts only accounts that are really unused, so recently used ones never block the queue", async () => {
@@ -979,8 +985,10 @@ test("the main loop never deletes notes whose code belongs to a human-made clien
       ...spec,
     });
     const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
-    assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-account-code" }], JSON.stringify(spec));
-    assert.equal(calls.some((call) => call.table === "keyword_research_notes" && isDelete(call)), false, JSON.stringify(spec));
+    const checkFailed = Boolean(spec["clients:error"]);
+    assert.deepEqual(result.deleted, [{ quota: 0, notes: checkFailed ? 0 : 1, notesKept: ["account-code"] }], JSON.stringify(spec));
+    assert.equal(deletedNotesCodes(calls).includes("trial-10411111"), false, JSON.stringify(spec));
+    if (checkFailed) assert.deepEqual(deletedNotesCodes(calls), [], "확인에 실패하면 노트는 하나도 지우지 않는다");
   }
 });
 

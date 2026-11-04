@@ -11,6 +11,7 @@ import { cronAuthorized } from "../cron-auth.mjs";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { PRIMARY_AGENCY_CODE, isReservedOwnerAgencyCode, primaryAgencyConfiguration } from "../owner-identity.mjs";
+import { TRIAL_ACCOUNT_CODE_PATTERN, legacyTrialAccountCode, trialAccountCode } from "../trial-account-code.mjs";
 import {
   GOOGLE_LINKED_PLAN_NOTE,
   GOOGLE_LINK_EXPIRY_NOTE,
@@ -569,12 +570,11 @@ export async function pruneAuditLogs(ctx, { nowMs = Date.now(), dryRun = false }
   return { cutoff, pruned: (result.data || []).length, dryRun };
 }
 
-function trialNotesCode(googleSub) {
-  return `trial-${String(googleSub || "").toLowerCase().slice(0, 8)}`;
+// 체험 노트 코드: 새 형식(전체 식별자 해시, 2026-11-04~)과 옛 형식(식별자 앞 8자). 사람이 정한 코드(예: 'trial-team01')는
+// TRIAL_ACCOUNT_CODE_PATTERN 에 맞지 않아 처음부터 정리 대상이 아니다.
+function trialNotesCodes(googleSub) {
+  return [trialAccountCode(googleSub), legacyTrialAccountCode(googleSub)].filter(Boolean);
 }
-
-// 체험 노트 코드의 실제 모양: 'trial-' + 구글 식별자(숫자) 앞 8자. 사람이 정한 코드(예: 'trial-team01')는 처음부터 정리 대상이 아니다.
-const TRIAL_NOTES_CODE_PATTERN = /^trial-[0-9]{8}$/;
 
 // 'trial-' 로 시작하는 광고주·운영팀 코드(사람이 직접 만든 코드). 이 코드의 노트는 체험 정리가 절대 지우지 않는다.
 // 읽기에 실패하면 null — 호출한 쪽은 노트를 지우지 않는다.
@@ -652,20 +652,27 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
     const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().eq("google_sub", sub).select("google_sub");
     if (quota.error) failed.push({ error: `trial_keyword_quota: ${String(quota.error.message || quota.error)}` });
     else summary.quota = (quota.data || []).length;
-    const notesCode = trialNotesCode(sub);
-    const shared = all.some((other) => {
-      const otherSub = String(other.google_sub);
-      return otherSub !== sub && !deletedSubs.has(otherSub) && trialNotesCode(otherSub) === notesCode;
-    });
-    if (shared) {
-      summary.notes = "kept-shared-prefix";
-    } else if (!accountCodes || accountCodes.has(notesCode) || !TRIAL_NOTES_CODE_PATTERN.test(notesCode)) {
-      summary.notes = "kept-account-code";
-    } else {
+    // 노트: 새 형식 코드는 계정마다 겹치지 않고, 옛 형식(앞 8자)은 같은 앞자리를 쓰는 다른 계정이 남아 있으면 남긴다.
+    summary.notes = 0;
+    const kept = new Set();
+    for (const notesCode of trialNotesCodes(sub)) {
+      if (!accountCodes || accountCodes.has(notesCode) || !TRIAL_ACCOUNT_CODE_PATTERN.test(notesCode)) {
+        kept.add("account-code");
+        continue;
+      }
+      const shared = all.some((other) => {
+        const otherSub = String(other.google_sub);
+        return otherSub !== sub && !deletedSubs.has(otherSub) && trialNotesCodes(otherSub).includes(notesCode);
+      });
+      if (shared) {
+        kept.add("shared-prefix");
+        continue;
+      }
       const notes = await ctx.supabaseAdmin.from("keyword_research_notes").delete().eq("agency_code", notesCode).select("id");
       if (notes.error) failed.push({ error: `keyword_research_notes: ${String(notes.error.message || notes.error)}` });
-      else summary.notes = (notes.data || []).length;
+      else summary.notes += (notes.data || []).length;
     }
+    if (kept.size) summary.notesKept = [...kept];
     try {
       await ctx.supabaseAdmin.from("audit_logs").insert({
         actor_id: null,
@@ -707,7 +714,7 @@ async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, account
     }
   }
   if (!accountCodes) return result; // 사람이 만든 'trial-' 코드를 확인하지 못했으면 노트는 건드리지 않는다
-  const knownCodes = new Set([...knownSubs].map(trialNotesCode));
+  const knownCodes = new Set([...knownSubs].flatMap(trialNotesCodes));
   for (const code of accountCodes) knownCodes.add(code);
   for (const row of identities) knownCodes.add(String(row.code || "").toLowerCase());
   const oldNotes = await ctx.supabaseAdmin
@@ -719,7 +726,7 @@ async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, account
   if (oldNotes.error) failed.push({ error: `keyword_research_notes sweep: ${String(oldNotes.error.message || oldNotes.error)}` });
   else {
     const orphanCodes = [...new Set((oldNotes.data || []).map((row) => String(row.agency_code || "").toLowerCase()))]
-      .filter((code) => TRIAL_NOTES_CODE_PATTERN.test(code) && !knownCodes.has(code));
+      .filter((code) => TRIAL_ACCOUNT_CODE_PATTERN.test(code) && !knownCodes.has(code));
     if (orphanCodes.length) {
       const removed = await ctx.supabaseAdmin.from("keyword_research_notes").delete().in("agency_code", orphanCodes).lt("created_at", cutoff).select("id");
       if (removed.error) failed.push({ error: `keyword_research_notes sweep: ${String(removed.error.message || removed.error)}` });

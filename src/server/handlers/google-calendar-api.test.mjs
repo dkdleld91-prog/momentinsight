@@ -17,6 +17,7 @@ import handler, {
   verifyOauthState,
 } from "./google-calendar-api.mjs";
 import { resetOptionalColumns } from "./google-calendar-sync.mjs";
+import { trialAccountCode } from "../trial-account-code.mjs";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -2500,8 +2501,10 @@ test("trial login callback creates a trial identity for an unknown google accoun
   assert.equal(claims.role, "client");
   assert.equal(claims.trial, 1);
   assert.equal(claims.gsub, "999000111222333");
-  assert.equal(claims.agencyCode, "trial-99900011");
-  assert.equal(claims.clientId, "trial-99900011");
+  // 체험 구분값은 구글 식별자 전체의 해시(앞 8자 원문이 아님, 점검 F72).
+  assert.equal(claims.agencyCode, trialAccountCode("999000111222333"));
+  assert.equal(claims.clientId, trialAccountCode("999000111222333"));
+  assert.notEqual(claims.agencyCode, "trial-99900011");
 });
 
 test("login callback without the trial marker still refuses an unknown google account", async () => {

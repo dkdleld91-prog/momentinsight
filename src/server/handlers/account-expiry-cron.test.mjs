@@ -946,9 +946,17 @@ test("orphaned trial quota rows and notes older than a year are swept; ones with
       return [{ google_sub: "109999999999999999999" }, { google_sub: KNOWN_CLIENT_SUB }, { google_sub: ACTIVE_SUB }];
     },
     clients: [{ agency_code: "trial-55555555" }],
+    operation_team_codes: [{ team_code: "trial-66666666" }],
     keyword_research_notes: (record) => {
       if (isDelete(record)) return deletedBy(record, "agency_code").map((code) => ({ id: code }));
-      return [{ agency_code: "trial-10999999" }, { agency_code: "trial-10533333" }, { agency_code: "trial-55555555" }, { agency_code: "trial-10722222" }];
+      return [
+        { agency_code: "trial-10999999" },
+        { agency_code: "trial-10533333" },
+        { agency_code: "trial-55555555" },
+        { agency_code: "trial-66666666" },
+        { agency_code: "trial-team01" },
+        { agency_code: "trial-10722222" },
+      ];
     },
   });
   const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
@@ -957,9 +965,23 @@ test("orphaned trial quota rows and notes older than a year are swept; ones with
   assert.deepEqual(deletedBy(quotaDelete, "google_sub"), ["109999999999999999999"], "주인 계정이 없는 한도 줄만");
   assert.deepEqual(quotaDelete.ops.find(([op]) => op === "lt"), ["lt", "updated_at", iso(-365)]);
   const notesDelete = calls.find((call) => call.table === "keyword_research_notes" && isDelete(call));
-  assert.deepEqual(deletedBy(notesDelete, "agency_code"), ["trial-10999999"], "정식 전환 계정·체험 계정·'trial-' 광고주 코드의 노트는 남긴다");
+  assert.deepEqual(deletedBy(notesDelete, "agency_code"), ["trial-10999999"], "정식 전환·체험 계정과 사람이 만든 'trial-' 광고주·운영팀 코드의 노트는 남긴다");
   assert.deepEqual(notesDelete.ops.find(([op]) => op === "lt"), ["lt", "created_at", iso(-365)]);
   assert.deepEqual(result.orphans, { quota: 1, notes: 1 });
+});
+
+test("the main loop never deletes notes whose code belongs to a human-made client or team code", async () => {
+  for (const spec of [{ clients: [{ agency_code: "trial-10411111" }] }, { operation_team_codes: [{ team_code: "trial-10411111" }] }, { "clients:error": { message: "down" } }]) {
+    const { ctx, calls } = fakeCtx({
+      login_identities: identitiesSpec(trialRows()),
+      trial_keyword_quota: [],
+      keyword_research_notes: [{ id: "n1" }],
+      ...spec,
+    });
+    const result = await pruneInactiveTrials(ctx, { nowMs: NOW });
+    assert.deepEqual(result.deleted, [{ quota: 0, notes: "kept-account-code" }], JSON.stringify(spec));
+    assert.equal(calls.some((call) => call.table === "keyword_research_notes" && isDelete(call)), false, JSON.stringify(spec));
+  }
 });
 
 test("inactive trial cleanup in a dry run only reports", async () => {

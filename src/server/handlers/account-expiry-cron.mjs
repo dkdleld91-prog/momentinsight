@@ -573,6 +573,23 @@ function trialNotesCode(googleSub) {
   return `trial-${String(googleSub || "").toLowerCase().slice(0, 8)}`;
 }
 
+// 체험 노트 코드의 실제 모양: 'trial-' + 구글 식별자(숫자) 앞 8자. 사람이 정한 코드(예: 'trial-team01')는 처음부터 정리 대상이 아니다.
+const TRIAL_NOTES_CODE_PATTERN = /^trial-[0-9]{8}$/;
+
+// 'trial-' 로 시작하는 광고주·운영팀 코드(사람이 직접 만든 코드). 이 코드의 노트는 체험 정리가 절대 지우지 않는다.
+// 읽기에 실패하면 null — 호출한 쪽은 노트를 지우지 않는다.
+async function loadTrialPrefixedAccountCodes(ctx) {
+  const [clients, teams] = await Promise.all([
+    ctx.supabaseAdmin.from("clients").select("agency_code").like("agency_code", "trial-%"),
+    ctx.supabaseAdmin.from("operation_team_codes").select("team_code").like("team_code", "trial-%"),
+  ]);
+  if (clients.error || teams.error) return null;
+  const codes = new Set();
+  for (const row of clients.data || []) codes.add(String(row.agency_code || "").toLowerCase());
+  for (const row of teams.data || []) codes.add(String(row.team_code || "").toLowerCase());
+  return codes;
+}
+
 // 마지막 이용 뒤 1년 동안 쓰지 않은 체험 계정(login_identities role=trial)을 지운다. 마지막 이용 = 연결·로그인 시각
 // (updated_at, 로그인 때마다 갱신)과 키워드 조회 기록(trial_keyword_quota.updated_at) 중 늦은 것. 정식 전환된 계정은
 // role 이 client 라 대상이 아니다.
@@ -589,7 +606,7 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
   const failed = [];
   const identities = await ctx.supabaseAdmin
     .from("login_identities")
-    .select("google_sub, role, linked_at, updated_at")
+    .select("google_sub, role, code, linked_at, updated_at")
     .limit(TRIAL_IDENTITY_SCAN_LIMIT);
   if (identities.error) return { cutoff, deleted, failed: [{ error: String(identities.error.message || identities.error) }] };
   const all = (identities.data || []).filter((row) => row && row.google_sub);
@@ -600,6 +617,8 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
   const candidates = all
     .filter((row) => row.role === "trial" && lastSeen(row) > 0 && lastSeen(row) < cutoffMs)
     .sort((a, b) => lastSeen(a) - lastSeen(b));
+  const accountCodes = dryRun ? new Set() : await loadTrialPrefixedAccountCodes(ctx);
+  if (!accountCodes) failed.push({ error: "clients/operation_team_codes: 'trial-' 코드 확인 실패 — 노트는 지우지 않음" });
   const deletedSubs = new Set();
   let processed = 0;
   for (const row of candidates) {
@@ -640,6 +659,8 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
     });
     if (shared) {
       summary.notes = "kept-shared-prefix";
+    } else if (!accountCodes || accountCodes.has(notesCode) || !TRIAL_NOTES_CODE_PATTERN.test(notesCode)) {
+      summary.notes = "kept-account-code";
     } else {
       const notes = await ctx.supabaseAdmin.from("keyword_research_notes").delete().eq("agency_code", notesCode).select("id");
       if (notes.error) failed.push({ error: `keyword_research_notes: ${String(notes.error.message || notes.error)}` });
@@ -665,14 +686,14 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
     }
     deleted.push(summary);
   }
-  const orphans = dryRun ? { quota: 0, notes: 0 } : await sweepTrialOrphans(ctx, { cutoff, identities: all, deletedSubs, failed });
+  const orphans = dryRun ? { quota: 0, notes: 0 } : await sweepTrialOrphans(ctx, { cutoff, identities: all, deletedSubs, accountCodes, failed });
   return { cutoff, deleted, failed, orphans };
 }
 
 // 계정을 먼저 지운 뒤 한도·노트 삭제가 실패했거나, 정식 전환 뒤 삭제된 광고주가 체험 때 남긴 노트처럼 주인 계정이 없어진
 // 체험 기록을 1년이 지나면 지운다(다음 날 자동 재시도 역할). 주인 판단: 남아 있는 로그인 연결(역할 무관)의 구글 식별자와 그
 // 노트 코드, 그리고 'trial-' 로 시작하는 광고주 코드. 1년 기준(updated_at·created_at)보다 새 줄은 지우지 않는다.
-async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, failed }) {
+async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, accountCodes, failed }) {
   const result = { quota: 0, notes: 0 };
   const knownSubs = new Set(identities.map((row) => String(row.google_sub)).filter((sub) => !deletedSubs.has(sub)));
   const oldQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").lt("updated_at", cutoff).limit(TRIAL_IDENTITY_SCAN_LIMIT);
@@ -685,13 +706,10 @@ async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, failed 
       else result.quota = (removed.data || []).length;
     }
   }
-  const trialCodedClients = await ctx.supabaseAdmin.from("clients").select("agency_code").like("agency_code", "trial-%");
-  if (trialCodedClients.error) {
-    failed.push({ error: `clients sweep check: ${String(trialCodedClients.error.message || trialCodedClients.error)}` });
-    return result;
-  }
+  if (!accountCodes) return result; // 사람이 만든 'trial-' 코드를 확인하지 못했으면 노트는 건드리지 않는다
   const knownCodes = new Set([...knownSubs].map(trialNotesCode));
-  for (const row of trialCodedClients.data || []) knownCodes.add(String(row.agency_code || "").toLowerCase());
+  for (const code of accountCodes) knownCodes.add(code);
+  for (const row of identities) knownCodes.add(String(row.code || "").toLowerCase());
   const oldNotes = await ctx.supabaseAdmin
     .from("keyword_research_notes")
     .select("agency_code")
@@ -700,7 +718,8 @@ async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, failed 
     .limit(TRIAL_IDENTITY_SCAN_LIMIT);
   if (oldNotes.error) failed.push({ error: `keyword_research_notes sweep: ${String(oldNotes.error.message || oldNotes.error)}` });
   else {
-    const orphanCodes = [...new Set((oldNotes.data || []).map((row) => String(row.agency_code || "").toLowerCase()))].filter((code) => code && !knownCodes.has(code));
+    const orphanCodes = [...new Set((oldNotes.data || []).map((row) => String(row.agency_code || "").toLowerCase()))]
+      .filter((code) => TRIAL_NOTES_CODE_PATTERN.test(code) && !knownCodes.has(code));
     if (orphanCodes.length) {
       const removed = await ctx.supabaseAdmin.from("keyword_research_notes").delete().in("agency_code", orphanCodes).lt("created_at", cutoff).select("id");
       if (removed.error) failed.push({ error: `keyword_research_notes sweep: ${String(removed.error.message || removed.error)}` });

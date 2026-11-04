@@ -65,6 +65,9 @@ test("개인정보처리방침 v1.1 은 코드의 실제 값과 같은 숫자를
   assert.equal(TRIAL_INACTIVE_DAYS, 365);
   assert.ok(privacy.includes("마지막 로그인 또는 키워드 조회 뒤 <b>1년</b> 동안 이용하지 않으면"));
   assert.ok(privacy.includes("처음 대화할 때 이 전달 내용을 안내하고 확인을 받습니다"));
+  // 로그아웃 때 광고주 화면 대시보드 사본을 지운다(client.html removeStoredPublicStates, 2026-11-04 F41 묶음)
+  assert.ok(privacy.includes("이 사본은 로그아웃하면 지워집니다"));
+  assert.match(read("src/pages/client.html"), /removeClientAuthCode\(\);\s*removeStoredPublicStates\(\);/);
   // 위탁·보관 위치
   for (const word of ["Vercel Inc.", "Supabase Inc.", "Google LLC", "Anthropic PBC", "OpenAI OpCo, LLC", "AWS ap-northeast-2",
     "privacy@vercel.com", "privacy@supabase.com", "privacy@anthropic.com", "dsar@openai.com"]) {

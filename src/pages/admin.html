@@ -15219,6 +15219,7 @@
           window.localStorage.removeItem("miRankAccessCode");
           window.sessionStorage.removeItem("miRankAccessCode");
         } catch (error) {}
+        if (typeof resetKeywordNotes === "function") resetKeywordNotes();
         resetAdminAsyncControls({ clearSensitiveInputs: true });
       }
 
@@ -19417,6 +19418,7 @@
         secureSession.scopeKey = String(session.scopeKey || "");
         secureSession.clientId = String(session.clientId || "");
         secureSession.teamId = String(session.teamId || "");
+        if (typeof refreshKeywordNotes === "function") refreshKeywordNotes();
         return session;
       }
 
@@ -24933,10 +24935,30 @@
           return '<li><b>' + escapeHtml(note.title || "") + '</b><span>' + escapeHtml((note.keywords || []).join(" · ")) + '</span><span class="r">' + escapeHtml(when) + (first.volume ? " · " + escapeHtml(first.keyword || "") + " " + formatNumber(Number(first.volume)) : "") + '</span><button type="button" data-keyword-note-load="' + escapeHtml(String(note.id)) + '">불러오기</button><button type="button" class="is-danger" data-keyword-note-delete="' + escapeHtml(String(note.id)) + '">삭제</button></li>';
         }).join("");
       }
+      // 조사 노트는 지금 로그인한 계정 것만 보인다(점검 2026-11-02 F41): 로그인·대상 광고주 변경 때 다시 불러오고 로그아웃 때 비운다.
+      // 앞 계정의 응답이 늦게 도착하면 버린다(세대 번호).
+      var keywordNotesGeneration = 0;
+      function resetKeywordNotes() {
+        keywordNotesGeneration += 1;
+        keywordNotesState.items = [];
+        keywordNotesState.ready = false;
+        renderKeywordNotes();
+      }
+      // 로그인한 상태일 때만 불러온다 — 로그아웃 순간(서버 로그아웃이 끝나기 전) 앞 계정 노트를 다시 받아 오지 않게.
+      function keywordNotesSignedIn() {
+        var session = typeof secureClientSession !== "undefined" ? secureClientSession : (typeof secureSession !== "undefined" ? secureSession : null);
+        return Boolean(session && session.role);
+      }
+      function refreshKeywordNotes() {
+        resetKeywordNotes();
+        if (keywordNotesSignedIn()) loadKeywordNotes();
+      }
       function loadKeywordNotes() {
+        var generation = keywordNotesGeneration;
         miFetch(getKeywordNotesApiUrl(), { method: "GET", cache: "no-store" }).then(function (response) {
           return response.json().catch(function () { return null; });
         }).then(function (payload) {
+          if (generation !== keywordNotesGeneration) return;
           if (!payload || payload.ok !== true) {
             keywordNotesState.ready = false;
             if (payload && payload.reason === "table_missing") keywordNoteStatus("조사 노트 저장은 DB 표 준비 후 열립니다", "is-warn");
@@ -24990,7 +25012,8 @@
           miFetch(getKeywordNotesApiUrl() + "?id=" + encodeURIComponent(remove.getAttribute("data-keyword-note-delete") || ""), { method: "DELETE" }).then(function () { loadKeywordNotes(); }).catch(function () {});
         }
       });
-      window.setTimeout(loadKeywordNotes, 4000);
+      window.addEventListener("mi:rank-scope-changed", refreshKeywordNotes);
+      window.setTimeout(function () { if (keywordNotesSignedIn()) loadKeywordNotes(); }, 4000);
 
       // 최근 3개월 합계 vs 그 전 3개월 합계(진행 중인 달 제외) — 후보 비교 표의 "3개월 추이".
       function keywordRecentTrend(data) {

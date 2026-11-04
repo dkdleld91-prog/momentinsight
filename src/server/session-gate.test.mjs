@@ -17,6 +17,7 @@ import {
   sessionActivityValid,
   trialAllowsPath,
 } from "./session-gate.mjs";
+import { trialAccountCode } from "./trial-account-code.mjs";
 
 const ENV = {
   NODE_ENV: "production",
@@ -370,7 +371,8 @@ test("trial keyword lookups consume the daily quota through the rpc and stop at 
   assert.deepEqual(rpcCalls, [{ p_sub: "102938475647382910111", p_limit: 5 }]);
   assert.equal(full.request.headers.get("x-mi-session-role"), "client");
   assert.equal(full.request.headers.get("x-mi-session-scope"), "trial");
-  assert.equal(full.request.headers.get("x-mi-agency-code"), "trial-10293847");
+  // 쿠키에 옛 형식(앞 8자)이 적혀 있어도 게이트는 구글 식별자에서 새 구분값을 다시 만든다(점검 F72).
+  assert.equal(full.request.headers.get("x-mi-agency-code"), trialAccountCode("102938475647382910111"));
   assert.equal(full.request.headers.get("x-mi-rank-access-code"), null);
 
   const compare = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=compare", claims), env, {

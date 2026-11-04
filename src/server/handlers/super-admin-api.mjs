@@ -761,6 +761,8 @@ const TEAM_CODE_COLUMN = { table: "operation_team_codes", column: "team_code", l
 
 async function accountCodeConflict(ctx, code, other) {
   if (isReservedOwnerAgencyCode(code)) return { conflict: "대표 계정 코드", error: null };
+  // 'trial-' 로 시작하는 코드는 체험 계정 구분값 자리다(조사 노트 범위·체험 정리). 사람이 만든 코드와 섞이지 않게 막는다(2026-11-04).
+  if (/^trial-/i.test(String(code || "").trim())) return { conflict: "체험 계정 구분 코드", error: null };
   const pattern = exactIdentityPattern(code);
   if (!pattern) return { conflict: other.label, error: null };
   const { data, error } = await ctx.supabaseAdmin

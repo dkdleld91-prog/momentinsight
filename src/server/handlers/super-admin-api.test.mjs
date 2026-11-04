@@ -1586,6 +1586,19 @@ test("N1 광고주 새로 만들기: 운영팀 코드(꺼진 것 포함, 대소�
   assert.equal(writesTo(allowed, "clients").length, 1);
 });
 
+test("'trial-' 로 시작하는 광고주·운영팀 코드는 체험 계정 구분값 자리라 만들 수 없다(2026-11-04)", async () => {
+  for (const body of [
+    { action: "create-client", name: "새 광고주", agencyCode: "trial-brand01" },
+    { action: "create-team", teamName: "새 운영팀", teamCode: "Trial-team01" },
+  ]) {
+    const stub = codeOverlapStub({});
+    const { response, payload } = await runCodeAction(SUPER_ADMIN_API_URL, body, OWNER_CODE_HEADERS, stub);
+    assert.equal(response.status, 409, JSON.stringify(payload));
+    assert.equal(payload.message, "체험 계정 구분 코드와 같은 코드라 쓸 수 없습니다. 다른 코드로 만들어 주세요.");
+    assert.equal(writesTo(stub, "clients").length + writesTo(stub, "operation_team_codes").length, 0);
+  }
+});
+
 test("N1 광고주 다시 켜기: 같은 코드의 운영팀이 있으면 409 로 막고, 없으면 다시 켠다", async () => {
   const pausedClient = { ...OVERLAP_CLIENT_ROW, agency_code: "shared-code1" };
   const blocked = codeOverlapStub({ clients: [pausedClient], teams: [OVERLAP_TEAM_ROW] });

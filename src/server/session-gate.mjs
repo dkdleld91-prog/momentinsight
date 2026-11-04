@@ -1,5 +1,6 @@
 import { csrfMatches, sessionFromRequest, trialKeywordDailyLimit } from "./code-session.mjs";
 import { trialSampleTrackersPayload } from "./trial-sample-trackers.mjs";
+import { trialAccountCode } from "./trial-account-code.mjs";
 import { planRestricted, planStatus } from "./account-plan.mjs";
 import {
   ownerClaimsMatchPrimary,
@@ -472,9 +473,11 @@ export function internalRequestForSession(request, claims, env = process.env) {
       headers.set("x-mi-rank-access-code", claims.teamCode);
     }
   } else if (claims.role === "client" && trial) {
-    // 체험 계정: 대행사 코드 자리에 trial-xxxxxxxx 를 실어 조사 노트·홈 피드 범위를 가른다.
+    // 체험 계정: 대행사 코드 자리에 체험 구분값을 실어 조사 노트·홈 피드 범위를 가른다. 구분값은 쿠키에 적힌 값이 아니라
+    // 검증된 구글 식별자(gsub)에서 다시 만든다 — 2026-11-04 전에 발급된 쿠키(앞 8자 형식)도 배포 즉시 새 구분값으로 갈린다(점검 F72).
     // 순위 접근 코드는 주지 않는다 — 순위 경로 자체가 TRIAL_LOCKED 로 닫혀 있다.
-    if (claims.agencyCode) headers.set("x-mi-agency-code", claims.agencyCode);
+    const trialCode = trialAccountCode(claims.gsub) || claims.agencyCode;
+    if (trialCode) headers.set("x-mi-agency-code", trialCode);
   } else if (claims.role === "client" && claims.agencyCode) {
     headers.set("x-mi-agency-code", claims.agencyCode);
     headers.set("x-mi-rank-access-code", claims.agencyCode);

@@ -680,7 +680,7 @@ export function keywordNewsWithRanks(articles, trackers) {
 
 // 키워드별 기사 찾기 결과만 키워드 기준으로 캐시한다(계정 정보 없음).
 async function loadKeywordArticles(config, keywords, nowMs, deadlineMs) {
-  const cacheKey = `keyword-news:v2:${keywords.join("|")}`;
+  const cacheKey = `keyword-news:v2:${JSON.stringify(keywords)}`; // '|' 가 든 키워드끼리 열쇠가 겹치지 않게
   const cached = cacheRead(metricCache, cacheKey, METRIC_CACHE_TTL_MS, nowMs);
   if (cached.fresh) return cached.fresh;
   try {

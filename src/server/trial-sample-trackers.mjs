@@ -1,3 +1,4 @@
+import { trialAccountCode } from "./trial-account-code.mjs";
 // 체험 계정(구글 가입) 전용 예시 순위 데이터(대표 지시 2026-09-07 "무료체험 계정에 예시로 나올 수 있게").
 // 세션 게이트가 체험 세션의 GET /api/naver-rank-trackers · /api/naver-place-rank-trackers 에 이 응답을
 // 돌려준다. 순위 수집 코드·표·워커는 전혀 건드리지 않는다. 화면(잠긴 renderRankResult 등)은 실제
@@ -73,7 +74,8 @@ const PLACE_SAMPLES = [
 
 // 예시 id 태그 = 체험 구분값('trial-' 뒤). 순위 화면(게이트)과 홈 피드가 같은 예시를 가리키도록 둘 다 구분값에서 만든다.
 function trialTag(claims) {
-  return String(claims?.agencyCode || claims?.clientId || "").replace(/^trial-/, "") || "sample";
+  const code = claims?.gsub ? trialAccountCode(claims.gsub) : String(claims?.agencyCode || claims?.clientId || "");
+  return code.replace(/^trial-/, "") || "sample";
 }
 
 // 매일 09:00(KST) 수집 시각. day=0 이 오늘, day=29 가 29일 전.
@@ -293,7 +295,7 @@ export function trialSampleTrackersPayload(path, claims, nowMs = Date.now()) {
 // 게이트의 예시 id(trial-<태그>-p1…)와 같은 태그가 나온다.
 export function trialSampleRankRows(accountCode, nowMs = Date.now()) {
   const tag = String(accountCode || "").replace(/^trial-/, "") || "sample";
-  const claims = { gsub: tag, agencyCode: `trial-${tag}`, clientId: `trial-${tag}` };
+  const claims = { agencyCode: `trial-${tag}`, clientId: `trial-${tag}` };
   const trackers = [];
   const snapshots = [];
   const since = nowMs - 3 * DAY_MS;

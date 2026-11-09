@@ -8,6 +8,7 @@ import {
   normalizeSearchTrendResults,
   searchTrendUpstreamBody,
 } from "./search-trend.mjs";
+import { safeErrorPayload } from "../error-safety.mjs";
 
 // 2026-11-09 12:00 KST
 const NOW = Date.parse("2026-11-09T03:00:00Z");
@@ -96,6 +97,24 @@ test("네이버 공식 형식으로 보낸다", () => {
   });
 });
 
+test("아주 작은 값도 네이버가 준 그대로 둔다", () => {
+  const [result] = normalizeSearchTrendResults({ results: [{ title: "a", data: [{ period: "2026-01-01", ratio: 0.00123 }] }] }, [{ name: "a", keywords: ["a"] }]);
+  assert.equal(result.data[0].ratio, 0.00123);
+});
+
+test("문자열이 아닌 입력은 예외 없이 거절한다", () => {
+  const nasty = { toString: 1 };
+  let deep = [];
+  for (let index = 0; index < 11000; index += 1) deep = [deep];
+  for (const patch of [
+    { topics: [{ name: nasty }] }, { topics: [{ name: "a", keywords: [nasty] }] }, { topics: [{ name: "a", keywords: nasty }] },
+    { topics: [{ name: deep }] }, { startDate: nasty }, { ages: [nasty] }, { timeUnit: nasty },
+  ]) {
+    assert.doesNotThrow(() => normalizeSearchTrendInput({ ...validBody, ...patch }, NOW), JSON.stringify(Object.keys(patch)));
+  }
+  assert.equal(normalizeSearchTrendInput({ ...validBody, topics: [{ name: nasty }] }, NOW).ok, false);
+});
+
 test("없는 구간을 0 으로 채우지 않고 잘못된 값은 버린다", () => {
   const topics = [{ name: "a", keywords: ["a"] }, { name: "b", keywords: ["b"] }];
   const results = normalizeSearchTrendResults({
@@ -135,7 +154,7 @@ test("공식 주소로 한 번만 부르고 같은 조건은 다른 계정에도
   const first = await (await handler(request(validBody))).json();
   assert.equal(first.ok, true);
   assert.equal(first.cached, false);
-  assert.equal(first.results[0].data[1].ratio, 12.35);
+  assert.equal(first.results[0].data[1].ratio, 12.345);
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, /\/search-trend\/v1\/search$/);
   assert.equal(calls[0].options.method, "POST");
@@ -169,6 +188,20 @@ test("실패는 재시도 없이 원문을 숨기고 캐시하지 않는다", as
     assert.equal(calls, 1);
     await handler(request(validBody));
     assert.equal(calls, 2, "실패는 캐시하지 않는다");
+  }
+});
+
+test("5xx 안내 문구가 운영 공통 오류로 가려지지 않는다", async () => {
+  const cases = [
+    [createSearchTrendHandler({ config, now: () => NOW, fetchImpl: async () => new Response("x", { status: 500 }) }), 502],
+    [createSearchTrendHandler({ config, now: () => NOW, fetchImpl: async () => { const error = new Error("x"); error.name = "AbortError"; throw error; } }), 504],
+    [createSearchTrendHandler({ config: { mode: "not-configured", hub: {}, legacy: {} }, now: () => NOW }), 503],
+  ];
+  for (const [handler, status] of cases) {
+    const response = await handler(request(validBody));
+    assert.equal(response.status, status);
+    const text = await response.text();
+    assert.equal(safeErrorPayload(new Response(text, { status }), text)?.body?.code === "SERVER_ERROR", false, text);
   }
 });
 

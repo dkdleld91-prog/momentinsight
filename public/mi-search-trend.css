@@ -42,11 +42,11 @@
 :is(#mi-admin, #mi-clean) .mi-trend-foot .mi-button { flex: none; min-width: 148px; padding: 0 24px; }
 
 /* 결과 */
-:is(#mi-admin, #mi-clean) .mi-trend-result { padding: 22px; background: var(--mi-panel); }
+:is(#mi-admin, #mi-clean) .mi-card.mi-trend-result { padding: 22px; background: var(--mi-panel); }
 :is(#mi-admin, #mi-clean) .mi-trend-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 :is(#mi-admin, #mi-clean) .mi-trend-result h2 { margin: 0 0 10px; color: var(--mi-navy); font-size: 19px; line-height: 1.25; }
 :is(#mi-admin, #mi-clean) .mi-trend-conditions { display: flex; flex-wrap: wrap; gap: 6px; }
-:is(#mi-admin, #mi-clean) .mi-trend-chip { display: inline-flex; min-height: 30px; align-items: center; border: 1px solid var(--mi-line); border-radius: 999px; padding: 0 11px; color: var(--mi-navy); background: #fff; font-size: 12px; font-weight: 900; white-space: nowrap; }
+:is(#mi-admin, #mi-clean) .mi-trend-chip { display: inline-flex; max-width: 100%; min-height: 30px; align-items: center; border: 1px solid var(--mi-line); border-radius: 15px; padding: 5px 11px; color: var(--mi-navy); background: #fff; font-size: 12px; font-weight: 900; line-height: 1.35; }
 :is(#mi-admin, #mi-clean) .mi-trend-actions { display: flex; flex: none; align-items: center; gap: 8px; }
 :is(#mi-admin, #mi-clean) .mi-trend-actions .mi-segment button { min-height: 36px; padding: 0 12px; font-size: 13px; }
 :is(#mi-admin, #mi-clean) .mi-trend-actions .mi-button { min-height: 36px; font-size: 13px; }
@@ -112,7 +112,7 @@
 
 @media (max-width: 640px) {
   :is(#mi-admin, #mi-clean) .mi-trend-form,
-  :is(#mi-admin, #mi-clean) .mi-trend-result { padding: 16px; }
+  :is(#mi-admin, #mi-clean) .mi-card.mi-trend-result { padding: 16px; }
   :is(#mi-admin, #mi-clean) .mi-trend-grid-head { display: none; }
   :is(#mi-admin, #mi-clean) .mi-trend-row { grid-template-columns: 6px minmax(0, 1fr); gap: 8px 10px; }
   :is(#mi-admin, #mi-clean) .mi-trend-key { grid-row: span 2; height: 100%; min-height: 72px; }

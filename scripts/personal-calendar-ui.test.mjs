@@ -1671,7 +1671,8 @@ test("the 업무 운영 menu is hidden for team sessions and its hash routes to 
   const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
   // 2026-09-18: 총관리자 전용 "운영 공지" 화면이 더해져 15개다.
   // 2026-10-16: C 30일 순위(쿠팡, 대표 승인) 화면이 더해져 16개다.
-  assert.equal(screens.length, 16, "메뉴 taxonomy 는 그대로여야 합니다.");
+  // 2026-11-09: 검색어 트렌드 화면이 더해져 17개다.
+  assert.equal(screens.length, 17, "메뉴 taxonomy 는 그대로여야 합니다.");
   assert.ok(screens.includes("work"));
 
   // 감추는 일만 JS 가 한다. 판정은 역할 하나뿐이다.

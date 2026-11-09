@@ -128,7 +128,8 @@ export function safeErrorPayload(response, text) {
     // disconnected collector both surfaced as the generic server error).
     const handlerCode = code || String(payload?.errorCode || "");
     const isHandlerAuthoredFailure = handlerCode === "NAVER_RANK_TRACKERS_FAILED"
-      || handlerCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE";
+      || handlerCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE"
+      || handlerCode === "SEARCH_TREND_SOURCE_FAILED";
     expectedServerResponse = isExpectedConfigPending
       || code === "SERVER_NOT_READY"
       || isHandlerAuthoredFailure

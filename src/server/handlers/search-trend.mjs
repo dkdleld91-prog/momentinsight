@@ -27,6 +27,8 @@ const DEVICES = new Set(["", "pc", "mo"]);
 const GENDERS = new Set(["", "m", "f"]);
 const AGES = new Set(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// 이 코드가 있어야 5xx 안내 문구가 일반 서버 오류로 바뀌지 않는다(error-safety.mjs).
+export const SEARCH_TREND_SOURCE_FAILED = "SEARCH_TREND_SOURCE_FAILED";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -35,8 +37,10 @@ function json(body, status = 200) {
   });
 }
 
+// 화면은 문자열만 보낸다. 객체·깊은 배열을 문자열로 바꾸다 예외가 나지 않게 다른 형식은 빈 값으로 본다.
 function clean(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim();
+  if (typeof value !== "string" && typeof value !== "number") return "";
+  return String(value).replace(/\s+/g, " ").trim();
 }
 
 function validDate(value) {
@@ -51,7 +55,7 @@ export function latestSearchTrendDate(nowMs) {
 }
 
 function splitKeywords(value) {
-  const list = Array.isArray(value) ? value : String(value ?? "").split(",");
+  const list = Array.isArray(value) ? value : clean(value).split(",");
   const seen = new Set();
   const out = [];
   for (const entry of list) {
@@ -132,7 +136,7 @@ export function normalizeSearchTrendResults(payload, topics) {
       const period = clean(point?.period);
       const ratio = Number(point?.ratio);
       if (!validDate(period) || point?.ratio === null || point?.ratio === "" || !Number.isFinite(ratio) || ratio < 0) continue;
-      points.set(period, Math.round(ratio * 100) / 100);
+      points.set(period, ratio);
     }
     return {
       title: topic.name,
@@ -143,9 +147,10 @@ export function normalizeSearchTrendResults(payload, topics) {
 }
 
 function upstreamFailure(status) {
+  console.warn("search_trend_upstream_failed", JSON.stringify({ status }));
   if (status === 400) return json({ ok: false, reason: "source_rejected", message: "네이버가 이 조건을 받지 않았습니다. 검색어 수나 기간을 줄여 다시 조회해 주세요." }, 400);
   if (status === 429) return json({ ok: false, reason: "source_limit", message: "네이버 조회 한도에 걸렸습니다. 잠시 뒤 다시 조회해 주세요." }, 429);
-  return json({ ok: false, reason: "source_unavailable", message: "네이버 데이터를 불러오지 못했습니다. 잠시 뒤 다시 조회해 주세요." }, 502);
+  return json({ ok: false, code: SEARCH_TREND_SOURCE_FAILED, reason: "source_unavailable", message: "네이버 데이터를 불러오지 못했습니다. 잠시 뒤 다시 조회해 주세요." }, 502);
 }
 
 function accountKey(request) {
@@ -217,7 +222,7 @@ export function createSearchTrendHandler({ env = process.env, config = null, fet
     const respond = (results, cached) => json({ ok: true, checkedAt: new Date(nowMs).toISOString(), cached, conditions, results });
 
     const apiConfig = config || naverApiProviderConfig(env);
-    if (!hasNaverMigratedApiConfig(apiConfig, "datalab")) return json({ ok: false, reason: "source_not_configured", message: "네이버 데이터 연결을 확인하는 중입니다. 잠시 뒤 다시 조회해 주세요." }, 503);
+    if (!hasNaverMigratedApiConfig(apiConfig, "datalab")) return json({ ok: false, code: "NAVER_DATALAB_NOT_CONFIGURED", reason: "source_not_configured", message: "네이버 데이터 연결을 확인하는 중입니다. 잠시 뒤 다시 조회해 주세요." }, 503);
 
     const upstreamBody = searchTrendUpstreamBody(value);
     const cacheKey = crypto.createHash("sha256").update(JSON.stringify(upstreamBody)).digest("hex");
@@ -238,7 +243,7 @@ export function createSearchTrendHandler({ env = process.env, config = null, fet
       cacheWrite(cacheKey, results, nowMs);
       return respond(results, false);
     } catch (error) {
-      if (error?.name === "AbortError") return json({ ok: false, reason: "source_timeout", message: "네이버 응답이 늦어 조회하지 못했습니다. 다시 조회해 주세요." }, 504);
+      if (error?.name === "AbortError") return json({ ok: false, code: SEARCH_TREND_SOURCE_FAILED, reason: "source_timeout", message: "네이버 응답이 늦어 조회하지 못했습니다. 다시 조회해 주세요." }, 504);
       return upstreamFailure(502);
     } finally {
       clearTimeout(timer);

@@ -215,7 +215,7 @@
     return (crc ^ 0xffffffff) >>> 0;
   }
   function xmlText(value) {
-    return String(value).replace(/[^\u0009\u000a\u000d -퟿-�]/g, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return String(value).replace(/[^\t\n\r\u0020-\ud7ff\ue000-\ufffd\u{10000}-\u{10ffff}]/gu, "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
   function columnName(index) {
     var name = "";
@@ -491,7 +491,7 @@
       activate(periodGroup, button);
       var period = button.getAttribute("data-value");
       if (period !== "custom") {
-        var end = latestDate(nowMs());
+        var end = refreshDateLimits();
         endInput.value = end;
         startInput.value = presetStart(period, end);
       }
@@ -551,6 +551,7 @@
 
     function clearResult() {
       state.model = null;
+      state.lastWidth = 0;
       state.hidden = Object.create(null);
       conditionsRoot.textContent = "";
       cards.textContent = "";
@@ -571,6 +572,7 @@
         card.disabled = !hasData;
         card.setAttribute("aria-pressed", hidden || !hasData ? "false" : "true");
         card.setAttribute("aria-label", item.title + " 선 " + (hidden ? "표시하기" : "숨기기"));
+        card.setAttribute("data-slot", String(item.slot));
         card.title = item.keywords.join(", ");
         var name = el("span", "mi-trend-card-name");
         name.appendChild(el("i"));
@@ -584,6 +586,8 @@
         card.addEventListener("click", function () {
           state.hidden[item.slot] = !state.hidden[item.slot];
           renderCards();
+          var again = cards.querySelector('[data-slot="' + item.slot + '"]');
+          if (again) again.focus({ preventScroll: true });
           draw(false);
         });
         card.addEventListener("pointerenter", function () { setFocus(item.slot); });
@@ -627,7 +631,8 @@
       var model = state.model;
       if (!model || state.view !== "chart" || !model.periods.length) return;
       var width = chart.clientWidth;
-      if (!width) return;
+      // 화면이 숨겨져 있으면 그리지 못한다. 다시 보일 때 새 결과로 그리도록 표시해 둔다.
+      if (!width) { state.lastWidth = 0; return; }
       state.lastWidth = width;
       var height = width < 560 ? 280 : 400;
       var left = 30;
@@ -783,20 +788,31 @@
       };
     }
 
+    // 페이지를 자정 넘겨 열어 두어도 달력의 마지막 날이 새 어제를 따라가게 한다.
+    function refreshDateLimits() {
+      var latest = latestDate(nowMs());
+      startInput.max = latest;
+      endInput.max = latest;
+      return latest;
+    }
     function setBusy(busy) {
       runButton.disabled = busy;
       runButton.textContent = busy ? "조회 중" : "조회";
     }
 
     async function run() {
+      // 진행 중인 조회는 입력 검사 전에 무효로 한다. 늦게 온 앞 응답이 새 안내를 덮지 않게 한다.
+      var id = state.requestId + 1;
+      state.requestId = id;
+      if (state.controller) state.controller.abort();
+      state.controller = null;
+      setBusy(false);
+      refreshDateLimits();
       var request = requestBody();
       if (!request.body.topics.length) { setStatus("주제어를 1개 이상 입력해 주세요.", "error"); return; }
       if (!request.body.startDate || !request.body.endDate || request.body.startDate > request.body.endDate) { setStatus("기간을 다시 확인해 주세요. 시작일은 종료일보다 앞이어야 합니다.", "error"); return; }
-      if (state.controller) state.controller.abort();
       var controller = typeof window.AbortController === "function" ? new window.AbortController() : null;
       state.controller = controller;
-      var id = state.requestId + 1;
-      state.requestId = id;
       setBusy(true);
       setStatus("네이버 데이터를 불러오는 중입니다.");
       try {
@@ -808,6 +824,7 @@
           return;
         }
         state.hidden = Object.create(null);
+        state.lastWidth = 0;
         state.model = buildModel(response.payload, request.slots);
         conditionsRoot.textContent = "";
         conditionTexts(state.model.conditions).forEach(function (label) { conditionsRoot.appendChild(el("span", "mi-trend-chip", label)); });
@@ -874,9 +891,7 @@
         row.keywords.value = "";
         row.row.classList.add("is-empty");
       });
-      var end = latestDate(nowMs());
-      startInput.max = end;
-      endInput.max = end;
+      var end = refreshDateLimits();
       endInput.value = end;
       startInput.value = presetStart("1y", end);
       activate(periodGroup, periodGroup.querySelector('[data-value="1y"]'));
@@ -929,6 +944,17 @@
     };
   }
 
+  // 같은 브라우저에서 코드만 바꿔 다른 광고주로 들어가도 로그인 표시는 그대로다. 세션 값으로 계정을 구분한다.
+  function createIdentity(fetcher, sessionUrl) {
+    return async function () {
+      var response = await fetcher(sessionUrl, { method: "GET", cache: "no-store", credentials: "same-origin" });
+      var payload = await response.json();
+      var session = payload && payload.session;
+      if (!response.ok || !session || !session.role) return "";
+      return JSON.stringify([session.role, session.scopeKey || "", session.clientId || "", session.teamId || ""]);
+    };
+  }
+
   function bootstrap() {
     var doc = window.document;
     if (!doc || typeof window.fetch !== "function") return;
@@ -944,6 +970,25 @@
       apiUrl: base + API_PATH
     });
     host.setAttribute("data-search-trend-mounted", "true");
+    var identityOf = createIdentity(function (url, options) { return window.fetch(url, options); }, base + "/api/session");
+    var knownIdentity = "";
+    var identitySeq = 0;
+    function checkIdentity() {
+      if (!sessionKey()) return;
+      var seq = identitySeq + 1;
+      identitySeq = seq;
+      identityOf().then(function (identity) {
+        if (seq !== identitySeq || !identity) return;
+        if (knownIdentity && identity !== knownIdentity) { epoch += 1; controller.reset(); }
+        knownIdentity = identity;
+      }).catch(function () { /* 확인 실패는 다음 기회에 다시 본다 */ });
+    }
+    window.addEventListener("mi:rank-auth-ready", checkIdentity);
+    var view = host.closest(".mi-view");
+    if (view && typeof window.MutationObserver === "function") {
+      new window.MutationObserver(function () { if (view.classList.contains("is-active")) checkIdentity(); }).observe(view, { attributes: true, attributeFilter: ["class"] });
+    }
+    checkIdentity();
     // 로그아웃·계정 전환 때 입력과 결과를 비운다. 다음 사람이 앞 계정의 조회를 보면 안 된다.
     if (typeof window.MutationObserver === "function") {
       new window.MutationObserver(function (records) {
@@ -952,7 +997,7 @@
           var previous = " " + String(record.oldValue || "") + " ";
           return (previous.indexOf(" is-authed ") >= 0) + ":" + (previous.indexOf(" is-locked ") >= 0) !== now;
         });
-        if (changed) { epoch += 1; controller.reset(); }
+        if (changed) { epoch += 1; knownIdentity = ""; controller.reset(); checkIdentity(); }
       }).observe(root, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
     }
   }

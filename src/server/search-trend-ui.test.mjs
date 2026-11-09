@@ -131,6 +131,21 @@ function unzip(bytes) {
   return files;
 }
 
+test("계정이 바뀌면 입력과 결과를 비우고 숨긴 동안 온 결과는 다시 그린다", () => {
+  assert.ok(script.includes('window.addEventListener("mi:rank-auth-ready", checkIdentity)'));
+  assert.ok(script.includes("if (knownIdentity && identity !== knownIdentity) { epoch += 1; controller.reset(); }"));
+  assert.ok(script.includes("if (!width) { state.lastWidth = 0; return; }"));
+  const runStart = script.indexOf("async function run()");
+  assert.ok(script.indexOf("state.requestId = id;", runStart) < script.indexOf("var request = requestBody();", runStart), "입력 검사 전에 앞 조회를 무효로 한다");
+});
+
+test("엑셀에서 이모지와 한글을 지우지 않고 제어 문자만 뺀다", () => {
+  const model = trend.buildModel({ conditions: { startDate: "2026-01-01", endDate: "2026-01-01", timeUnit: "date" }, results: [{ title: "캠핑😀\u0001", keywords: ["a"], data: [{ period: "2026-01-01", ratio: 1 }] }] }, [0]);
+  const sheet = unzip(new Uint8Array(trend.workbookBytes(model)))["xl/worksheets/sheet1.xml"];
+  assert.ok(sheet.includes("캠핑😀"));
+  assert.equal(sheet.includes("\u0001"), false);
+});
+
 test("엑셀에 조회 조건을 함께 적고 없는 구간은 비우며 특수문자를 안전하게 넣는다", () => {
   const model = trend.buildModel({
     conditions: { startDate: "2026-01-01", endDate: "2026-01-02", timeUnit: "date", device: "", gender: "", ages: [] },

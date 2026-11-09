@@ -247,6 +247,10 @@ export async function handleKeywordResearchRequest(request) {
     const { handleRelatedKeywordsRequest } = await import("./related-keywords.mjs");
     return handleRelatedKeywordsRequest(request);
   }
+  if (new URL(request.url).searchParams.get("mode") === "search-trend") {
+    const { handleSearchTrendRequest } = await import("./search-trend.mjs");
+    return handleSearchTrendRequest(request);
+  }
   if (request.method !== "GET") return json({ ok: false, message: "Method not allowed" }, 405);
   const role = String(request.headers.get("x-mi-session-role") || "").trim().toLowerCase();
   if (!role) return json({ ok: false, message: "세션 역할을 확인할 수 없습니다." }, 401);

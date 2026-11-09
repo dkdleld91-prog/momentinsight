@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
 <link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v7-20260827" />
 <link rel="stylesheet" href="/mi-related-keywords.css?v=rq-v5-20261019" />
+    <link rel="stylesheet" href="/mi-search-trend.css?v=st-v1-20261109" />
 <section id="mi-clean" class="mi-client-wrap is-locked">
   <style>
     #mi-clean,
@@ -7397,6 +7398,7 @@
           <p class="mi-nav-title">키워드·SEO</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
           <a href="#mi-related-keywords" data-mi-screen="related-keywords">연관 키워드 조회</a>
+                <a href="#mi-search-trend" data-mi-screen="search-trend">검색어 트렌드</a>
         </div>
 
         <div class="mi-nav-group">
@@ -7433,6 +7435,7 @@
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
         <a href="#mi-related-keywords" data-mi-screen="related-keywords">연관 키워드 조회</a>
+                <a href="#mi-search-trend" data-mi-screen="search-trend">검색어 트렌드</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
         <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
@@ -8273,6 +8276,18 @@
           </article>
         </section>
 
+        <section class="mi-view" id="mi-search-trend" data-mi-view="search-trend" aria-label="검색어 트렌드 화면">
+          <header class="mi-screen-head">
+            <div>
+              <span class="mi-kicker">마케팅 도구</span>
+              <h1>키워드 검색 추이를 겹쳐서 비교합니다.</h1>
+              <p>어느 키워드가 언제 오르내리는지 네이버 공식 데이터로 봅니다.</p>
+            </div>
+            <span class="mi-badge">주제어 최대 5개</span>
+          </header>
+          <div data-search-trend></div>
+        </section>
+
         <section class="mi-view" id="mi-related-keywords" data-mi-view="related-keywords" aria-label="연관 키워드 화면" data-related-query>
           <header class="mi-screen-head mi-rq-head">
             <div>
@@ -8365,6 +8380,7 @@
   <script src="/mi-capture.js?v=cap-v3-20260909" defer></script>
   <script src="/mi-related-keywords-xlsx.js?v=rq-xlsx-v2-20261019"></script>
   <script src="/mi-related-keywords.js?v=rq-v6-20261019"></script>
+    <script src="/mi-search-trend.js?v=st-v1-20261109"></script>
   <script>
     (function () {
       // 옵션 확인 버튼(2.1.0)이 연 새 탭의 대기값(#mi-optfill=…)은 해시 라우터·로그인 복원보다 먼저, 동기로 받아 둔다

@@ -1,0 +1,137 @@
+/* 검색어 트렌드 화면(2026-11-09). 카드·입력칸·버튼은 페이지의 기존 스타일을 쓰고, 이 화면에만 있는 것만 정의한다. */
+:is(#mi-admin, #mi-clean) [data-search-trend] {
+  --mi-chart-1: #2558d8;
+  --mi-chart-2: #e5603c;
+  --mi-chart-3: #14a37f;
+  --mi-chart-4: #d48f00;
+  --mi-chart-5: #7a55d6;
+  --mi-trend-grid: #eef1f6;
+  --mi-trend-guide: #cbd5e1;
+}
+#mi-clean.is-trial [data-mi-screen="search-trend"] { display: none !important; }
+
+/* 입력 */
+:is(#mi-admin, #mi-clean) .mi-trend-form { margin-bottom: 16px; padding: 22px; }
+:is(#mi-admin, #mi-clean) .mi-trend-grid-head,
+:is(#mi-admin, #mi-clean) .mi-trend-row { display: grid; grid-template-columns: 6px minmax(0, 1fr) minmax(0, 2.5fr); align-items: center; gap: 10px; }
+:is(#mi-admin, #mi-clean) .mi-trend-grid-head { margin-bottom: 8px; color: var(--mi-navy); font-size: 13px; font-weight: 900; }
+:is(#mi-admin, #mi-clean) .mi-trend-grid-head em { margin-left: 8px; color: var(--mi-muted); font-size: 12px; font-style: normal; font-weight: 600; }
+:is(#mi-admin, #mi-clean) .mi-trend-topics { display: grid; gap: 8px; }
+:is(#mi-admin, #mi-clean) .mi-trend-key { width: 6px; height: 28px; border-radius: 3px; background: var(--series); transition: background 0.14s ease; }
+:is(#mi-admin, #mi-clean) .mi-trend-row.is-empty .mi-trend-key { background: var(--mi-gold); }
+:is(#mi-admin, #mi-clean) .mi-trend-input { position: relative; }
+:is(#mi-admin, #mi-clean) .mi-trend-input-label { display: none; }
+:is(#mi-admin, #mi-clean) .mi-trend-input .mi-input { min-height: 42px; padding-right: 36px; font-size: 14px; }
+:is(#mi-admin, #mi-clean) .mi-trend-clear { position: absolute; top: 50%; right: 9px; display: grid; width: 22px; height: 22px; place-items: center; border: 0; border-radius: 999px; padding: 0; color: var(--mi-muted); background: transparent; cursor: pointer; font-size: 15px; line-height: 1; transform: translateY(-50%); }
+:is(#mi-admin, #mi-clean) .mi-trend-clear:hover { color: var(--mi-navy); background: var(--mi-gold); }
+:is(#mi-admin, #mi-clean) .mi-trend-clear:focus-visible { outline: 3px solid rgba(77, 115, 255, 0.18); outline-offset: 1px; }
+:is(#mi-admin, #mi-clean) .mi-trend-input input:placeholder-shown + .mi-trend-clear { visibility: hidden; }
+
+:is(#mi-admin, #mi-clean) .mi-trend-options { display: flex; flex-wrap: wrap; gap: 16px 32px; margin-top: 20px; border-top: 1px solid var(--mi-line); padding-top: 18px; }
+:is(#mi-admin, #mi-clean) .mi-trend-option { display: grid; flex: none; align-content: start; gap: 8px; min-width: 0; max-width: 100%; }
+:is(#mi-admin, #mi-clean) .mi-trend-option.is-grow { flex: 1 1 420px; }
+:is(#mi-admin, #mi-clean) .mi-trend-more { display: none; }
+:is(#mi-admin, #mi-clean) .mi-trend-label { color: var(--mi-navy); font-size: 13px; font-weight: 900; }
+:is(#mi-admin, #mi-clean) .mi-trend-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+:is(#mi-admin, #mi-clean) .mi-trend-dates { display: flex; align-items: center; gap: 8px; color: var(--mi-muted); font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-dates .mi-input { width: 148px; min-height: 34px; font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-form .mi-segment button { min-height: 34px; padding: 0 12px; font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 20px; }
+:is(#mi-admin, #mi-clean) .mi-trend-foot p { flex: 1; min-width: 0; margin: 0; color: var(--mi-muted); font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-foot p.is-error { color: var(--mi-orange); font-weight: 800; }
+:is(#mi-admin, #mi-clean) .mi-trend-foot .mi-button { flex: none; min-width: 148px; padding: 0 24px; }
+
+/* 결과 */
+:is(#mi-admin, #mi-clean) .mi-trend-result { padding: 22px; background: var(--mi-panel); }
+:is(#mi-admin, #mi-clean) .mi-trend-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+:is(#mi-admin, #mi-clean) .mi-trend-result h2 { margin: 0 0 10px; color: var(--mi-navy); font-size: 19px; line-height: 1.25; }
+:is(#mi-admin, #mi-clean) .mi-trend-conditions { display: flex; flex-wrap: wrap; gap: 6px; }
+:is(#mi-admin, #mi-clean) .mi-trend-chip { display: inline-flex; min-height: 30px; align-items: center; border: 1px solid var(--mi-line); border-radius: 999px; padding: 0 11px; color: var(--mi-navy); background: #fff; font-size: 12px; font-weight: 900; white-space: nowrap; }
+:is(#mi-admin, #mi-clean) .mi-trend-actions { display: flex; flex: none; align-items: center; gap: 8px; }
+:is(#mi-admin, #mi-clean) .mi-trend-actions .mi-segment button { min-height: 36px; padding: 0 12px; font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-actions .mi-button { min-height: 36px; font-size: 13px; }
+:is(#mi-admin, #mi-clean) .mi-trend-empty { margin-top: 14px; border: 1px dashed var(--mi-line); border-radius: 8px; padding: 56px 16px; color: var(--mi-muted); font-size: 14px; text-align: center; }
+:is(#mi-admin, #mi-clean) .mi-trend-result [hidden] { display: none !important; }
+
+:is(#mi-admin, #mi-clean) .mi-trend-series { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 18px; }
+:is(#mi-admin, #mi-clean) .mi-trend-card { display: grid; gap: 7px; min-width: 0; border: 1px solid var(--mi-line); border-radius: 8px; padding: 11px 12px; color: var(--mi-ink); background: #fff; cursor: pointer; font: inherit; text-align: left; transition: border-color 0.14s ease, box-shadow 0.14s ease; }
+:is(#mi-admin, #mi-clean) .mi-trend-card:hover:not(:disabled) { border-color: rgba(6, 26, 58, 0.28); box-shadow: 0 8px 18px rgba(6, 26, 58, 0.07); }
+:is(#mi-admin, #mi-clean) .mi-trend-card:focus-visible { outline: 3px solid rgba(77, 115, 255, 0.2); outline-offset: 2px; }
+:is(#mi-admin, #mi-clean) .mi-trend-card:disabled { cursor: default; }
+:is(#mi-admin, #mi-clean) .mi-trend-card[aria-pressed="false"] { background: var(--mi-grey-50); }
+:is(#mi-admin, #mi-clean) .mi-trend-card-name { display: flex; align-items: center; gap: 7px; min-width: 0; }
+:is(#mi-admin, #mi-clean) .mi-trend-card-name > i:first-child { flex: none; width: 14px; height: 3px; border-radius: 2px; background: var(--series); }
+:is(#mi-admin, #mi-clean) .mi-trend-card[aria-pressed="false"] .mi-trend-card-name > i:first-child { background: var(--mi-line); }
+:is(#mi-admin, #mi-clean) .mi-trend-card-name b { overflow: hidden; color: var(--mi-navy); font-size: 13.5px; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+:is(#mi-admin, #mi-clean) .mi-trend-card[aria-pressed="false"] b,
+:is(#mi-admin, #mi-clean) .mi-trend-card[aria-pressed="false"] strong { color: var(--mi-muted); }
+:is(#mi-admin, #mi-clean) .mi-trend-card-check { display: grid; flex: none; width: 16px; height: 16px; margin-left: auto; place-items: center; border: 1px solid var(--mi-navy); border-radius: 4px; color: #fff; background: var(--mi-navy); font-size: 11px; font-style: normal; line-height: 1; }
+:is(#mi-admin, #mi-clean) .mi-trend-card[aria-pressed="false"] .mi-trend-card-check { border-color: var(--mi-line); color: transparent; background: #fff; }
+:is(#mi-admin, #mi-clean) .mi-trend-card-value { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+:is(#mi-admin, #mi-clean) .mi-trend-card-value strong { color: var(--mi-navy); font-size: 21px; font-weight: 850; line-height: 1; }
+:is(#mi-admin, #mi-clean) .mi-trend-card-value span { color: var(--mi-muted); font-size: 11.5px; white-space: nowrap; }
+
+:is(#mi-admin, #mi-clean) .mi-trend-chart { position: relative; margin-top: 14px; touch-action: pan-y; }
+:is(#mi-admin, #mi-clean) .mi-trend-chart svg { display: block; width: 100%; outline: none; }
+:is(#mi-admin, #mi-clean) .mi-trend-chart svg:focus-visible { outline: 3px solid rgba(77, 115, 255, 0.2); outline-offset: 2px; }
+:is(#mi-admin, #mi-clean) .mi-trend-gridline { stroke: var(--mi-trend-grid); }
+:is(#mi-admin, #mi-clean) .mi-trend-baseline { stroke: var(--mi-line); }
+:is(#mi-admin, #mi-clean) .mi-trend-guide { stroke: var(--mi-trend-guide); }
+:is(#mi-admin, #mi-clean) .mi-trend-hit { fill: transparent; }
+:is(#mi-admin, #mi-clean) .mi-trend-axis { fill: var(--mi-muted); font-size: 11.5px; }
+:is(#mi-admin, #mi-clean) .mi-trend-line-path { fill: none; stroke: var(--series); stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; transition: opacity 0.14s ease; }
+:is(#mi-admin, #mi-clean) .mi-trend-line-path.is-dense { stroke-width: 1.5px; }
+:is(#mi-admin, #mi-clean) .mi-trend-dot { fill: var(--series); }
+:is(#mi-admin, #mi-clean) .mi-trend-chart.is-focus .mi-trend-line-path:not(.is-focus),
+:is(#mi-admin, #mi-clean) .mi-trend-chart.is-focus .mi-trend-dot:not(.is-focus) { opacity: 0.16; }
+:is(#mi-admin, #mi-clean) .mi-trend-line-path.is-focus { stroke-width: 2.5px; }
+:is(#mi-admin, #mi-clean) .mi-trend-area { fill: var(--series); opacity: 0; transition: opacity 0.14s ease; }
+:is(#mi-admin, #mi-clean) .mi-trend-area.is-focus { opacity: 0.1; }
+:is(#mi-admin, #mi-clean) .mi-trend-line-path.is-drawing { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mi-trend-draw 0.7s ease-out forwards; }
+@keyframes mi-trend-draw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  :is(#mi-admin, #mi-clean) .mi-trend-line-path.is-drawing { animation: none; stroke-dashoffset: 0; }
+}
+:is(#mi-admin, #mi-clean) .mi-trend-peak circle { fill: var(--series); stroke: #fff; stroke-width: 2px; }
+:is(#mi-admin, #mi-clean) .mi-trend-peak text { fill: var(--mi-navy); font-size: 12px; font-weight: 800; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+:is(#mi-admin, #mi-clean) .mi-trend-hover-dot { fill: var(--series); stroke: #fff; stroke-width: 2px; }
+:is(#mi-admin, #mi-clean) .mi-trend-hint { margin: 8px 0 0; color: var(--mi-orange); font-size: 12.5px; }
+:is(#mi-admin, #mi-clean) .mi-trend-tip { position: absolute; z-index: 2; min-width: 168px; border: 1px solid var(--mi-line); border-radius: 8px; padding: 10px 12px; background: #fff; box-shadow: var(--mi-shadow); font-size: 12.5px; pointer-events: none; }
+:is(#mi-admin, #mi-clean) .mi-trend-tip > b { display: block; margin-bottom: 6px; color: var(--mi-muted); font-size: 12px; font-weight: 700; }
+:is(#mi-admin, #mi-clean) .mi-trend-tip div { display: flex; align-items: center; gap: 7px; padding: 2px 0; }
+:is(#mi-admin, #mi-clean) .mi-trend-tip i { flex: none; width: 12px; height: 3px; border-radius: 2px; background: var(--series); }
+:is(#mi-admin, #mi-clean) .mi-trend-tip strong { margin-left: auto; padding-left: 14px; color: var(--mi-navy); font-weight: 850; font-variant-numeric: tabular-nums; }
+:is(#mi-admin, #mi-clean) .mi-trend-table { overflow: auto; max-height: 420px; margin-top: 14px; border: 1px solid var(--mi-line); border-radius: 8px; }
+:is(#mi-admin, #mi-clean) .mi-trend-table table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+:is(#mi-admin, #mi-clean) .mi-trend-table th,
+:is(#mi-admin, #mi-clean) .mi-trend-table td { border-bottom: 1px solid var(--mi-gold-soft); padding: 9px 12px; text-align: right; white-space: nowrap; }
+:is(#mi-admin, #mi-clean) .mi-trend-table th { position: sticky; top: 0; color: var(--mi-navy); background: var(--mi-grey-50); font-weight: 850; }
+:is(#mi-admin, #mi-clean) .mi-trend-table th:first-child,
+:is(#mi-admin, #mi-clean) .mi-trend-table td:first-child { text-align: left; }
+:is(#mi-admin, #mi-clean) .mi-trend-source { margin: 12px 0 0; color: var(--mi-muted); font-size: 12.5px; line-height: 1.55; }
+
+@media (max-width: 640px) {
+  :is(#mi-admin, #mi-clean) .mi-trend-form,
+  :is(#mi-admin, #mi-clean) .mi-trend-result { padding: 16px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-grid-head { display: none; }
+  :is(#mi-admin, #mi-clean) .mi-trend-row { grid-template-columns: 6px minmax(0, 1fr); gap: 8px 10px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-key { grid-row: span 2; height: 100%; min-height: 72px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-input-label { display: block; margin-bottom: 4px; color: var(--mi-navy); font-size: 12px; font-weight: 850; }
+  :is(#mi-admin, #mi-clean) .mi-trend-input .mi-input { min-height: 44px; font-size: 16px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-clear { top: auto; bottom: 11px; transform: none; }
+  :is(#mi-admin, #mi-clean) .mi-trend-options { gap: 14px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-option,
+  :is(#mi-admin, #mi-clean) .mi-trend-option.is-grow { flex: 1 1 100%; }
+  :is(#mi-admin, #mi-clean) .mi-trend-more { display: flex; flex: 1 1 100%; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; border: 1px solid var(--mi-line); border-radius: 8px; padding: 0 12px; color: var(--mi-navy); background: #fff; cursor: pointer; font: inherit; font-size: 13px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-more b { flex: none; font-weight: 900; }
+  :is(#mi-admin, #mi-clean) .mi-trend-more span { overflow: hidden; color: var(--mi-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  :is(#mi-admin, #mi-clean) .mi-trend-options:not(.is-open) .is-advanced { display: none; }
+  :is(#mi-admin, #mi-clean) .mi-trend-dates { width: 100%; }
+  :is(#mi-admin, #mi-clean) .mi-trend-dates .mi-input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+  :is(#mi-admin, #mi-clean) .mi-trend-foot { flex-direction: column; align-items: stretch; }
+  :is(#mi-admin, #mi-clean) .mi-trend-result-head { flex-direction: column; }
+  :is(#mi-admin, #mi-clean) .mi-trend-actions { width: 100%; }
+  :is(#mi-admin, #mi-clean) .mi-trend-actions .mi-button { margin-left: auto; }
+  :is(#mi-admin, #mi-clean) .mi-trend-series { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :is(#mi-admin, #mi-clean) .mi-trend-card:nth-child(5):last-child { grid-column: 1 / -1; }
+}

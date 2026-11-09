@@ -345,7 +345,8 @@ test("admin exposes 내 캘린더 as the 14th screen, right after 업무 운영"
   const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
   // 15번째 화면은 총관리자 전용 "운영 공지"(공지 팝업 편집, 대표 결정 2026-09-18)다.
   // 16번째 화면은 C 30일 순위(쿠팡, 대표 승인 2026-10-16)다.
-  assert.equal(screens.length, 16);
+  // 17번째 화면은 검색어 트렌드(대표 지시 2026-11-09)다.
+  assert.equal(screens.length, 17);
   assert.ok(screens.includes("my-calendar"));
 });
 

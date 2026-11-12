@@ -74,6 +74,7 @@ const DEDUPE_KEY_LENGTH = 22;
 const LIST_ITEM_LIMIT = 3;
 
 // 모듈 스코프 메모리 캐시. 마이그레이션·캐시 테이블 없이 인스턴스 수명 동안만 산다.
+const TRIAL_SAMPLE_METRICS_SCOPE = "trial-sample";
 const newsCache = new Map();
 const metricCache = new Map();
 
@@ -772,9 +773,11 @@ export async function handleHomeFeedRequest(request, ctx) {
   }
 
   const keywords = distinctKeywords(trackers);
+  // 체험 계정의 예시 키워드 지표는 모든 체험 계정이 같으므로 캐시 열쇠를 하나로 묶는다(2026-11-12) — 계정마다
+  // 데이터랩을 다시 부르지 않게. 응답의 scope.accountCode 도 공용 값이라 다른 체험 계정 코드가 섞이지 않는다.
   const metricsPromise = trackerError
     ? Promise.resolve({ ok: false, reason: trackerError })
-    : loadMetrics(config, env, scope.accountCode, trackers, nowMs, deadlineMs);
+    : loadMetrics(config, env, trialRows ? TRIAL_SAMPLE_METRICS_SCOPE : scope.accountCode, trackers, nowMs, deadlineMs);
   const keywordNewsPromise = trackerError
     ? Promise.resolve({ ok: false, reason: trackerError })
     : loadKeywordNews(config, keywords.slice(0, KEYWORD_NEWS_LIMIT), trackers, nowMs, deadlineMs);

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  handleHomeFeedRequest,
+  resetHomeFeedCaches,
   agencyCodeScope,
   articleTopic,
   buildBrandSection,
@@ -410,4 +412,42 @@ test("keyword news: the same cached articles get each account's own rank, and th
   assert.equal(JSON.stringify(articles), snapshot, "캐시된 기사에 계정 순위를 써 넣지 않는다");
   assert.equal("myRank" in articles.items[0], false);
   assert.deepEqual(keywordNewsWithRanks({ ok: false, reason: "x" }, []), { ok: false, reason: "x" });
+});
+
+test("trial home example-keyword metrics share one cache across trial accounts, so a new trial account does not call DataLab again (2026-11-12)", async () => {
+  const keys = ["NAVER_API_HUB_MODE", "NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_CLIENT_SECRET"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const savedFetch = globalThis.fetch;
+  Object.assign(process.env, { NAVER_API_HUB_MODE: "hub", NAVER_API_HUB_CLIENT_ID: "test-id", NAVER_API_HUB_CLIENT_SECRET: "test-secret" });
+  let datalabCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(typeof input === "string" ? input : input.url);
+    if (url.includes("/search-trend/")) {
+      datalabCalls += 1;
+      return Response.json({ results: [] });
+    }
+    return Response.json({ items: [], total: 0 });
+  };
+  const trialRequest = (agencyCode) => new Request("https://insight.momentlabs.co.kr/api/client/home-feed", {
+    headers: { "x-mi-session-role": "client", "x-mi-session-scope": "trial", "x-mi-agency-code": agencyCode },
+  });
+  try {
+    resetHomeFeedCaches();
+    const first = await handleHomeFeedRequest(trialRequest("trial-10293847"), {});
+    assert.equal(first.status, 200);
+    const afterFirst = datalabCalls;
+    assert.ok(afterFirst > 0, "첫 체험 계정은 예시 키워드 지표를 위해 데이터랩을 부른다");
+    const second = await handleHomeFeedRequest(trialRequest("trial-56473829"), {});
+    assert.equal(second.status, 200);
+    assert.equal(datalabCalls, afterFirst, "다른 체험 계정은 같은 캐시를 쓴다");
+    const body = await second.json();
+    assert.notEqual(body.metrics?.scope?.accountCode, "trial-10293847", "다른 체험 계정의 코드가 응답에 섞이지 않는다");
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    resetHomeFeedCaches();
+  }
 });

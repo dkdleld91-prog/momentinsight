@@ -12,6 +12,7 @@ import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { PRIMARY_AGENCY_CODE, isReservedOwnerAgencyCode, primaryAgencyConfiguration } from "../owner-identity.mjs";
 import { TRIAL_ACCOUNT_CODE_PATTERN, legacyTrialAccountCode, trialAccountCode } from "../trial-account-code.mjs";
+import { trialQuotaKeys, trialQuotaOwner } from "../code-session.mjs";
 import {
   GOOGLE_LINKED_PLAN_NOTE,
   GOOGLE_LINK_EXPIRY_NOTE,
@@ -293,7 +294,8 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
     const subs = (identities.data || []).map((row) => row.google_sub).filter(Boolean);
     let quotaOk = true;
     if (subs.length) {
-      const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", subs).select("google_sub");
+      // 한도 행은 '<sub>'(전체 조회)와 '<sub>#compare'(비교 조회, 2026-11-12~) 두 열쇠로 남는다 — 함께 지운다.
+      const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", subs.flatMap(trialQuotaKeys)).select("google_sub");
       if (quota.error) {
         quotaOk = false;
         fail("trial_keyword_quota", quota.error);
@@ -309,7 +311,7 @@ export async function deleteExpiredClient(ctx, client, { nowMs = Date.now(), env
         // 읽은 뒤 지우기 전에 다른 구글 계정이 연결됐으면 그 계정의 체험 한도도 지운다(연결이 지워지면 다시 찾을 길이 없다).
         const late = (removedIdentities.data || []).map((row) => row.google_sub).filter((sub) => sub && !subs.includes(sub));
         if (late.length) {
-          const lateQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", late).select("google_sub");
+          const lateQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", late.flatMap(trialQuotaKeys)).select("google_sub");
           if (lateQuota.error) fail("trial_keyword_quota", lateQuota.error);
           else summary.quota += (lateQuota.data || []).length;
         }
@@ -624,7 +626,8 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
   for (const row of candidates) {
     if (processed >= limit) break;
     const sub = String(row.google_sub);
-    const recent = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").eq("google_sub", sub).gte("updated_at", cutoff).limit(1);
+    // 비교 조회 행('<sub>#compare')도 이용 기록이다.
+    const recent = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").in("google_sub", trialQuotaKeys(sub)).gte("updated_at", cutoff).limit(1);
     if (recent.error) {
       failed.push({ error: `trial_keyword_quota: ${String(recent.error.message || recent.error)}` });
       continue;
@@ -649,7 +652,7 @@ export async function pruneInactiveTrials(ctx, { nowMs = Date.now(), dryRun = fa
     if ((identity.data || []).length !== 1) continue; // 그 사이 다시 로그인했거나 정식 전환됨 — 아무것도 지우지 않는다
     deletedSubs.add(sub);
     const summary = { quota: null, notes: null };
-    const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().eq("google_sub", sub).select("google_sub");
+    const quota = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", trialQuotaKeys(sub)).select("google_sub");
     if (quota.error) failed.push({ error: `trial_keyword_quota: ${String(quota.error.message || quota.error)}` });
     else summary.quota = (quota.data || []).length;
     // 노트: 새 형식 코드는 계정마다 겹치지 않고, 옛 형식(앞 8자)은 같은 앞자리를 쓰는 다른 계정이 남아 있으면 남긴다.
@@ -706,7 +709,7 @@ async function sweepTrialOrphans(ctx, { cutoff, identities, deletedSubs, account
   const oldQuota = await ctx.supabaseAdmin.from("trial_keyword_quota").select("google_sub").lt("updated_at", cutoff).limit(TRIAL_IDENTITY_SCAN_LIMIT);
   if (oldQuota.error) failed.push({ error: `trial_keyword_quota sweep: ${String(oldQuota.error.message || oldQuota.error)}` });
   else {
-    const orphanSubs = [...new Set((oldQuota.data || []).map((row) => String(row.google_sub || "")))].filter((sub) => sub && !knownSubs.has(sub));
+    const orphanSubs = [...new Set((oldQuota.data || []).map((row) => String(row.google_sub || "")))].filter((sub) => sub && !knownSubs.has(trialQuotaOwner(sub)));
     if (orphanSubs.length) {
       const removed = await ctx.supabaseAdmin.from("trial_keyword_quota").delete().in("google_sub", orphanSubs).lt("updated_at", cutoff).select("google_sub");
       if (removed.error) failed.push({ error: `trial_keyword_quota sweep: ${String(removed.error.message || removed.error)}` });

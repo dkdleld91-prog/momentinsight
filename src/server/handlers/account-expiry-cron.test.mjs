@@ -328,7 +328,8 @@ test("a Google account linked between reading and deleting login identities also
   const summary = await deleteExpiredClient(ctx, DUE_CLIENT, { nowMs: NOW, env: ENV });
   assert.deepEqual(summary.errors, []);
   const quotaCalls = calls.filter((call) => call.table === "trial_keyword_quota");
-  assert.deepEqual(quotaCalls.map((call) => call.ops.find(([op]) => op === "in")[2]), [["sub-1"], ["sub-2"]]);
+  // 비교 조회 한도 행('<sub>#compare', 2026-11-12~)도 함께 지운다.
+  assert.deepEqual(quotaCalls.map((call) => call.ops.find(([op]) => op === "in")[2]), [["sub-1", "sub-1#compare"], ["sub-2", "sub-2#compare"]]);
   assert.equal(summary.quota, 2);
   assert.equal(summary.identities, 2);
 });
@@ -919,8 +920,11 @@ test("the batch limit counts only accounts that are really unused, so recently u
     login_identities: identitiesSpec([...busy, ...trialRows()]),
     trial_keyword_quota: (record) => {
       if (isDelete(record)) return [];
-      const sub = (record.ops.find(([op, column]) => op === "eq" && column === "google_sub") || [])[2];
-      return String(sub).startsWith("2000") ? [{ google_sub: sub }] : [];
+      // 최근 이용 확인은 전체 조회·비교 조회 두 열쇠를 함께 본다(in google_sub [sub, sub#compare]).
+      if (!record.ops.some(([op]) => op === "gte")) return []; // 주인 없는 행 정리용 조회
+      const keys = (record.ops.find(([op, column]) => op === "in" && column === "google_sub") || [])[2] || [];
+      assert.deepEqual(keys.slice(1), [`${keys[0]}#compare`]);
+      return String(keys[0]).startsWith("2000") ? [{ google_sub: keys[0] }] : [];
     },
     keyword_research_notes: [],
   });
@@ -1013,4 +1017,40 @@ test("the nightly run reports trial and audit-log cleanup counts", async () => {
   assert.deepEqual(summary.trialsFailed, []);
   assert.equal(summary.auditLogsPruned, 1);
   assert.equal(summary.auditLogsPruneError, null);
+});
+
+test("trial compare quota rows ('<sub>#compare') follow their owner: deleted with the account, kept while the owner lives", async () => {
+  // 1) 1년 미이용 체험 계정을 지울 때 두 열쇠의 한도 행을 함께 지운다.
+  const OLD = "108888888888888888888";
+  const { ctx, calls } = fakeCtx({
+    login_identities: identitiesSpec([{ google_sub: OLD, role: "trial", linked_at: iso(-900), updated_at: iso(-800) }]),
+    trial_keyword_quota: (record) => {
+      if (isDelete(record)) return ((record.ops.find(([op, col]) => op === "in" && col === "google_sub") || [])[2] || []).map((sub) => ({ google_sub: sub }));
+      return [];
+    },
+    keyword_research_notes: [],
+  });
+  const pruned = await pruneInactiveTrials(ctx, { nowMs: NOW });
+  assert.deepEqual(pruned.failed, []);
+  const quotaDeletes = calls.filter((call) => call.table === "trial_keyword_quota" && isDelete(call));
+  assert.deepEqual(quotaDeletes[0].ops.find(([op, col]) => op === "in" && col === "google_sub")[2], [OLD, `${OLD}#compare`]);
+  assert.equal(pruned.deleted[0].quota, 2);
+
+  // 2) 주인 없는 행 정리: 살아 있는 계정의 '#compare' 행은 고아가 아니다. 주인이 없어진 '#compare' 행만 지운다.
+  const deletedBy = (call, column) => (call.ops.find(([op, col]) => op === "in" && col === column) || [])[2];
+  const sweep = fakeCtx({
+    login_identities: [{ google_sub: ACTIVE_SUB, role: "trial", linked_at: iso(-30), updated_at: iso(-3) }],
+    trial_keyword_quota: (record) => {
+      if (isDelete(record)) return deletedBy(record, "google_sub").map((sub) => ({ google_sub: sub }));
+      if (record.ops.some(([op]) => op === "gte")) return [];
+      return [{ google_sub: `${ACTIVE_SUB}#compare` }, { google_sub: "109999999999999999999#compare" }];
+    },
+    clients: [],
+    operation_team_codes: [],
+    keyword_research_notes: [],
+  });
+  const result = await pruneInactiveTrials(sweep.ctx, { nowMs: NOW });
+  assert.deepEqual(result.failed, []);
+  const sweepDelete = sweep.calls.find((call) => call.table === "trial_keyword_quota" && isDelete(call));
+  assert.deepEqual(deletedBy(sweepDelete, "google_sub"), ["109999999999999999999#compare"]);
 });

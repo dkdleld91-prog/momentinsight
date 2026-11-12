@@ -380,7 +380,8 @@ test("trial keyword lookups consume the daily quota through the rpc and stop at 
     fetchImpl: fetchFor(true, 2),
   });
   assert.equal(compare.ok, true);
-  assert.equal(rpcCalls.length, 1);
+  // 비교용 조회도 센다(2026-11-12~): 같은 한도 함수에 '<sub>#compare' 열쇠, 한도는 조회 1회당 4개 × 재시도 여유 2배(5×4×2=40).
+  assert.deepEqual(rpcCalls[1], { p_sub: "102938475647382910111#compare", p_limit: 40 });
 
   const exhausted = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90", claims), env, {
     activityCheck: async () => true,
@@ -405,8 +406,52 @@ test("trial keyword lookups consume the daily quota through the rpc and stop at 
     fetchImpl: fetchFor(false, 5),
   });
   assert.equal(research.ok, true);
-  // 전체 조회 1건 + 한도 초과 확인 1건. 비교 프로필·조사 API·장애 응답은 세지 않았다.
-  assert.equal(rpcCalls.length, 2);
+  // 전체 조회 1건 + 비교 조회 1건 + 한도 초과 확인 1건. 조사 API·장애 응답은 세지 않았다.
+  assert.equal(rpcCalls.length, 3);
+});
+
+test("trial compare lookups have their own daily cap so the screen-only 4-keyword limit cannot be bypassed", async () => {
+  const claims = trialClaims();
+  const rpcCalls = [];
+  const fetchFor = (allowed, used) => async (url, init = {}) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/rpc/mi_trial_keyword_consume")) {
+      rpcCalls.push(JSON.parse(String(init.body)));
+      return Response.json([{ allowed, used_count: used }]);
+    }
+    assert.fail(`unexpected fetch ${parsed.pathname}`);
+  };
+  const env = { ...ENV, SUPABASE_URL: "https://project.supabase.co" };
+  const options = (allowed, used) => ({ activityCheck: async () => true, fetchImpl: fetchFor(allowed, used) });
+
+  // 한도에 닿으면 429 + 비교 전용 코드. 화면의 '오늘 조회 n/5' 칩(TRIAL_QUOTA 만 읽음)을 건드리지 않고,
+  // x-mi-trial-quota 머리글로 재시도 없이 바로 멈춘다.
+  const exhausted = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=compare", claims), env, options(false, 40));
+  assert.equal(exhausted.ok, false);
+  assert.equal(exhausted.response.status, 429);
+  assert.equal(exhausted.response.headers.get("x-mi-trial-quota"), "compare:40/40");
+  const body = await exhausted.response.json();
+  assert.equal(body.code, "TRIAL_COMPARE_QUOTA");
+  assert.equal(body.used, 40);
+  assert.equal(body.limit, 40);
+  assert.match(body.message, /비교 조회 40회/);
+
+  // 핸들러처럼 대소문자를 가리지 않는다(COMPARE 도 비교 열쇠로 센다).
+  const upper = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=COMPARE", claims), env, options(true, 3));
+  assert.equal(upper.ok, true);
+  assert.equal(rpcCalls.at(-1).p_sub, "102938475647382910111#compare");
+
+  // 하루 한도를 환경변수로 바꾸면 비교 한도도 따라간다(3 → 3×4×2=24).
+  const tuned = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=compare", claims), { ...env, MI_TRIAL_KEYWORD_DAILY_LIMIT: "3" }, options(true, 1));
+  assert.equal(tuned.ok, true);
+  assert.deepEqual(rpcCalls.at(-1), { p_sub: "102938475647382910111#compare", p_limit: 24 });
+
+  // 한도 함수 장애에는 막지 않는다(전체 조회와 같은 fail-open).
+  const outage = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=compare", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: async () => new Response("down", { status: 503 }),
+  });
+  assert.equal(outage.ok, true);
 });
 
 test("trial session activity follows the trial login identity row", async () => {

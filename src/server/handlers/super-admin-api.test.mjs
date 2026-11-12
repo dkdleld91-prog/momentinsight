@@ -19,6 +19,7 @@ import handler, {
   auditLogQueryOptions,
   existingAccountCode,
   normalizeAgencyCode,
+  selectTrialUsageToday,
   teamActionAccess,
   teamActionPayload,
 } from "./super-admin-api.mjs";
@@ -1740,4 +1741,22 @@ test("N1 체험 정식 전환: 서버가 뽑은 코드가 운영팀 코드와 �
   assert.equal(failed.payload.message, "코드 생성에 실패했습니다. 다시 시도해주세요.");
   assert.equal(writesTo(alwaysClash, "clients").length, 0);
   assert.equal(writesTo(alwaysClash, "login_identities").length, 0);
+});
+
+test("trial usage today reads only the daily lookup rows, not the '#compare' rows (2026-11-12)", async () => {
+  const ops = [];
+  const chain = {
+    select(columns) { ops.push(["select", columns]); return chain; },
+    eq(column, value) { ops.push(["eq", column, value]); return chain; },
+    not(column, operator, value) { ops.push(["not", column, operator, value]); return chain; },
+    limit(count) {
+      ops.push(["limit", count]);
+      return Promise.resolve({ data: [{ google_sub: "sub-1", used: 3 }], error: null });
+    },
+  };
+  const ctx = { supabaseAdmin: { from(table) { ops.push(["from", table]); return chain; } } };
+  const usage = await selectTrialUsageToday(ctx);
+  assert.equal(usage.get("sub-1"), 3);
+  assert.deepEqual(ops.find(([op]) => op === "not"), ["not", "google_sub", "like", "%#compare"]);
+  assert.deepEqual(ops[0], ["from", "trial_keyword_quota"]);
 });

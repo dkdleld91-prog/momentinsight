@@ -684,13 +684,15 @@ function seoulDay(now = Date.now()) {
   return new Date(now).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 }
 
-async function selectTrialUsageToday(ctx) {
+export async function selectTrialUsageToday(ctx) {
   const usage = new Map();
   try {
     const result = await ctx.supabaseAdmin
       .from("trial_keyword_quota")
       .select("google_sub, used")
       .eq("day", seoulDay())
+      // 비교 조회 행('<sub>#compare', 2026-11-12~)은 빼고 하루 조회 사용량만 읽는다(1000줄 상한을 비교 행이 먹지 않게).
+      .not("google_sub", "like", "%#compare")
       .limit(1000);
     if (result.error) return usage;
     for (const row of result.data || []) usage.set(String(row.google_sub || ""), Number(row.used || 0));

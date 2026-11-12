@@ -1,4 +1,4 @@
-import { csrfMatches, sessionFromRequest, trialKeywordDailyLimit } from "./code-session.mjs";
+import { csrfMatches, sessionFromRequest, trialCompareDailyLimit, trialCompareQuotaKey, trialKeywordDailyLimit } from "./code-session.mjs";
 import { trialSampleTrackersPayload } from "./trial-sample-trackers.mjs";
 import { trialAccountCode } from "./trial-account-code.mjs";
 import { planRestricted, planStatus } from "./account-plan.mjs";
@@ -331,24 +331,45 @@ async function activeTrialForClaims(claims, env, fetchImpl) {
     : SESSION_ACTIVITY_REVOKED;
 }
 
-function trialKeywordLookupRequest(request, path) {
-  if (path !== TRIAL_KEYWORD_LOOKUP_PATH || request.method !== "GET") return false;
-  // 비교용 프로필(두 번째 키워드부터)은 세지 않는다. 전체 지표 조회만 하루 한도에 든다.
-  return new URL(request.url).searchParams.get("profile") !== "compare";
+// 체험 키워드 조회의 종류: "lookup"(전체 지표 조회, 하루 5회) · "compare"(두 번째 키워드부터의 비교용 조회,
+// 하루 40개 = 조회 1회당 4개 × 재시도 여유 2배 — 2026-11-12 전까지는 세지 않아 화면을 거치지 않으면 끝없이 받을 수
+// 있었다) · ""(세지 않음).
+// profile 은 핸들러(naver-keyword.mjs)처럼 대소문자를 가리지 않는다.
+function trialKeywordQuotaKind(request, path) {
+  if (path !== TRIAL_KEYWORD_LOOKUP_PATH || request.method !== "GET") return "";
+  const profile = String(new URL(request.url).searchParams.get("profile") || "").toLowerCase();
+  return profile === "compare" ? "compare" : "lookup";
 }
 
-async function consumeTrialKeywordQuota(claims, env, options = {}) {
-  const limit = trialKeywordDailyLimit(env);
+async function consumeTrialKeywordQuota(claims, env, options = {}, kind = "lookup") {
+  const compare = kind === "compare";
+  const limit = compare ? trialCompareDailyLimit(env) : trialKeywordDailyLimit(env);
   const result = await callSessionRpc(
     TRIAL_QUOTA_RPC,
-    { p_sub: claims.gsub, p_limit: limit },
+    { p_sub: compare ? trialCompareQuotaKey(claims.gsub) : claims.gsub, p_limit: limit },
     env,
     options.fetchImpl || globalThis.fetch,
   );
   // 한도 함수가 잠시 안 되면 막지 않는다(fail-open). 체험은 도입 상담용이라 오류로 잠그는 손해가 더 크다.
-  if (!result.ok || result.rows.length !== 1) return { allowed: true, used: null, limit, unavailable: true };
+  // 그동안에도 naver-keyword 핸들러의 IP당 분당 30회 제한은 그대로 남는다.
+  if (!result.ok || result.rows.length !== 1) return { allowed: true, used: null, limit, kind, unavailable: true };
   const row = result.rows[0];
-  return { allowed: row?.allowed !== false, used: Number(row?.used_count ?? 0), limit };
+  return { allowed: row?.allowed !== false, used: Number(row?.used_count ?? 0), limit, kind };
+}
+
+// 한도에 닿은 응답. 비교용은 화면이 '오늘 조회 n/5' 칩을 잘못 고치지 않게 다른 코드(TRIAL_COMPARE_QUOTA)로 돌려준다.
+// 둘 다 x-mi-trial-quota 머리글을 달아 화면의 재시도(keywordFetchWithRetry)가 기다리지 않고 바로 멈추게 한다.
+function trialQuotaExceededResponse(request, quota) {
+  const compare = quota.kind === "compare";
+  return protectedJson(request, {
+    ok: false,
+    code: compare ? "TRIAL_COMPARE_QUOTA" : "TRIAL_QUOTA",
+    message: compare
+      ? `오늘 체험 비교 조회 ${quota.limit}회를 모두 썼습니다. 내일 다시 열리거나, 도입 문의로 제한 없이 이용하세요.`
+      : `오늘 체험 조회 ${quota.limit}회를 모두 썼습니다. 내일 다시 열리거나, 도입 문의로 제한 없이 이용하세요.`,
+    used: quota.used,
+    limit: quota.limit,
+  }, 429, { extraHeaders: { "x-mi-trial-quota": `${compare ? "compare:" : ""}${quota.used}/${quota.limit}` } });
 }
 
 async function activeClientForClaims(claims, env, fetchImpl) {
@@ -578,20 +599,10 @@ export async function authorizeCodeSession(request, env = process.env, options =
     const sample = trialSampleTrackersPayload(path, claims, Date.now());
     if (sample) return { ok: false, response: protectedJson(request, sample, 200) };
   }
-  if (isTrialClaims(claims) && trialKeywordLookupRequest(request, path)) {
-    const quota = await consumeTrialKeywordQuota(claims, env, options);
-    if (!quota.allowed) {
-      return {
-        ok: false,
-        response: protectedJson(request, {
-          ok: false,
-          code: "TRIAL_QUOTA",
-          message: `오늘 체험 조회 ${quota.limit}회를 모두 썼습니다. 내일 다시 열리거나, 도입 문의로 제한 없이 이용하세요.`,
-          used: quota.used,
-          limit: quota.limit,
-        }, 429, { extraHeaders: { "x-mi-trial-quota": `${quota.used}/${quota.limit}` } }),
-      };
-    }
+  const trialQuotaKind = isTrialClaims(claims) ? trialKeywordQuotaKind(request, path) : "";
+  if (trialQuotaKind) {
+    const quota = await consumeTrialKeywordQuota(claims, env, options, trialQuotaKind);
+    if (!quota.allowed) return { ok: false, response: trialQuotaExceededResponse(request, quota) };
   }
   return { ok: true, request: internalRequestForSession(request, claims, env), session: claims };
 }

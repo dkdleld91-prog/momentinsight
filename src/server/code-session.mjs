@@ -107,6 +107,33 @@ export function trialKeywordDailyLimit(env = process.env) {
   return Number.isInteger(parsed) && parsed > 0 && parsed <= 100 ? parsed : TRIAL_KEYWORD_DAILY_LIMIT;
 }
 
+// 체험 계정 비교 조회(두 번째 키워드부터, profile=compare) 하루 한도(2026-11-12): 전체 조회 1회당 화면이 보내는
+// 최대 4개 × 재시도 여유 2배(기본 5×4×2=40). 전에는 세지 않아 화면을 거치지 않으면 데이터랩 지수를 끝없이 받을 수
+// 있었다. 화면은 일시 오류에 같은 요청을 다시 보내고 게이트는 그때마다 세므로, 정상 사용이 한도에 닿지 않게 여유를 둔다.
+// 새 표·SQL 없이 같은 한도 함수·표(trial_keyword_quota)를 '<구글 sub>#compare' 열쇠로 따로 센다.
+export const TRIAL_COMPARE_PER_LOOKUP = 4;
+export const TRIAL_COMPARE_RETRY_HEADROOM = 2;
+export const TRIAL_COMPARE_QUOTA_SUFFIX = "#compare";
+
+export function trialCompareDailyLimit(env = process.env) {
+  return trialKeywordDailyLimit(env) * TRIAL_COMPARE_PER_LOOKUP * TRIAL_COMPARE_RETRY_HEADROOM;
+}
+
+export function trialCompareQuotaKey(googleSub) {
+  return `${String(googleSub)}${TRIAL_COMPARE_QUOTA_SUFFIX}`;
+}
+
+// 한 구글 계정의 한도 행 열쇠 전부(계정 정리 때 함께 지운다).
+export function trialQuotaKeys(googleSub) {
+  return googleSub ? [String(googleSub), trialCompareQuotaKey(googleSub)] : [];
+}
+
+// 한도 행 열쇠의 주인 구글 식별자('<sub>#compare' → '<sub>'). 주인 없는 행 정리가 비교 행을 고아로 오인하지 않게.
+export function trialQuotaOwner(key) {
+  const text = String(key || "");
+  return text.endsWith(TRIAL_COMPARE_QUOTA_SUFFIX) ? text.slice(0, -TRIAL_COMPARE_QUOTA_SUFFIX.length) : text;
+}
+
 export function sealSession(claims, env = process.env) {
   const config = sessionConfiguration(env);
   if (!config.valid || !config.secrets[0]) throw new Error("session_secret_unavailable");

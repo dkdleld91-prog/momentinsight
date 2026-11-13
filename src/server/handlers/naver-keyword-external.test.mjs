@@ -107,7 +107,9 @@ test("a staff lookup fills its own cache; an advertiser asking the same keyword 
 });
 
 test("staff and external lookups use different cache keys for the same keyword and profile", () => {
-  const env = {};
+  // 실제 핸들러처럼 설정 묶음(shoppingResults 포함)을 넘긴다. 빈 {} 를 넘기면 빌드 환경(Vercel)의 쇼핑 순위 환경 변수로
+  // 설정이 있다고 판단해 env.shoppingResults.mode 를 읽다 실패한다(2026-11-13 Vercel 빌드 실패, 운영 코드는 영향 없음).
+  const env = { shoppingResults: {} };
   assert.notEqual(keywordCacheKeyFor(true, "원두", "full", env), keywordCacheKeyFor(false, "원두", "full", env));
   assert.match(keywordCacheKeyFor(false, "원두", "full", env), /^external:/u);
   assert.match(keywordCacheKeyFor(true, "원두", "full", env), /^staff:/u);

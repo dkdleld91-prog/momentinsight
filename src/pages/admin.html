@@ -21425,7 +21425,9 @@
           bar.appendChild(fill);
           line.appendChild(bar);
           line.appendChild(homeNode("span", "mi-home-pc", row.changePct === null ? "-" : (pct < 0 ? "▼" : "▲") + Math.abs(pct) + "%"));
-          line.appendChild(homeNode("span", "mi-home-vol", row.monthlyVolume === null ? "조회 필요" : Number(row.monthlyVolume).toLocaleString("ko-KR")));
+          // 검색광고 "10 미만"이 섞인 합계는 아래 한계다(서버 volumeLowerBound) → "1,230+", 둘 다 10 미만이면 "20 미만".
+          var volumeText = row.monthlyVolume === null ? "조회 필요" : (row.volumeLowerBound ? (Number(row.monthlyVolume) > 0 ? Number(row.monthlyVolume).toLocaleString("ko-KR") + "+" : "20 미만") : Number(row.monthlyVolume).toLocaleString("ko-KR"));
+          line.appendChild(homeNode("span", "mi-home-vol", volumeText));
           container.appendChild(line);
         });
       }
@@ -24911,7 +24913,7 @@
             background: getComputedStyle(root).getPropertyValue("--mi-bg").trim() || "white",
             ignore: function (node) { return node === header || node === queryCard || Boolean(node && node.hasAttribute && node.hasAttribute("data-keyword-save-tools")); }
           });
-          say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 카카오톡·메일로 바로 전달하세요.");
+          say((captured.jpeg ? "JPG" : "PNG") + " 이미지로 저장했습니다 · " + Math.round(captured.bytes / 1024) + "KB · 내부 검토용입니다. 네이버 데이터랩 정보가 들어 있어 광고주에게 보내지 마세요.");
         } catch (error) {
           say("캡처에 실패했습니다. 화면을 새로고침한 뒤 다시 시도해주세요.");
         } finally {
@@ -24964,6 +24966,8 @@
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/keyword-notes";
         return "http://127.0.0.1:8790/api/client/keyword-notes";
       }
+      // 조사 노트 제목 입력 안내(화면마다 다름 — 노트 공용 코드 밖에 둔다). 관리자 화면은 제목이 광고주에게도 보인다는 것을 알린다.
+      var KEYWORD_NOTE_TITLE_PROMPT = "조사 노트 제목 · 광고주 코드로 저장하면 그 광고주 화면에도 보입니다(검색 추이·피크 달 등 데이터랩 내용은 적지 마세요)";
       var keywordNotesState = { items: [], ready: false };
       function keywordNoteStatus(text, tone) {
         var node = root.querySelector("[data-keyword-note-status]");
@@ -25041,15 +25045,13 @@
         var items = (keywordCompareItems && keywordCompareItems.length ? keywordCompareItems : keywordDatasets) || [];
         if (!items.length) { keywordNoteStatus("먼저 조회하세요", "is-warn"); return; }
         var keywords = items.map(function (item) { return item.keyword; });
+        // 노트에는 검색광고 월 검색수만 남긴다. 피크 달(데이터랩)은 두 화면 모두 저장하지 않는다 — 노트는 광고주 코드로
+        // 묶여 운영팀이 저장한 노트도 그 광고주 화면에 보이기 때문(네이버 답변 2026-11-13, 서버도 외부 응답에서 지운다).
         var snapshots = items.map(function (item) {
           var data = item.data || {};
-          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
-          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
-          var peak = -1; var peakValue = 0;
-          month.forEach(function (value, i) { if (value > peakValue) { peakValue = value; peak = i; } });
-          return { keyword: item.keyword, volume: keywordNumber(data.volume), peakMonth: peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "", checkedAt: new Date().toISOString() };
+          return { keyword: item.keyword, volume: keywordNumber(data.volume), peakMonth: "", checkedAt: new Date().toISOString() };
         });
-        var title = window.prompt("조사 노트 제목", keywords.join(" · ").slice(0, 60));
+        var title = window.prompt(KEYWORD_NOTE_TITLE_PROMPT, keywords.join(" · ").slice(0, 60));
         if (title === null) return;
         if (button) button.disabled = true;
         keywordNoteStatus("저장 중", "");

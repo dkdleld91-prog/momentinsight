@@ -11,7 +11,9 @@ const pathname = "/api/public/related-keywords";
 // HEAD changes after commit, and a deployment checkout need not contain its history.
 const privateBaseline = Object.freeze({
   css: "0a65adfc3365e0cc66f75a1060e3f043c505148294c3f2c6672890aba0defcfb",
-  homeInline: ["99105621d423b52d0eee5e32459f4f11f567839e14452d3cde36d1f18a894f20", "f2fee52f1d35d9d62b113931d72a2062d374fbad946271a76fa0f702a6602039"],
+  // 2026-11-13 네이버 답변(데이터랩은 광고주에게 제공 불가): 홈 구조화 데이터 설명에서 '데이터랩'을 빼 첫 값이 바뀌었다.
+  // 이전 값 99105621d423b52d0eee5e32459f4f11f567839e14452d3cde36d1f18a894f20.
+  homeInline: ["e2974de562b0e9b99a99f4aec00dfb0c4b3c1c4cf8f719e0b86fc405b1b8a726", "f2fee52f1d35d9d62b113931d72a2062d374fbad946271a76fa0f702a6602039"],
   // 2026-10-23 N30 그룹상품(대표 승인): 광고주 카드에 '그룹상품 n개'·잡힌 옵션 줄·현재 알약 ' · 옵션' 표시를 더해
   // 인라인 스크립트가 바뀌었다(반박 검토 반영 포함). 이전 값 b6f74a7cf4a262b80453d38783bdab2b8531af0ba1fc310ae1234a49823e60bd.
   // vercel.json CSP 해시도 같이 바뀐다. 3차 수정(D2 예외: 관리자 안내 문구 분기 — 광고주 화면에는 안 보임)으로
@@ -38,7 +40,10 @@ const privateBaseline = Object.freeze({
   // 편집창·대기값 처리 함수와 광고주 연결 함수, 목록 받음 신호·저장 뒤 다시 읽기가 더해져 바뀌었다(관리자 전용 표시는 그대로
   // 없음 — naver-rank-option-group-ui 시험 U24~U28). 10차 값
   // 1cc55d924d6de40ae7fccf4980fbc766bcec8ec0317e2dcfe0c0bebc624a4a11.
-  clientInline: ["18ca56a164927f02c7cf1413ea6867f9be0c8d38c65b77a851af7d41bdad3a94"],
+  // 2026-11-13 네이버 답변(데이터랩은 광고주·체험 계정 제공 불가, 대표 승인): 광고주 화면에서 데이터랩 블록·검색어 트렌드를
+  // 걷어 내고 키워드 조회·홈 지표를 검색광고 기준으로 바꿔 인라인 스크립트가 바뀌었다(client-datalab-hidden-ui 시험).
+  // 이전 값 18ca56a164927f02c7cf1413ea6867f9be0c8d38c65b77a851af7d41bdad3a94.
+  clientInline: ["e4f2a9cc1dc3bfc17d69c77ea9f7759eb1a2531f28b762b84ec8942bd405b722"],
   clientRelatedView: "5091beda36875524aab52f97eeac425fe7bc60530eb84b572983974e31f89822",
 });
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");

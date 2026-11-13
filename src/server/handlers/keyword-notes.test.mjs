@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanSnapshots, handleKeywordNotesRequest } from "./keyword-notes.mjs";
+import { cleanSnapshots, handleKeywordNotesRequest, stripNoteDatalab } from "./keyword-notes.mjs";
 
 // 2026-09-27 통합 점검: 연달아 저장하면 같은 노트가 2개 생기고, 없는 노트를 지워도 '성공'이라고 답했다.
 
@@ -43,10 +43,10 @@ function fakeDb() {
   return { rows, ctx: { supabaseAdmin: { from: query } } };
 }
 
-function request(method, body, query = "") {
+function request(method, body, query = "", role = "client") {
   return new Request(`https://example.com/api/client/keyword-notes${query}`, {
     method,
-    headers: { "content-type": "application/json", "x-mi-session-role": "client", "x-mi-agency-code": "test-account" },
+    headers: { "content-type": "application/json", "x-mi-session-role": role, "x-mi-agency-code": "test-account" },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -83,4 +83,34 @@ test("검색량 기록의 날짜가 날짜 형식이 아니면 저장 시각으�
   assert.ok(!Number.isNaN(new Date(item.checkedAt).getTime()));
   const [kept] = cleanSnapshots([{ keyword: "모자", checkedAt: "2026-09-27T01:02:03.000Z" }]);
   assert.equal(kept.checkedAt, "2026-09-27T01:02:03.000Z");
+});
+
+// 네이버 답변(2026-11-13): '가장 많이 찾는 달'(peakMonth)은 데이터랩 값이라 직원(총관리자·운영팀)끼리만 쓴다.
+// 노트는 광고주 코드로 묶여 운영팀이 저장한 값도 광고주 화면에 보이므로, 광고주·체험 응답(목록·저장·중복)에서 지운다.
+test("광고주·체험 세션에는 노트의 '가장 많이 찾는 달'을 보내지 않고, 새로 저장하지도 않는다. 직원 세션은 그대로 본다", async () => {
+  const { rows, ctx } = fakeDb();
+  const snapshots = [{ keyword: "원두", volume: 6300, peakMonth: "12월", checkedAt: "2026-11-01T00:00:00.000Z" }];
+  const staffSaved = await (await handleKeywordNotesRequest(request("POST", { title: "직원 조사", keywords: ["원두"], snapshots }, "", "team"), ctx)).json();
+  assert.equal(staffSaved.item.snapshots[0].peakMonth, "12월", "직원 응답은 그대로");
+  assert.equal(rows[0].snapshots[0].peakMonth, "12월", "직원이 저장한 값은 남는다(직원끼리 쓰는 값)");
+
+  const clientList = await (await handleKeywordNotesRequest(request("GET"), ctx)).json();
+  assert.equal(clientList.items.length, 1);
+  assert.equal(clientList.items[0].snapshots[0].peakMonth, "", "광고주 목록에는 직원이 저장한 피크 달도 없다");
+  assert.equal(clientList.items[0].snapshots[0].volume, 6300, "검색광고 월 검색수는 그대로");
+  const ownerList = await (await handleKeywordNotesRequest(request("GET", null, "", "owner"), ctx)).json();
+  assert.equal(ownerList.items[0].snapshots[0].peakMonth, "12월", "총관리자 목록은 그대로");
+
+  const duplicate = await (await handleKeywordNotesRequest(request("POST", { title: "직원 조사", keywords: ["원두"], snapshots }), ctx)).json();
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.item.snapshots[0].peakMonth, "", "중복 저장 응답에서도 지운다");
+
+  const clientSaved = await (await handleKeywordNotesRequest(request("POST", { title: "광고주 조사", keywords: ["담요"], snapshots: [{ keyword: "담요", volume: 900, peakMonth: "1월" }] }), ctx)).json();
+  assert.equal(clientSaved.item.snapshots[0].peakMonth, "");
+  assert.equal(rows.find((row) => row.title === "광고주 조사").snapshots[0].peakMonth, "", "광고주가 보낸 피크 달은 저장하지 않는다");
+});
+
+test("stripNoteDatalab 은 snapshots 가 없거나 이상한 노트도 깨지지 않게 둔다", () => {
+  assert.deepEqual(stripNoteDatalab({ id: "a", snapshots: null }).snapshots, null);
+  assert.deepEqual(stripNoteDatalab({ id: "b", snapshots: [null, { keyword: "x", peakMonth: "3월" }] }).snapshots, [null, { keyword: "x", peakMonth: "" }]);
 });

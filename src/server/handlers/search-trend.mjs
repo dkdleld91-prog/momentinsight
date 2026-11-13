@@ -7,6 +7,7 @@
 import crypto from "node:crypto";
 
 import { hasNaverMigratedApiConfig, naverApiProviderConfig, naverDatalabRequest } from "../naver-api-hub.mjs";
+import { datalabAllowedForRequest } from "../datalab-access.mjs";
 
 export const SEARCH_TREND_MIN_DATE = "2016-01-01";
 export const SEARCH_TREND_MAX_TOPICS = 5;
@@ -202,7 +203,11 @@ export function createSearchTrendHandler({ env = process.env, config = null, fet
     if (request.method !== "POST") return json({ ok: false, reason: "method_not_allowed", message: "POST 요청만 가능합니다." }, 405);
     if (!clean(request.headers.get("x-mi-session-role"))) return json({ ok: false, reason: "session_required", message: "로그인 후 이용할 수 있습니다." }, 401);
     if (request.headers.get("x-mi-session-scope") === "trial") {
-      return json({ ok: false, code: "TRIAL_LOCKED", reason: "trial_locked", message: "체험 계정은 키워드 조회만 열려 있습니다. 검색어 트렌드는 도입 후 이용할 수 있습니다." }, 403);
+      return json({ ok: false, code: "TRIAL_LOCKED", reason: "trial_locked", message: "체험 계정은 키워드 조회만 열려 있습니다. 검색어 트렌드는 네이버 이용 정책에 따라 회사 내부용으로만 씁니다." }, 403);
+    }
+    // 검색어 트렌드는 직원(총관리자·운영팀) 전용 — 네이버 답변(2026-11-13): 광고주 등 외부 제공 불가.
+    if (!datalabAllowedForRequest(request)) {
+      return json({ ok: false, code: "STAFF_ONLY", reason: "staff_only", message: "검색어 트렌드는 네이버 이용 정책에 따라 회사 내부용으로만 씁니다." }, 403);
     }
 
     const raw = await request.text().catch(() => "");

@@ -18,16 +18,16 @@ function load() {
 const trend = load();
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-test("두 화면에 메뉴·화면·파일이 같은 방식으로 연결되어 있다", () => {
-  for (const source of [client, admin]) {
-    assert.ok(source.includes('href="/mi-search-trend.css?v='));
-    assert.ok(source.includes('<script src="/mi-search-trend.js?v='));
-    assert.equal([...source.matchAll(/data-search-trend><\/div>/g)].length, 1);
-  }
-  assert.equal([...client.matchAll(/data-mi-screen="search-trend">검색어 트렌드<\/a>/g)].length, 2, "사이드바와 모바일 메뉴");
-  assert.ok(client.includes('data-mi-view="search-trend"'));
+test("관리자 화면에만 메뉴·화면·파일이 연결되어 있다(네이버 답변 2026-11-13: 데이터랩은 직원 내부용만)", () => {
+  assert.ok(admin.includes('href="/mi-search-trend.css?v='));
+  assert.ok(admin.includes('<script src="/mi-search-trend.js?v='));
+  assert.equal([...admin.matchAll(/data-search-trend><\/div>/g)].length, 1);
   assert.ok(admin.includes('data-mi-admin-screen="search-trend">검색어 트렌드</a>'));
   assert.ok(admin.includes('data-mi-admin-view="search-trend"'));
+  // 광고주·체험 화면(client.html)에는 메뉴·화면·파일 어느 것도 없다. 서버도 직원이 아니면 STAFF_ONLY 로 거절한다.
+  for (const marker of ["mi-search-trend.css", "mi-search-trend.js", "data-search-trend", 'data-mi-screen="search-trend"', 'data-mi-view="search-trend"']) {
+    assert.equal(client.includes(marker), false, `광고주 화면에 ${marker} 가 없어야 한다`);
+  }
 });
 
 test("체험 계정 메뉴는 숨기고 화면 글자는 textContent 로만 넣는다", () => {

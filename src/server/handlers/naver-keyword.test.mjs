@@ -6,7 +6,11 @@ import naverKeywordHandler, {
   buildSourceStatus,
   keywordMarketIndicators,
   shoppingAgeProfile,
+  stripDatalabForExternal,
 } from "./naver-keyword.mjs";
+
+// 데이터랩 동작 시험은 직원(운영팀) 세션으로 부른다 — 광고주·체험 세션은 데이터랩을 받지 않는다(2026-11-13).
+const STAFF_HEADERS = { "x-mi-session-role": "team" };
 
 function shoppingWindow(keyword, count = 100, marketTotal = count) {
   return {
@@ -172,6 +176,7 @@ async function runOfficialCategoryProbeScenario({
   try {
     const response = await naverKeywordHandler.fetch(new Request(
       `http://127.0.0.1/api/naver-keyword?${new URLSearchParams({ keyword }).toString()}`,
+      { headers: STAFF_HEADERS },
     ));
     return { response, body: await response.json(), calls };
   } finally {
@@ -520,6 +525,7 @@ test("키워드 핸들러는 Hub DataLab과 검증 쇼핑 수집기를 함께 �
   try {
     const response = await naverKeywordHandler.fetch(new Request(
       "http://127.0.0.1/api/naver-keyword?keyword=%ED%97%88%EB%B8%8C%EC%A0%84%ED%99%98%EA%B2%80%EC%A6%9D&profile=trend",
+      { headers: STAFF_HEADERS },
     ));
     const body = await response.json();
 
@@ -651,6 +657,7 @@ test("쇼핑 표본의 대분류 ID로 연령 API를 호출하고 기존 연령 
   try {
     const response = await naverKeywordHandler.fetch(new Request(
       "http://127.0.0.1/api/naver-keyword?keyword=%EC%97%B0%EB%A0%B9%EA%B7%B8%EB%9E%98%ED%94%84%EA%B2%80%EC%A6%9D",
+      { headers: STAFF_HEADERS },
     ));
     const body = await response.json();
     const ageCall = calls.find((call) => call.href.endsWith("/shopping/v1/category/keyword/age"));
@@ -758,6 +765,7 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
   try {
     const response = await naverKeywordHandler.fetch(new Request(
       "http://127.0.0.1/api/naver-keyword?keyword=%ED%97%88%EB%B8%8C%EC%9D%BC%EC%8B%9C%EB%B3%B5%EA%B5%AC%EA%B2%80%EC%A6%9D&profile=trend",
+      { headers: STAFF_HEADERS },
     ));
     const body = await response.json();
 
@@ -829,6 +837,7 @@ test("쇼핑 수집원이 없으면 종료 API로 우회하지 않고 지원 API
   try {
     const response = await naverKeywordHandler.fetch(new Request(
       "http://127.0.0.1/api/naver-keyword?keyword=%EC%88%98%EC%A7%91%EC%9B%90%EB%AF%B8%EC%97%B0%EA%B2%B0%EA%B2%80%EC%A6%9D&profile=trend",
+      { headers: STAFF_HEADERS },
     ));
     const body = await response.json();
 

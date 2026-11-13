@@ -870,10 +870,12 @@ const checks = {
   homeAnonymousFeatureShowcase: homeFeatureShowcaseSource.includes('data-mi-showcase-privacy="synthetic-only"')
     && homeFeatureShowcaseSource.includes("예시 데이터")
     && homeFeatureShowcaseSource.includes("실고객 정보 미사용")
-    && homeFeatureShowcaseSource.includes("예시 키워드 B")
+    && homeFeatureShowcaseSource.includes("예시 키워드 5개")
     && homeFeatureShowcaseSource.includes("예시 상품 A")
     && homeFeatureShowcaseSource.includes("네이버·쿠팡 시장 뉴스")
-    && homeFeatureShowcaseSource.includes("누가 · 언제 · 얼마나 검색하나")
+    // 2026-11-13 네이버 답변: 데이터랩(시즌·연령 등)은 광고주에게 제공하지 않으므로 홈 카드도 검색광고 기준으로 소개한다.
+    && homeFeatureShowcaseSource.includes("얼마나 검색하고, 광고비는 얼마인가")
+    && !/데이터랩|쇼핑인사이트/u.test(homeFeatureShowcaseSource)
     && homeFeatureShowcaseSource.includes("N 30일 순위")
     && homeFeatureShowcaseSource.includes("기능 설명을 위한 예시 데이터입니다.")
     && (homeFeatureShowcaseSource.match(/class="mi-hp-card"/g) || []).length === 3

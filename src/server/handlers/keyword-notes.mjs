@@ -4,6 +4,7 @@
 // 순위 수집·추적과 무관한 독립 표. 서비스 롤로만 접근한다.
 import { withSupabase } from "@supabase/server";
 import { resolveScope } from "./home-feed.mjs";
+import { datalabAllowedForRole } from "../datalab-access.mjs";
 
 const TABLE = "keyword_research_notes";
 const MAX_NOTES = 50;
@@ -46,9 +47,22 @@ export function cleanSnapshots(list) {
   }));
 }
 
+// '가장 많이 찾는 달'(peakMonth)은 데이터랩 월별 비율에서 고른 값이다. 직원이 아닌 세션(광고주·체험)에는
+// 저장하지도 보내지도 않는다(네이버 답변 2026-11-13). 노트는 광고주 코드로 묶여 운영팀이 그 광고주로 저장한
+// 값도 광고주 화면에 보이므로, 저장할 때뿐 아니라 목록·저장·중복 저장 응답에서도 지운다.
+export function stripNoteDatalab(note) {
+  if (!note || typeof note !== "object") return note;
+  const snapshots = Array.isArray(note.snapshots)
+    ? note.snapshots.map((item) => (item && typeof item === "object" ? { ...item, peakMonth: "" } : item))
+    : note.snapshots;
+  return { ...note, snapshots };
+}
+
 export async function handleKeywordNotesRequest(request, ctx) {
   const scope = resolveScope(request);
   if (!scope.ok || !scope.accountCode) return json({ ok: false, message: "세션 역할을 확인할 수 없습니다." }, 401);
+  const staff = datalabAllowedForRole(scope.role);
+  const outward = (note) => (staff ? note : stripNoteDatalab(note));
   const db = ctx.supabaseAdmin;
   try {
     if (request.method === "GET") {
@@ -59,7 +73,7 @@ export async function handleKeywordNotesRequest(request, ctx) {
         .order("created_at", { ascending: false })
         .limit(MAX_NOTES);
       if (error) throw error;
-      return json({ ok: true, items: data || [] });
+      return json({ ok: true, items: (data || []).map(outward) });
     }
     if (request.method === "POST") {
       const body = await request.json().catch(() => ({}));
@@ -69,7 +83,7 @@ export async function handleKeywordNotesRequest(request, ctx) {
         agency_code: scope.accountCode,
         title: String(body?.title || keywords.join(" · ")).trim().slice(0, 80) || keywords.join(" · "),
         keywords,
-        snapshots: cleanSnapshots(body?.snapshots),
+        snapshots: staff ? cleanSnapshots(body?.snapshots) : cleanSnapshots(body?.snapshots).map((item) => ({ ...item, peakMonth: "" })),
         created_by_role: scope.role,
       };
       const since = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString();
@@ -82,10 +96,10 @@ export async function handleKeywordNotesRequest(request, ctx) {
         .limit(5);
       if (recentError) throw recentError;
       const same = (recent || []).find((item) => JSON.stringify(item.keywords || []) === JSON.stringify(keywords));
-      if (same) return json({ ok: true, item: same, duplicate: true });
+      if (same) return json({ ok: true, item: outward(same), duplicate: true });
       const { data, error } = await db.from(TABLE).insert(row).select("id, title, keywords, snapshots, created_at").single();
       if (error) throw error;
-      return json({ ok: true, item: data });
+      return json({ ok: true, item: outward(data) });
     }
     if (request.method === "DELETE") {
       const id = String(new URL(request.url).searchParams.get("id") || "").trim();

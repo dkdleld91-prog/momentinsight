@@ -157,7 +157,8 @@ test("순위 페이지는 '순위 확인'이 아니라 '순위 추적·30일 변
 test("두 페이지 모두 첫 화면 바로 아래에 '이럴 때 씁니다' 3가지와 가짜 데이터 예시 숫자 1개", () => {
   const expected = {
     "naver-shopping-rank-tracking": ["광고비를 쓰기 전에", "바꾼 뒤 순위로 효과 확인", "광고주에게 기록으로 보고", "23위 → 9위"],
-    "naver-keyword-search-volume": ["상품 등록 전에 키워드 고르기", "시즌 전에 광고 준비", "광고비 예산 잡기", "5월 최다 → 4월 준비"],
+    // 2026-11-13 네이버 답변: 시즌(데이터랩)은 광고주에게 제공하지 않으므로 '시즌 전에 광고 준비' 대신 검색광고 모바일 비중 카드.
+    "naver-keyword-search-volume": ["상품 등록 전에 키워드 고르기", "모바일 먼저인지 확인", "광고비 예산 잡기", "모바일 82% → 모바일 상세 먼저"],
   };
   for (const page of pages) {
     const start = page.html.indexOf('id="mi-guide-use"');
@@ -169,6 +170,13 @@ test("두 페이지 모두 첫 화면 바로 아래에 '이럴 때 씁니다' 3�
     assert.match(block, /<p class="mi-example"><span>예시 숫자 · 가짜 데이터<\/span><strong>[^<]+<\/strong><\/p>/u, page.slug);
     for (const phrase of expected[page.slug]) assert.ok(block.includes(phrase), `${page.slug}: ${phrase}`);
   }
+});
+
+test("키워드 안내는 광고주가 받지 못하는 데이터랩 기능(추이·시즌·연령·요일)을 소개하지 않는다(네이버 답변 2026-11-13)", () => {
+  const page = pages.find((entry) => entry.slug === "naver-keyword-search-volume");
+  const withoutPolicyNote = page.html.replace(/검색 추이·시기별 검색 비율·연령 같은 네이버 데이터랩 정보는 네이버 이용 정책에 따라 제공하지 않습니다\./u, "");
+  assert.doesNotMatch(withoutPolicyNote, /데이터랩|쇼핑인사이트|12개월 추이|시즌|요일|연령|성별/u);
+  for (const other of pages) assert.doesNotMatch(other.html, /월 검색수·시즌·연령/u, other.slug);
 });
 
 test("순위 기능 카드는 4개, '몇 페이지 몇 번째'·'가격비교(원부)'는 자주 묻는 질문으로", () => {

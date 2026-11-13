@@ -23,7 +23,8 @@ const validBody = {
   ages: ["5", "4"],
 };
 
-function request(body, headers = { "x-mi-session-role": "client", "x-mi-agency-code": "abc" }, method = "POST") {
+// 검색어 트렌드는 직원(총관리자·운영팀) 전용(네이버 답변 2026-11-13) — 기본 요청은 운영팀 세션.
+function request(body, headers = { "x-mi-session-role": "team", "x-mi-team-code": "abc" }, method = "POST") {
   return new Request("https://x.test/api/client/keyword-research?mode=search-trend", {
     method,
     headers,
@@ -127,6 +128,21 @@ test("없는 구간을 0 으로 채우지 않고 잘못된 값은 버린다", ()
   assert.deepEqual(results[1], { title: "b", keywords: ["b"], data: [] });
 });
 
+test("광고주(직원이 아닌) 세션은 네이버를 부르지 않고 운영팀 전용으로 거절한다(2026-11-13 네이버 답변)", async () => {
+  let calls = 0;
+  const handler = createSearchTrendHandler({ config, now: () => NOW, fetchImpl: async () => { calls += 1; return upstreamOk(); } });
+  for (const headers of [{ "x-mi-session-role": "client", "x-mi-agency-code": "brand-a" }, { "x-mi-session-role": "advertiser" }, { "x-mi-session-role": "client", "x-mi-session-scope": "advertiser" }]) {
+    const response = await handler(request(validBody, headers));
+    assert.equal(response.status, 403, JSON.stringify(headers));
+    const body = await response.json();
+    assert.equal(body.code, "STAFF_ONLY");
+    assert.match(body.message, /회사 내부용/u);
+  }
+  const owner = await handler(request(validBody, { "x-mi-session-role": "owner" }));
+  assert.equal(owner.status, 200, "총관리자는 그대로");
+  assert.equal(calls, 1, "광고주 요청은 네이버를 한 번도 부르지 않았다");
+});
+
 test("세션이 없거나 체험 계정이면 네이버를 부르지 않는다", async () => {
   let calls = 0;
   const handler = createSearchTrendHandler({ config, now: () => NOW, fetchImpl: async () => { calls += 1; return upstreamOk(); } });
@@ -224,7 +240,7 @@ test("계정별로 과다 호출을 막고 다른 계정과 캐시 조회는 막
   assert.equal(blocked.status, 429);
   assert.equal(calls, 20);
   assert.equal((await handler(request({ ...validBody, startDate: "2026-01-01" }))).status, 200, "캐시는 막지 않는다");
-  assert.equal((await handler(request({ ...validBody, startDate: "2026-02-01" }, { "x-mi-session-role": "client", "x-mi-agency-code": "other" }))).status, 200);
+  assert.equal((await handler(request({ ...validBody, startDate: "2026-02-01" }, { "x-mi-session-role": "team", "x-mi-team-code": "other" }))).status, 200);
   current = NOW + 61 * 1000;
   assert.equal((await handler(request({ ...validBody, startDate: "2026-02-02" }))).status, 200);
 });

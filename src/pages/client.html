@@ -11,7 +11,6 @@
 <link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
 <link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v7-20260827" />
 <link rel="stylesheet" href="/mi-related-keywords.css?v=rq-v5-20261019" />
-    <link rel="stylesheet" href="/mi-search-trend.css?v=st-v2-20261109" />
 <section id="mi-clean" class="mi-client-wrap is-locked">
   <style>
     #mi-clean,
@@ -7398,7 +7397,6 @@
           <p class="mi-nav-title">키워드·SEO</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
           <a href="#mi-related-keywords" data-mi-screen="related-keywords">연관 키워드 조회</a>
-                <a href="#mi-search-trend" data-mi-screen="search-trend">검색어 트렌드</a>
         </div>
 
         <div class="mi-nav-group">
@@ -7435,7 +7433,6 @@
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
         <a href="#mi-related-keywords" data-mi-screen="related-keywords">연관 키워드 조회</a>
-                <a href="#mi-search-trend" data-mi-screen="search-trend">검색어 트렌드</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
         <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
@@ -7521,15 +7518,15 @@
               <div class="mi-home-bhead">
                 <strong>내 키워드 지표</strong>
                 <span class="mi-home-lead-note">등록한 키워드만 집계합니다</span>
-                <span class="mi-home-rt"><span class="mi-home-live"></span>매일 04:10 갱신 · 분야 트렌드·구매층 비중은 준비되면 추가</span>
+                <span class="mi-home-rt"><span class="mi-home-live"></span>매일 04:10 갱신</span>
               </div>
               <div class="mi-home-lead-note" style="margin-bottom: 12px;">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
               <div class="mi-home-scope" data-home-scope>집계 범위 — 내가 등록한 키워드를 확인하는 중입니다 · 전체 시장 통계가 아닙니다</div>
               <div class="mi-home-m3">
                 <!-- 분야 트렌드·구매층 비중 칸은 데이터가 연결될 때까지 숨긴다("다음 배포" 안내를 운영 화면에 두지 않음, 2026-09-07 검토). -->
                 <div class="mi-home-mbox" style="grid-column: 1 / -1;">
-                  <h4>검색량 증감 TOP</h4>
-                  <div class="mi-home-sub"><span class="mi-home-pill is-info">내 등록 키워드</span>검색 관심도 · 지난주 대비 · 데이터랩 상대지수</div>
+                  <h4>월 검색수 TOP</h4>
+                  <div class="mi-home-sub"><span class="mi-home-pill is-info">내 등록 키워드</span>등록 키워드 최대 20개 중 상위 6개 · 최근 30일 · 네이버 검색광고 기준</div>
                   <div data-home-volume-rows>
                     <div class="mi-home-empty-detail">지표를 불러오는 중입니다.</div>
                   </div>
@@ -7765,7 +7762,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 공식 데이터로 키워드를 조회합니다.</h1>
-              <p>얼마나 · 누가 · 언제 검색하는지, 그리고 옆 키워드까지 한 번에.</p>
+              <p>얼마나 검색하고 광고비는 얼마인지, 그리고 옆 키워드까지 한 번에.</p>
             </div>
             <span class="mi-badge">개별 조회 · 비교 최대 5개</span>
           </header>
@@ -7776,7 +7773,7 @@
             <div class="mi-card-head">
               <div>
                 <h2>키워드 조회</h2>
-                <p>네이버 공식 데이터 기준의 월 검색량, 검색 추이와 확인 가능한 검색 비율, 연관 키워드를 확인합니다.</p>
+                <p>네이버 검색광고 기준의 월 검색수·광고 지표와 연관 키워드를 확인합니다.</p>
               </div>
               <span class="mi-period">쉼표로 최대 5개</span>
             </div>
@@ -7800,22 +7797,20 @@
               <div class="mi-kw-notes-head">최근 조사</div>
               <ul class="mi-kw-notes-list" data-keyword-notes-list></ul>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드를 입력하면(쉼표로 최대 5개) 공식 데이터 기준 검색량과 검색 비율을 확인합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드를 입력하면(쉼표로 최대 5개) 검색광고 기준 월 검색수와 광고 지표를 확인합니다.</p>
           </article>
 
           <!-- 키워드 조회 6안(2026-09-06): 블록 순서 = 1 얼마나 → 2 추이 → 3 언제 → 4 누가 → 5 광고·콘텐츠 → 6 비교 → 7 연관 → 8 시즌 -->
           <!-- 조회 직후 4줄 요약(2026-09-06 피드백 1): 줄을 누르면 근거 블록으로 이동 -->
           <article class="mi-card mi-card-pad mi-kw-summary" data-keyword-summary hidden style="margin-bottom:16px;">
-            <div class="mi-kw-summary-head"><h2>핵심 4줄</h2><p>아래 블록이 근거입니다 · 줄을 누르면 이동</p></div>
+            <div class="mi-kw-summary-head"><h2>핵심 요약</h2><p>아래 블록이 근거입니다 · 줄을 누르면 이동</p></div>
             <div class="mi-kw-summary-rows">
-              <a class="mi-kw-summary-row" href="#" data-kw-jump="3"><i>언제</i><span data-keyword-summary="when">조회 후 표시</span></a>
-              <a class="mi-kw-summary-row" href="#" data-kw-jump="4"><i>누가</i><span data-keyword-summary="who">조회 후 표시</span></a>
               <a class="mi-kw-summary-row" href="#" data-kw-jump="5"><i>얼마</i><span data-keyword-summary="cost">조회 후 표시</span></a>
               <a class="mi-kw-summary-row" href="#" data-kw-jump="6"><i>대안</i><span data-keyword-summary="alt">조회 후 표시</span></a>
             </div>
           </article>
 
-          <div class="mi-kw-sec"><span class="n">1</span><div><h2>얼마나 검색하고, 얼마나 드나</h2><p>검색광고 키워드도구 · 월 검색수 · 1위 입찰가 · 한 달 예상 비용 · 광고 노출 깊이</p></div></div>
+          <div class="mi-kw-sec"><span class="n">1</span><div><h2>얼마나 검색하고, 얼마나 드나</h2><p>검색광고 키워드도구 · 월 검색수 · 1위 입찰가 · 한 달 예상 비용 · 광고 노출 깊이 · 모바일 비중</p></div></div>
           <article class="mi-card mi-keyword-market" data-keyword-market>
             <div class="mi-market-head">
               <section class="mi-market-title" aria-labelledby="mi-client-keyword-market-title">
@@ -7831,16 +7826,20 @@
                 </div>
                 <div class="mi-market-basis"><span data-keyword-market-basis>검색광고 키워드도구 · 최근 30일 · PC·모바일 합산</span><span data-keyword-market-disclaimer></span></div>
               </section>
-              <!-- 클릭수·클릭률·피크 달·노출 깊이 — 검색광고 응답과 월별 비율에서 바로 계산 -->
+              <!-- 입찰가·예상 비용·노출 깊이·모바일 비중 — 모두 검색광고 응답에서 계산(데이터랩 값은 쓰지 않음, 2026-11-13) -->
               <div class="mi-market-kpis" data-keyword-kpis hidden aria-label="클릭·시즌 요약">
                 <div class="mi-market-kpi"><span>1위 노출 입찰가</span><b data-keyword-kpi="bid1">—</b><em>모바일 · 클릭당 · 검색광고 추정치</em></div>
                 <div class="mi-market-kpi"><span>한 달 예상 비용</span><b data-keyword-kpi="cost">—</b><em data-keyword-kpi="costNote">1위 노출 기준 · 검색광고 추정치</em></div>
                 <div class="mi-market-kpi"><span>광고 노출 깊이</span><b data-keyword-kpi="depth">—</b><em>검색 결과 상단에 붙는 광고 수 · 검색광고</em></div>
-                <div class="mi-market-kpi"><span>가장 많이 찾는 달</span><b data-keyword-kpi="peakMonth">—</b><em data-keyword-kpi="peakNote">월별 검색 비율 기준</em></div>
+                <div class="mi-market-kpi"><span>모바일 검색 비중</span><b data-keyword-kpi="mobileShare">—</b><em data-keyword-kpi="mobileNote">최근 30일 · 검색광고 검색수 기준</em></div>
               </div>
             </div>
           </article>
 
+          <!-- 네이버 데이터랩(검색어 트렌드·쇼핑인사이트) 블록: 추이·월별/요일별 비율·연령·성별.
+               네이버 답변(2026-11-13): 회사 직원 내부용만 가능, 광고주·체험 계정 제공 불가. 서버도 이 값을 보내지 않는다.
+               렌더 함수와 '핵심 요약' 이동 번호(data-kw-jump = .mi-kw-sec 순서)가 참조하므로 요소는 숨겨 둔다. -->
+          <div hidden aria-hidden="true" data-keyword-datalab-hidden>
           <div class="mi-kw-sec"><span class="n">2</span><div><h2>12개월 검색량 추이</h2><p>데이터랩 지수 × 실제 검색량 환산 · 1년 / 3년 · 전년 대비</p></div></div>
 
           <article class="mi-card mi-keyword-chart">
@@ -7928,8 +7927,10 @@
               </div>
             </article>
           </div>
+          </div>
+          <p class="mi-code-status" style="margin:0 0 16px;" data-keyword-datalab-note>검색 추이·월별/요일별 검색 비율·연령·성별·시즌 캘린더는 네이버 데이터랩 정보라 네이버 이용 정책에 따라 제공하지 않습니다.</p>
 
-          <div class="mi-kw-sec"><span class="n">5</span><div><h2>광고를 건다면 얼마인가</h2><p>검색광고 입찰가·예상 실적 API · 같은 계정 키로 호출</p></div></div>
+          <div class="mi-kw-sec"><span class="n">2</span><div><h2>광고를 건다면 얼마인가</h2><p>검색광고 입찰가·예상 실적 API · 같은 계정 키로 호출</p></div></div>
           <article class="mi-card mi-card-pad" data-keyword-research-card style="margin-bottom:16px;">
             <div class="mi-kw-g2 is-bid">
               <div class="mi-kw-chart">
@@ -7953,13 +7954,13 @@
             </div>
           </article>
 
-          <div class="mi-kw-sec"><span class="n">6</span><div><h2>후보 키워드 비교</h2><p>쉼표로 나눠 입력한 키워드를 같은 기준으로 · 최대 5개</p></div></div>
+          <div class="mi-kw-sec"><span class="n">3</span><div><h2>후보 키워드 비교</h2><p>쉼표로 나눠 입력한 키워드를 같은 기준으로 · 최대 5개</p></div></div>
           <article class="mi-card mi-card-pad" data-keyword-compare-card style="margin-bottom:16px;">
             <div class="mi-compare-wrap"><table class="mi-compare" data-keyword-compare><tbody><tr><td class="mi-compare-note">조회하면 입력한 키워드를 나란히 비교합니다 · 쉼표로 최대 5개</td></tr></tbody></table></div>
-            <p class="mi-compare-note">광고 평균 클릭·광고 클릭률은 검색광고 기준(검색 클릭 아님) · 주 연령은 쇼핑인사이트 기준이라 비교용 키워드는 비어 있을 수 있음 · 3개월 추이 = 최근 3개월 합계 대 그 전 3개월</p>
+            <p class="mi-compare-note">모두 네이버 검색광고 기준 · 광고 평균 클릭·광고 클릭률은 광고 클릭(검색 클릭 아님) · 모바일 비중은 최근 30일 검색수 기준</p>
           </article>
 
-          <div class="mi-kw-sec"><span class="n">7</span><div><h2>연관 키워드</h2><p>검색광고 키워드도구 · 정렬 · CSV</p></div></div>
+          <div class="mi-kw-sec"><span class="n">4</span><div><h2>연관 키워드</h2><p>검색광고 키워드도구 · 정렬 · CSV</p></div></div>
           <article class="mi-card mi-card-pad mi-kw-related" style="margin-bottom:16px;">
             <div class="mi-related-head">
               <h3>연관 키워드 미리보기</h3>
@@ -7977,7 +7978,7 @@
             </div>
           </article>
 
-          <div class="mi-kw-sec"><span class="n">8</span><div><h2>이 키워드로 콘텐츠가 얼마나 있나</h2><p>네이버 검색 API 블로그·카페·지식iN · 글 총량과 최근 30일</p></div></div>
+          <div class="mi-kw-sec"><span class="n">5</span><div><h2>이 키워드로 콘텐츠가 얼마나 있나</h2><p>네이버 검색 API 블로그·카페·지식iN · 글 총량과 최근 30일</p></div></div>
           <article class="mi-card mi-card-pad" data-keyword-content-card style="margin-bottom:16px;">
             <div class="mi-kw-g3">
               <div class="mi-kw-chart"><h3>블로그</h3><p class="mi-kw-why">글이 많을수록 체험단 포화.</p><b class="mi-research-big" data-keyword-content="blog">—</b><p class="mi-research-note" data-keyword-content="blogNote">글 총량 · 최근 30일 발행</p></div>
@@ -7986,11 +7987,14 @@
             </div>
           </article>
 
+          <!-- 시즌 캘린더도 데이터랩 월별 비율이라 숨긴다(위와 같은 이유). -->
+          <div hidden aria-hidden="true" data-keyword-datalab-hidden>
           <div class="mi-kw-sec"><span class="n">9</span><div><h2>시즌 캘린더</h2><p>조회한 키워드의 월별 검색 비율을 한 장에 · 진할수록 검색이 몰리는 달</p></div></div>
           <article class="mi-card mi-card-pad" data-keyword-season-card style="margin-bottom:16px;">
             <div class="mi-season" data-keyword-season><p class="mi-compare-note">조회하면 키워드별 월별 검색 비율을 한 장에 보여줍니다 · 진할수록 검색이 몰리는 달</p></div>
             <p class="mi-code-status" style="margin-top:10px;" data-keyword-season-note></p>
           </article>
+          </div>
 
           <!-- 옛 '조회 결과·활용 기준' 표는 화면에서 내렸다. 렌더 함수가 참조하므로 요소만 숨겨 둔다. -->
           <div hidden aria-hidden="true">
@@ -8276,18 +8280,6 @@
           </article>
         </section>
 
-        <section class="mi-view" id="mi-search-trend" data-mi-view="search-trend" aria-label="검색어 트렌드 화면">
-          <header class="mi-screen-head">
-            <div>
-              <span class="mi-kicker">마케팅 도구</span>
-              <h1>키워드 검색 추이를 겹쳐서 비교합니다.</h1>
-              <p>어느 키워드가 언제 오르내리는지 네이버 공식 데이터로 봅니다.</p>
-            </div>
-            <span class="mi-badge">주제어 최대 5개</span>
-          </header>
-          <div data-search-trend></div>
-        </section>
-
         <section class="mi-view" id="mi-related-keywords" data-mi-view="related-keywords" aria-label="연관 키워드 화면" data-related-query>
           <header class="mi-screen-head mi-rq-head">
             <div>
@@ -8380,7 +8372,6 @@
   <script src="/mi-capture.js?v=cap-v3-20260909" defer></script>
   <script src="/mi-related-keywords-xlsx.js?v=rq-xlsx-v2-20261019"></script>
   <script src="/mi-related-keywords.js?v=rq-v6-20261019"></script>
-    <script src="/mi-search-trend.js?v=st-v2-20261109"></script>
   <script>
     (function () {
       // 옵션 확인 버튼(2.1.0)이 연 새 탭의 대기값(#mi-optfill=…)은 해시 라우터·로그인 복원보다 먼저, 동기로 받아 둔다
@@ -8684,7 +8675,7 @@
         "agency-code": { title: "대행사 연결은 도입 계정에서 합니다", lines: ["도입하면 담당자가 접속 코드를 발급합니다", "이미 코드를 받으셨다면 로그아웃 후 코드로 접속하세요"] },
         "my-calendar": { title: "내 캘린더는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정·할 일", "구글 캘린더 연동"] },
         "schedule": { title: "일정표는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정"] },
-        "news": { title: "뉴스 전체 보기·내 키워드 지표·내 순위 요약은 도입 후 열립니다", lines: ["최근 7일 플랫폼별 전체 기사(네이버·쿠팡·11번가·G마켓)", "내가 등록한 키워드와 겹치는 기사만 모아 보는 '내 키워드 뉴스'", "등록 키워드 검색량 증감·분야 트렌드·내 순위 요약"] },
+        "news": { title: "뉴스 전체 보기·내 키워드 지표·내 순위 요약은 도입 후 열립니다", lines: ["최근 7일 플랫폼별 전체 기사(네이버·쿠팡·11번가·G마켓)", "내가 등록한 키워드와 겹치는 기사만 모아 보는 '내 키워드 뉴스'", "등록 키워드 월 검색수 TOP·내 순위 요약"] },
         "quota": { title: "오늘 체험 조회 횟수를 모두 썼습니다", lines: ["체험 계정은 키워드 조회가 하루 5회입니다(자정 이후 다시 열림)", "도입하면 횟수 제한 없이 조회하고 30일 순위 추적까지 이용"] }
       };
 
@@ -10150,6 +10141,24 @@
         return node;
       }
       // 광고 클릭률 = 검색광고 키워드도구의 PC·모바일 클릭률(노출 대비, %)을 클릭수 가중으로 합친 값. 검색수 대비가 아니다.
+      // 모바일 검색 비중(검색광고 PC·모바일 월 검색수). 검색광고는 적은 값을 "< 10"으로 주므로 그 칸은 0~9 범위로 보고,
+      // 비중이 한 값으로 정해지면 "81%", 좁은 범위면 "90~99%", 넓으면 "확인 필요"로 보여 준다(Codex 검토 2026-11-13).
+      function keywordCountRange(value) {
+        var text = String(value === undefined || value === null ? "" : value).trim();
+        if (text.indexOf("<") > -1) return { min: 0, max: Math.max(0, keywordNumber(text) - 1) };
+        var count = keywordNumber(text);
+        return { min: count, max: count };
+      }
+      function keywordMobileShare(naver) {
+        var mobile = keywordCountRange(naver && naver.monthlyMobileQcCnt);
+        var pc = keywordCountRange(naver && naver.monthlyPcQcCnt);
+        if (mobile.max + pc.max <= 0) return { text: "확인 필요", pcText: "", exact: false };
+        var low = mobile.min + pc.max > 0 ? (mobile.min / (mobile.min + pc.max)) * 100 : 0;
+        var high = mobile.max + pc.min > 0 ? (mobile.max / (mobile.max + pc.min)) * 100 : 100;
+        if (Math.round(low) === Math.round(high)) return { text: keywordPercent(low, 0), pcText: keywordPercent(100 - low, 0), exact: true };
+        if (high - low <= 10) return { text: Math.round(low) + "~" + keywordPercent(high, 0), pcText: "", exact: false };
+        return { text: "확인 필요", pcText: "", exact: false };
+      }
       function keywordAdCtr(naver) {
         naver = naver || {};
         var pcClicks = keywordNumber(naver.monthlyAvePcClkCnt);
@@ -10186,8 +10195,10 @@
             if (value > peakValue) { peakValue = value; peakIndex = index; }
           });
           var peakLabel = peakIndex >= 0 ? keywordMonthLabel(monthLabels[peakIndex], peakIndex) : "";
-          setKeywordText('[data-keyword-kpi="peakMonth"]', peakLabel || "확인 필요");
-          setKeywordText('[data-keyword-kpi="peakNote"]', peakLabel ? "월별 검색 비율 " + keywordPercent(peakValue, 0) + " · 행사·광고는 한 달 앞서 준비" : "월별 검색 비율 기준");
+          // 모바일 검색 비중은 검색광고 월 검색수(PC·모바일)에서 계산한다. 피크 달(데이터랩)은 광고주 화면에 보이지 않는다.
+          var mobileShare = keywordMobileShare(naver);
+          setKeywordText('[data-keyword-kpi="mobileShare"]', mobileShare.text);
+          setKeywordText('[data-keyword-kpi="mobileNote"]', mobileShare.exact ? "PC " + mobileShare.pcText + " · 최근 30일 · 검색광고 기준" : (mobileShare.text === "확인 필요" ? "최근 30일 · 검색광고 검색수 기준" : "10 미만 기기가 있어 범위로 표시 · 검색광고 기준"));
           if (kpis) kpis.hidden = false;
 
           var monthNote = root.querySelector('[data-keyword-ratio-note="month"]');
@@ -10222,12 +10233,10 @@
             }
           }
 
-          // 핵심 4줄(피드백 1): 언제·누가는 위 결론 문장을 그대로, 얼마·대안은 입찰가·비교가 오면 채운다.
+          // 핵심 요약: 얼마·대안은 입찰가·비교가 오면 채운다. 언제·누가(데이터랩)는 광고주 화면에서 뺐다(2026-11-13).
           var summaryCard = root.querySelector("[data-keyword-summary]");
           if (summaryCard) {
             summaryCard.hidden = false;
-            setKeywordText('[data-keyword-summary="when"]', monthNote && !monthNote.hidden ? monthNote.textContent : "월별 검색 비율은 연결 후 표시됩니다");
-            setKeywordText('[data-keyword-summary="who"]', ageNote && !ageNote.hidden ? ageNote.textContent : (data.profileStatus && data.profileStatus.age === "category_required" ? "쇼핑 카테고리가 하나로 정해지지 않는 키워드라 연령 데이터가 없습니다" : "연령 데이터는 연결 후 표시됩니다"));
             setKeywordText('[data-keyword-summary="cost"]', "입찰가 불러오는 중");
             setKeywordText('[data-keyword-summary="alt"]', "후보 비교 불러오는 중");
           }
@@ -10254,8 +10263,7 @@
         var currentPeriod = now.getFullYear() + "-" + String(now.getMonth() + 1).replace(/^(\d)$/, "0$1");
         if (periods.length === series.length && String(periods[periods.length - 1] || "").indexOf(currentPeriod) === 0) series = series.slice(0, -1);
         else if (series.length >= 3 && series[series.length - 1] < series[series.length - 2] * 0.4) series = series.slice(0, -1);
-        // 히어로의 전월 대비: 완결된 달끼리 비교(시안의 "▲ 9% 전월 대비").
-        if (series.length >= 2 && series[series.length - 2] > 0) setKeywordText("[data-keyword-market-status]", keywordSigned(((series[series.length - 1] - series[series.length - 2]) / series[series.length - 2]) * 100) + " 전월 대비 · 완결 월 기준");
+        // 히어로(보이는 1번 블록)의 '전월 대비'는 데이터랩 추이에서 계산한 값이라 광고주 화면에 쓰지 않는다(2026-11-13).
         if (series.length < 24) { box.hidden = true; return; }
         var last12 = series.slice(-12);
         var prev12 = series.slice(-24, -12);
@@ -10439,7 +10447,7 @@
             ["광고 노출 깊이", keywordExportText('[data-keyword-kpi="depth"]'), "검색 결과 상단에 붙는 광고 수"]
           ],
           extra: [
-            ["가장 많이 찾는 달", keywordExportText('[data-keyword-kpi="peakMonth"]'), keywordExportText('[data-keyword-kpi="peakNote"]')],
+            ["모바일 검색 비중", keywordExportText('[data-keyword-kpi="mobileShare"]'), keywordExportText('[data-keyword-kpi="mobileNote"]')],
             ["광고 평균 클릭", keywordExportText('[data-keyword-kpi="clicks"]'), "광고 1개가 한 달에 받는 평균 클릭 · 검색 클릭 아님"],
             ["광고 클릭률", keywordExportText('[data-keyword-kpi="ctr"]'), "광고 노출 대비 클릭 비율"]
           ],
@@ -10741,6 +10749,8 @@
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/keyword-notes";
         return "http://127.0.0.1:8790/api/client/keyword-notes";
       }
+      // 조사 노트 제목 입력 안내(화면마다 다름 — 노트 공용 코드 밖에 둔다). 관리자 화면은 제목이 광고주에게도 보인다는 것을 알린다.
+      var KEYWORD_NOTE_TITLE_PROMPT = "조사 노트 제목";
       var keywordNotesState = { items: [], ready: false };
       function keywordNoteStatus(text, tone) {
         var node = root.querySelector("[data-keyword-note-status]");
@@ -10818,15 +10828,13 @@
         var items = (keywordCompareItems && keywordCompareItems.length ? keywordCompareItems : keywordDatasets) || [];
         if (!items.length) { keywordNoteStatus("먼저 조회하세요", "is-warn"); return; }
         var keywords = items.map(function (item) { return item.keyword; });
+        // 노트에는 검색광고 월 검색수만 남긴다. 피크 달(데이터랩)은 두 화면 모두 저장하지 않는다 — 노트는 광고주 코드로
+        // 묶여 운영팀이 저장한 노트도 그 광고주 화면에 보이기 때문(네이버 답변 2026-11-13, 서버도 외부 응답에서 지운다).
         var snapshots = items.map(function (item) {
           var data = item.data || {};
-          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
-          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
-          var peak = -1; var peakValue = 0;
-          month.forEach(function (value, i) { if (value > peakValue) { peakValue = value; peak = i; } });
-          return { keyword: item.keyword, volume: keywordNumber(data.volume), peakMonth: peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "", checkedAt: new Date().toISOString() };
+          return { keyword: item.keyword, volume: keywordNumber(data.volume), peakMonth: "", checkedAt: new Date().toISOString() };
         });
-        var title = window.prompt("조사 노트 제목", keywords.join(" · ").slice(0, 60));
+        var title = window.prompt(KEYWORD_NOTE_TITLE_PROMPT, keywords.join(" · ").slice(0, 60));
         if (title === null) return;
         if (button) button.disabled = true;
         keywordNoteStatus("저장 중", "");
@@ -10858,59 +10866,34 @@
       });
       window.addEventListener("mi:rank-scope-changed", refreshKeywordNotes);
 
-      // 최근 3개월 합계 vs 그 전 3개월 합계(진행 중인 달 제외) — 후보 비교 표의 "3개월 추이".
-      function keywordRecentTrend(data) {
-        var series = Array.isArray(data && data.series) ? data.series.map(keywordNumber) : [];
-        var periods = Array.isArray(data && data.seriesPeriods) ? data.seriesPeriods : [];
-        var now = new Date();
-        var currentPeriod = now.getFullYear() + "-" + String(now.getMonth() + 1).replace(/^(\d)$/, "0$1");
-        if (periods.length === series.length && String(periods[periods.length - 1] || "").indexOf(currentPeriod) === 0) series = series.slice(0, -1);
-        if (series.length < 6) return "—";
-        var recent = series.slice(-3).reduce(function (sum, value) { return sum + value; }, 0);
-        var before = series.slice(-6, -3).reduce(function (sum, value) { return sum + value; }, 0);
-        if (!(before > 0)) return "—";
-        return keywordSigned(((recent - before) / before) * 100);
-      }
       function renderKeywordCompare(items) {
         var card = root.querySelector("[data-keyword-compare-card]");
         var table = root.querySelector("[data-keyword-compare]");
         if (!card || !table) return;
         var rows = (items || []).filter(function (entry) { return entry && entry.data; });
         if (!rows.length) { card.hidden = true; return; }
-        var foot = rows.length < 2 ? '<tfoot><tr><td colspan="8" class="mi-compare-note">쉼표로 키워드를 더 입력하면 여기서 나란히 비교됩니다 · 최대 5개</td></tr></tfoot>' : "";
-        var basisNote = keywordBasisNote(rows);
-        if (basisNote) foot = '<tfoot><tr><td colspan="8" class="mi-compare-note">' + escapeHtml(basisNote) + '</td></tr></tfoot>';
-        var ageLabels = ["10대", "20대", "30대", "40대", "50대 이상"];
-        var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>광고 평균 클릭</th><th>광고 클릭률</th><th>주 연령</th><th>피크 달</th><th>3개월 추이</th><th>1위 입찰가</th></tr></thead>";
+        // 광고주 화면 비교 표는 검색광고 지표만 쓴다. 주 연령·피크 달·3개월 추이(데이터랩)는 뺐다(네이버 답변 2026-11-13).
+        var foot = rows.length < 2 ? '<tfoot><tr><td colspan="7" class="mi-compare-note">쉼표로 키워드를 더 입력하면 여기서 나란히 비교됩니다 · 최대 5개</td></tr></tfoot>' : "";
+        var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>모바일 비중</th><th>광고 평균 클릭</th><th>광고 클릭률</th><th>경쟁 정도</th><th>1위 입찰가</th></tr></thead>";
         var altParts = [];
-        var body = rows.map(function (entry, index) {
+        var body = rows.map(function (entry) {
           var data = entry.data || {};
           var naver = data.naver || {};
           var clicks = keywordNumber(naver.monthlyAvePcClkCnt) + keywordNumber(naver.monthlyAveMobileClkCnt);
           var volume = keywordNumber(data.volume);
           var ctr = keywordAdCtr(naver);
-          var age = Array.isArray(data.age) ? data.age.map(keywordNumber) : [];
-          var topAge = -1; var topAgeValue = 0;
-          age.slice(0, 5).forEach(function (value, index) { if (value > topAgeValue) { topAgeValue = value; topAge = index; } });
-          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
-          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
-          var peak = -1; var peakValue = 0;
-          month.forEach(function (value, index) { if (value > peakValue) { peakValue = value; peak = index; } });
-          return "<tr><td>" + escapeHtml(entry.keyword) + "</td><td>" + escapeHtml(volume ? formatNumber(volume) : (data.volumeLabel || "확인 필요")) + "</td><td>" + escapeHtml(clicks ? formatNumber(Math.round(clicks)) : "—") +
-            "</td><td>" + escapeHtml(ctr ? keywordPercent(ctr, 1) : "—") + "</td><td>" + escapeHtml(topAge >= 0 ? ageLabels[topAge] : "—") + "</td><td>" + escapeHtml(peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "—") +
-            "</td><td>" + escapeHtml(keywordRecentTrend(data)) + "</td><td>" + escapeHtml(keywordWon(entry.research && entry.research.ads && entry.research.ads.bids && entry.research.ads.bids.ok ? entry.research.ads.bids.bids[1] : null)) + "</td></tr>";
+          var mobileShare = keywordMobileShare(naver).text;
+          var comp = displayCompetitionLabel(data.comp);
+          return "<tr><td>" + escapeHtml(entry.keyword) + "</td><td>" + escapeHtml(volume ? formatNumber(volume) : (data.volumeLabel || "확인 필요")) + "</td><td>" + escapeHtml(mobileShare === "확인 필요" ? "—" : mobileShare) +
+            "</td><td>" + escapeHtml(clicks ? formatNumber(Math.round(clicks)) : "—") + "</td><td>" + escapeHtml(ctr ? keywordPercent(ctr, 1) : "—") + "</td><td>" + escapeHtml(comp && comp !== "확인 필요" ? comp : "—") +
+            "</td><td>" + escapeHtml(keywordWon(entry.research && entry.research.ads && entry.research.ads.bids && entry.research.ads.bids.ok ? entry.research.ads.bids.bids[1] : null)) + "</td></tr>";
         }).join("");
         rows.forEach(function (entry, index) {
           if (index === 0) return;
-          var data = entry.data || {};
-          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
-          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
-          var peak = -1; var peakValue = 0;
-          month.forEach(function (value, i) { if (value > peakValue) { peakValue = value; peak = i; } });
-          var volume = keywordNumber(data.volume);
-          altParts.push(entry.keyword + "(" + (volume ? formatNumber(volume) : "—") + (peak >= 0 ? " · " + keywordMonthLabel(labels[peak], peak) + " 피크" : "") + ")");
+          var volume = keywordNumber((entry.data || {}).volume);
+          altParts.push(entry.keyword + "(월 " + (volume ? formatNumber(volume) : "—") + ")");
         });
-        setKeywordText('[data-keyword-summary="alt"]', altParts.length ? altParts.join(" · ") + " → 시즌이 다른 후보는 세트·순차 행사 후보" : "쉼표로 후보를 더 입력하면 대안을 제안합니다");
+        setKeywordText('[data-keyword-summary="alt"]', altParts.length ? altParts.join(" · ") + " → 검색수·입찰가를 비교해 대안 후보로" : "쉼표로 후보를 더 입력하면 대안을 제안합니다");
         table.innerHTML = head + "<tbody>" + body + "</tbody>" + foot;
         card.hidden = false;
       }
@@ -11065,10 +11048,11 @@
           renderKeywordCompare(all());
           renderKeywordSeason(all());
         };
-        // 비교 키워드는 연령이 비어 있으면 전체 프로필로 다시 받는다(피드백 3). 키워드당 호출 +1.
+        // 조회 흐름에 없던 비교 키워드만 새로 받는다. 예전에는 연령(데이터랩)을 채우려고 이미 받은 키워드도
+        // 전체 프로필로 다시 불렀지만, 광고주 화면은 연령을 쓰지 않으므로(2026-11-13) 다시 부르지 않는다.
         var profileJobs = keywords.map(function (keyword) {
           var entry = known[keyword];
-          if (entry && entry.data && hasRatioValues(entry.data.age || [])) return Promise.resolve();
+          if (entry && entry.data) return Promise.resolve();
           // 체험 계정은 비교 키워드의 전체 프로필 재조회를 건너뛴다(한도 1회 = 첫 키워드 전체 조회 1건).
           if (secureClientSession.trial === true) return Promise.resolve();
           return fetchKeywordData(keyword, "full").then(function (payload) {
@@ -18775,13 +18759,9 @@
             var quotaNote = quotaFailed.length ? quotaFailed[0].quotaMessage + " 한도에 걸린 비교 키워드(" + quotaFailed.map(function (item) { return item.keyword; }).join(", ") + ")는 빼고 표시합니다. " : "";
             var report = function (text, tone) { setStatus(keywordStatus, quotaNote + text, quotaNote ? "is-warn" : tone); };
             var failed = shownItems.filter(function (item) { return !item.ok; });
-            var pendingTrend = shownItems.filter(function (item) { return item.data.trendStatus !== "확인됨"; });
             var missingVolume = shownItems.filter(function (item) { return !hasSearchVolume(item.data); });
             var primaryProfile = items[0] && items[0].data ? items[0].data : {};
             var primaryMessage = primaryProfile.userMessage || "";
-            var hasDeviceProfile = primaryProfile.device && (Number(primaryProfile.device.mobile || 0) > 0 || Number(primaryProfile.device.pc || 0) > 0);
-            var hasGenderProfile = primaryProfile.gender && (Number(primaryProfile.gender.female || 0) > 0 || Number(primaryProfile.gender.male || 0) > 0);
-            var missingProfile = !hasRatioValues(primaryProfile.month || []) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []) || !hasDeviceProfile || !hasGenderProfile;
             var compareShown = shownItems.length - 1;
             if (failed.length) {
               report("해당 키워드는 검색량 확인이 필요합니다. 확인된 수치만 표시합니다.", "is-warn");
@@ -18789,12 +18769,9 @@
               report("조회 완료: 해당 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
             } else if (primaryMessage.indexOf("한도") > -1) {
               report(primaryMessage, "is-warn");
-            } else if (pendingTrend.length) {
-              report("조회 완료: 월 검색량은 확인됐고, 비율 데이터는 연결 후 표시됩니다.", "is-ok");
-            } else if (missingProfile) {
-              report("조회 완료: 일부 검색 비율 데이터는 연결 후 표시됩니다.", "is-warn");
             } else {
-              report(compareShown > 0 ? "조회 완료: 첫 키워드는 전체 지표, 나머지 " + compareShown + "개는 비교 표·시즌 캘린더에 표시합니다." : "조회 완료: 월 검색량과 검색 비율을 표시합니다.", "is-ok");
+              // 검색 추이·비율(데이터랩)은 광고주 화면에서 제공하지 않으므로(2026-11-13) 그 상태는 따지지 않는다.
+              report(compareShown > 0 ? "조회 완료: 첫 키워드는 전체 지표, 나머지 " + compareShown + "개는 비교 표에 표시합니다." : "조회 완료: 월 검색수와 광고 지표를 표시합니다.", "is-ok");
             }
           } catch (error) {
             if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
@@ -19852,28 +19829,32 @@
         });
       }
 
+      // 광고주·체험 홈은 검색광고 월 검색수만 보여 준다. 지난주 대비 증감률은 데이터랩 값이라
+      // 네이버 이용 정책(2026-11-13 답변: 회사 내부용만)에 따라 서버가 보내지 않고, 화면도 쓰지 않는다.
       function renderHomeVolumeRows(container, metrics) {
         if (!container) return;
-        if (!metrics || metrics.ok === false || !(metrics.volumeChange || []).length) {
-          homeReplace(container, homeNode("div", "mi-home-empty-detail", "비교 기준을 쌓는 중입니다. 완결된 두 주가 모이면 증감이 표시됩니다."));
+        var rows = metrics && metrics.ok !== false ? (metrics.volumeChange || []).filter(function (row) {
+          return row && row.monthlyVolume !== null && row.monthlyVolume !== undefined && Number.isFinite(Number(row.monthlyVolume));
+        }) : [];
+        if (!rows.length) {
+          homeReplace(container, homeNode("div", "mi-home-empty-detail", "등록한 키워드의 월 검색수가 아직 없습니다."));
           return;
         }
-        var rows = metrics.volumeChange;
-        var widest = rows.reduce(function (max, row) {
-          return Math.max(max, Math.abs(Number(row.changePct || 0)));
-        }, 0) || 1;
+        rows = rows.slice().sort(function (a, b) { return Number(b.monthlyVolume) - Number(a.monthlyVolume); });
+        var widest = Number(rows[0].monthlyVolume) || 1;
         container.textContent = "";
         rows.forEach(function (row) {
-          var pct = Number(row.changePct || 0);
-          var line = homeNode("div", "mi-home-vrow " + (pct < 0 ? "is-down" : "is-up"));
+          var volume = Number(row.monthlyVolume);
+          var line = homeNode("div", "mi-home-vrow");
           line.appendChild(homeNode("span", "mi-home-kw", row.keyword));
           var bar = homeNode("span", "mi-home-bar");
           var fill = document.createElement("i");
-          fill.style.width = Math.round((Math.abs(pct) / widest) * 100) + "%";
+          fill.style.width = Math.round((volume / widest) * 100) + "%";
           bar.appendChild(fill);
           line.appendChild(bar);
-          line.appendChild(homeNode("span", "mi-home-pc", row.changePct === null ? "-" : (pct < 0 ? "▼" : "▲") + Math.abs(pct) + "%"));
-          line.appendChild(homeNode("span", "mi-home-vol", row.monthlyVolume === null ? "조회 필요" : Number(row.monthlyVolume).toLocaleString("ko-KR")));
+          // PC·모바일 중 "10 미만"이 섞이면 합계는 아래 한계다 → "1,230+", 둘 다 10 미만이면 "20 미만".
+          var volumeText = row.volumeLowerBound ? (volume > 0 ? volume.toLocaleString("ko-KR") + "+" : "20 미만") : volume.toLocaleString("ko-KR");
+          line.appendChild(homeNode("span", "mi-home-vol", volumeText));
           container.appendChild(line);
         });
       }
@@ -20051,7 +20032,8 @@
         var requestSession = captureClientSession();
         if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
         try {
-          var response = await miFetch(getHomeFeedApiUrl(), { method: "GET", cache: "no-store" });
+          // view=client: 운영팀·총관리자가 이 화면을 미리 볼 때도 광고주와 같은 응답(데이터랩 증감률 없음)을 받는다.
+          var response = await miFetch(getHomeFeedApiUrl() + "?view=client", { method: "GET", cache: "no-store" });
           var text = await response.text().catch(function () { return ""; });
           var payload = null;
           try {

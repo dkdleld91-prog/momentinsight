@@ -38,7 +38,9 @@ test("the lookup keeps every resolved item, judges data status without the refus
   const runBody = functionBody("runKeywordLookup");
   assert.match(runBody, /keywordLookupItems = items;\s*keywordDatasets = items;/u);
   assert.match(runBody, /var shownItems = items\.filter\(function \(item\) \{ return !item\.quotaMessage; \}\);/u);
-  for (const name of ["failed", "pendingTrend", "missingVolume"]) {
+  // pendingTrend(데이터랩 추이 대기)는 광고주 화면이 데이터랩을 쓰지 않게 되어 뺐다(네이버 답변 2026-11-13).
+  assert.doesNotMatch(runBody, /pendingTrend|missingProfile/u);
+  for (const name of ["failed", "missingVolume"]) {
     assert.match(runBody, new RegExp(`var ${name} = shownItems\\.filter`, "u"), `${name} 는 한도로 빠진 키워드를 빼고 판단한다`);
   }
   assert.match(runBody, /var report = function \(text, tone\) \{ setStatus\(keywordStatus, quotaNote \+ text, quotaNote \? "is-warn" : tone\); \};/u, "비교 한도 안내와 첫 키워드 데이터 상태를 함께 보여 준다");
@@ -53,7 +55,9 @@ test("only trial sessions reuse the lookup's compare items (with the lookup's ow
   assert.match(compareBody, /trialLookup \? keywordLookupItems\.slice\(1\)/u, "체험은 조회 때 확정한 키워드 목록을 쓴다(입력이 바뀌어도)");
   assert.match(compareBody, /if \(trialLookup\) \{\s*keywordLookupItems\.forEach\(function \(entry\) \{[\s\S]*?if \(entry && entry\.ok !== false && entry\.keyword && entry\.data && !known\[entry\.keyword\]\) known\[entry\.keyword\] = entry;/u,
     "한도로 거절된 항목(ok:false)은 빼고, 이미 아는 키워드는 덮어쓰지 않는다");
-  assert.match(functionBody("renderKeywordCompare"), /var basisNote = keywordBasisNote\(rows\);/u, "비교 표에 실제 기간 기준 안내");
+  // 비교 표는 피크 달(데이터랩) 열을 뺐으므로 기간 기준 안내도 없다. 시즌 캘린더(숨김)는 그대로 둔다.
+  const compareCode = functionBody("renderKeywordCompare").split("\n").filter((line) => !line.trim().startsWith("//")).join("\n");
+  assert.doesNotMatch(compareCode, /keywordBasisNote|피크 달|주 연령|3개월 추이|data\.(?:age|month|series)\b/u, "비교 표에 데이터랩 열·값·안내 없음(주석 제외)");
   assert.match(functionBody("renderKeywordSeason"), /keywordBasisNote\(items\)/u, "시즌 캘린더에 실제 기간 기준 안내");
   assert.match(functionBody("resetKeywordCompare"), /keywordLookupItems = \[\];/u, "로그아웃 때 앞 사람의 조회 결과를 비운다");
   assert.match(html, /var keywordLookupItems = \[\];/u);

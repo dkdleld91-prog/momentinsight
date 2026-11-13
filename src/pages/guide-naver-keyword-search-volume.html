@@ -4,8 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="theme-color" content="#061a3a" />
-<title>네이버 키워드 검색량 조회 · 월 검색수·시즌·연령 확인 | 모먼트 인사이트</title>
-<meta name="description" content="네이버 검색광고 키워드도구·데이터랩·쇼핑인사이트 공식 데이터로 키워드의 월 검색수, 12개월 추이, 검색이 몰리는 달과 요일, 연령·성별, 광고 입찰가를 한 화면에서 봅니다. 구글로 가입하면 하루 5회 무료." />
+<title>네이버 키워드 검색량 조회 · 월 검색수·광고비 확인 | 모먼트 인사이트</title>
+<meta name="description" content="네이버 검색광고 키워드도구 공식 데이터로 키워드의 월 검색수와 모바일 비중, 광고 입찰가와 한 달 예상 비용, 연관 키워드를 한 화면에서 봅니다. 구글로 가입하면 하루 5회 무료." />
 <meta name="robots" content="index, follow" />
 <meta name="author" content="모먼트 인사이트" />
 <link rel="canonical" href="https://insight.momentlabs.co.kr/guide/naver-keyword-search-volume" />
@@ -14,7 +14,7 @@
 <meta property="og:site_name" content="모먼트 인사이트" />
 <meta property="og:locale" content="ko_KR" />
 <meta property="og:title" content="네이버 키워드 검색량 조회 | 모먼트 인사이트" />
-<meta property="og:description" content="네이버 공식 데이터로 월 검색수·12개월 추이·시즌·연령·광고 입찰가를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
+<meta property="og:description" content="네이버 검색광고 공식 데이터로 월 검색수·광고 입찰가·예상 비용·연관 키워드를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
 <meta property="og:url" content="https://insight.momentlabs.co.kr/guide/naver-keyword-search-volume" />
 <meta property="og:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
 <meta property="og:image:width" content="1200" />
@@ -23,7 +23,7 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
 <meta name="twitter:title" content="네이버 키워드 검색량 조회 | 모먼트 인사이트" />
-<meta name="twitter:description" content="네이버 공식 데이터로 월 검색수·12개월 추이·시즌·연령·광고 입찰가를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
+<meta name="twitter:description" content="네이버 검색광고 공식 데이터로 월 검색수·광고 입찰가·예상 비용·연관 키워드를 한 화면에서. 구글로 가입하면 하루 5회 무료." />
 <link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
 <link rel="stylesheet" href="/mi-guide.css?v=guide-v2-20261030" />
 </head>
@@ -62,8 +62,8 @@
         <span class="mi-kicker">사용 안내 · 네이버 키워드 조회</span>
         <h1 id="mi-guide-title"><span class="mi-nb">네이버 키워드 검색량,</span> <span class="mi-nb">공식 데이터로 한 번에</span></h1>
         <p class="mi-lead">
-          이 키워드를 한 달에 얼마나 찾는지, 언제 몰리는지, 누가 찾는지, 광고를 걸면 얼마인지.
-          네이버 검색광고·데이터랩·쇼핑인사이트의 공식 데이터를 모아 한 화면에서 보여 줍니다.
+          이 키워드를 한 달에 얼마나 찾는지, 광고를 걸면 얼마인지, 함께 볼 키워드는 무엇인지.
+          네이버 검색광고의 공식 데이터를 모아 한 화면에서 보여 줍니다.
         </p>
         <div class="mi-inline-actions">
           <a class="mi-button primary" href="/client?signup=1">무료 체험 가입 · 구글로 시작</a>
@@ -73,7 +73,7 @@
         </div>
         <aside class="mi-glance" aria-label="키워드 조회 핵심 사실">
           <span class="mi-glance-head">한눈에 보기</span>
-          <div class="mi-glance-row"><strong>공식</strong><span>네이버 검색광고 · 데이터랩 · 쇼핑인사이트 데이터</span></div>
+          <div class="mi-glance-row"><strong>공식</strong><span>네이버 검색광고 · 검색 API 데이터</span></div>
           <div class="mi-glance-row"><strong>최대 5개</strong><span>쉼표로 나눠 같은 기준으로 비교</span></div>
           <div class="mi-glance-row"><strong>하루 5회</strong><span>구글로 가입하면 무료</span></div>
         </aside>
@@ -93,10 +93,10 @@
             <p>후보 키워드를 쉼표로 나눠 넣고 월 검색수를 나란히 비교해, 상품명에 쓸 키워드를 고릅니다.</p>
           </article>
           <article class="mi-card">
-            <span class="mi-fact-tag">시즌 전</span>
-            <h3>시즌 전에 광고 준비</h3>
-            <p>검색이 가장 몰리는 달을 보고, 한 달 앞서 행사와 광고를 준비합니다.</p>
-            <p class="mi-example"><span>예시 숫자 · 가짜 데이터</span><strong>5월 최다 → 4월 준비</strong></p>
+            <span class="mi-fact-tag">기기</span>
+            <h3>모바일 먼저인지 확인</h3>
+            <p>PC와 모바일 검색수 비중을 보고, 상세페이지와 광고 소재를 어느 화면에 먼저 맞출지 정합니다.</p>
+            <p class="mi-example"><span>예시 숫자 · 가짜 데이터</span><strong>모바일 82% → 모바일 상세 먼저</strong></p>
           </article>
           <article class="mi-card">
             <span class="mi-fact-tag">예산</span>
@@ -111,29 +111,14 @@
       <div class="mi-shell">
         <div class="mi-section-head">
           <span class="mi-kicker">무엇을 확인할 수 있나요</span>
-          <h2 id="mi-guide-what-title">얼마나 · 언제 · 누가 검색하는지, 광고비까지</h2>
+          <h2 id="mi-guide-what-title">얼마나 검색하는지, 광고비와 함께 볼 키워드까지</h2>
           <p>키워드를 입력하면 아래 내용을 한 화면에서 차례로 보여 줍니다.</p>
         </div>
         <div class="mi-grid-3">
           <article class="mi-card">
             <span class="mi-fact-tag">월 검색수</span>
             <h3>한 달에 얼마나 검색하나</h3>
-            <p>검색광고 키워드도구 기준으로 최근 30일 PC·모바일 검색수를 합쳐 보여 줍니다. 검색이 아주 적은 키워드는 정확한 숫자 대신 범위로, 검색광고에 똑같은 키워드가 없으면 '확인 필요'로 표시합니다.</p>
-          </article>
-          <article class="mi-card">
-            <span class="mi-fact-tag">12개월 추이</span>
-            <h3>검색량이 늘고 있나, 줄고 있나</h3>
-            <p>데이터랩 검색 지수를 월 검색수에 맞춰 환산한 월별 추정 검색량으로 추이를 그리고, 1년·3년 보기와 전년 대비를 보여 줍니다.</p>
-          </article>
-          <article class="mi-card">
-            <span class="mi-fact-tag">시즌 · 요일</span>
-            <h3>언제 검색이 몰리나</h3>
-            <p>데이터랩의 월별·요일별 검색 비율(2016년부터 누적)로 가장 많이 찾는 달과 요일을 봅니다. 긴 기간 자료를 받지 못하면 월별은 최근 12개월 기준으로 보여 주고, 요일별은 비어 있을 수 있습니다.</p>
-          </article>
-          <article class="mi-card">
-            <span class="mi-fact-tag">연령 · 성별 · 기기</span>
-            <h3>누가 찾나 · 쇼핑 클릭 기준</h3>
-            <p>네이버 쇼핑에서 이 키워드로 상품을 클릭한 사람들의 연령·성별·기기 비중(데이터랩 쇼핑인사이트)을 봅니다. 자료가 부족한 키워드는 일부 항목이 비거나 다른 기준으로 대신 표시될 수 있습니다.</p>
+            <p>검색광고 키워드도구 기준으로 최근 30일 PC·모바일 검색수를 합쳐 보여 주고, 모바일 비중도 함께 봅니다. 검색이 아주 적은 키워드는 정확한 숫자 대신 범위로, 검색광고에 똑같은 키워드가 없으면 '확인 필요'로 표시합니다.</p>
           </article>
           <article class="mi-card">
             <span class="mi-fact-tag">광고 비용</span>
@@ -168,8 +153,8 @@
           </li>
           <li class="mi-card">
             <span class="mi-card-number">3</span>
-            <h3>핵심 4줄부터 확인 · 저장</h3>
-            <p>언제·누가·얼마·대안을 요약한 핵심 4줄을 먼저 보고, 필요한 블록으로 내려갑니다. 조사 노트·이미지·CSV로 저장할 수 있습니다.</p>
+            <h3>핵심 요약부터 확인 · 저장</h3>
+            <p>광고비와 대안 키워드를 요약한 핵심 요약을 먼저 보고, 필요한 블록으로 내려갑니다. 조사 노트·이미지·CSV로 저장할 수 있습니다.</p>
           </li>
         </ol>
       </div>
@@ -185,10 +170,10 @@
         <figure class="mi-shot">
           <div class="mi-shot-bar"><span class="mi-shot-label">예시 화면</span><span>가짜 데이터 · 실제 조회 결과 아님</span></div>
           <picture>
-            <source media="(max-width: 640px)" srcset="/guide/img/keyword-search-volume-example-mobile.webp" width="708" height="2018" />
-            <img src="/guide/img/keyword-search-volume-example.webp" width="1470" height="1842" loading="lazy" decoding="async" alt="예시 화면: 키워드의 핵심 4줄 요약, 월 검색수와 클릭 지표, 12개월 검색량 추이 차트가 보이는 키워드 조회 화면" />
+            <source media="(max-width: 640px)" srcset="/guide/img/keyword-search-volume-example-mobile.webp" width="708" height="1738" />
+            <img src="/guide/img/keyword-search-volume-example.webp" width="1470" height="1523" loading="lazy" decoding="async" alt="예시 화면: 키워드의 핵심 요약, 월 검색수와 광고 지표, 노출 순위별 예상 입찰가가 보이는 키워드 조회 화면" />
           </picture>
-          <figcaption>예시 화면 · 핵심 4줄 요약 아래로 월 검색수·광고 지표, 12개월 검색량 추이가 이어집니다.</figcaption>
+          <figcaption>예시 화면 · 핵심 요약 아래로 월 검색수·광고 지표, 노출 순위별 예상 입찰가가 이어집니다.</figcaption>
         </figure>
       </div>
     </section>
@@ -237,13 +222,13 @@
           <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
             <summary itemprop="name">검색량 데이터는 어디서 가져오나요?</summary>
             <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
-              <p itemprop="text">네이버 공식 데이터입니다. 월 검색수·클릭·입찰가는 네이버 검색광고(키워드도구·입찰가 추정), 검색 추이와 월별·요일별 비율은 네이버 데이터랩 검색어 트렌드, 연령·성별·기기별 쇼핑 클릭 비중은 데이터랩 쇼핑인사이트(기기 자료가 없으면 검색광고의 PC·모바일 검색수 비중), 블로그·카페·지식iN 글 수는 네이버 검색 API에서 가져옵니다.</p>
+              <p itemprop="text">네이버 공식 데이터입니다. 월 검색수·모바일 비중·클릭·입찰가는 네이버 검색광고(키워드도구·입찰가 추정), 블로그·카페·지식iN 글 수는 네이버 검색 API에서 가져옵니다. 검색 추이·시기별 검색 비율·연령 같은 네이버 데이터랩 정보는 네이버 이용 정책에 따라 제공하지 않습니다.</p>
             </div>
           </details>
           <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
             <summary itemprop="name">월 검색수는 어떤 기간 기준인가요?</summary>
             <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
-              <p itemprop="text">검색광고 키워드도구의 최근 30일 검색수이며, PC와 모바일을 합친 값입니다. 월별 추이는 데이터랩 검색 지수를 이 검색수에 맞춰 환산한 추정치라 실제 검색 건수와 다를 수 있습니다.</p>
+              <p itemprop="text">검색광고 키워드도구의 최근 30일 검색수이며, PC와 모바일을 합친 값입니다. 검색이 아주 적은 키워드는 정확한 숫자 대신 범위로 표시합니다.</p>
             </div>
           </details>
           <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
@@ -255,7 +240,7 @@
           <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
             <summary itemprop="name">여러 키워드를 한 번에 비교할 수 있나요?</summary>
             <div itemprop="acceptedAnswer" itemscope itemtype="https://schema.org/Answer">
-              <p itemprop="text">네. 쉼표로 나눠 최대 5개까지 넣으면 같은 기준으로 나란히 비교합니다. 첫 키워드는 전체 지표로, 나머지는 비교 표와 시즌 캘린더로 보여 줍니다.</p>
+              <p itemprop="text">네. 쉼표로 나눠 최대 5개까지 넣으면 같은 기준으로 나란히 비교합니다. 첫 키워드는 전체 지표로, 나머지는 비교 표로 보여 줍니다.</p>
             </div>
           </details>
           <details open itemprop="mainEntity" itemscope itemtype="https://schema.org/Question">
@@ -283,7 +268,7 @@
           <div>
             <span class="mi-kicker">시작</span>
             <h2>키워드 조회는 가입하면 바로.</h2>
-            <p>후보 키워드를 넣고 월 검색수·시즌·예상 광고비부터 확인해 보세요. 30일 순위 추적 도입은 카카오 채널로 문의해 주세요.</p>
+            <p>후보 키워드를 넣고 월 검색수·예상 광고비부터 확인해 보세요. 30일 순위 추적 도입은 카카오 채널로 문의해 주세요.</p>
           </div>
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client?signup=1">무료 체험 가입</a>

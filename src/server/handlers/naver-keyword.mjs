@@ -12,6 +12,7 @@ import {
   shoppingRankConfig,
 } from "../naver-shopping/source-status.mjs";
 import { fetchShoppingResultsWindow } from "./naver-shopping-rank.mjs";
+import { DATALAB_STAFF_ONLY_MESSAGE, datalabAllowedForRequest } from "../datalab-access.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_HISTORY_START_DATE = "2016-01-01";
@@ -171,6 +172,11 @@ function keywordCacheKey(keyword, profileMode, env) {
   return `${profileMode}:${keywordConfigSignature(env)}:${normalizeCompare(keyword)}`;
 }
 
+// 직원용·외부용 저장본 열쇠(직원 조회로 채운 데이터랩 값이 광고주·체험 응답으로 나가지 않게, 2026-11-13).
+export function keywordCacheKeyFor(staff, keyword, profileMode, env) {
+  return `${staff ? "staff" : "external"}:${keywordCacheKey(keyword, profileMode, env)}`;
+}
+
 function getKeywordCache(key) {
   const hit = keywordCache.get(key);
   if (!hit) return null;
@@ -220,7 +226,8 @@ function setShoppingProfileCache(key, profile, ttlMs = SHOPPING_PROFILE_CACHE_TT
 
 function canCacheKeywordPayload(payload) {
   const statuses = Object.values(payload?.sourceStatus || {}).map((item) => item?.status);
-  return statuses.length > 0 && statuses.every((status) => status === "ok" || status === "not_configured");
+  // staff_only: 광고주·체험 응답의 데이터랩 칸(일부러 비움) — 저장해도 된다(2026-11-13).
+  return statuses.length > 0 && statuses.every((status) => status === "ok" || status === "not_configured" || status === "staff_only");
 }
 
 function clientRateKey(request) {
@@ -1119,6 +1126,57 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   };
 }
 
+// 직원이 아닌 세션(광고주·체험)에 보내기 직전에 데이터랩 값과 그걸로 만든 값을 지운다(2026-11-13 네이버 답변).
+// 외부 세션은 데이터랩을 아예 부르지 않지만, 옛 저장본·다른 경로로 섞여 들어와도 응답에서 빠지게 한 번 더 지운다.
+// 기기 비중은 데이터랩 값이었으면 검색광고 PC·모바일 검색수 비중으로 다시 맞춘다.
+const DATALAB_TREND_STATUS = { status: "staff_only", label: "제공 안 함(네이버 데이터랩 이용 정책)" };
+export function stripDatalabForExternal(payload) {
+  if (!payload || typeof payload !== "object") return payload;
+  const out = { ...payload };
+  if (out.chartData && typeof out.chartData === "object") {
+    const chart = { ...out.chartData };
+    const naver = chart.naver || {};
+    const pc = Number(naver.monthlyPcQcCnt) || 0;
+    const mobile = Number(naver.monthlyMobileQcCnt) || 0;
+    const mobileShare = pc + mobile > 0 ? Math.round((mobile / (pc + mobile)) * 100) : 0;
+    Object.assign(chart, {
+      trendStatus: "제공 안 함",
+      series: [],
+      seriesLabels: [],
+      seriesPeriods: [],
+      trendIndex: [],
+      trendUnit: "",
+      month: [],
+      monthLabels: [],
+      monthBasis: "",
+      gender: null,
+      genderBasis: "",
+      age: [],
+      ageBasis: "",
+      agePeriod: "",
+      demographicStatus: "",
+      profileStatus: {},
+      week: [],
+      weekBasis: "",
+    });
+    if (chart.deviceBasis !== "naver_searchad_monthly_query_count") {
+      chart.device = { mobile: mobileShare, pc: pc + mobile > 0 ? 100 - mobileShare : 0 };
+      chart.deviceBasis = "naver_searchad_monthly_query_count";
+    }
+    out.chartData = chart;
+  }
+  if (out.source && typeof out.source === "object") {
+    out.source = { ...out.source, trend: "staff_only", profile: "staff_only" };
+    delete out.source.migratedApiProvider;
+  }
+  if (out.sourceStatus && typeof out.sourceStatus === "object") {
+    out.sourceStatus = { ...out.sourceStatus, trend: { ...DATALAB_TREND_STATUS }, ratios: { ...DATALAB_TREND_STATUS } };
+  }
+  if (Array.isArray(out.warnings)) out.warnings = out.warnings.filter((code) => code !== "trend_unavailable");
+  if (out.sourceStatus?.searchVolume?.status !== "partial") out.userMessage = DATALAB_STAFF_ONLY_MESSAGE;
+  return out;
+}
+
 export function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppingProfile, shoppingError, includeProfile }) {
   const datalabConfigured = hasDatalabConfig(env);
   const shoppingConfigured = hasShoppingRankConfig(env.shoppingResults);
@@ -1200,6 +1258,9 @@ export default {
     if (!keyword) return json(request, { ok: false, message: "검색어를 입력해주세요." }, 400);
     const profileMode = String(url.searchParams.get("profile") || "full").toLowerCase();
     const includeProfile = profileMode !== "compare" && profileMode !== "trend";
+    // 직원(총관리자·운영팀)만 데이터랩을 쓴다. 광고주·체험은 검색광고 값만(네이버 답변 2026-11-13).
+    const staff = datalabAllowedForRequest(request);
+    const respond = (body) => json(request, staff ? body : stripDatalabForExternal(body));
 
     const env = config();
     if (!hasSearchAdConfig(env)) {
@@ -1213,10 +1274,11 @@ export default {
       }, 503);
     }
 
-    const cacheKey = keywordCacheKey(keyword, profileMode, env);
+    // 직원용·외부용 저장본을 나눈다(직원 조회로 채운 데이터랩 값이 외부 응답으로 나가지 않게).
+    const cacheKey = keywordCacheKeyFor(staff, keyword, profileMode, env);
     const cached = getKeywordCache(cacheKey);
     if (cached) {
-      return json(request, {
+      return respond({
         ...cached.payload,
         cache: { hit: true, ttlSeconds: cached.ttlSeconds },
       });
@@ -1247,7 +1309,7 @@ export default {
         }
       }
 
-      if (hasDatalabConfig(env)) {
+      if (staff && hasDatalabConfig(env)) {
         try {
           datalabProfile = await buildDatalabProfile(env, keyword, {
             includeProfile,
@@ -1288,8 +1350,9 @@ export default {
         cache: { hit: false, ttlSeconds: Math.ceil(KEYWORD_CACHE_TTL_MS / 1000) },
       };
 
-      if (!datalabError && !shoppingError && canCacheKeywordPayload(payload)) setKeywordCache(cacheKey, payload);
-      return json(request, payload);
+      const outward = staff ? payload : stripDatalabForExternal(payload);
+      if (!datalabError && !shoppingError && canCacheKeywordPayload(outward)) setKeywordCache(cacheKey, outward);
+      return json(request, outward);
     } catch (error) {
       return json(request, {
         ok: false,

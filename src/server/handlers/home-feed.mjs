@@ -19,6 +19,7 @@ import {
   naverSearchRequest,
 } from "../naver-api-hub.mjs";
 import { RANK_NEVER_FOUND_MIN_CHECKS } from "../naver-rank-requeue.mjs";
+import { datalabAllowedForRole } from "../datalab-access.mjs";
 import { trialSampleRankRows } from "../trial-sample-trackers.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
@@ -294,6 +295,13 @@ export function parseSearchCount(value) {
   return Number(text.replace(/,/g, "")) || 0;
 }
 
+// PC·모바일 중 하나라도 검색광고가 "< 10"(10 미만)으로 준 값이면, 합계는 정확한 수가 아니라 아래 한계다
+// ("< 10"을 0으로 더하므로). 화면이 "1,230+" / "20 미만"처럼 범위로 보여 주게 표시한다(Codex 검토 2026-11-13).
+export function volumeIsLowerBound(item) {
+  if (!item) return false;
+  return [item.monthlyPcQcCnt, item.monthlyMobileQcCnt].some((value) => String(value ?? "").includes("<"));
+}
+
 export function monthlyVolumeOf(item) {
   if (!item) return null;
   return parseSearchCount(item.monthlyPcQcCnt) + parseSearchCount(item.monthlyMobileQcCnt);
@@ -521,7 +529,8 @@ async function searchAdVolume(env, keyword) {
     const list = Array.isArray(payload?.keywordList) ? payload.keywordList : [];
     const compare = (value) => String(value || "").replace(/\s/g, "").toLowerCase();
     const exact = list.find((item) => compare(item.relKeyword) === compare(keyword));
-    return monthlyVolumeOf(exact);
+    if (!exact) return null;
+    return { volume: monthlyVolumeOf(exact), lowerBound: volumeIsLowerBound(exact) };
   } catch {
     return null;
   } finally {
@@ -628,23 +637,25 @@ function distinctKeywords(trackers) {
   return keywords;
 }
 
-async function loadMetrics(config, env, accountCode, trackers, nowMs, deadlineMs) {
+// includeDatalab=false(광고주·체험 홈): 데이터랩 증감률을 부르지 않고 저장본도 따로 쓴다(네이버 답변 2026-11-13).
+async function loadMetrics(config, env, accountCode, trackers, nowMs, deadlineMs, { includeDatalab = true } = {}) {
   const keywords = distinctKeywords(trackers);
-  const cacheKey = `metrics:${accountCode}:${keywords.slice(0, VOLUME_KEYWORD_LIMIT).join("|")}`;
+  const cacheKey = `metrics:${includeDatalab ? "staff" : "external"}:${accountCode}:${keywords.slice(0, VOLUME_KEYWORD_LIMIT).join("|")}`;
   const cached = cacheRead(metricCache, cacheKey, METRIC_CACHE_TTL_MS, nowMs);
   if (cached.fresh) return cached.fresh;
   try {
     const sampled = keywords.slice(0, VOLUME_KEYWORD_LIMIT);
     const volumes = await collectVolumes(env, sampled, deadlineMs);
-    const changes = await collectChanges(config, sampled, nowMs, deadlineMs);
+    const changes = includeDatalab ? await collectChanges(config, sampled, nowMs, deadlineMs) : new Map();
     const volumeChange = sampled
       .map((keyword) => ({
         keyword,
-        monthlyVolume: volumes.has(keyword) ? volumes.get(keyword) : null,
+        monthlyVolume: volumes.has(keyword) ? volumes.get(keyword).volume : null,
+        volumeLowerBound: volumes.has(keyword) ? volumes.get(keyword).lowerBound : false,
         changePct: changes.has(keyword) ? changes.get(keyword) : null,
       }))
       .filter((row) => row.changePct !== null || row.monthlyVolume !== null)
-      .sort((a, b) => Math.abs(b.changePct || 0) - Math.abs(a.changePct || 0))
+      .sort((a, b) => (includeDatalab ? Math.abs(b.changePct || 0) - Math.abs(a.changePct || 0) : (b.monthlyVolume || 0) - (a.monthlyVolume || 0)))
       .slice(0, 6);
     const payload = {
       ok: true,
@@ -726,6 +737,18 @@ function json(request, body, status = 200) {
   });
 }
 
+// 직원이 아닌 홈 응답에서 데이터랩 증감률을 지운다(옛 저장본·오류 때 옛 값 경로 포함).
+export function stripMetricsDatalab(metrics) {
+  if (!metrics || typeof metrics !== "object" || !Array.isArray(metrics.volumeChange)) return metrics;
+  return {
+    ...metrics,
+    datalab: "staff_only",
+    volumeChange: metrics.volumeChange
+      .map((row) => ({ keyword: row.keyword, monthlyVolume: row.monthlyVolume ?? null, volumeLowerBound: Boolean(row.volumeLowerBound), changePct: null }))
+      .filter((row) => row.monthlyVolume !== null),
+  };
+}
+
 // 체험 계정 응답에서 플랫폼별 7일 전체 목록(all)만 떼어 낸다. lead·items(메인에 뜬 기사)는 그대로다.
 export function withoutFullNews(news) {
   if (!news || typeof news !== "object" || Array.isArray(news)) return news;
@@ -775,9 +798,14 @@ export async function handleHomeFeedRequest(request, ctx) {
   const keywords = distinctKeywords(trackers);
   // 체험 계정의 예시 키워드 지표는 모든 체험 계정이 같으므로 캐시 열쇠를 하나로 묶는다(2026-11-12) — 계정마다
   // 데이터랩을 다시 부르지 않게. 응답의 scope.accountCode 도 공용 값이라 다른 체험 계정 코드가 섞이지 않는다.
+  // 데이터랩 증감률은 직원(총관리자·운영팀) 홈에만(네이버 답변 2026-11-13). 광고주·체험 홈은 월 검색수만.
+  // 광고주 화면(client.html)은 view=client 를 붙여 부른다 — 총관리자·운영팀이 광고주 화면을 미리 볼 때도 광고주가
+  // 받는 것과 같은 응답(월 검색수 순 상위)을 받게(Codex 검토 2026-11-13). 스스로 외부 모양을 고르는 것뿐이라 권한은 줄기만 한다.
+  const clientView = new URL(request.url).searchParams.get("view") === "client";
+  const staff = datalabAllowedForRole(scope.role) && !clientView;
   const metricsPromise = trackerError
     ? Promise.resolve({ ok: false, reason: trackerError })
-    : loadMetrics(config, env, trialRows ? TRIAL_SAMPLE_METRICS_SCOPE : scope.accountCode, trackers, nowMs, deadlineMs);
+    : loadMetrics(config, env, trialRows ? TRIAL_SAMPLE_METRICS_SCOPE : scope.accountCode, trackers, nowMs, deadlineMs, { includeDatalab: staff });
   const keywordNewsPromise = trackerError
     ? Promise.resolve({ ok: false, reason: trackerError })
     : loadKeywordNews(config, keywords.slice(0, KEYWORD_NEWS_LIMIT), trackers, nowMs, deadlineMs);
@@ -788,7 +816,8 @@ export async function handleHomeFeedRequest(request, ctx) {
       const snapshots = trialRows
         ? trialRows.snapshots
         : await recentSnapshots(ctx, trackers.map((tracker) => tracker.id), nowMs);
-      rank = scope.role === "client"
+      // 광고주 화면(view=client)으로 부르면 직원이어도 광고주와 같은 순위 요약 모양을 준다(Codex 2회차).
+      rank = scope.role === "client" || clientView
         ? { ok: true, summary: computeRankSummary(trackers, snapshots) }
         : { ok: true, swings: computeRankSwings(trackers, snapshots) };
     } catch (error) {
@@ -804,7 +833,7 @@ export async function handleHomeFeedRequest(request, ctx) {
     role: scope.role,
     accountCode: scope.accountCode || null,
     news: trial ? withoutFullNews(news) : news,
-    metrics,
+    metrics: staff ? metrics : stripMetricsDatalab(metrics),
     keywordNews,
     rank,
   });

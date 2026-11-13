@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   handleHomeFeedRequest,
   resetHomeFeedCaches,
+  stripMetricsDatalab,
+  volumeIsLowerBound,
   agencyCodeScope,
   articleTopic,
   buildBrandSection,
@@ -414,7 +416,7 @@ test("keyword news: the same cached articles get each account's own rank, and th
   assert.deepEqual(keywordNewsWithRanks({ ok: false, reason: "x" }, []), { ok: false, reason: "x" });
 });
 
-test("trial home example-keyword metrics share one cache across trial accounts, so a new trial account does not call DataLab again (2026-11-12)", async () => {
+test("trial homes never call DataLab (2026-11-13 네이버 답변) and still share one example-metrics cache across trial accounts", async () => {
   const keys = ["NAVER_API_HUB_MODE", "NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_CLIENT_SECRET"];
   const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   const savedFetch = globalThis.fetch;
@@ -435,11 +437,12 @@ test("trial home example-keyword metrics share one cache across trial accounts, 
     resetHomeFeedCaches();
     const first = await handleHomeFeedRequest(trialRequest("trial-10293847"), {});
     assert.equal(first.status, 200);
-    const afterFirst = datalabCalls;
-    assert.ok(afterFirst > 0, "첫 체험 계정은 예시 키워드 지표를 위해 데이터랩을 부른다");
+    assert.equal(datalabCalls, 0, "체험 홈은 데이터랩을 부르지 않는다(외부 제공 불가)");
+    const firstBody = await first.json();
+    assert.ok((firstBody.metrics?.volumeChange || []).every((row) => row.changePct === null), "증감률(데이터랩)이 응답에 없다");
     const second = await handleHomeFeedRequest(trialRequest("trial-56473829"), {});
     assert.equal(second.status, 200);
-    assert.equal(datalabCalls, afterFirst, "다른 체험 계정은 같은 캐시를 쓴다");
+    assert.equal(datalabCalls, 0);
     const body = await second.json();
     assert.notEqual(body.metrics?.scope?.accountCode, "trial-10293847", "다른 체험 계정의 코드가 응답에 섞이지 않는다");
   } finally {
@@ -450,4 +453,77 @@ test("trial home example-keyword metrics share one cache across trial accounts, 
     }
     resetHomeFeedCaches();
   }
+});
+
+test("stripMetricsDatalab removes the DataLab change rate from advertiser/trial home metrics, including stale cached payloads", () => {
+  const stripped = stripMetricsDatalab({
+    ok: true,
+    scope: { accountCode: "brand-a", keywordCount: 3 },
+    volumeChange: [
+      { keyword: "원두", monthlyVolume: 6300, changePct: 12.5 },
+      { keyword: "온수매트", monthlyVolume: null, changePct: -30 },
+      { keyword: "담요", monthlyVolume: 900, changePct: null },
+    ],
+    categoryTrend: { ok: false, reason: "not_wired" },
+  });
+  assert.equal(stripped.datalab, "staff_only");
+  assert.deepEqual(stripped.volumeChange, [
+    { keyword: "원두", monthlyVolume: 6300, volumeLowerBound: false, changePct: null },
+    { keyword: "담요", monthlyVolume: 900, volumeLowerBound: false, changePct: null },
+  ], "증감률만 있던 줄은 빼고, 월 검색수만 남긴다");
+  assert.deepEqual(stripMetricsDatalab({ ok: false, reason: "metrics_unavailable" }), { ok: false, reason: "metrics_unavailable" });
+});
+
+test("the advertiser screen asks with view=client, so an owner/team previewing it gets the advertiser shape (no DataLab call, no change %)", async () => {
+  const keys = ["NAVER_API_HUB_MODE", "NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_CLIENT_SECRET"];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const savedFetch = globalThis.fetch;
+  Object.assign(process.env, { NAVER_API_HUB_MODE: "hub", NAVER_API_HUB_CLIENT_ID: "test-id", NAVER_API_HUB_CLIENT_SECRET: "test-secret" });
+  let datalabCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = String(typeof input === "string" ? input : input.url);
+    if (url.includes("/search-trend/")) {
+      datalabCalls += 1;
+      return Response.json({ results: [] });
+    }
+    return Response.json({ items: [], total: 0 });
+  };
+  const chain = (rows) => {
+    const api = { select: () => api, in: () => api, eq: () => api, gte: () => api, order: () => api, limit: () => Promise.resolve({ data: rows, error: null }) };
+    return api;
+  };
+  const ctx = { supabaseAdmin: { from: (table) => chain(table === "naver_rank_trackers" ? TRACKERS.map((row) => ({ ...row, status: "active" })) : []) } };
+  const ownerRequest = (query) => new Request(`https://insight.momentlabs.co.kr/api/client/home-feed${query}`, {
+    headers: { "x-mi-session-role": "owner", "x-mi-owner-agency-code": "mml93-a01", "x-mi-agency-code": "hadden" },
+  });
+  try {
+    resetHomeFeedCaches();
+    const preview = await handleHomeFeedRequest(ownerRequest("?view=client"), ctx);
+    assert.equal(preview.status, 200);
+    assert.equal(datalabCalls, 0, "광고주 화면 미리보기는 데이터랩을 부르지 않는다");
+    const previewBody = await preview.json();
+    assert.equal(previewBody.metrics?.datalab, "staff_only", "광고주가 받는 모양 그대로");
+    assert.ok(previewBody.rank?.summary && !previewBody.rank?.swings, "순위도 광고주용 요약 모양");
+    resetHomeFeedCaches();
+    const admin = await handleHomeFeedRequest(ownerRequest(""), ctx);
+    assert.equal(admin.status, 200);
+    assert.ok(datalabCalls > 0, "관리자 화면(직원) 홈은 그대로 데이터랩 증감률을 부른다");
+    const adminBody = await admin.json();
+    assert.notEqual(adminBody.metrics?.datalab, "staff_only");
+    assert.ok(adminBody.rank?.swings, "관리자 홈 순위는 그대로 변동 목록 모양");
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    resetHomeFeedCaches();
+  }
+});
+
+test("a search-ad count of '< 10' makes the monthly total a lower bound, flagged for the screen", () => {
+  assert.equal(volumeIsLowerBound({ monthlyPcQcCnt: "< 10", monthlyMobileQcCnt: "120" }), true);
+  assert.equal(volumeIsLowerBound({ monthlyPcQcCnt: 30, monthlyMobileQcCnt: "120" }), false);
+  assert.equal(volumeIsLowerBound(null), false);
+  assert.equal(stripMetricsDatalab({ ok: true, volumeChange: [{ keyword: "a", monthlyVolume: 120, volumeLowerBound: true, changePct: 3 }] }).volumeChange[0].volumeLowerBound, true);
 });

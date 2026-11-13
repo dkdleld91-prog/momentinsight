@@ -19,7 +19,7 @@
       "id": "advertiser-keyword-lookup",
       "file": "src/pages/client.html",
       "name": "runKeywordLookup",
-      "sha256": "3b372194efacd2da4a5175bdbdec5c9607580b9fa6461c796810e3fb8312e48e"
+      "sha256": "58f254767c32034ff6f50b382ef174a83629cbbc71eec419de7f2d966abfa39e"
     },
     {
       "id": "operation-seo-entry",
@@ -167,7 +167,7 @@
     {
       "id": "keyword-query-server",
       "file": "src/server/handlers/naver-keyword.mjs",
-      "sha256": "34c463339ca48eb14ac234fa5b828a3dd35a836ae2bdd3ba07f8424bc19c1de5"
+      "sha256": "82fecf126e2ec6658559c571f1cb6942393ee49cab2c89d4d02f3c973c5a2bc7"
     },
     {
       "id": "product-tracker-server",
